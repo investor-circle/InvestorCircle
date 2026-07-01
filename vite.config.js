@@ -8,7 +8,7 @@ export default defineConfig({
   // base must match your GitHub repository name exactly.
   // e.g. if your repo is github.com/you/investorcircle → "/investorcircle/"
   // For a custom domain or root deploy, set to "/" instead.
-  base: "/investorcircle/",
+  base: "/InvestorCircle/",
 
   server: { port: 5173, open: true },
 
