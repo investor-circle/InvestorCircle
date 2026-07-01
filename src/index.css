@@ -1,0 +1,12 @@
+/* The full component design system lives in the STYLES constant inside App.jsx
+   (injected via <style>), so this file only carries page-level resets. Fonts are
+   loaded from index.html. */
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; min-height: 100vh; }
+body {
+  background: #f5f5fb;
+  font-family: "Plus Jakarta Sans", -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}

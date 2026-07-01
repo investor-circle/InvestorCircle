@@ -1,0 +1,1512 @@
+import React, { useState, useMemo, useRef } from "react";
+import {
+  Home, PieChart, Users, Lightbulb, Shield, Search, Bell, Settings,
+  Lock, Eye, EyeOff, TrendingUp, TrendingDown, Plus, X, Check, Send,
+  UserCog, Layers, Wallet, ArrowUpRight, ArrowDownRight, MessageSquare,
+  Bookmark, ChevronRight, ChevronDown, ChevronsUpDown, Sparkles, ArrowUpDown,
+  List, Table as TableIcon, Mail, UserPlus, Calendar, Crown,
+  ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
+  Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader
+} from "lucide-react";
+import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
+import { parsePortfolioFile } from "./importers";
+import { fetchHoldingsByPAN, isValidPAN } from "./services/pan";
+
+/* ============================================================
+   InvestorCircle — social space for investors.
+   Palette: deep navy sidebar, indigo→violet→magenta gradient,
+   light content; green/red only for gains/losses.
+   Single-file React artifact. All data is mock / in-memory.
+   ============================================================ */
+
+const STYLES = `
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
+:root{
+  --bg:#f5f5fb; --surface:#ffffff; --surface-2:#f1f1f8;
+  --ink:#13142b; --ink-soft:#565a78; --muted:#8d90ad;
+  --line:#e9e9f2; --line-2:#dddcec;
+  --accent:#6d5df5; --accent-ink:#5a49e6; --accent-soft:#eeecff; --accent-line:#dcd8fb;
+  --grad:linear-gradient(135deg,#6d5df5 0%,#9a55ee 55%,#cf52d8 100%);
+  --side:#0a0b18; --side-2:#11132a; --side-line:#23253f; --side-text:#a7abc6; --side-dim:#6d7196;
+  --gain:#15924e; --gain-soft:#e6f4ec; --loss:#c2453d; --loss-soft:#f8eae8;
+  --r:16px; --shadow:0 1px 2px rgba(20,20,50,.04), 0 6px 18px rgba(20,20,50,.05);
+  --font:'Plus Jakarta Sans',-apple-system,system-ui,sans-serif; --serif:'Fraunces',Georgia,serif;
+}
+*{box-sizing:border-box;}
+.app{font-family:var(--font);color:var(--ink);background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased;font-feature-settings:"tnum";}
+.app button,.app input,.app select,.app textarea{font-family:var(--font);}
+.tnum{font-variant-numeric:tabular-nums;}
+.pos{color:var(--gain);} .neg{color:var(--loss);}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:256px;flex-shrink:0;background:var(--side);color:#fff;display:flex;flex-direction:column;padding:18px 14px;}
+.brand{display:flex;align-items:center;gap:12px;padding:6px 8px 16px;}
+.brand .mark{width:42px;height:42px;border-radius:13px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;letter-spacing:-1px;box-shadow:0 6px 18px rgba(124,92,252,.45);}
+.brand .nm{font-weight:800;font-size:18px;letter-spacing:-.4px;line-height:1.1;}
+.brand .tag{font-size:10px;letter-spacing:1.4px;color:var(--side-dim);text-transform:uppercase;margin-top:2px;}
+.viewing{background:var(--grad);border-radius:15px;padding:13px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;box-shadow:0 8px 22px rgba(124,92,252,.4);margin-bottom:18px;transition:.15s;}
+.viewing:hover{filter:brightness(1.06);}
+.viewing .ava{width:36px;height:36px;border-radius:11px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;}
+.viewing .vs{font-size:10px;letter-spacing:1.3px;text-transform:uppercase;color:rgba(255,255,255,.78);}
+.viewing .role{font-size:16px;font-weight:700;line-height:1.1;}
+.side-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--side-dim);padding:4px 12px 8px;}
+.nav-item{display:flex;align-items:center;gap:13px;padding:12px 13px;border-radius:12px;font-size:14.5px;font-weight:600;color:var(--side-text);cursor:pointer;margin-bottom:3px;border:1px solid transparent;transition:.12s;}
+.nav-item svg{color:var(--side-dim);}
+.nav-item:hover{background:rgba(255,255,255,.045);color:#fff;}
+.nav-item:hover svg{color:#cfd2ee;}
+.nav-item.active{background:rgba(124,92,252,.16);border-color:rgba(124,92,252,.45);color:#fff;box-shadow:0 8px 20px rgba(124,92,252,.12);}
+.nav-item.active svg{color:#b6a9ff;}
+.nav-badge{margin-left:auto;background:var(--grad);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:2px 9px;}
+.side-foot{margin-top:auto;padding-top:14px;border-top:1px solid var(--side-line);}
+.side-stat{display:flex;justify-content:space-between;padding:7px 12px;font-size:13px;color:var(--side-dim);}
+.side-stat b{color:#fff;font-weight:700;}
+
+.main{flex:1;display:flex;flex-direction:column;min-width:0;}
+.topbar{height:64px;background:rgba(245,245,251,.8);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 26px;position:sticky;top:0;z-index:30;}
+.searchbox{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 14px;}
+.searchbox input{border:none;outline:none;background:transparent;font-size:13.5px;width:100%;}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:8px;}
+.icon-btn{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.icon-btn:hover{background:var(--surface-2);}
+.avatar-pill{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 8px 5px 6px;}
+.avatar-pill .gava{width:30px;height:30px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px;}
+
+.content{padding:28px 30px;max-width:1280px;}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap;}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
+.page-title{font-size:26px;font-weight:800;letter-spacing:-.6px;}
+.page-sub{font-size:14px;color:var(--muted);margin-top:4px;}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;}
+.card.lift{transition:transform .15s, box-shadow .15s;}
+.card.lift:hover{transform:translateY(-2px);box-shadow:0 8px 26px rgba(20,20,50,.1);}
+.card-head{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:700;}
+.card-body{padding:18px;}
+
+.hero-grad{background:var(--grad);border-radius:22px;padding:26px 28px;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:18px;box-shadow:0 14px 36px rgba(124,92,252,.32);}
+.hero-grad .lbl{font-size:13px;font-weight:600;color:rgba(255,255,255,.82);margin-bottom:8px;}
+.balance{font-family:var(--serif);font-size:46px;font-weight:600;letter-spacing:-1px;line-height:1;color:var(--ink);}
+.hero-grad .balance{color:#fff;}
+.delta-light{display:inline-flex;align-items:center;gap:5px;font-weight:700;font-size:14px;margin-top:12px;color:#fff;}
+.delta{display:inline-flex;align-items:center;gap:5px;font-weight:700;font-size:14px;}
+
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 17px;}
+.kpi .lbl{font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.kpi .val{font-size:23px;font-weight:800;letter-spacing:-.5px;}
+.kpi .sub{font-size:12px;font-weight:700;margin-top:3px;}
+
+table.grid{width:100%;border-collapse:collapse;font-size:14px;}
+.grid th{text-align:left;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);padding:0 14px 11px;border-bottom:1px solid var(--line);}
+.grid th.sortable{cursor:pointer;user-select:none;white-space:nowrap;}
+.grid th.sortable:hover{color:var(--ink);}
+.grid th .si{display:inline-flex;vertical-align:-2px;margin-left:4px;opacity:.55;}
+.grid th.sorted .si{opacity:1;color:var(--accent);}
+.grid td{padding:13px 14px;border-bottom:1px solid var(--line);vertical-align:middle;}
+.grid tr:last-child td{border-bottom:none;}
+.grid tbody tr.hoverable{transition:background .1s;}
+.grid tbody tr.hoverable:hover td{background:var(--surface-2);}
+.sym{font-weight:700;letter-spacing:-.2px;}
+.muted{color:var(--muted);} .small{font-size:12px;}
+
+.ttag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--ink-soft);}
+.dot{width:8px;height:8px;border-radius:3px;flex-shrink:0;}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--surface-2);color:var(--ink-soft);}
+.pill.accent{background:var(--accent-soft);color:var(--accent-ink);}
+.pill.gain{background:var(--gain-soft);color:var(--gain);}
+.pill.loss{background:var(--loss-soft);color:var(--loss);}
+.pill.amber{background:#fdf0dc;color:#9a6a16;}
+
+.btn{border:none;border-radius:12px;font-size:13px;font-weight:700;padding:10px 16px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:.12s;}
+.btn-pri{background:var(--grad);color:#fff;box-shadow:0 6px 16px rgba(124,92,252,.3);}
+.btn-pri:hover{filter:brightness(1.06);}
+.btn-ghost{background:var(--surface);border:1px solid var(--line-2);color:var(--ink);} .btn-ghost:hover{background:var(--surface-2);}
+.btn-soft{background:var(--accent-soft);color:var(--accent-ink);} .btn-soft:hover{background:#e4e0ff;}
+.btn-sm{padding:7px 12px;font-size:12px;border-radius:10px;}
+.btn:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowed;border:1px solid var(--line);box-shadow:none;filter:none;}
+
+.seg{display:inline-flex;background:var(--surface-2);border-radius:12px;padding:3px;gap:2px;}
+.seg button{border:none;background:transparent;color:var(--muted);font-size:13px;font-weight:700;padding:8px 16px;border-radius:9px;cursor:pointer;display:flex;align-items:center;gap:7px;transition:.15s;}
+.seg button:hover{color:var(--ink);}
+.seg button.active{background:var(--surface);color:var(--accent-ink);box-shadow:0 1px 4px rgba(20,20,50,.12);}
+.seg.tiny button{padding:6px 11px;font-size:12px;}
+
+.av{border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;flex-shrink:0;letter-spacing:-.3px;}
+.sw{width:44px;height:25px;border-radius:999px;background:var(--line-2);position:relative;cursor:pointer;transition:.15s;flex-shrink:0;}
+.sw.on{background:var(--accent);}
+.sw .knob{width:19px;height:19px;border-radius:50%;background:#fff;position:absolute;top:3px;left:3px;transition:left .15s;box-shadow:0 1px 3px rgba(0,0,0,.28);}
+.sw.on .knob{left:22px;}
+
+.feed-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:18px;margin-bottom:14px;}
+.feed-head{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.feed-act{font-size:13px;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-weight:600;}
+.feed-act:hover{color:var(--ink);}
+
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line-2);color:var(--ink-soft);border-radius:999px;font-size:13px;font-weight:600;padding:6px 12px;cursor:pointer;transition:.12s;}
+.chip:hover{border-color:var(--accent);color:var(--accent-ink);}
+.chip.sel{background:var(--grad);border-color:transparent;color:#fff;}
+.chip.mini{font-size:11px;padding:3px 9px;cursor:default;}
+.chip.mini:hover{border-color:var(--line-2);color:var(--ink-soft);}
+
+.overlay{position:fixed;inset:0;background:rgba(13,14,30,.5);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
+.modal{background:var(--surface);border-radius:20px;width:560px;max-width:100%;max-height:90vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.32);}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:20px 22px 14px;}
+.modal-head h3{margin:0;font-size:19px;font-weight:800;letter-spacing:-.4px;}
+.modal-body{padding:6px 22px 18px;}
+.modal-foot{padding:16px 22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.field{margin-bottom:16px;}
+.field label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:7px;}
+.field input,.field textarea,.field select{width:100%;border:1px solid var(--line-2);border-radius:11px;padding:11px 13px;font-size:14px;outline:none;background:var(--surface);transition:.12s;}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.inline-select{border:1px solid var(--line-2);border-radius:10px;padding:8px 11px;font-size:13px;font-weight:600;background:var(--surface);cursor:pointer;color:var(--ink);}
+.inline-select.sm{padding:6px 9px;font-size:12px;}
+
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+.toolbar .grow{flex:1;min-width:200px;}
+.fl{display:flex;align-items:center;gap:7px;}
+.fl .lab{font-size:12px;font-weight:700;color:var(--muted);}
+.clickable{cursor:pointer;color:var(--accent-ink);font-weight:700;display:inline-flex;align-items:center;gap:6px;}
+.clickable:hover{text-decoration:underline;}
+.expand-row > td{background:var(--surface-2);padding:0;}
+.expand-inner{padding:16px 18px;}
+.member-row{display:flex;align-items:center;gap:11px;padding:9px 8px;border-bottom:1px solid var(--line);}
+.member-row:last-child{border-bottom:none;}
+.note{font-size:13px;border-radius:12px;padding:12px 14px;display:flex;gap:9px;align-items:flex-start;font-weight:600;}
+.note.ok{background:var(--gain-soft);color:var(--gain);}
+.note.info{background:var(--accent-soft);color:var(--accent-ink);}
+.note.warn{background:#fdf0dc;color:#9a6a16;}
+.counter{font-size:12px;font-weight:700;color:var(--muted);}
+.empty{padding:36px;text-align:center;color:var(--muted);font-size:14px;}
+.tscroll{overflow-x:auto;}
+tr.exit > td{background:var(--loss-soft);}
+tr.exit > td:first-child{box-shadow:inset 3px 0 0 var(--loss);}
+tr.hiddenrow > td{opacity:.55;}
+.iconbtn{width:30px;height:30px;border-radius:9px;border:1px solid var(--line-2);background:var(--surface);color:var(--ink-soft);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;}
+.iconbtn:hover{background:var(--surface-2);}
+.iconbtn.on-like{background:var(--gain-soft);color:var(--gain);border-color:transparent;}
+.iconbtn.on-dislike{background:var(--loss-soft);color:var(--loss);border-color:transparent;}
+.iconbtn.on-exit{background:var(--loss-soft);color:var(--loss);border-color:transparent;}
+.iconbtn.danger:hover{background:var(--loss-soft);color:var(--loss);border-color:transparent;}
+.actions{display:flex;gap:6px;align-items:center;justify-content:flex-end;}
+.expand-sub{padding:14px 16px;background:var(--surface-2);}
+.namelist{display:flex;flex-wrap:wrap;gap:8px;}
+.nl-item{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 12px 5px 6px;font-size:13px;font-weight:600;}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;}
+.stat .v{font-size:19px;font-weight:800;letter-spacing:-.3px;}
+.stat .l{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:4px;}
+.stat.click{cursor:pointer;transition:.12s;}
+.stat.click:hover{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.menu{position:absolute;top:calc(100% + 6px);right:0;z-index:30;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 40px rgba(20,20,50,.16);padding:6px;min-width:170px;}
+.menu-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;}
+.menu-item:hover{background:var(--surface-2);color:var(--accent-ink);}
+.cap{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.spin{animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.nowrap{white-space:nowrap;}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+`;
+
+/* ---------- mock data ---------- */
+const ME = { id:"me", name:"Jordan Avery", initials:"JA" };
+const TODAY = "2026-06-28";
+
+const ACCOUNTS = [
+  { id:"fid", name:"Fidelity 401(k)" }, { id:"van", name:"Vanguard Roth IRA" },
+  { id:"rh", name:"Robinhood Individual" }, { id:"cb", name:"Coinbase" },
+];
+
+const HOLDINGS = [
+  { id:"h1", sym:"AAPL", name:"Apple Inc.", type:"Stock",  acct:"rh",  sh:50,  cost:145, price:213.4 },
+  { id:"h2", sym:"MSFT", name:"Microsoft Corp.", type:"Stock", acct:"fid", sh:30, cost:280, price:478 },
+  { id:"h3", sym:"VOO",  name:"Vanguard S&P 500 ETF", type:"ETF", acct:"van", sh:40, cost:380, price:545 },
+  { id:"h4", sym:"NVDA", name:"NVIDIA Corp.", type:"Stock", acct:"rh", sh:120, cost:95, price:172 },
+  { id:"h5", sym:"VTSAX",name:"Vanguard Total Stock Mkt", type:"Fund", acct:"van", sh:120, cost:105, price:142 },
+  { id:"h6", sym:"TSLA", name:"Tesla Inc.", type:"Stock", acct:"rh", sh:15, cost:240, price:205 },
+  { id:"h7", sym:"JEPI", name:"JPMorgan Equity Premium ETF", type:"ETF", acct:"fid", sh:200, cost:55, price:58.2 },
+  { id:"h8", sym:"BTC",  name:"Bitcoin", type:"Crypto", acct:"cb", sh:0.5, cost:42000, price:61000 },
+];
+const TYPE_COLORS = { Stock:"#6d5df5", ETF:"#9a55ee", Fund:"#cf52d8", Crypto:"#2b2b40" };
+const CONTACT_COLORS = ["#6d5df5","#15924e","#cf52d8","#9a55ee","#5a49e6","#0ea5b7","#d97706","#be185d"];
+const DEFAULT_CLASSES = ["Equity","Bonds","ETF","Mutual Funds","Crypto","Metals","F&P","Others"];
+const CLASS_COLOR = { Equity:"#6d5df5", Bonds:"#0ea5b7", ETF:"#9a55ee", "Mutual Funds":"#cf52d8", Crypto:"#d97706", Metals:"#64748b", "F&P":"#15924e", Others:"#8d90ad" };
+const classColor = (c) => CLASS_COLOR[c] || "#8d90ad";
+
+const FRIENDS = [
+  { id:"priya", name:"Priya Sharma", initials:"PS", color:"#6d5df5", title:"Growth investor",
+    shared:{ level:"full", holdings:[
+      { sym:"NVDA", name:"NVIDIA", type:"Stock", value:41280, pnlPct:0.81 },
+      { sym:"PLTR", name:"Palantir", type:"Stock", value:18600, pnlPct:1.34 },
+      { sym:"VOO", name:"Vanguard S&P 500", type:"ETF", value:54500, pnlPct:0.43 }]}},
+  { id:"marcus", name:"Marcus Lee", initials:"ML", color:"#15924e", title:"Dividend & income",
+    shared:{ level:"names", holdings:[
+      { sym:"SCHD", name:"Schwab US Dividend" }, { sym:"O", name:"Realty Income" },
+      { sym:"JEPI", name:"JPMorgan Equity Prem." }, { sym:"KO", name:"Coca-Cola" }]}},
+  { id:"elena", name:"Elena Ruiz", initials:"ER", color:"#cf52d8", title:"Crypto & alts",
+    shared:{ level:"full", holdings:[
+      { sym:"BTC", name:"Bitcoin", type:"Crypto", value:122000, pnlPct:0.52 },
+      { sym:"ETH", name:"Ethereum", type:"Crypto", value:38000, pnlPct:-0.12 }]}},
+  { id:"david", name:"David Okafor", initials:"DO", color:"#9a55ee", title:"Index & chill",
+    shared:{ level:"none", holdings:[] }},
+  { id:"aisha", name:"Aisha Khan", initials:"AK", color:"#5a49e6", title:"Small-cap value",
+    shared:{ level:"full", holdings:[
+      { sym:"VBR", name:"Vanguard Small-Cap Value", type:"ETF", value:29000, pnlPct:0.22 },
+      { sym:"AAPL", name:"Apple", type:"Stock", value:21300, pnlPct:0.47 }]}},
+];
+
+const GROUPS0 = [
+  { id:"g1", name:"Tech Bulls", created:"2026-02-03", members:["me","priya","aisha"], admins:["me"], color:"#6d5df5" },
+  { id:"g2", name:"Dividend Investors", created:"2026-01-18", members:["me","marcus","david"], admins:["marcus"], color:"#15924e" },
+  { id:"g3", name:"Crypto Crew", created:"2026-03-22", members:["me","elena"], admins:["elena"], color:"#cf52d8" },
+  { id:"g4", name:"College Buddies", created:"2026-01-05", members:["me","priya","marcus","david","elena","aisha"], admins:["me","priya"], color:"#9a55ee" },
+];
+
+/* people who already have an account (for the "add by email" flow) */
+const PLATFORM_USERS = {
+  "sam@circle.io":{ name:"Sam Patel", title:"ETF indexer" },
+  "noah@circle.io":{ name:"Noah Kim", title:"Momentum trader" },
+  "lena@circle.io":{ name:"Lena Brooks", title:"Value & dividends" },
+};
+
+const SPARK = [62,61,64,63,67,66,69,72,70,74,77,76,80,84,83,88,92,90,95,100];
+
+const fmt = (n) => "$" + Math.round(n).toLocaleString("en-US");
+const fmtSigned = (n) => (n>=0?"+":"-") + fmt(Math.abs(n));
+const fmtPct = (p) => (p >= 0 ? "+" : "") + (p * 100).toFixed(1) + "%";
+const fmtDate = (iso) => new Date(iso+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+const initialsOf = (name) => name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+
+const NOTIONAL = 1000; // assumed notional per acted recommendation, for demo P&L
+const recoStats = (recs, pred) => {
+  const list = recs.filter(pred);
+  const acted = list.filter(r=>r.invested);
+  const pnl = acted.reduce((s,r)=> s + NOTIONAL*((r.price/(r.investedPrice||r.priceAt))-1), 0);
+  return {
+    count:list.length, acted:acted.length,
+    liked:list.filter(r=>r.reaction==="like").length,
+    disliked:list.filter(r=>r.reaction==="dislike").length,
+    inMoney:list.filter(r=>(r.price-r.priceAt)/r.priceAt>=0).length,
+    outMoney:list.filter(r=>(r.price-r.priceAt)/r.priceAt<0).length,
+    pnl,
+  };
+};
+
+const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;
+const Avatar = ({ f, size=40 }) => <div className="av" style={{ width:size, height:size, background:f.color||"var(--grad)", fontSize:size*0.38 }}>{f.initials||initialsOf(f.name||"?")}</div>;
+
+/* permission helpers (outbound = what I share with them) */
+const PERM_ORDER = { off:0, names:1, full:2 };
+const normLevel = (lvl) => lvl==="none" ? "off" : lvl;          // their level -> off/names/full
+const myPerm = (sharing,id) => { const c=sharing[id]; if(!c||c.visibility==="off") return "off"; return c.level==="full"?"full":"names"; };
+const setMyPerm = (setSharing,id,val) => setSharing(s=>({ ...s, [id]:{ visibility: val==="off"?"off":"all", level: val==="full"?"full":"names", selected: s[id]?.selected||[] } }));
+const PermBadge = ({ p }) => p==="full" ? <span className="pill accent">Amounts & P&L</span> : p==="names" ? <span className="pill">Only names</span> : <span className="pill">Not shared</span>;
+
+/* =================================================================== */
+export default function App() {
+  const [role, setRole] = useState("investor");
+  const [investorPage, setInvestorPage] = useState("home");
+  const [adminPage, setAdminPage] = useState("users");
+
+  const [contacts, setContacts] = useState(FRIENDS);
+  const [holdings, setHoldings] = useState(HOLDINGS);
+  const [groups, setGroups] = useState(GROUPS0);
+  const [pendingInvites, setPendingInvites] = useState([]);
+
+  const [sharing, setSharing] = useState(() => {
+    // outbound defaults: every contact "Not shared"; groups keep a demo mix for the Sharing page
+    const s = {};
+    FRIENDS.forEach(f => s[f.id] = { visibility:"off", level:"names", selected:[] });
+    s.g1={visibility:"all",level:"full",selected:[]}; s.g2={visibility:"all",level:"names",selected:[]};
+    s.g3={visibility:"off",level:"names",selected:[]}; s.g4={visibility:"selected",level:"names",selected:["h1","h2","h3"]};
+    return s;
+  });
+
+  const [recsReceived, setRecsReceived] = useState([
+    { id:"r1", from:"priya", sharedBy:"marcus", assetName:"NVIDIA Corp.", ticker:"NVDA", assetClass:"Equity", date:"2026-04-02", priceAt:118, price:172, invested:true, investedPrice:120, recoActed:4, shareType:"group", groupId:"g1", reaction:"like", likes:12, dislikes:1, exitSignal:false, exitDate:null, hidden:false, thesis:"AI datacenter demand is still underpriced by the street. Margins expanding as Blackwell ramps; I'm adding on any dip below 120." },
+    { id:"r2", from:"elena", assetName:"Bitcoin", ticker:"BTC", assetClass:"Crypto", date:"2026-05-09", priceAt:52000, price:61000, invested:true, investedPrice:53000, recoActed:2, shareType:"one", reaction:"none", likes:8, dislikes:0, exitSignal:true, exitDate:"2026-06-27", hidden:false, thesis:"ETF inflows are structurally changing demand. Sized as a core alt position — but I've now flagged an exit as we hit my target." },
+    { id:"r3", from:"marcus", assetName:"Schwab US Dividend", ticker:"SCHD", assetClass:"ETF", date:"2026-05-20", priceAt:79, price:81.5, invested:false, recoActed:6, shareType:"group", groupId:"g2", reaction:"none", likes:5, dislikes:2, exitSignal:false, exitDate:null, hidden:false, thesis:"Quality dividend growth at a low fee. Good ballast for any book; reinvest the distributions." },
+    { id:"r4", from:"aisha", assetName:"Tesla Inc.", ticker:"TSLA", assetClass:"Equity", date:"2026-03-11", priceAt:248, price:205, invested:false, recoActed:1, shareType:"one", reaction:"dislike", likes:3, dislikes:4, exitSignal:false, exitDate:null, hidden:false, thesis:"Energy + robotaxi optionality. High volatility — only size this if you can stomach the drawdowns." },
+    { id:"r5", from:"priya", assetName:"Palantir", ticker:"PLTR", assetClass:"Equity", date:"2026-04-22", priceAt:24, price:31, invested:false, recoActed:3, shareType:"group", groupId:"g1", reaction:"none", likes:9, dislikes:1, exitSignal:false, exitDate:null, hidden:false, thesis:"Commercial AIP traction is the real story, not the government book. Watch net dollar retention." },
+    { id:"r6", from:"marcus", assetName:"Coca-Cola", ticker:"KO", assetClass:"Equity", date:"2026-02-15", priceAt:60, price:63, invested:false, recoActed:2, shareType:"one", reaction:"none", likes:2, dislikes:0, exitSignal:false, exitDate:null, hidden:true, thesis:"Defensive compounder with pricing power. Nothing exciting — a sleep-well-at-night holding." },
+  ]);
+  const [recsMade, setRecsMade] = useState([
+    { id:"m1", assetName:"Vanguard S&P 500 ETF", ticker:"VOO", assetClass:"ETF", date:"2026-02-14", recipients:["g4"], priceAt:498, price:545, thesis:"Boring beats clever. A fine core holding for everyone.",
+      actedList:[{name:"Priya Sharma",date:"2026-02-16"},{name:"David Okafor",date:"2026-02-20"},{name:"Aisha Khan",date:"2026-03-01"}], likes:["Priya Sharma","Elena Ruiz","Aisha Khan","Marcus Lee"], dislikes:["David Okafor"], exit:false, exitDate:null },
+    { id:"m2", assetName:"Microsoft", ticker:"MSFT", assetClass:"Equity", date:"2026-01-30", recipients:["priya","aisha"], priceAt:410, price:478, thesis:"Copilot monetization ramping faster than consensus.",
+      actedList:[{name:"Aisha Khan",date:"2026-02-02"}], likes:["Priya Sharma"], dislikes:[], exit:false, exitDate:null },
+    { id:"m3", assetName:"SPDR Gold Shares", ticker:"GLD", assetClass:"Metals", date:"2026-04-05", recipients:["g3"], priceAt:210, price:222, thesis:"Hedge against rate-cut risk. Taking profits now.",
+      actedList:[{name:"Elena Ruiz",date:"2026-04-07"}], likes:["Elena Ruiz"], dislikes:[], exit:true, exitDate:"2026-06-20" },
+  ]);
+  const [assetClasses, setAssetClasses] = useState(DEFAULT_CLASSES);
+  const [recoInit, setRecoInit] = useState(null); // {by} or {groupId} to pre-filter Recommendations
+
+  const [users, setUsers] = useState([
+    { id:"u1", name:"Jordan Avery", email:"jordan@circle.io", role:"Investor", status:"Active", accounts:4, joined:"Jan 2026" },
+    { id:"u2", name:"Priya Sharma", email:"priya@circle.io", role:"Investor", status:"Active", accounts:3, joined:"Jan 2026" },
+    { id:"u3", name:"Marcus Lee", email:"marcus@circle.io", role:"Investor", status:"Active", accounts:2, joined:"Feb 2026" },
+    { id:"u4", name:"Elena Ruiz", email:"elena@circle.io", role:"Moderator", status:"Active", accounts:2, joined:"Feb 2026" },
+    { id:"u5", name:"David Okafor", email:"david@circle.io", role:"Investor", status:"Suspended", accounts:1, joined:"Mar 2026" },
+    { id:"u6", name:"Aisha Khan", email:"aisha@circle.io", role:"Investor", status:"Active", accounts:3, joined:"Mar 2026" },
+    { id:"u7", name:"Sam Patel", email:"sam@circle.io", role:"Investor", status:"Pending", accounts:0, joined:"Jun 2026" },
+    { id:"u8", name:"Admin Root", email:"admin@circle.io", role:"Admin", status:"Active", accounts:0, joined:"Jan 2026" },
+  ]);
+  const [configs, setConfigs] = useState({
+    enableRecommendations:true, allowCryptoAccounts:true, publicFeed:true,
+    requireAccountApproval:true, allowAmountSharing:true, defaultDisclosure:"names",
+    maxGroupMembers:8, groupCreationPolicy:"all", // all | mods | admins
+  });
+  const [providers, setProviders] = useState(["Fidelity","Vanguard","Robinhood","Coinbase","Schwab","E*TRADE"]);
+
+  const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
+  const isInv = role==="investor";
+  const page = isInv ? investorPage : adminPage;
+  const setPage = isInv ? setInvestorPage : setAdminPage;
+  const canCreateGroups = configs.groupCreationPolicy==="all"; // current user is an Investor
+
+  const nav = isInv ? [
+    { id:"home", label:"Home", icon:Home },
+    { id:"portfolio", label:"My Portfolio", icon:PieChart },
+    { id:"network", label:"Network", icon:Users },
+    ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", icon:Lightbulb, badge:newRecs }] : []),
+    { id:"sharing", label:"Sharing & Privacy", icon:Shield },
+  ] : [
+    { id:"users", label:"Users", icon:UserCog },
+    { id:"groups", label:"Groups", icon:Layers },
+    { id:"configs", label:"App Configuration", icon:Settings },
+  ];
+  const stats = isInv
+    ? [["Connections",contacts.length],["Groups",groups.filter(g=>g.members.includes("me")).length],["Accounts",ACCOUNTS.length]]
+    : [["Users",users.length],["Active",users.filter(u=>u.status==="Active").length],["Groups",groups.length]];
+
+  return (
+    <div className="app">
+      <style>{STYLES}</style>
+      <div className="shell">
+        <div className="sidebar">
+          <div className="brand"><div className="mark">ic</div>
+            <div><div className="nm">InvestorCircle</div><div className="tag">Social Investing</div></div></div>
+          <div className="viewing" onClick={()=>setRole(isInv?"admin":"investor")} title="Switch role">
+            <div className="ava">{isInv?ME.initials:"AR"}</div>
+            <div style={{flex:1}}><div className="vs">Viewing as</div><div className="role">{isInv?"Investor":"Admin"}</div></div>
+            <ChevronsUpDown size={17} color="rgba(255,255,255,.85)"/>
+          </div>
+          <div className="side-label">{isInv?"Menu":"Admin"}</div>
+          {nav.map(n=>(
+            <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>setPage(n.id)}>
+              <n.icon size={19}/> {n.label}{n.badge>0 && <span className="nav-badge">{n.badge}</span>}</div>
+          ))}
+          <div className="side-foot">{stats.map(([l,v])=><div key={l} className="side-stat"><span>{l}</span><b>{v}</b></div>)}</div>
+        </div>
+
+        <div className="main">
+          <div className="topbar">
+            <div className="searchbox" style={{width:300,maxWidth:"40vw"}}><Search size={16} color="var(--muted)"/><input placeholder="Search investors, tickers…"/></div>
+            <div className="tb-right">
+              <button className="icon-btn"><Bell size={18}/></button>
+              <div className="avatar-pill"><div className="gava">{isInv?ME.initials:"AR"}</div>
+                <div style={{paddingRight:6}}><div style={{fontSize:13,fontWeight:700,lineHeight:1.2}}>{isInv?ME.name:"Admin Root"}</div>
+                  <div style={{fontSize:11,color:"var(--muted)"}}>{isInv?"Investor":"Administrator"}</div></div></div>
+            </div>
+          </div>
+          <div className="content">
+            {isInv && page==="home" && <HomeFeed setPage={setPage} recsReceived={recsReceived} configs={configs} holdings={holdings} contacts={contacts}/>}
+            {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings}/>}
+            {isInv && page==="network" && <Network contacts={contacts} setContacts={setContacts} groups={groups} setGroups={setGroups}
+                sharing={sharing} setSharing={setSharing} configs={configs} canCreateGroups={canCreateGroups}
+                pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
+                recsReceived={recsReceived} onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}/>}
+            {isInv && page==="recs" && <Recommendations recsReceived={recsReceived} setRecsReceived={setRecsReceived} recsMade={recsMade} setRecsMade={setRecsMade}
+                contacts={contacts} groups={groups} assetClasses={assetClasses} setAssetClasses={setAssetClasses} initFilter={recoInit} holdings={holdings}/>}
+            {isInv && page==="sharing" && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups}/>}
+            {!isInv && page==="users" && <AdminUsers users={users} setUsers={setUsers}/>}
+            {!isInv && page==="groups" && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts}/>}
+            {!isInv && page==="configs" && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =================================================================== NETWORK */
+function SortTh({ label, k, sort, setSort, align }) {
+  const active = sort.key===k;
+  return (
+    <th className={"sortable"+(active?" sorted":"")} style={align?{textAlign:align}:null}
+        onClick={()=>setSort(s=>({ key:k, dir: s.key===k && s.dir==="asc" ? "desc":"asc" }))}>
+      {label}<span className="si">{active ? (sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>) : <ArrowUpDown size={12}/>}</span>
+    </th>
+  );
+}
+
+function RecoBreakdown({ stats, onPnl, pnlLabel }) {
+  return (
+    <div className="statgrid">
+      <div className="stat"><div className="v">{stats.count}</div><div className="l">Recommendations</div></div>
+      <div className="stat"><div className="v">{stats.acted}</div><div className="l">I acted on</div></div>
+      <div className="stat"><div className="v">{stats.liked}</div><div className="l">I liked</div></div>
+      <div className="stat"><div className="v">{stats.disliked}</div><div className="l">I disliked</div></div>
+      <div className="stat"><div className="v pos">{stats.inMoney}</div><div className="l">In the money</div></div>
+      <div className="stat"><div className="v neg">{stats.outMoney}</div><div className="l">Out of money</div></div>
+      <div className="stat click" onClick={(e)=>{ e.stopPropagation(); onPnl(); }} title="Open these recommendations">
+        <div className={"v "+(stats.pnl>=0?"pos":"neg")}>{fmtSigned(stats.pnl)}</div>
+        <div className="l" style={{color:"var(--accent-ink)"}}>{pnlLabel||"My P&L"} ↗</div></div>
+    </div>
+  );
+}
+
+function Network({ contacts, setContacts, groups, setGroups, sharing, setSharing, configs, canCreateGroups, pendingInvites, setPendingInvites, recsReceived, onOpenRecos }) {
+  const [tab, setTab] = useState("contacts");
+  const myGroups = groups.filter(g=>g.members.includes("me"));
+  return (
+    <>
+      <div className="page-head">
+        <div><div className="eyebrow">Network</div><div className="page-title">Your circle</div>
+          <div className="page-sub">Manage who you’re connected to and the groups you share with</div></div>
+      </div>
+      <div className="seg" style={{ marginBottom:20 }}>
+        <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}><Users size={15}/> Contacts · {contacts.length}</button>
+        <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}><Layers size={15}/> Groups · {myGroups.length}</button>
+      </div>
+      {tab==="contacts"
+        ? <ContactsSection contacts={contacts} setContacts={setContacts} groups={groups} sharing={sharing} setSharing={setSharing} configs={configs}
+            pendingInvites={pendingInvites} setPendingInvites={setPendingInvites} recsReceived={recsReceived} onOpenRecos={onOpenRecos}/>
+        : <GroupsSection groups={groups} setGroups={setGroups} contacts={contacts} configs={configs} canCreateGroups={canCreateGroups}
+            recsReceived={recsReceived} onOpenRecos={onOpenRecos}/>}
+    </>
+  );
+}
+
+/* ---------- contacts ---------- */
+function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, configs, pendingInvites, setPendingInvites, recsReceived, onOpenRecos }) {
+  const [view, setView] = useState("table");
+  const [q, setQ] = useState("");
+  const [fStyle, setFStyle] = useState("all");
+  const [fGroup, setFGroup] = useState("all");
+  const [fTheir, setFTheir] = useState("all");
+  const [fMine, setFMine] = useState("all");
+  const [sort, setSort] = useState({ key:"name", dir:"asc" });
+  const [showAdd, setShowAdd] = useState(false);
+  const [openContact, setOpenContact] = useState(null);
+  const [expandId, setExpandId] = useState(null);
+  const styles = [...new Set(contacts.map(c=>c.title))];
+  const commonGroups = (id) => groups.filter(g=>g.members.includes("me") && g.members.includes(id));
+  const statsOf = (c) => recoStats(recsReceived, r => r.from===c.id || (r.byName && r.byName===c.name));
+  const rows = useMemo(()=>{
+    let r = contacts.map(c=>({ ...c, their: normLevel(c.shared.level), mine: myPerm(sharing,c.id), common: commonGroups(c.id), stats: statsOf(c) }));
+    if(q.trim()){ const s=q.toLowerCase(); r=r.filter(c=>(c.name+c.title).toLowerCase().includes(s)); }
+    if(fStyle!=="all") r=r.filter(c=>c.title===fStyle);
+    if(fGroup!=="all") r=r.filter(c=>c.common.some(g=>g.id===fGroup));
+    if(fTheir!=="all") r=r.filter(c=>c.their===fTheir);
+    if(fMine!=="all") r=r.filter(c=>c.mine===fMine);
+    const dir = sort.dir==="asc"?1:-1;
+    r.sort((a,b)=>{ let av,bv;
+      if(sort.key==="name"){av=a.name.toLowerCase();bv=b.name.toLowerCase();}
+      else if(sort.key==="style"){av=a.title.toLowerCase();bv=b.title.toLowerCase();}
+      else if(sort.key==="common"){av=a.common.length;bv=b.common.length;}
+      else if(sort.key==="recos"){av=a.stats.count;bv=b.stats.count;}
+      else if(sort.key==="pnl"){av=a.stats.pnl;bv=b.stats.pnl;}
+      else if(sort.key==="their"){av=PERM_ORDER[a.their];bv=PERM_ORDER[b.their];}
+      else if(sort.key==="mine"){av=PERM_ORDER[a.mine];bv=PERM_ORDER[b.mine];}
+      return av<bv?-dir:av>bv?dir:0; });
+    return r;
+  },[contacts,sharing,groups,recsReceived,q,fStyle,fGroup,fTheir,fMine,sort]);
+  const addExisting = (email,info) => {
+    setContacts(cs=>[...cs,{ id:email, name:info.name, initials:initialsOf(info.name), color:CONTACT_COLORS[cs.length%CONTACT_COLORS.length], title:info.title||"New connection", shared:{ level:"none", holdings:[] } }]);
+    // Apply the admin-configured default disclosure level for new connections (App Configuration → Privacy defaults).
+    const dflt = configs.defaultDisclosure || "names";
+    setSharing(s=>({ ...s, [email]: { visibility: dflt==="none"?"off":"all", level: dflt==="full"?"full":"names", selected:[] } }));
+  };
+  const addInvite = (email) => setPendingInvites(p=> p.some(x=>x.email===email)?p:[...p,{email,date:TODAY}]);
+  return (<>
+    {pendingInvites.length>0 && <div className="note info" style={{marginBottom:14}}><Mail size={16}/><div>Pending email invitations: {pendingInvites.map(p=>p.email).join(", ")}. They’ll join your network once they create an account.</div></div>}
+    <div className="toolbar">
+      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search contacts by name or style…"/></div>
+      <div className="fl"><span className="lab">Style</span><select className="inline-select sm" value={fStyle} onChange={e=>setFStyle(e.target.value)}><option value="all">All</option>{styles.map(s=><option key={s}>{s}</option>)}</select></div>
+      <div className="fl"><span className="lab">Group</span><select className="inline-select sm" value={fGroup} onChange={e=>setFGroup(e.target.value)}><option value="all">All</option>{groups.filter(g=>g.members.includes("me")).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+      <div className="fl"><span className="lab">They share</span><select className="inline-select sm" value={fTheir} onChange={e=>setFTheir(e.target.value)}><option value="all">All</option><option value="off">Not shared</option><option value="names">Only names</option><option value="full">Amounts & P&L</option></select></div>
+      <div className="fl"><span className="lab">I share</span><select className="inline-select sm" value={fMine} onChange={e=>setFMine(e.target.value)}><option value="all">All</option><option value="off">Not shared</option><option value="names">Only names</option><option value="full">Amounts & P&L</option></select></div>
+      <div className="seg tiny"><button className={view==="list"?"active":""} onClick={()=>setView("list")}><List size={14}/> List</button><button className={view==="table"?"active":""} onClick={()=>setView("table")}><TableIcon size={14}/> Table</button></div>
+      <button className="btn btn-pri btn-sm" onClick={()=>setShowAdd(true)}><UserPlus size={15}/> Add connection</button>
+    </div>
+    {rows.length===0 && <div className="card"><div className="empty">No contacts match your filters.</div></div>}
+    {view==="table" && rows.length>0 && (
+      <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:1080}}>
+        <thead><tr>
+          <SortTh label="Name" k="name" sort={sort} setSort={setSort}/>
+          <SortTh label="Investor style" k="style" sort={sort} setSort={setSort}/>
+          <SortTh label="Groups in common" k="common" sort={sort} setSort={setSort}/>
+          <SortTh label="Recos made" k="recos" sort={sort} setSort={setSort}/>
+          <SortTh label="My P&L" k="pnl" sort={sort} setSort={setSort} align="right"/>
+          <SortTh label="They shared with me" k="their" sort={sort} setSort={setSort}/>
+          <SortTh label="I share with them" k="mine" sort={sort} setSort={setSort}/>
+        </tr></thead>
+        <tbody>{rows.map(c=>{ const open=expandId===c.id;
+          return (<React.Fragment key={c.id}>
+            <tr className="hoverable" style={{cursor:"pointer"}} onClick={()=>setExpandId(open?null:c.id)}>
+              <td><div style={{display:"flex",gap:11,alignItems:"center"}}><Avatar f={c} size={36}/><div className="sym">{c.name}</div>
+                <ChevronDown size={15} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s"}}/></div></td>
+              <td className="muted">{c.title}</td>
+              <td>{c.common.length===0 ? <span className="muted small">—</span> : <div style={{display:"flex",flexWrap:"wrap",gap:5}}>{c.common.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}</td>
+              <td className="tnum">{c.stats.count}</td>
+              <td style={{textAlign:"right"}} onClick={(e)=>{e.stopPropagation(); onOpenRecos({by:c.name});}}><span className="clickable tnum nowrap">{fmtSigned(c.stats.pnl)} ↗</span></td>
+              <td onClick={e=>e.stopPropagation()}><PermBadge p={c.their}/></td>
+              <td onClick={e=>e.stopPropagation()}><select className="inline-select sm" value={c.mine} onChange={e=>setMyPerm(setSharing,c.id,e.target.value)}>
+                <option value="off">Not shared</option><option value="names">Only names</option><option value="full">Amounts & P&L</option></select></td>
+            </tr>
+            {open && <tr className="expand-row"><td colSpan={7}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:10}}>
+                <b style={{fontSize:14}}>{c.name}'s recommendations to you</b>
+                <button className="btn btn-ghost btn-sm" disabled={c.their==="off"} onClick={()=>setOpenContact(c)}><Eye size={14}/> View portfolio</button></div>
+              <RecoBreakdown stats={c.stats} pnlLabel="My P&L from their recos" onPnl={()=>onOpenRecos({by:c.name})}/>
+            </div></td></tr>}
+          </React.Fragment>);
+        })}</tbody>
+      </table></div></div></div>
+    )}
+    {view==="list" && rows.length>0 && (
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))", gap:16 }}>
+        {rows.map(c=>(
+          <div key={c.id} className="card lift"><div className="card-body">
+            <div style={{ display:"flex", gap:13, alignItems:"center" }}><Avatar f={c} size={48}/>
+              <div><div style={{ fontWeight:700 }}>{c.name}</div><div className="muted small">{c.title}</div></div></div>
+            <div style={{display:"flex",gap:18,margin:"14px 0"}}>
+              <div><div className="small muted">Recos made</div><div style={{fontWeight:800,fontSize:18}}>{c.stats.count}</div></div>
+              <div><div className="small muted">I acted on</div><div style={{fontWeight:800,fontSize:18}}>{c.stats.acted}</div></div>
+              <div onClick={()=>onOpenRecos({by:c.name})} style={{cursor:"pointer"}}><div className="small muted" style={{color:"var(--accent-ink)"}}>My P&L ↗</div><div className={"tnum "+(c.stats.pnl>=0?"pos":"neg")} style={{fontWeight:800,fontSize:18}}>{fmtSigned(c.stats.pnl)}</div></div>
+            </div>
+            <div className="small muted" style={{marginBottom:6}}>Groups in common</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:13}}>{c.common.length===0 ? <span className="muted small">None yet</span> : c.common.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>
+            <div className="small muted" style={{marginBottom:6}}>I share with them</div>
+            <div className="seg tiny" style={{marginBottom:14,width:"100%"}}>
+              {["off","names","full"].map(v=><button key={v} style={{flex:1,justifyContent:"center"}} className={c.mine===v?"active":""} onClick={()=>setMyPerm(setSharing,c.id,v)}>{v==="off"?"Not shared":v==="names"?"Names":"+ P&L"}</button>)}</div>
+            <button className="btn btn-soft btn-sm" style={{width:"100%",justifyContent:"center"}} disabled={c.their==="off"} onClick={()=>setOpenContact(c)}>
+              {c.their==="off"?"Portfolio not shared":"View portfolio"} {c.their!=="off" && <ChevronRight size={15}/>}</button>
+          </div></div>
+        ))}
+      </div>
+    )}
+    {showAdd && <AddConnectionModal existing={contacts} onClose={()=>setShowAdd(false)} onAddExisting={addExisting} onInvite={addInvite}/>}
+    {openContact && <PortfolioModal contact={openContact} onClose={()=>setOpenContact(null)}/>}
+  </>);
+}
+
+function AddConnectionModal({ existing, onClose, onAddExisting, onInvite }) {
+  const [email, setEmail] = useState("");
+  const [result, setResult] = useState(null);
+  const submit = () => {
+    const e = email.trim().toLowerCase();
+    if(!/^\S+@\S+\.\S+$/.test(e)){ setResult({type:"warn", msg:"Please enter a valid email address."}); return; }
+    if(existing.some(c=>c.id===e)){ setResult({type:"warn", msg:"That person is already in your network."}); return; }
+    const user = PLATFORM_USERS[e];
+    if(user){ onAddExisting(e,user); setResult({type:"ok", msg:`${user.name} is already on InvestorCircle and has been added to your network.`}); }
+    else { onInvite(e); setResult({type:"info", msg:`No account found for ${e}. We’ve emailed them an invitation from Jordan Avery to join InvestorCircle — they’ll be added to your network once they sign up.`}); }
+  };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><h3><UserPlus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add connection</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+        <div className="modal-body">
+          <div className="field"><label>Email address</label>
+            <input value={email} onChange={e=>{setEmail(e.target.value);setResult(null);}} placeholder="name@example.com" onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
+          <div className="muted small" style={{marginBottom:result?14:0}}>If they already have an account they’re added instantly. Otherwise they’ll get an email invite mentioning your name.
+            <div style={{marginTop:6}}>Try <b>sam@circle.io</b> (existing user) or any other email (invite).</div></div>
+          {result && <div className={"note "+result.type}>{result.type==="ok"?<Check size={16}/>:<Mail size={16}/>}<div>{result.msg}</div></div>}
+        </div>
+        <div className="modal-foot"><span/>
+          <div style={{display:"flex",gap:10}}>
+            <button className="btn btn-ghost" onClick={onClose}>{result?.type==="ok"||result?.type==="info"?"Done":"Cancel"}</button>
+            <button className="btn btn-pri" disabled={!email} onClick={submit}><Send size={15}/> Send</button></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PortfolioModal({ contact, onClose }) {
+  const full = contact.shared.level==="full";
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><div style={{ display:"flex", gap:12, alignItems:"center" }}><Avatar f={contact} size={42}/>
+          <div><h3>{contact.name}</h3><div className="muted small">{contact.title}</div></div></div>
+          <button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+        <div className="modal-body">
+          <div className="muted small" style={{ marginBottom:14, display:"flex", gap:6, alignItems:"center" }}>
+            {contact.shared.level==="names" ? <><Lock size={13}/> Amounts and P&L are hidden — only names are shared.</> : <>Showing everything {contact.name.split(" ")[0]} shared with you.</>}</div>
+          <table className="grid">
+            <thead><tr><th>Asset</th><th>Type</th>{full && <><th style={{textAlign:"right"}}>Value</th><th style={{textAlign:"right"}}>P&L</th></>}</tr></thead>
+            <tbody>{contact.shared.holdings.map((h,i)=>(
+              <tr key={i} className="hoverable"><td><span className="sym">{h.sym}</span><div className="muted small">{h.name}</div></td>
+                <td>{h.type?<TypeTag t={h.type}/>:<span className="muted">—</span>}</td>
+                {full && <><td style={{textAlign:"right"}} className="tnum">{fmt(h.value)}</td>
+                  <td style={{textAlign:"right"}} className={"tnum "+(h.pnlPct>=0?"pos":"neg")}>{fmtPct(h.pnlPct)}</td></>}</tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- groups ---------- */
+function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, recsReceived, onOpenRecos }) {
+  const [q, setQ] = useState("");
+  const [fAdmin, setFAdmin] = useState("all");
+  const [sort, setSort] = useState({ key:"name", dir:"asc" });
+  const [expanded, setExpanded] = useState(null);
+  const [showNew, setShowNew] = useState(false);
+  const [addTo, setAddTo] = useState(null);
+  const nameOf = (id) => id==="me" ? "You" : (contacts.find(c=>c.id===id)?.name) || (id==="admin"?"Admin Root":id);
+  const avOf = (id) => id==="me" ? {name:"You",initials:"JA",color:"#6d5df5"} : contacts.find(c=>c.id===id) || {name:id,initials:initialsOf(id),color:"#8d90ad"};
+  const statsOf = (g) => recoStats(recsReceived, r => r.shareType==="group" && r.groupId===g.id);
+  const myGroups = groups.filter(g=>g.members.includes("me"));
+  const rows = useMemo(()=>{
+    let r = myGroups.map(g=>({ ...g, stats: statsOf(g) }));
+    if(q.trim()){ const s=q.toLowerCase(); r=r.filter(g=>(g.name+" "+g.admins.map(nameOf).join(" ")).toLowerCase().includes(s)); }
+    if(fAdmin==="mine") r=r.filter(g=>g.admins.includes("me"));
+    const dir = sort.dir==="asc"?1:-1;
+    r.sort((a,b)=>{ let av,bv;
+      if(sort.key==="name"){av=a.name.toLowerCase();bv=b.name.toLowerCase();}
+      else if(sort.key==="created"){av=a.created;bv=b.created;}
+      else if(sort.key==="members"){av=a.members.length;bv=b.members.length;}
+      else if(sort.key==="admins"){av=a.admins.map(nameOf).join(",").toLowerCase();bv=b.admins.map(nameOf).join(",").toLowerCase();}
+      else if(sort.key==="recos"){av=a.stats.count;bv=b.stats.count;}
+      else if(sort.key==="pnl"){av=a.stats.pnl;bv=b.stats.pnl;}
+      return av<bv?-dir:av>bv?dir:0; });
+    return r;
+  },[groups,q,fAdmin,sort,contacts,recsReceived]);
+  const createGroup = (name, memberIds) => setGroups(gs=>[...gs,{ id:"g"+Date.now(), name, created:TODAY, members:["me",...memberIds], admins:["me"], color:CONTACT_COLORS[gs.length%CONTACT_COLORS.length] }]);
+  const addMembers = (gid, ids) => setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:[...g.members,...ids]}:g));
+  const removeMember = (gid, id) => setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:g.members.filter(m=>m!==id)}:g));
+  return (<>
+    <div className="toolbar">
+      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search groups by name or admin…"/></div>
+      <div className="fl"><span className="lab">Show</span><select className="inline-select sm" value={fAdmin} onChange={e=>setFAdmin(e.target.value)}><option value="all">All my groups</option><option value="mine">Groups I admin</option></select></div>
+      <button className="btn btn-pri btn-sm" disabled={!canCreateGroups} title={canCreateGroups?"":"Group creation is restricted by your administrator"} onClick={()=>setShowNew(true)}><Plus size={15}/> New group</button>
+    </div>
+    {!canCreateGroups && <div className="note warn" style={{marginBottom:14}}><Lock size={16}/><div>Your administrator has restricted who can create groups, so the New group button is disabled.</div></div>}
+    {rows.length===0 ? <div className="card"><div className="empty">No groups match your search.</div></div> :
+    <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:980}}>
+      <thead><tr>
+        <SortTh label="Group name" k="name" sort={sort} setSort={setSort}/>
+        <SortTh label="Created on" k="created" sort={sort} setSort={setSort}/>
+        <SortTh label="Members" k="members" sort={sort} setSort={setSort}/>
+        <SortTh label="Admins" k="admins" sort={sort} setSort={setSort}/>
+        <SortTh label="Recos made" k="recos" sort={sort} setSort={setSort}/>
+        <SortTh label="My P&L" k="pnl" sort={sort} setSort={setSort} align="right"/>
+      </tr></thead>
+      <tbody>{rows.map(g=>{ const open=expanded===g.id;
+        return (<React.Fragment key={g.id}>
+          <tr className="hoverable" style={{cursor:"pointer"}} onClick={()=>setExpanded(open?null:g.id)}>
+            <td><span className="clickable nowrap"><span className="av" style={{width:30,height:30,background:g.color,fontSize:12}}><Layers size={14}/></span>{g.name}
+              <ChevronDown size={15} style={{transform:open?"rotate(180deg)":"none",transition:".15s"}}/></span></td>
+            <td className="muted nowrap"><Calendar size={13} style={{verticalAlign:-2,marginRight:5}}/>{fmtDate(g.created)}</td>
+            <td><span className="pill">{g.members.length} members</span></td>
+            <td className="muted">{g.admins.map(nameOf).join(", ")}</td>
+            <td className="tnum">{g.stats.count}</td>
+            <td style={{textAlign:"right"}} onClick={(e)=>{e.stopPropagation(); onOpenRecos({groupId:g.id});}}><span className="clickable tnum nowrap">{fmtSigned(g.stats.pnl)} ↗</span></td>
+          </tr>
+          {open && <tr className="expand-row"><td colSpan={6}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
+            <b style={{fontSize:14,display:"block",marginBottom:12}}>{g.name} · recommendations shared in this group</b>
+            <RecoBreakdown stats={g.stats} pnlLabel="My P&L from this group" onPnl={()=>onOpenRecos({groupId:g.id})}/>
+            <div style={{height:18}}/>
+            <MemberPanel group={g} nameOf={nameOf} avOf={avOf} canManage={g.admins.includes("me")} max={configs.maxGroupMembers} onAdd={()=>setAddTo(g.id)} onRemove={(id)=>removeMember(g.id,id)}/>
+          </div></td></tr>}
+        </React.Fragment>);
+      })}</tbody>
+    </table></div></div></div>}
+    {showNew && <GroupModal title="New group" contacts={contacts} max={configs.maxGroupMembers} alreadyIn={["me"]} onClose={()=>setShowNew(false)} onSave={(name,ids)=>{ createGroup(name,ids); setShowNew(false); }}/>}
+    {addTo && <GroupModal title="Add members" addOnly contacts={contacts} max={configs.maxGroupMembers} alreadyIn={groups.find(g=>g.id===addTo).members} onClose={()=>setAddTo(null)} onSave={(_,ids)=>{ addMembers(addTo,ids); setAddTo(null); }}/>}
+  </>);
+}
+
+function MemberPanel({ group, nameOf, avOf, canManage, max, onAdd, onRemove }) {
+  const [mq, setMq] = useState("");
+  const [msort, setMsort] = useState("asc");
+  let members = group.members.map(id=>({ id, name:nameOf(id), av:avOf(id), isAdmin:group.admins.includes(id) }));
+  if(mq.trim()) members = members.filter(m=>m.name.toLowerCase().includes(mq.toLowerCase()));
+  members.sort((a,b)=> msort==="asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
+  return (
+    <>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+        <b style={{fontSize:13}}>Members</b>
+        <span className="counter">{group.members.length} / {max} (max set by admin)</span>
+        <div className="searchbox" style={{marginLeft:"auto",width:200,padding:"7px 11px"}}><Search size={14} color="var(--muted)"/><input value={mq} onChange={e=>setMq(e.target.value)} placeholder="Search members…" style={{fontSize:13}}/></div>
+        <button className="inline-select sm" style={{display:"flex",alignItems:"center",gap:6}} onClick={()=>setMsort(s=>s==="asc"?"desc":"asc")}><ArrowUpDown size={13}/> {msort==="asc"?"A–Z":"Z–A"}</button>
+        {canManage && <button className="btn btn-soft btn-sm" disabled={group.members.length>=max} onClick={onAdd}><UserPlus size={14}/> Add members</button>}
+      </div>
+      <div style={{background:"var(--surface)",border:"1px solid var(--line)",borderRadius:12,overflow:"hidden"}}>
+        {members.length===0 ? <div className="empty" style={{padding:20}}>No members found.</div> :
+        members.map(m=>(
+          <div key={m.id} className="member-row">
+            <Avatar f={m.av} size={34}/>
+            <div style={{flex:1}}><span style={{fontWeight:600}}>{m.name}</span>{m.id==="me" && <span className="muted small"> · that’s you</span>}</div>
+            {m.isAdmin && <span className="pill amber"><Crown size={11}/> Admin</span>}
+            {canManage && m.id!=="me" && !m.isAdmin && <button className="icon-btn" style={{width:30,height:30,border:"none"}} title="Remove" onClick={()=>onRemove(m.id)}><X size={16}/></button>}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function GroupModal({ title, contacts, max, alreadyIn, onClose, onSave, addOnly }) {
+  const [name, setName] = useState("");
+  const [sel, setSel] = useState([]);
+  const [mq, setMq] = useState("");
+  const available = contacts.filter(c=>!alreadyIn.includes(c.id));
+  const filtered = mq.trim() ? available.filter(c=>c.name.toLowerCase().includes(mq.toLowerCase())) : available;
+  const currentCount = alreadyIn.length; // includes "me" / existing members
+  const remaining = max - currentCount;
+  const atLimit = sel.length >= remaining;
+  const toggle = (id) => setSel(s=> s.includes(id) ? s.filter(x=>x!==id) : (s.length<remaining ? [...s,id] : s));
+  const valid = addOnly ? sel.length>0 : (name.trim() && true);
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><h3>{title}</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+        <div className="modal-body">
+          {!addOnly && <div className="field"><label>Group name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Value Hunters"/></div>}
+          <div className="field"><label style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Add members from your network</span><span className="counter">{currentCount+sel.length} / {max}</span></label>
+            <div className="searchbox" style={{marginBottom:10}}><Search size={15} color="var(--muted)"/><input value={mq} onChange={e=>setMq(e.target.value)} placeholder="Search your contacts…"/></div>
+            {available.length===0 ? <div className="muted small">Everyone in your network is already in this group.</div> :
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {filtered.map(c=>{ const on=sel.includes(c.id); const dim=!on&&atLimit;
+                return <span key={c.id} className={"chip"+(on?" sel":"")} style={dim?{opacity:.4,cursor:"not-allowed"}:null} onClick={()=>!dim&&toggle(c.id)}>{on&&<Check size={13}/>}{c.name}</span>; })}
+            </div>}
+            {atLimit && <div className="note warn" style={{marginTop:12}}><Lock size={15}/><div>This group has reached the maximum of {max} members set by your administrator.</div></div>}
+          </div>
+        </div>
+        <div className="modal-foot"><span className="counter">Max group size: {max}</span>
+          <div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="btn btn-pri" disabled={!valid} onClick={()=>onSave(name.trim(),sel)}>{addOnly?`Add ${sel.length}`:"Create group"}</button></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =================================================================== PORTFOLIO */
+function useDerivedHoldings(holdings, includeCrypto = true) {
+  return useMemo(()=>{
+    const rows = holdings.filter(h=>includeCrypto || h.type!=="Crypto").map(h=>{
+      const value=h.sh*h.price, costTot=h.sh*h.cost, pnl=value-costTot;
+      return { ...h, value, costTot, pnl, pnlPct: pnl/costTot, acctName: ACCOUNTS.find(a=>a.id===h.acct)?.name || h.acctName || "—" };
+    });
+    const total=rows.reduce((s,r)=>s+r.value,0), cost=rows.reduce((s,r)=>s+r.costTot,0);
+    return { rows, total, cost, pnl: total-cost, pnlPct:(total-cost)/cost };
+  },[holdings,includeCrypto]);
+}
+function Sparkline({ data, w=150, h=44, color="var(--accent)" }) {
+  const min=Math.min(...data), max=Math.max(...data), pad=4;
+  const pts = data.map((v,i)=>[ pad+(i/(data.length-1))*(w-2*pad), pad+(1-(v-min)/(max-min))*(h-2*pad) ]);
+  const line = pts.map(p=>p.join(",")).join(" "); const id="sg"+Math.round(w);
+  return (<svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+    <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.25"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
+    <polygon points={`${pad},${h-pad} ${line} ${w-pad},${h-pad}`} fill={`url(#${id})`}/>
+    <polyline points={line} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+    <circle cx={pts[pts.length-1][0]} cy={pts[pts.length-1][1]} r="3.5" fill={color}/></svg>);
+}
+function Ring({ data, size=176 }) {
+  const total=data.reduce((s,d)=>s+d.value,0), r=size/2-14, c=2*Math.PI*r; let off=0;
+  return (<svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    <g transform={`rotate(-90 ${size/2} ${size/2})`}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={20}/>
+      {data.map((d,i)=>{ const dash=(d.value/total)*c; const el=<circle key={i} cx={size/2} cy={size/2} r={r} fill="none" stroke={d.color} strokeWidth={20} strokeLinecap="round" strokeDasharray={`${Math.max(dash-3,0)} ${c-Math.max(dash-3,0)}`} strokeDashoffset={-off}/>; off+=dash; return el; })}</g>
+    <text x="50%" y="46%" textAnchor="middle" fontSize="12" fill="var(--muted)" fontWeight="600">Total value</text>
+    <text x="50%" y="58%" textAnchor="middle" fontFamily="var(--serif)" fontSize="21" fontWeight="600" fill="var(--ink)">{fmt(total)}</text></svg>);
+}
+function Portfolio({ configs, holdings, setHoldings }) {
+  const [acct, setAcct] = useState("all"); const [hide, setHide] = useState(false);
+  const [importRes, setImportRes] = useState(null); const [importBusy, setImportBusy] = useState(false);
+  const [showPan, setShowPan] = useState(false); const [menu, setMenu] = useState(false);
+  const fileRef = useRef(null);
+  const { rows } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
+  const shown = acct==="all" ? rows : rows.filter(r=>r.acct===acct);
+  const onPickFile = async (e) => {
+    const file = e.target.files?.[0]; e.target.value=""; if(!file) return;
+    setImportBusy(true);
+    try { const res = await parsePortfolioFile(file); setImportRes({ ...res, fileName:file.name }); }
+    catch(err){ setImportRes({ holdings:[], warnings:["Could not read this file: "+err.message], fileName:file.name }); }
+    setImportBusy(false);
+  };
+  const applyImport = (newHoldings, mode) => {
+    setHoldings(prev => mode==="replace" ? newHoldings : [...prev, ...newHoldings]);
+    setImportRes(null);
+  };
+  const sTotal=shown.reduce((s,r)=>s+r.value,0), sCost=shown.reduce((s,r)=>s+r.costTot,0), sPnl=sTotal-sCost;
+  const byType = useMemo(()=>{ const m={}; shown.forEach(r=>m[r.type]=(m[r.type]||0)+r.value); return Object.entries(m).map(([k,v])=>({label:k,value:v,color:TYPE_COLORS[k]||"#999"})); },[shown]);
+  const top=[...shown].sort((a,b)=>b.value-a.value)[0]; const mask=(s)=>hide?"••••••":s;
+  return (<>
+    <div className="page-head"><div><div className="eyebrow">My Portfolio</div><div className="page-title">Everything in one place</div>
+      <div className="page-sub">{ACCOUNTS.length} accounts aggregated · {rows.length} holdings</div></div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf" style={{display:"none"}} onChange={onPickFile}/>
+        <div style={{position:"relative"}}>
+          <button className="btn btn-soft btn-sm" onClick={()=>setMenu(m=>!m)}><Download size={15}/> Export <ChevronDown size={13}/></button>
+          {menu && <div className="menu" onMouseLeave={()=>setMenu(false)}>
+            <div className="menu-item" onClick={()=>{ exportPortfolioExcel(shown); setMenu(false); }}><FileSpreadsheet size={15}/> Excel (.xlsx)</div>
+            <div className="menu-item" onClick={()=>{ exportPortfolioPDF(shown); setMenu(false); }}><FileText size={15}/> PDF (.pdf)</div>
+          </div>}
+        </div>
+        <button className="btn btn-soft btn-sm" disabled={importBusy} onClick={()=>fileRef.current?.click()}>
+          {importBusy ? <><Loader size={15} className="spin"/> Reading…</> : <><Upload size={15}/> Import</>}</button>
+        <button className="btn btn-soft btn-sm" onClick={()=>setShowPan(true)}><CreditCard size={15}/> Link via PAN</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setHide(v=>!v)}>{hide?<Eye size={15}/>:<EyeOff size={15}/>} {hide?"Show values":"Hide values"}</button>
+      </div></div>
+    <div className="hero-grad"><div>
+      <div className="lbl">Total balance · {acct==="all"?"all accounts":ACCOUNTS.find(a=>a.id===acct)?.name}</div>
+      <div className="balance tnum">{mask(fmt(sTotal))}</div>
+      <div className="delta-light">{sPnl>=0?<ArrowUpRight size={17}/>:<ArrowDownRight size={17}/>} {mask(fmtSigned(sPnl))} ({fmtPct(sPnl/sCost)}) all time</div></div>
+      <Sparkline data={SPARK} w={190} h={58} color="#ffffff"/></div>
+    <div className="kpi-row">
+      <div className="kpi"><div className="lbl"><Wallet size={14}/> Invested (cost)</div><div className="val tnum">{mask(fmt(sCost))}</div></div>
+      <div className="kpi"><div className="lbl">Unrealized P&L</div><div className={"val tnum "+(sPnl>=0?"pos":"neg")}>{mask(fmtSigned(sPnl))}</div><div className={"sub "+(sPnl>=0?"pos":"neg")}>{fmtPct(sPnl/sCost)}</div></div>
+      <div className="kpi"><div className="lbl">Holdings</div><div className="val">{shown.length}</div><div className="sub muted">in {new Set(shown.map(r=>r.acct)).size} accounts</div></div>
+      <div className="kpi"><div className="lbl">Top position</div><div className="val">{top?.sym}</div><div className="sub muted">{fmt(top?.value||0)}</div></div></div>
+    <div style={{ display:"grid", gridTemplateColumns:"1fr 320px", gap:18 }}>
+      <div className="card"><div className="card-head">Holdings
+        <select className="inline-select" value={acct} onChange={e=>setAcct(e.target.value)}><option value="all">All accounts</option>{ACCOUNTS.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+        <div className="card-body" style={{ padding:"8px 10px" }}><table className="grid">
+          <thead><tr><th>Asset</th><th>Account</th><th>Type</th><th style={{textAlign:"right"}}>Value</th><th style={{textAlign:"right"}}>P&L</th></tr></thead>
+          <tbody>{shown.map(r=>(<tr key={r.id} className="hoverable">
+            <td><div className="sym">{r.sym}</div><div className="muted small">{r.name}</div></td>
+            <td className="muted small">{r.acctName}</td><td><TypeTag t={r.type}/></td>
+            <td style={{textAlign:"right"}} className="tnum">{mask(fmt(r.value))}</td>
+            <td style={{textAlign:"right"}} className={"tnum "+(r.pnl>=0?"pos":"neg")}>{hide?"••••":<>{fmtSigned(r.pnl)}<div className="small">{fmtPct(r.pnlPct)}</div></>}</td></tr>))}</tbody>
+        </table></div></div>
+      <div className="card" style={{ height:"fit-content" }}><div className="card-head">Allocation</div>
+        <div className="card-body" style={{ display:"flex", flexDirection:"column", alignItems:"center" }}><Ring data={byType}/>
+          <div style={{ width:"100%", marginTop:18, display:"flex", flexDirection:"column", gap:11 }}>
+            {byType.map(d=>(<div key={d.label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:13 }}>
+              <span style={{ display:"flex", alignItems:"center", gap:9 }}><span className="dot" style={{background:d.color, width:10, height:10}}/>{d.label}</span>
+              <b className="tnum">{((d.value/sTotal)*100).toFixed(0)}%</b></div>))}</div></div></div>
+    </div>
+    {importRes && <ImportPreviewModal result={importRes} onClose={()=>setImportRes(null)} onApply={applyImport}/>}
+    {showPan && <PanPullModal onClose={()=>setShowPan(false)} onApply={(h,mode)=>{ applyImport(h,mode); setShowPan(false); }}/>}
+  </>);
+}
+
+/* =================================================================== RECOMMENDATIONS */
+const Money = ({ itm }) => <span className={"pill "+(itm?"gain":"loss")}>{itm?<TrendingUp size={12}/>:<TrendingDown size={12}/>} {itm?"In the money":"Out of the money"}</span>;
+const ClassTag = ({ c }) => <span className="ttag nowrap"><span className="dot" style={{ background:classColor(c) }}/>{c}</span>;
+const ret = (r) => (r.price-r.priceAt)/r.priceAt;
+
+function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade, contacts, groups, assetClasses, setAssetClasses, initFilter, holdings }) {
+  const [tab, setTab] = useState("received");
+  const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id==="me"?"You":id);
+  const groupName = (id) => groups.find(g=>g.id===id)?.name || id;
+  const recipientName = (id) => groups.find(g=>g.id===id)?.name || contactName(id);
+  const reach = (ids) => { const s=new Set(); ids.forEach(id=>{ const g=groups.find(x=>x.id===id); if(g) g.members.filter(m=>m!=="me").forEach(m=>s.add(m)); else s.add(id); }); return s.size; };
+  const forwardReco = (r, targetIds, note) => {
+    const orig = r.byName || contactName(r.from);
+    setRecsMade(ms=>[{ id:"m"+Date.now(), assetName:r.assetName, ticker:r.ticker, assetClass:r.assetClass, date:TODAY, recipients:targetIds,
+      priceAt:r.price, price:r.price, thesis:(note&&note.trim())||r.thesis||"(forwarded)", actedList:[], likes:[], dislikes:[], exit:false, exitDate:null, forwardedFrom:orig }, ...ms]);
+    setTab("made");
+  };
+  return (<>
+    <div className="page-head"><div><div className="eyebrow">Recommendations</div><div className="page-title">Ideas worth tracking</div>
+      <div className="page-sub">From your network, and the ones you share</div></div></div>
+    <div className="seg" style={{ marginBottom:20 }}>
+      <button className={tab==="received"?"active":""} onClick={()=>setTab("received")}>Received · {recsReceived.filter(r=>!r.hidden).length}</button>
+      <button className={tab==="made"?"active":""} onClick={()=>setTab("made")}>Made by me · {recsMade.length}</button></div>
+    {tab==="received"
+      ? <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} contactName={contactName} groupName={groupName} assetClasses={assetClasses} contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId} onForward={forwardReco}/>
+      : <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName} reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses} setAssetClasses={setAssetClasses} holdings={holdings}/>}
+  </>);
+}
+
+function ReceivedSection({ recs, setRecs, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward }) {
+  const [q,setQ]=useState(""); const [sort,setSort]=useState({key:"date",dir:"desc"});
+  const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fInv,setFInv]=useState("all"),[fShare,setFShare]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all");
+  const [showHidden,setShowHidden]=useState(false); const [showAdd,setShowAdd]=useState(false); const [investing,setInvesting]=useState(null);
+  const [openRow,setOpenRow]=useState(null); const [fwd,setFwd]=useState(null);
+  const recName = (r) => r.byName || contactName(r.from);
+  const isForwarded = (r) => r.sharedBy && r.sharedBy!==r.from;
+  const sharedByName = (r) => isForwarded(r) ? contactName(r.sharedBy) : null;
+  const byOptions = [...new Set(recs.map(recName))];
+  const groupOptions = [...new Set(recs.filter(r=>r.shareType==="group").map(r=>r.groupId))];
+  const doInvest=(r,price)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,invested:true,investedPrice:price,recoActed:x.recoActed+1}:x));
+  const unInvest=(r)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,invested:false,investedPrice:null,recoActed:Math.max(0,x.recoActed-1)}:x));
+  const onInvestClick=(r)=>{ if(r.invested) unInvest(r); else setInvesting(r); };
+  const react=(r,val)=>setRecs(rs=>rs.map(x=>{ if(x.id!==r.id) return x; let {reaction,likes,dislikes}=x; const cur=reaction||"none";
+    if(cur==="like")likes--; if(cur==="dislike")dislikes--; const next=cur===val?"none":val; if(next==="like")likes++; if(next==="dislike")dislikes++;
+    return {...x,reaction:next,likes,dislikes}; }));
+  const toggleHide=(r)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,hidden:!x.hidden}:x));
+  const del=(r)=>{ if(confirm("Delete this recommendation permanently?")) setRecs(rs=>rs.filter(x=>x.id!==r.id)); };
+  const toggleExit=(r)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exitSignal:!x.exitSignal,exitDate:!x.exitSignal?TODAY:null}:x));
+  const rows = useMemo(()=>{
+    let r = recs.filter(x=>showHidden || !x.hidden);
+    if(q.trim()){ const s=q.toLowerCase(); r=r.filter(x=>(x.assetName+" "+x.ticker+" "+recName(x)).toLowerCase().includes(s)); }
+    if(fBy!=="all") r=r.filter(x=>recName(x)===fBy);
+    if(fGroup!=="all") r=r.filter(x=>x.shareType==="group" && x.groupId===fGroup);
+    if(fCls!=="all") r=r.filter(x=>x.assetClass===fCls);
+    if(fMoney!=="all") r=r.filter(x=> fMoney==="in" ? ret(x)>=0 : ret(x)<0);
+    if(fInv!=="all") r=r.filter(x=> fInv==="yes" ? x.invested : !x.invested);
+    if(fShare!=="all") r=r.filter(x=>x.shareType===fShare);
+    const dir=sort.dir==="asc"?1:-1; const k=sort.key;
+    r=[...r].sort((a,b)=>{ let av,bv;
+      if(k==="assetName"){av=a.assetName.toLowerCase();bv=b.assetName.toLowerCase();}
+      else if(k==="ticker"){av=a.ticker.toLowerCase();bv=b.ticker.toLowerCase();}
+      else if(k==="by"){av=recName(a).toLowerCase();bv=recName(b).toLowerCase();}
+      else if(k==="sharedby"){av=(sharedByName(a)||"").toLowerCase();bv=(sharedByName(b)||"").toLowerCase();}
+      else if(k==="cls"){av=a.assetClass.toLowerCase();bv=b.assetClass.toLowerCase();}
+      else if(k==="date"){av=a.date;bv=b.date;}
+      else if(k==="reco"){av=a.priceAt;bv=b.priceAt;}
+      else if(k==="cur"){av=a.price;bv=b.price;}
+      else if(k==="ret"){av=ret(a);bv=ret(b);}
+      else if(k==="shared"){av=a.shareType;bv=b.shareType;}
+      else if(k==="inv"){av=a.invested?1:0;bv=b.invested?1:0;}
+      return av<bv?-dir:av>bv?dir:0; });
+    return r;
+  },[recs,q,fBy,fGroup,fCls,fMoney,fInv,fShare,showHidden,sort]);
+  const activeFilterNote = fBy!=="all" ? `Showing recommendations from ${fBy}.` : fGroup!=="all" ? `Showing recommendations shared via ${groupName(fGroup)}.` : null;
+  return (<>
+    {activeFilterNote && <div className="note info" style={{marginBottom:14}}><Filter size={16}/><div>{activeFilterNote} <span className="clickable" onClick={()=>{setFBy("all");setFGroup("all");}}>Clear filter</span></div></div>}
+    {recs.some(r=>r.exitSignal && (showHidden||!r.hidden)) &&
+      <div className="note warn" style={{marginBottom:14}}><AlertTriangle size={16}/><div>A recommender has issued an <b>exit signal</b> — affected rows are highlighted below and were refreshed.</div></div>}
+    <div className="toolbar">
+      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by asset or contact…"/></div>
+      <div className="fl"><span className="lab">By</span><select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)}><option value="all">All</option>{byOptions.map(b=><option key={b}>{b}</option>)}</select></div>
+      <div className="fl"><span className="lab">Group</span><select className="inline-select sm" value={fGroup} onChange={e=>setFGroup(e.target.value)}><option value="all">All</option>{groupOptions.map(g=><option key={g} value={g}>{groupName(g)}</option>)}</select></div>
+      <div className="fl"><span className="lab">Class</span><select className="inline-select sm" value={fCls} onChange={e=>setFCls(e.target.value)}><option value="all">All</option>{assetClasses.map(c=><option key={c}>{c}</option>)}</select></div>
+      <div className="fl"><span className="lab">Money</span><select className="inline-select sm" value={fMoney} onChange={e=>setFMoney(e.target.value)}><option value="all">All</option><option value="in">In the money</option><option value="out">Out of money</option></select></div>
+      <div className="fl"><span className="lab">Invested</span><select className="inline-select sm" value={fInv} onChange={e=>setFInv(e.target.value)}><option value="all">All</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+      <div className="fl"><span className="lab">Shared</span><select className="inline-select sm" value={fShare} onChange={e=>setFShare(e.target.value)}><option value="all">All</option><option value="one">One-to-one</option><option value="group">Group</option></select></div>
+      <div className="fl"><span className="lab">Show hidden</span><div className={"sw"+(showHidden?" on":"")} onClick={()=>setShowHidden(v=>!v)}><div className="knob"/></div></div>
+      <button className="btn btn-pri btn-sm" onClick={()=>setShowAdd(true)}><Plus size={15}/> Add manually</button>
+    </div>
+    {rows.length===0 ? <div className="card"><div className="empty">No recommendations match your filters.</div></div> :
+    <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:1200}}>
+      <thead><tr>
+        <SortTh label="Asset name" k="assetName" sort={sort} setSort={setSort}/>
+        <SortTh label="Ticker" k="ticker" sort={sort} setSort={setSort}/>
+        <SortTh label="Recommended by" k="by" sort={sort} setSort={setSort}/>
+        <SortTh label="Shared by" k="sharedby" sort={sort} setSort={setSort}/>
+        <SortTh label="Class" k="cls" sort={sort} setSort={setSort}/>
+        <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
+        <SortTh label="Reco $" k="reco" sort={sort} setSort={setSort} align="right"/>
+        <SortTh label="Current $" k="cur" sort={sort} setSort={setSort} align="right"/>
+        <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
+        <th>Status</th>
+        <SortTh label="Shared" k="shared" sort={sort} setSort={setSort}/>
+        <SortTh label="Invested" k="inv" sort={sort} setSort={setSort}/>
+        <th title="Totals the recommender sees">Reactions</th>
+        <th style={{textAlign:"right"}}>Actions</th>
+      </tr></thead>
+      <tbody>{rows.map(r=>{ const itm=ret(r)>=0; const open=openRow===r.id;
+        return (<React.Fragment key={r.id}>
+        <tr className={"hoverable"+(r.exitSignal?" exit":"")+(r.hidden?" hiddenrow":"")}>
+          <td className="sym nowrap" style={{cursor:"pointer"}} onClick={()=>setOpenRow(open?null:r.id)}>
+            <ChevronDown size={14} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s",verticalAlign:-2,marginRight:6}}/>
+            {r.assetName}{r.hidden && <span className="pill" style={{marginLeft:8}}>Hidden</span>}</td>
+          <td className="sym">{r.ticker}</td>
+          <td className="nowrap">{recName(r)}</td>
+          <td className="nowrap">{isForwarded(r)
+            ? <span className="pill accent" title={"Forwarded to you by "+sharedByName(r)}><Forward size={11}/> {sharedByName(r)}</span>
+            : <span className="muted small" title="Came straight from the recommender">— direct</span>}</td>
+          <td><ClassTag c={r.assetClass}/></td>
+          <td className="muted small nowrap">{fmtDate(r.date)}</td>
+          <td style={{textAlign:"right"}} className="tnum">{fmt(r.priceAt)}</td>
+          <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
+          <td style={{textAlign:"right"}} className={"tnum nowrap "+(itm?"pos":"neg")}>{fmtPct(ret(r))}</td>
+          <td className="nowrap"><Money itm={itm}/>{r.exitSignal && <div style={{marginTop:5}}><span className="pill loss"><AlertTriangle size={11}/> EXIT · {fmtDate(r.exitDate)}</span></div>}</td>
+          <td>{r.shareType==="group" ? <span className="pill accent nowrap"><Layers size={11}/> {groupName(r.groupId)}</span> : <span className="pill">One-to-one</span>}</td>
+          <td className="nowrap">{r.invested
+            ? <><button className="btn btn-sm btn-soft" onClick={()=>onInvestClick(r)}><Check size={13}/> Invested</button><div className="muted small" style={{marginTop:4}}>{r.recoActed} acted</div></>
+            : <button className="btn btn-sm btn-ghost" onClick={()=>onInvestClick(r)}>Mark invested</button>}</td>
+          <td><div className="actions" style={{justifyContent:"flex-start"}} title="Totals the recommender sees">
+            <button className={"iconbtn"+(r.reaction==="like"?" on-like":"")} title="Like" onClick={()=>react(r,"like")}><ThumbsUp size={14}/></button>
+            <span className="muted small tnum">{r.likes}</span>
+            <button className={"iconbtn"+(r.reaction==="dislike"?" on-dislike":"")} title="Dislike" onClick={()=>react(r,"dislike")}><ThumbsDown size={14}/></button>
+            <span className="muted small tnum">{r.dislikes}</span></div></td>
+          <td><div className="actions">
+            <button className="iconbtn" title="Forward to contacts or groups" onClick={()=>setFwd(r)}><Share2 size={14}/></button>
+            <button className={"iconbtn"+(r.exitSignal?" on-exit":"")} title="Toggle exit signal from recommender (demo)" onClick={()=>toggleExit(r)}><LogOut size={14}/></button>
+            <button className="iconbtn" title={r.hidden?"Unhide":"Hide"} onClick={()=>toggleHide(r)}>{r.hidden?<Eye size={14}/>:<EyeOff size={14}/>}</button>
+            <button className="iconbtn danger" title="Delete permanently" onClick={()=>del(r)}><Trash2 size={14}/></button></div></td>
+        </tr>
+        {open && <tr className="expand-row"><td colSpan={14}><div className="expand-inner">
+          <div style={{maxWidth:780,display:"flex",flexDirection:"column",gap:13}}>
+            <div><div className="cap">Thesis from {recName(r)}{isForwarded(r) && <> · forwarded by {sharedByName(r)}</>}</div>
+              <div style={{fontSize:14,lineHeight:1.6,color:"var(--ink-soft)"}}>{r.thesis || "No thesis was shared with this recommendation."}</div></div>
+            <div style={{display:"flex",gap:28,flexWrap:"wrap"}}>
+              <div><div className="cap">Recommended by</div><b>{recName(r)}</b></div>
+              {isForwarded(r) && <div><div className="cap">Shared with you by</div><b>{sharedByName(r)}</b></div>}
+              <div><div className="cap">Shared</div><b>{r.shareType==="group"?groupName(r.groupId):"One-to-one"}</b></div>
+              <div><div className="cap">Reco → Current</div><b className="tnum">{fmt(r.priceAt)} → {fmt(r.price)}</b></div>
+              <div><div className="cap">Return</div><b className={"tnum "+(itm?"pos":"neg")}>{fmtPct(ret(r))}</b></div></div>
+            <div><button className="btn btn-soft btn-sm" onClick={()=>setFwd(r)}><Share2 size={14}/> Forward this idea</button></div>
+          </div></div></td></tr>}
+        </React.Fragment>);
+      })}</tbody>
+    </table></div></div></div>}
+    {showAdd && <AddReceivedModal assetClasses={assetClasses} contacts={contacts} groups={groups} onClose={()=>setShowAdd(false)} onAdd={(rec)=>{ setRecs(rs=>[rec,...rs]); setShowAdd(false); }}/>}
+    {investing && <InvestPriceModal reco={investing} onClose={()=>setInvesting(null)} onConfirm={(price)=>{ doInvest(investing,price); setInvesting(null); }}/>}
+    {fwd && <ShareRecoModal reco={fwd} mode="forward" originName={recName(fwd)} contacts={contacts} groups={groups} onClose={()=>setFwd(null)}
+        onShare={(targets,note)=>{ onForward(fwd,targets,note); setFwd(null); }}/>}
+  </>);
+}
+
+function InvestPriceModal({ reco, onClose, onConfirm }) {
+  const [price,setPrice]=useState(String(reco.price));
+  const valid = price!=="" && !isNaN(+price) && +price>0;
+  return (<div className="overlay" onClick={onClose}><div className="modal" style={{width:420}} onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3>Mark as invested</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      <div className="muted small" style={{marginBottom:14}}>What price did you invest at for <b style={{color:"var(--ink)"}}>{reco.ticker}</b> — {reco.assetName}?</div>
+      <div style={{display:"flex",gap:18,marginBottom:16}}>
+        <div><div className="muted small">Reco price</div><div className="tnum" style={{fontWeight:700}}>{fmt(reco.priceAt)}</div></div>
+        <div><div className="muted small">Current price</div><div className="tnum" style={{fontWeight:700}}>{fmt(reco.price)}</div></div></div>
+      <div className="field"><label>Your entry price</label><input type="number" value={price} autoFocus onChange={e=>setPrice(e.target.value)} onKeyDown={e=>e.key==="Enter"&&valid&&onConfirm(+price)} placeholder="0"/></div>
+    </div>
+    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-pri" disabled={!valid} onClick={()=>onConfirm(+price)}><Check size={15}/> Confirm invested</button></div></div>
+  </div></div>);
+}
+
+function ShareRecoModal({ reco, mode, originName, contacts, groups, onClose, onShare }) {
+  const [targets,setTargets]=useState([]); const [note,setNote]=useState("");
+  const toggle=(id)=>setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
+  const fwd = mode==="forward";
+  const valid = targets.length>0;
+  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3>{fwd?<><Forward size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Forward recommendation</>:<><Share2 size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Share recommendation</>}</h3>
+      <button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      <div className="note info" style={{marginBottom:16}}><Lightbulb size={16}/><div>
+        <b>{reco.ticker}</b> — {reco.assetName}{fwd && originName && <> · originally recommended by <b>{originName}</b></>}.
+        {fwd && " Forwarding keeps the original recommender credited; you'll appear as the one who shared it."}</div></div>
+      <div className="field"><label>Send to contacts</label><div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {contacts.map(c=><span key={c.id} className={"chip"+(targets.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{targets.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}</div></div>
+      <div className="field"><label>Send to groups</label><div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {groups.filter(g=>g.members.includes("me")).map(g=><span key={g.id} className={"chip"+(targets.includes(g.id)?" sel":"")} onClick={()=>toggle(g.id)}>{targets.includes(g.id)&&<Check size={13}/>}<Layers size={13}/>{g.name}</span>)}</div></div>
+      <div className="field"><label>Add a note {fwd && <span className="muted small">(optional — replaces the thesis you pass on)</span>}</label>
+        <textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder={fwd?"Your take when forwarding…":"Anything to add?"}/></div>
+    </div>
+    <div className="modal-foot"><span className="muted small">{targets.length} selected</span><div style={{display:"flex",gap:10}}>
+      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-pri" disabled={!valid} onClick={()=>onShare(targets,note)}><Send size={15}/> {fwd?"Forward":"Share"}</button></div></div>
+  </div></div>);
+}
+
+function HoldPreviewTable({ holdings }) {
+  return (<table className="grid"><thead><tr><th>Symbol</th><th>Name</th><th>Type</th><th style={{textAlign:"right"}}>Shares</th><th style={{textAlign:"right"}}>Cost</th><th style={{textAlign:"right"}}>Price</th><th style={{textAlign:"right"}}>Value</th></tr></thead>
+    <tbody>{holdings.map(h=>(<tr key={h.id} className="hoverable"><td className="sym">{h.sym}</td><td className="muted small">{h.name}</td><td><TypeTag t={h.type}/></td>
+      <td style={{textAlign:"right"}} className="tnum">{h.sh}</td><td style={{textAlign:"right"}} className="tnum">{fmt(h.cost)}</td><td style={{textAlign:"right"}} className="tnum">{fmt(h.price)}</td>
+      <td style={{textAlign:"right"}} className="tnum">{fmt(h.sh*h.price)}</td></tr>))}</tbody></table>);
+}
+
+function ImportPreviewModal({ result, onClose, onApply }) {
+  const [mode,setMode]=useState("append"); const h=result.holdings||[];
+  return (<div className="overlay" onClick={onClose}><div className="modal" style={{width:720}} onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3><Upload size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Import portfolio</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      <div className="muted small" style={{marginBottom:12}}>From <b style={{color:"var(--ink)"}}>{result.fileName}</b> — found <b style={{color:"var(--ink)"}}>{h.length}</b> holding{h.length===1?"":"s"}.</div>
+      {(result.warnings||[]).map((w,i)=><div key={i} className="note warn" style={{marginBottom:12}}><AlertTriangle size={16}/><div>{w}</div></div>)}
+      {h.length>0 && <>
+        <div style={{maxHeight:300,overflow:"auto",border:"1px solid var(--line)",borderRadius:12}}><HoldPreviewTable holdings={h}/></div>
+        <div style={{display:"flex",gap:18,marginTop:16}}>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:600}}><input type="radio" checked={mode==="append"} onChange={()=>setMode("append")} style={{accentColor:"var(--accent)"}}/> Add to my portfolio</label>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:600}}><input type="radio" checked={mode==="replace"} onChange={()=>setMode("replace")} style={{accentColor:"var(--accent)"}}/> Replace everything</label></div>
+      </>}
+    </div>
+    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-pri" disabled={h.length===0} onClick={()=>onApply(h,mode)}><Check size={15}/> Import {h.length||""}</button></div></div>
+  </div></div>);
+}
+
+function PanPullModal({ onClose, onApply }) {
+  const [pan,setPan]=useState(""); const [status,setStatus]=useState("idle"); const [err,setErr]=useState(""); const [result,setResult]=useState(null); const [mode,setMode]=useState("append");
+  const ok = isValidPAN(pan);
+  const pull=async()=>{ setStatus("loading"); setErr(""); try{ const h=await fetchHoldingsByPAN(pan); setResult(h); setStatus("done"); }catch(e){ setErr(e.message); setStatus("idle"); } };
+  return (<div className="overlay" onClick={onClose}><div className="modal" style={{width:result?720:480}} onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3><CreditCard size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Link holdings via PAN</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      <div className="note info" style={{marginBottom:16}}><Shield size={16}/><div>Demo only — this calls a mock service. A production build would use a consented aggregator (India's Account Aggregator framework, or a CAS/depository API). Try <b>ABCDE1234F</b> or <b>AAAPZ1234C</b>.</div></div>
+      <div className="field"><label>PAN number</label>
+        <input autoFocus maxLength={10} style={{textTransform:"uppercase",letterSpacing:1}} value={pan} onChange={e=>{setPan(e.target.value.toUpperCase());setResult(null);setStatus("idle");}} onKeyDown={e=>e.key==="Enter"&&ok&&pull()} placeholder="ABCDE1234F"/>
+        {pan && !ok && <div className="neg small" style={{marginTop:6}}>Format: 5 letters, 4 digits, 1 letter.</div>}
+        {err && <div className="neg small" style={{marginTop:6}}>{err}</div>}</div>
+      {status==="loading" && <div className="muted small" style={{display:"flex",alignItems:"center",gap:8}}><Loader size={15} className="spin"/> Fetching holdings…</div>}
+      {result && <>
+        <div className="muted small" style={{margin:"4px 0 12px"}}>Found <b style={{color:"var(--ink)"}}>{result.length}</b> holdings linked to this PAN.</div>
+        <div style={{maxHeight:280,overflow:"auto",border:"1px solid var(--line)",borderRadius:12}}><HoldPreviewTable holdings={result}/></div>
+        <div style={{display:"flex",gap:18,marginTop:16}}>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:600}}><input type="radio" checked={mode==="append"} onChange={()=>setMode("append")} style={{accentColor:"var(--accent)"}}/> Add to my portfolio</label>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:600}}><input type="radio" checked={mode==="replace"} onChange={()=>setMode("replace")} style={{accentColor:"var(--accent)"}}/> Replace everything</label></div>
+      </>}
+    </div>
+    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      {result ? <button className="btn btn-pri" onClick={()=>onApply(result,mode)}><Check size={15}/> Import {result.length}</button>
+              : <button className="btn btn-pri" disabled={!ok||status==="loading"} onClick={pull}><CreditCard size={15}/> Fetch holdings</button>}</div></div>
+  </div></div>);
+}
+
+function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings }) {
+  const [q,setQ]=useState(""); const [fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
+  const [sort,setSort]=useState({key:"date",dir:"desc"}); const [expanded,setExpanded]=useState(null); const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
+  const del=(r)=>{ if(confirm("Delete this recommendation you made?")) setRecs(rs=>rs.filter(x=>x.id!==r.id)); };
+  const toggleExit=(r)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:!x.exit,exitDate:!x.exit?TODAY:null}:x));
+  const reShare=(r,targets)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,recipients:[...new Set([...x.recipients,...targets])]}:x));
+  const exp=(id,which)=>setExpanded(e=> e&&e.id===id&&e.which===which?null:{id,which});
+  const rows = useMemo(()=>{
+    let r=[...recs];
+    if(q.trim()){ const s=q.toLowerCase(); r=r.filter(x=>(x.assetName+" "+x.ticker).toLowerCase().includes(s)); }
+    if(fCls!=="all") r=r.filter(x=>x.assetClass===fCls);
+    if(fMoney!=="all") r=r.filter(x=> fMoney==="in"?ret(x)>=0:ret(x)<0);
+    const dir=sort.dir==="asc"?1:-1; const k=sort.key;
+    r.sort((a,b)=>{ let av,bv;
+      if(k==="assetName"){av=a.assetName.toLowerCase();bv=b.assetName.toLowerCase();}
+      else if(k==="ticker"){av=a.ticker.toLowerCase();bv=b.ticker.toLowerCase();}
+      else if(k==="cls"){av=a.assetClass.toLowerCase();bv=b.assetClass.toLowerCase();}
+      else if(k==="date"){av=a.date;bv=b.date;}
+      else if(k==="reco"){av=a.priceAt;bv=b.priceAt;}
+      else if(k==="cur"){av=a.price;bv=b.price;}
+      else if(k==="ret"){av=ret(a);bv=ret(b);}
+      else if(k==="acted"){av=a.actedList.length;bv=b.actedList.length;}
+      else if(k==="likes"){av=a.likes.length;bv=b.likes.length;}
+      else if(k==="dislikes"){av=a.dislikes.length;bv=b.dislikes.length;}
+      return av<bv?-dir:av>bv?dir:0; });
+    return r;
+  },[recs,q,fCls,fMoney,sort]);
+  const COLS=13;
+  return (<>
+    <div className="toolbar">
+      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by asset…"/></div>
+      <div className="fl"><span className="lab">Class</span><select className="inline-select sm" value={fCls} onChange={e=>setFCls(e.target.value)}><option value="all">All</option>{assetClasses.map(c=><option key={c}>{c}</option>)}</select></div>
+      <div className="fl"><span className="lab">Money</span><select className="inline-select sm" value={fMoney} onChange={e=>setFMoney(e.target.value)}><option value="all">All</option><option value="in">In the money</option><option value="out">Out of money</option></select></div>
+      <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)}><Plus size={15}/> New recommendation</button>
+    </div>
+    {rows.length===0 ? <div className="card"><div className="empty">No recommendations match your filters.</div></div> :
+    <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:1200}}>
+      <thead><tr>
+        <SortTh label="Asset name" k="assetName" sort={sort} setSort={setSort}/>
+        <SortTh label="Ticker" k="ticker" sort={sort} setSort={setSort}/>
+        <SortTh label="Class" k="cls" sort={sort} setSort={setSort}/>
+        <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
+        <th>Shared with</th>
+        <SortTh label="Reco $" k="reco" sort={sort} setSort={setSort} align="right"/>
+        <SortTh label="Current $" k="cur" sort={sort} setSort={setSort} align="right"/>
+        <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
+        <th>Status</th>
+        <SortTh label="Acted on it" k="acted" sort={sort} setSort={setSort}/>
+        <SortTh label="Likes" k="likes" sort={sort} setSort={setSort}/>
+        <SortTh label="Dislikes" k="dislikes" sort={sort} setSort={setSort}/>
+        <th style={{textAlign:"right"}}>Actions</th>
+      </tr></thead>
+      <tbody>{rows.map(r=>{ const itm=ret(r)>=0; const isExp=expanded&&expanded.id===r.id;
+        return (<React.Fragment key={r.id}>
+          <tr className={"hoverable"+(r.exit?" exit":"")}>
+            <td className="sym nowrap">{r.assetName}{r.forwardedFrom && <span className="pill accent" style={{marginLeft:8}} title={"Forwarded from "+r.forwardedFrom}><Forward size={11}/> via {r.forwardedFrom}</span>}</td>
+            <td className="sym">{r.ticker}</td>
+            <td><ClassTag c={r.assetClass}/></td>
+            <td className="muted small nowrap">{fmtDate(r.date)}</td>
+            <td><div style={{display:"flex",flexWrap:"wrap",gap:5,maxWidth:210}}>{r.recipients.map(id=><span key={id} className="chip mini">{recipientName(id)}</span>)}</div></td>
+            <td style={{textAlign:"right"}} className="tnum">{fmt(r.priceAt)}</td>
+            <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
+            <td style={{textAlign:"right"}} className={"tnum nowrap "+(itm?"pos":"neg")}>{fmtPct(ret(r))}</td>
+            <td className="nowrap"><Money itm={itm}/>{r.exit && <div style={{marginTop:5}}><span className="pill loss"><LogOut size={11}/> Exit · {fmtDate(r.exitDate)}</span></div>}</td>
+            <td><span className="clickable nowrap" onClick={()=>exp(r.id,"acted")}>{r.actedList.length} of {reach(r.recipients)} <ChevronDown size={13} style={{transform:isExp&&expanded.which==="acted"?"rotate(180deg)":"none"}}/></span></td>
+            <td><span className="clickable" onClick={()=>exp(r.id,"likes")}><ThumbsUp size={13}/> {r.likes.length}</span></td>
+            <td><span className="clickable" onClick={()=>exp(r.id,"dislikes")}><ThumbsDown size={13}/> {r.dislikes.length}</span></td>
+            <td><div className="actions">
+              <button className="iconbtn" title="Share with more contacts or groups" onClick={()=>setShare(r)}><Share2 size={14}/></button>
+              <button className={"btn btn-sm "+(r.exit?"btn-ghost":"btn-soft")} onClick={()=>toggleExit(r)}><LogOut size={13}/> {r.exit?"Cancel exit":"Send exit"}</button>
+              <button className="iconbtn danger" title="Delete" onClick={()=>del(r)}><Trash2 size={14}/></button></div></td>
+          </tr>
+          {isExp && <tr className="expand-row"><td colSpan={COLS}><div className="expand-sub">
+            {expanded.which==="acted" && <><b style={{fontSize:13}}>Acted on it ({r.actedList.length})</b>
+              {r.actedList.length===0?<div className="muted small" style={{marginTop:8}}>No one yet.</div>:
+              <div className="namelist" style={{marginTop:10}}>{r.actedList.map((a,i)=><span key={i} className="nl-item"><span className="av" style={{width:26,height:26,background:CONTACT_COLORS[i%CONTACT_COLORS.length],fontSize:10}}>{initialsOf(a.name)}</span>{a.name} <span className="muted small">· {fmtDate(a.date)}</span></span>)}</div>}</>}
+            {expanded.which==="likes" && <><b style={{fontSize:13}}>Liked by ({r.likes.length})</b>
+              {r.likes.length===0?<div className="muted small" style={{marginTop:8}}>No likes yet.</div>:
+              <div className="namelist" style={{marginTop:10}}>{r.likes.map((n,i)=><span key={i} className="nl-item"><span className="av" style={{width:26,height:26,background:CONTACT_COLORS[i%CONTACT_COLORS.length],fontSize:10}}>{initialsOf(n)}</span>{n}</span>)}</div>}</>}
+            {expanded.which==="dislikes" && <><b style={{fontSize:13}}>Disliked by ({r.dislikes.length})</b>
+              {r.dislikes.length===0?<div className="muted small" style={{marginTop:8}}>No dislikes.</div>:
+              <div className="namelist" style={{marginTop:10}}>{r.dislikes.map((n,i)=><span key={i} className="nl-item"><span className="av" style={{width:26,height:26,background:"#8d90ad",fontSize:10}}>{initialsOf(n)}</span>{n}</span>)}</div>}</>}
+          </div></td></tr>}
+        </React.Fragment>);
+      })}</tbody>
+    </table></div></div></div>}
+    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecs(rs=>[rec,...rs]); setShowNew(false); }}/>}
+    {share && <ShareRecoModal reco={share} mode="share" contacts={contacts} groups={groups} onClose={()=>setShare(null)}
+        onShare={(targets)=>{ reShare(share,targets); setShare(null); }}/>}
+  </>);
+}
+
+function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAdd }) {
+  const [f,setF]=useState({ assetName:"", ticker:"", by:"", assetClass:assetClasses[0], date:TODAY, recoPrice:"", curPrice:"", shareType:"one", groupId:groups[0]?.id||"", invested:false, investedPrice:"", thesis:"" });
+  const up=(k,v)=>setF(s=>({...s,[k]:v}));
+  const valid = f.assetName.trim() && f.by.trim() && f.recoPrice && f.curPrice && (!f.invested || f.investedPrice);
+  const save=()=>onAdd({ id:"r"+Date.now(), from:null, byName:f.by.trim(), assetName:f.assetName.trim(), ticker:(f.ticker||"—").toUpperCase(), assetClass:f.assetClass, date:f.date||TODAY,
+    priceAt:+f.recoPrice, price:+f.curPrice, invested:f.invested, investedPrice:f.invested?(+f.investedPrice):null, recoActed:f.invested?1:0, shareType:f.shareType, groupId:f.shareType==="group"?f.groupId:null,
+    reaction:"none", likes:0, dislikes:0, exitSignal:false, exitDate:null, hidden:false, thesis:f.thesis.trim()||null });
+  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3><Plus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add a recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      <div className="muted small" style={{marginBottom:14}}>Log a tip someone shared with you offline — fill in the details yourself.</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,columnGap:14}}>
+        <div className="field"><label>Asset name</label><input value={f.assetName} onChange={e=>up("assetName",e.target.value)} placeholder="e.g. Apple Inc."/></div>
+        <div className="field"><label>Ticker</label><input value={f.ticker} onChange={e=>up("ticker",e.target.value)} placeholder="AAPL"/></div>
+        <div className="field"><label>Recommended by</label><input value={f.by} onChange={e=>up("by",e.target.value)} placeholder="Name" list="cnames"/>
+          <datalist id="cnames">{contacts.map(c=><option key={c.id} value={c.name}/>)}</datalist></div>
+        <div className="field"><label>Asset class</label><select value={f.assetClass} onChange={e=>up("assetClass",e.target.value)}>{assetClasses.map(c=><option key={c}>{c}</option>)}</select></div>
+        <div className="field"><label>Date</label><input type="date" value={f.date} onChange={e=>up("date",e.target.value)}/></div>
+        <div className="field"><label>Shared as</label><select value={f.shareType} onChange={e=>up("shareType",e.target.value)}><option value="one">One-to-one</option><option value="group">Group</option></select></div>
+        <div className="field"><label>Reco price</label><input type="number" value={f.recoPrice} onChange={e=>up("recoPrice",e.target.value)} placeholder="0"/></div>
+        <div className="field"><label>Current price</label><input type="number" value={f.curPrice} onChange={e=>up("curPrice",e.target.value)} placeholder="0"/></div>
+        {f.shareType==="group" && <div className="field" style={{gridColumn:"1 / span 2"}}><label>Group</label><select value={f.groupId} onChange={e=>up("groupId",e.target.value)}>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></div>}
+      </div>
+      <div className="field"><label>Thesis <span className="muted small">(optional — shown when the row is expanded)</span></label>
+        <textarea rows={2} value={f.thesis} onChange={e=>up("thesis",e.target.value)} placeholder="What was their reasoning?"/></div>
+      <label style={{display:"flex",alignItems:"center",gap:9,fontSize:14,fontWeight:600,cursor:"pointer"}}><input type="checkbox" checked={f.invested} onChange={e=>up("invested",e.target.checked)} style={{width:17,height:17,accentColor:"var(--accent)"}}/> I’ve already invested on this</label>
+      {f.invested && <div className="field" style={{marginTop:12,maxWidth:220}}><label>My entry price</label><input type="number" value={f.investedPrice} onChange={e=>up("investedPrice",e.target.value)} placeholder="0"/></div>}
+    </div>
+    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-pri" disabled={!valid} onClick={save}>Add recommendation</button></div></div>
+  </div></div>);
+}
+
+function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, onClose, onCreate }) {
+  const [assetName,setAssetName]=useState(""); const [ticker,setTicker]=useState(""); const [cls,setCls]=useState(assetClasses[0]);
+  const [thesis,setThesis]=useState(""); const [targets,setTargets]=useState([]); const [adding,setAdding]=useState(false); const [newCat,setNewCat]=useState("");
+  const toggle=(id)=>setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
+  const addCat=()=>{ const c=newCat.trim(); if(c && !assetClasses.includes(c)){ setAssetClasses(a=>[...a,c]); setCls(c); } setNewCat(""); setAdding(false); };
+  const known = holdings.find(x=>x.sym===ticker.toUpperCase());
+  const create=()=>{ onCreate({ id:"m"+Date.now(), assetName:assetName.trim()||(known?known.name:ticker.toUpperCase()), ticker:(ticker||"—").toUpperCase(), assetClass:cls, date:TODAY, recipients:targets,
+      priceAt:known?known.price:100, price:known?known.price:100, thesis:thesis||"—", actedList:[], likes:[], dislikes:[], exit:false, exitDate:null }); };
+  const valid = (assetName.trim()||ticker.trim()) && targets.length>0;
+  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> New recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14}}>
+        <div className="field"><label>Ticker</label><input value={ticker} onChange={e=>setTicker(e.target.value)} placeholder="e.g. AAPL" list="myh"/>
+          <datalist id="myh">{holdings.map(h=><option key={h.id} value={h.sym}>{h.name}</option>)}</datalist></div>
+        <div className="field"><label>Asset name {ticker && !known && <span className="muted small">(not found — name it)</span>}</label>
+          <input value={assetName} onChange={e=>setAssetName(e.target.value)} placeholder="e.g. Apple Inc."/></div>
+      </div>
+      <div className="field"><label style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Asset class</span>
+        <span className="clickable" style={{fontSize:12}} onClick={()=>setAdding(a=>!a)}><Plus size={13}/> Add category</span></label>
+        {adding
+          ? <div style={{display:"flex",gap:8}}><input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="New category name" onKeyDown={e=>e.key==="Enter"&&addCat()}/><button className="btn btn-pri btn-sm" onClick={addCat}>Add</button></div>
+          : <select value={cls} onChange={e=>setCls(e.target.value)}>{assetClasses.map(c=><option key={c}>{c}</option>)}</select>}</div>
+      <div className="field"><label>Your thesis</label><textarea rows={3} value={thesis} onChange={e=>setThesis(e.target.value)} placeholder="Why should they look at this?"/></div>
+      <div className="field"><label>Send to friends</label><div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {contacts.map(c=><span key={c.id} className={"chip"+(targets.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{targets.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}</div></div>
+      <div className="field"><label>Send to groups</label><div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {groups.filter(g=>g.members.includes("me")).map(g=><span key={g.id} className={"chip"+(targets.includes(g.id)?" sel":"")} onClick={()=>toggle(g.id)}>{targets.includes(g.id)&&<Check size={13}/>}<Layers size={13}/>{g.name}</span>)}</div></div>
+    </div>
+    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-pri" disabled={!valid} onClick={create}><Send size={15}/> Send</button></div></div>
+  </div></div>);
+}
+
+/* =================================================================== SHARING */
+function Sharing({ sharing, setSharing, configs, holdings, contacts, groups }) {
+  const [previewId, setPreviewId] = useState(null); const [pickFor, setPickFor] = useState(null);
+  const nameOfLive = (id) => contacts.find(c=>c.id===id)?.name ?? groups.find(g=>g.id===id)?.name ?? id;
+  const set=(id,patch)=>setSharing(s=>({...s,[id]:{...s[id],...patch}}));
+  const Row = ({ id, name, sub, color, isGroup }) => {
+    const cfg = sharing[id] || { visibility:"off", level:"names", selected:[] }; const off = cfg.visibility==="off";
+    return (<tr className="hoverable">
+      <td><div style={{ display:"flex", gap:11, alignItems:"center" }}>
+        <div className="av" style={{ width:36, height:36, background:color, fontSize:13 }}>{isGroup?<Layers size={16}/>:initialsOf(name)}</div>
+        <div><div style={{fontWeight:600}}>{name}</div><div className="muted small">{sub}</div></div></div></td>
+      <td><select className="inline-select" value={cfg.visibility} onChange={e=>set(id,{visibility:e.target.value})}>
+          <option value="off">Nothing</option><option value="all">Whole portfolio</option><option value="selected">Selected holdings</option></select>
+        {cfg.visibility==="selected" && <div style={{marginTop:7}}><button className="btn btn-soft btn-sm" onClick={()=>setPickFor(id)}>{cfg.selected.length} chosen · edit</button></div>}</td>
+      <td><div className="seg tiny" style={{ opacity:off?.45:1, pointerEvents:off?"none":"auto" }}>
+          <button className={cfg.level==="names"?"active":""} onClick={()=>set(id,{level:"names"})}>Names</button>
+          <button className={cfg.level==="full"?"active":""} disabled={!configs.allowAmountSharing} onClick={()=>set(id,{level:"full"})}>+ Amounts & P&L</button></div></td>
+      <td style={{ textAlign:"right" }}><button className="btn btn-ghost btn-sm" disabled={off} onClick={()=>setPreviewId(id)}><Eye size={14}/> Preview</button></td>
+    </tr>);
+  };
+  return (<>
+    <div className="page-head"><div><div className="eyebrow">Sharing & Privacy</div><div className="page-title">Who sees what</div>
+      <div className="page-sub">Set visibility per person or group, and how much detail.</div></div></div>
+    {!configs.allowAmountSharing && <div className="card" style={{ marginBottom:16, borderLeft:"3px solid var(--accent)" }}><div className="card-body" style={{padding:"13px 16px", fontSize:13, display:"flex", gap:8, alignItems:"center"}}>
+      <Lock size={15}/> Amount & P&L sharing is turned off by the administrator — only holding names can be shared right now.</div></div>}
+    <div className="card" style={{ marginBottom:18 }}><div className="card-head"><span style={{display:"flex",gap:8,alignItems:"center"}}><Users size={16}/> Friends</span></div>
+      <div className="card-body" style={{padding:"8px 10px"}}><table className="grid"><thead><tr><th>Connection</th><th>Can see</th><th>Detail level</th><th></th></tr></thead>
+        <tbody>{contacts.map(f=><Row key={f.id} id={f.id} name={f.name} sub={f.title} color={f.color}/>)}</tbody></table></div></div>
+    <div className="card"><div className="card-head"><span style={{display:"flex",gap:8,alignItems:"center"}}><Layers size={16}/> Groups</span></div>
+      <div className="card-body" style={{padding:"8px 10px"}}><table className="grid"><thead><tr><th>Group</th><th>Can see</th><th>Detail level</th><th></th></tr></thead>
+        <tbody>{groups.filter(g=>g.members.includes("me")).map(g=><Row key={g.id} id={g.id} name={g.name} sub={`${g.members.length} members`} color={g.color} isGroup/>)}</tbody></table></div></div>
+    {pickFor && <HoldingsPicker entityName={nameOfLive(pickFor)} holdings={holdings} selected={sharing[pickFor].selected} onClose={()=>setPickFor(null)} onSave={(sel)=>{ set(pickFor,{selected:sel}); setPickFor(null); }}/>}
+    {previewId && <SharePreview id={previewId} name={nameOfLive(previewId)} cfg={sharing[previewId]} holdings={holdings} onClose={()=>setPreviewId(null)}/>}
+  </>);
+}
+function HoldingsPicker({ entityName, holdings, selected, onClose, onSave }) {
+  const [sel, setSel] = useState(selected); const toggle=(id)=>setSel(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
+  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3>Holdings shared with {entityName}</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">{holdings.map(h=>(
+      <label key={h.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 4px", borderBottom:"1px solid var(--line)", cursor:"pointer" }}>
+        <input type="checkbox" checked={sel.includes(h.id)} onChange={()=>toggle(h.id)} style={{ width:17, height:17, accentColor:"var(--accent)" }}/>
+        <span className="sym" style={{width:62}}>{h.sym}</span><span className="muted small" style={{flex:1}}>{h.name}</span><TypeTag t={h.type}/></label>))}</div>
+    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-pri" onClick={()=>onSave(sel)}>Save · {sel.length}</button></div></div>
+  </div></div>);
+}
+function SharePreview({ id, name, cfg, holdings, onClose }) {
+  const rows = holdings.filter(h=> cfg.visibility==="all"?true:cfg.selected.includes(h.id)).map(h=>({...h,value:h.sh*h.price,pnlPct:(h.price-h.cost)/h.cost}));
+  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3>As seen by {name}</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body"><div className="muted small" style={{ marginBottom:14, display:"flex", gap:6, alignItems:"center" }}>
+      {cfg.level==="full" ? "They see names, amounts and P&L for these holdings." : <><Lock size={13}/> They see names only — amounts and P&L stay private.</>}</div>
+      <table className="grid"><thead><tr><th>Asset</th><th>Type</th>{cfg.level==="full" && <><th style={{textAlign:"right"}}>Value</th><th style={{textAlign:"right"}}>P&L</th></>}</tr></thead>
+        <tbody>{rows.map(r=>(<tr key={r.id} className="hoverable"><td><span className="sym">{r.sym}</span><div className="muted small">{r.name}</div></td><td><TypeTag t={r.type}/></td>
+          {cfg.level==="full" && <><td style={{textAlign:"right"}} className="tnum">{fmt(r.value)}</td><td style={{textAlign:"right"}} className={"tnum "+(r.pnlPct>=0?"pos":"neg")}>{fmtPct(r.pnlPct)}</td></>}</tr>))}</tbody></table></div>
+  </div></div>);
+}
+
+/* =================================================================== HOME */
+function HomeFeed({ setPage, recsReceived, configs, holdings, contacts }) {
+  const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
+  const feed = [
+    { id:"f1", who:"priya", action:"recommended NVDA to Tech Bulls", sym:"NVDA", perf:0.46, time:"2h", body:"AI datacenter demand still underpriced. Adding on dips.", type:"reco" },
+    { id:"f2", who:"elena", action:"shared an update on her crypto allocation", time:"5h", body:"Trimmed ETH and rotated into BTC ahead of the ETF flows. Up 52% on the position.", type:"update" },
+    { id:"f3", who:"marcus", action:"recommended SCHD to Dividend Investors", sym:"SCHD", perf:0.03, time:"1d", body:"Quality dividend growth at a low fee. Good ballast for any book.", type:"reco" },
+    { id:"f4", who:"aisha", action:"started following you", time:"2d", type:"social" },
+  ];
+  return (<div style={{ display:"grid", gridTemplateColumns:"1fr 300px", gap:22 }}>
+    <div><div className="page-head"><div><div className="eyebrow">Welcome back, Jordan</div><div className="page-title">Here's what's moving today</div></div>
+      <button className="btn btn-pri btn-sm" onClick={()=>setPage("recs")}><Lightbulb size={15}/> Recommend an idea</button></div>
+      {feed.map(item=>{ const f=contacts.find(x=>x.id===item.who);
+        return (<div key={item.id} className="feed-card"><div className="feed-head"><Avatar f={f} size={42}/>
+          <div style={{flex:1}}><div><b>{f?.name}</b> <span className="muted">{item.action}</span></div><div className="muted small">{item.time} ago</div></div>
+          {item.type==="reco" && <span className={"pill "+(item.perf>=0?"gain":"loss")}>{item.sym} {fmtPct(item.perf)}</span>}</div>
+          {item.body && <div style={{ fontSize:14.5, color:"var(--ink-soft)", lineHeight:1.55 }}>{item.body}</div>}
+          <div style={{ display:"flex", gap:20, marginTop:14 }}>
+            <span className="feed-act"><MessageSquare size={15}/> Comment</span><span className="feed-act"><Bookmark size={15}/> Save</span>
+            {item.type==="reco" && <span className="feed-act" style={{color:"var(--accent-ink)"}} onClick={()=>setPage("recs")}>Track this <ChevronRight size={14}/></span>}</div>
+        </div>); })}
+    </div>
+    <div><div className="card" style={{ marginBottom:16 }}><div className="card-head">Your portfolio</div><div className="card-body">
+      <div className="balance tnum" style={{ fontSize:30 }}>{fmt(total)}</div>
+      <div className={"delta "+(pnl>=0?"pos":"neg")} style={{marginTop:8, marginBottom:14}}>{pnl>=0?<ArrowUpRight size={16}/>:<ArrowDownRight size={16}/>} {fmtSigned(pnl)} ({fmtPct(pnlPct)})</div>
+      <Sparkline data={SPARK} w={252} h={48}/>
+      <button className="btn btn-ghost btn-sm" style={{width:"100%", justifyContent:"center", marginTop:14}} onClick={()=>setPage("portfolio")}>Open portfolio</button></div></div>
+      <div className="card"><div className="card-head">New for you</div><div className="card-body" style={{ fontSize:13.5 }}>
+        {recsReceived.filter(r=>!r.invested && !r.hidden).slice(0,3).map(r=>{ const f=contacts.find(x=>x.id===r.from), perf=(r.price-r.priceAt)/r.priceAt, who=(f?f.name:(r.byName||"someone")).split(" ")[0];
+          return <div key={r.id} style={{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:"1px solid var(--line)" }}>
+            <span><b>{r.ticker}</b> <span className="muted">from {who}</span></span><span className={"tnum "+(perf>=0?"pos":"neg")}>{fmtPct(perf)}</span></div>; })}
+        <button className="btn btn-soft btn-sm" style={{ width:"100%", justifyContent:"center", marginTop:12 }} onClick={()=>setPage("recs")}>See all recommendations</button></div></div>
+    </div>
+  </div>);
+}
+
+/* =================================================================== ADMIN */
+function AdminUsers({ users, setUsers }) {
+  const [q, setQ] = useState(""); const [showAdd, setShowAdd] = useState(false);
+  const filtered = users.filter(u=>(u.name+u.email).toLowerCase().includes(q.toLowerCase()));
+  const setStatus=(id,status)=>setUsers(us=>us.map(u=>u.id===id?{...u,status}:u));
+  const setRole=(id,role)=>setUsers(us=>us.map(u=>u.id===id?{...u,role}:u));
+  const sp=(s)=>s==="Active"?"gain":s==="Suspended"?"loss":"";
+  return (<>
+    <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">Users</div><div className="page-sub">{users.length} accounts · manage roles, status and access</div></div>
+      <button className="btn btn-pri" onClick={()=>setShowAdd(true)}><Plus size={16}/> Add user</button></div>
+    <div className="card"><div className="card-head"><span>All users</span>
+      <div style={{ display:"flex", alignItems:"center", gap:8, background:"var(--surface-2)", borderRadius:10, padding:"7px 12px" }}>
+        <Search size={15} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…" style={{border:"none",outline:"none",background:"transparent",fontSize:13}}/></div></div>
+      <div className="card-body" style={{padding:"8px 10px"}}><table className="grid">
+        <thead><tr><th>User</th><th>Role</th><th>Status</th><th style={{textAlign:"center"}}>Accounts</th><th>Joined</th><th style={{textAlign:"right"}}>Actions</th></tr></thead>
+        <tbody>{filtered.map(u=>(<tr key={u.id} className="hoverable">
+          <td><div style={{fontWeight:600}}>{u.name}</div><div className="muted small">{u.email}</div></td>
+          <td><select className="inline-select" value={u.role} onChange={e=>setRole(u.id,e.target.value)}>{["Investor","Moderator","Admin"].map(r=><option key={r}>{r}</option>)}</select></td>
+          <td><span className={"pill "+sp(u.status)}>{u.status}</span></td>
+          <td style={{textAlign:"center"}}>{u.accounts}</td><td className="muted small">{u.joined}</td>
+          <td style={{textAlign:"right"}}>{u.status==="Active"?<button className="btn btn-ghost btn-sm" onClick={()=>setStatus(u.id,"Suspended")}>Suspend</button>:<button className="btn btn-ghost btn-sm" onClick={()=>setStatus(u.id,"Active")}>Activate</button>}</td>
+        </tr>))}</tbody></table></div></div>
+    {showAdd && <AddUserModal onClose={()=>setShowAdd(false)} onAdd={(u)=>{ setUsers(us=>[{...u,id:"u"+Date.now()},...us]); setShowAdd(false); }}/>}
+  </>);
+}
+function AddUserModal({ onClose, onAdd }) {
+  const [name,setName]=useState(""); const [email,setEmail]=useState(""); const [role,setRole]=useState("Investor");
+  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3>Add user</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      <div className="field"><label>Full name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Jane Doe"/></div>
+      <div className="field"><label>Email</label><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="jane@circle.io"/></div>
+      <div className="field"><label>Role</label><select value={role} onChange={e=>setRole(e.target.value)}>{["Investor","Moderator","Admin"].map(r=><option key={r}>{r}</option>)}</select></div></div>
+    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-pri" disabled={!name||!email} onClick={()=>onAdd({name,email,role,status:"Pending",accounts:0,joined:"Jun 2026"})}>Create user</button></div></div>
+  </div></div>);
+}
+function AdminGroups({ groups, setGroups, contacts }) {
+  const [showNew, setShowNew] = useState(false);
+  const nameOfM = (id)=> id==="me"?"Jordan Avery":(contacts.find(c=>c.id===id)?.name)||(id==="admin"?"Admin Root":id);
+  const removeMember=(gid,mid)=>setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:g.members.filter(m=>m!==mid)}:g));
+  return (<>
+    <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">Groups</div><div className="page-sub">All groups on the platform · used for sharing and recommendations</div></div>
+      <button className="btn btn-pri" onClick={()=>setShowNew(true)}><Plus size={16}/> Create group</button></div>
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))", gap:16 }}>
+      {groups.map(g=>(<div key={g.id} className="card"><div className="card-body">
+        <div style={{ display:"flex", gap:12, alignItems:"center", marginBottom:13 }}>
+          <div className="av" style={{ width:44, height:44, background:g.color }}><Layers size={19}/></div>
+          <div><div style={{fontWeight:700,fontSize:15}}>{g.name}</div><div className="muted small">{g.members.length} members · created {fmtDate(g.created)}</div></div></div>
+        <div className="small muted" style={{marginBottom:8}}>Admins: {g.admins.map(nameOfM).join(", ")||"—"}</div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
+          {g.members.map(mid=><span key={mid} className="pill">{nameOfM(mid)} <X size={13} style={{cursor:"pointer"}} onClick={()=>removeMember(g.id,mid)}/></span>)}
+          {g.members.length===0 && <span className="muted small">No members yet</span>}</div>
+      </div></div>))}
+    </div>
+    {showNew && <CreateGroupModal contacts={contacts} onClose={()=>setShowNew(false)} onCreate={(g)=>{ setGroups(gs=>[...gs,{...g,id:"g"+Date.now(),created:TODAY,admins:["admin"],color:CONTACT_COLORS[gs.length%CONTACT_COLORS.length]}]); setShowNew(false); }}/>}
+  </>);
+}
+function CreateGroupModal({ contacts, onClose, onCreate }) {
+  const [name,setName]=useState(""); const [members,setMembers]=useState([]);
+  const toggle=(id)=>setMembers(m=>m.includes(id)?m.filter(x=>x!==id):[...m,id]);
+  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3>Create group</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      <div className="field"><label>Group name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Value Hunters"/></div>
+      <div className="field"><label>Members</label><div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+        {contacts.map(f=><span key={f.id} className={"chip"+(members.includes(f.id)?" sel":"")} onClick={()=>toggle(f.id)}>{members.includes(f.id)&&<Check size={13}/>}{f.name}</span>)}</div></div></div>
+    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-pri" disabled={!name} onClick={()=>onCreate({name,members})}>Create group</button></div></div>
+  </div></div>);
+}
+function AdminConfigs({ configs, setConfigs, providers, setProviders }) {
+  const [newProv, setNewProv] = useState("");
+  const toggle=(k)=>setConfigs(c=>({...c,[k]:!c[k]}));
+  const Switch=({k,title,desc,last})=>(<div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 0", borderBottom:last?"none":"1px solid var(--line)" }}>
+    <div style={{ paddingRight:20 }}><div style={{fontWeight:700,fontSize:14}}>{title}</div><div className="muted small" style={{marginTop:2}}>{desc}</div></div>
+    <div className={"sw"+(configs[k]?" on":"")} onClick={()=>toggle(k)}><div className="knob"/></div></div>);
+  return (<>
+    <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">App Configuration</div><div className="page-sub">Platform-wide settings — these affect every user in real time</div></div></div>
+    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:18, alignItems:"start" }}>
+      <div className="card"><div className="card-head">Features</div><div className="card-body" style={{paddingTop:2,paddingBottom:2}}>
+        <Switch k="enableRecommendations" title="Recommendations" desc="Let users send and track investment ideas"/>
+        <Switch k="allowCryptoAccounts" title="Crypto accounts" desc="Permit linking crypto exchange accounts"/>
+        <Switch k="publicFeed" title="Public activity feed" desc="Show network activity on the home feed" last/></div></div>
+      <div className="card"><div className="card-head">Privacy defaults</div><div className="card-body" style={{paddingTop:2,paddingBottom:2}}>
+        <Switch k="requireAccountApproval" title="Account-link approval" desc="Require admin approval before a linked account goes live"/>
+        <Switch k="allowAmountSharing" title="Amount & P&L sharing" desc="Let users share amounts and P&L, not just names"/>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 0" }}>
+          <div><div style={{fontWeight:700,fontSize:14}}>Default disclosure for new connections</div><div className="muted small" style={{marginTop:2}}>Applied when a user adds a new friend</div></div>
+          <select className="inline-select" value={configs.defaultDisclosure} onChange={e=>setConfigs(c=>({...c,defaultDisclosure:e.target.value}))}>
+            <option value="none">Nothing</option><option value="names">Names only</option><option value="full">Names + P&L</option></select></div></div></div>
+    </div>
+    <div className="card" style={{ marginTop:18 }}><div className="card-head"><span style={{display:"flex",gap:8,alignItems:"center"}}><Layers size={16}/> Groups</span></div>
+      <div className="card-body" style={{paddingTop:2,paddingBottom:2}}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 0", borderBottom:"1px solid var(--line)" }}>
+          <div style={{paddingRight:20}}><div style={{fontWeight:700,fontSize:14}}>Maximum members per group</div><div className="muted small" style={{marginTop:2}}>Caps how many people any single group can contain</div></div>
+          <input type="number" min={2} max={500} value={configs.maxGroupMembers} onChange={e=>setConfigs(c=>({...c,maxGroupMembers:Math.max(2,parseInt(e.target.value||"2",10))}))}
+            style={{width:90,border:"1px solid var(--line-2)",borderRadius:10,padding:"8px 11px",fontSize:14,fontWeight:700,textAlign:"center",outline:"none"}}/></div>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 0" }}>
+          <div style={{paddingRight:20}}><div style={{fontWeight:700,fontSize:14}}>Who can create groups</div><div className="muted small" style={{marginTop:2}}>Controls the “New group” action across the app</div></div>
+          <select className="inline-select" value={configs.groupCreationPolicy} onChange={e=>setConfigs(c=>({...c,groupCreationPolicy:e.target.value}))}>
+            <option value="all">Everyone</option><option value="mods">Moderators &amp; Admins</option><option value="admins">Admins only</option></select></div>
+      </div></div>
+    <div className="card" style={{ marginTop:18 }}><div className="card-head">Supported account providers</div><div className="card-body">
+      <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:15 }}>
+        {providers.map(p=><span key={p} className="pill accent">{p} <X size={13} style={{cursor:"pointer"}} onClick={()=>setProviders(ps=>ps.filter(x=>x!==p))}/></span>)}</div>
+      <div style={{ display:"flex", gap:10 }}>
+        <input value={newProv} onChange={e=>setNewProv(e.target.value)} placeholder="Add a provider (e.g. Interactive Brokers)" style={{ flex:1, border:"1px solid var(--line-2)", borderRadius:11, padding:"10px 13px", fontSize:14, outline:"none" }}/>
+        <button className="btn btn-pri" disabled={!newProv} onClick={()=>{ setProviders(ps=>[...ps,newProv]); setNewProv(""); }}><Plus size={15}/> Add</button></div>
+    </div></div>
+  </>);
+}
