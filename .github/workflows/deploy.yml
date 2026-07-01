@@ -29,8 +29,8 @@ jobs:
         run: npm run build
         # If you later add a real VITE_DATABASE_URL, add it as a GitHub secret
         # (repo Settings → Secrets → Actions) and expose it here:
-        # env:
-        #   VITE_DATABASE_URL: ${{ secrets.VITE_DATABASE_URL }}
+        env:
+          VITE_DATABASE_URL: ${{ secrets.VITE_DATABASE_URL }}
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
