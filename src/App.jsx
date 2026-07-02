@@ -6,11 +6,12 @@ import {
   Bookmark, ChevronRight, ChevronDown, ChevronsUpDown, Sparkles, ArrowUpDown,
   List, Table as TableIcon, Mail, UserPlus, Calendar, Crown,
   ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
-  Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader
+  Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw
 } from "lucide-react";
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
 import { fetchHoldingsByPAN, isValidPAN } from "./services/pan";
+import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 
 /* ============================================================
    InvestorCircle — social space for investors.
@@ -115,6 +116,8 @@ table.grid{width:100%;border-collapse:collapse;font-size:14px;}
 .pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--surface-2);color:var(--ink-soft);}
 .pill.accent{background:var(--accent-soft);color:var(--accent-ink);}
 .pill.gain{background:var(--gain-soft);color:var(--gain);}
+.hl{display:inline-flex;align-items:center;gap:5px;background:var(--accent-soft);color:var(--accent-ink);border-radius:6px;padding:2px 8px;font-size:12px;font-weight:700;}
+.hl.green{background:#ecfdf5;color:#15924e;}
 .pill.loss{background:var(--loss-soft);color:var(--loss);}
 .pill.amber{background:#fdf0dc;color:#9a6a16;}
 
@@ -311,6 +314,21 @@ export default function App() {
   const [contacts, setContacts] = useState(FRIENDS);
   const [holdings, setHoldings] = useState(HOLDINGS);
   const [groups, setGroups] = useState(GROUPS0);
+  const [priceRefresh, setPriceRefresh] = useState({ busy:false, lastAt:null, errors:[] });
+
+  const refreshPrices = async () => {
+    setPriceRefresh(s=>({...s, busy:true, errors:[]}));
+    try {
+      const { results, errors } = await fetchLivePrices(holdings);
+      setHoldings(prev => prev.map(h => {
+        const r = results[h.sym];
+        return (r && r.price !== null) ? { ...h, price: r.price } : h;
+      }));
+      setPriceRefresh({ busy:false, lastAt:new Date(), errors });
+    } catch(err) {
+      setPriceRefresh({ busy:false, lastAt:null, errors:[err.message] });
+    }
+  };
   const [pendingInvites, setPendingInvites] = useState([]);
 
   const [sharing, setSharing] = useState(() => {
@@ -411,7 +429,7 @@ export default function App() {
           </div>
           <div className="content">
             {isInv && page==="home" && <HomeFeed setPage={setPage} recsReceived={recsReceived} configs={configs} holdings={holdings} contacts={contacts}/>}
-            {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings}/>}
+            {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
             {isInv && page==="network" && <Network contacts={contacts} setContacts={setContacts} groups={groups} setGroups={setGroups}
                 sharing={sharing} setSharing={setSharing} configs={configs} canCreateGroups={canCreateGroups}
                 pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
@@ -818,7 +836,7 @@ function Ring({ data, size=176 }) {
     <text x="50%" y="46%" textAnchor="middle" fontSize="12" fill="var(--muted)" fontWeight="600">Total value</text>
     <text x="50%" y="58%" textAnchor="middle" fontFamily="var(--serif)" fontSize="21" fontWeight="600" fill="var(--ink)">{fmt(total)}</text></svg>);
 }
-function Portfolio({ configs, holdings, setHoldings }) {
+function Portfolio({ configs, holdings, setHoldings, refreshPrices, priceRefresh }) {
   const [acct, setAcct] = useState("all"); const [hide, setHide] = useState(false);
   const [importRes, setImportRes] = useState(null); const [importBusy, setImportBusy] = useState(false);
   const [showPan, setShowPan] = useState(false); const [menu, setMenu] = useState(false);
@@ -839,6 +857,7 @@ function Portfolio({ configs, holdings, setHoldings }) {
   const sTotal=shown.reduce((s,r)=>s+r.value,0), sCost=shown.reduce((s,r)=>s+r.costTot,0), sPnl=sTotal-sCost;
   const byType = useMemo(()=>{ const m={}; shown.forEach(r=>m[r.type]=(m[r.type]||0)+r.value); return Object.entries(m).map(([k,v])=>({label:k,value:v,color:TYPE_COLORS[k]||"#999"})); },[shown]);
   const top=[...shown].sort((a,b)=>b.value-a.value)[0]; const mask=(s)=>hide?"••••••":s;
+  const fmtTime=(d)=>d?d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"";
   return (<>
     <div className="page-head"><div><div className="eyebrow">My Portfolio</div><div className="page-title">Everything in one place</div>
       <div className="page-sub">{ACCOUNTS.length} accounts aggregated · {rows.length} holdings</div></div>
@@ -856,6 +875,27 @@ function Portfolio({ configs, holdings, setHoldings }) {
         <button className="btn btn-soft btn-sm" onClick={()=>setShowPan(true)}><CreditCard size={15}/> Link via PAN</button>
         <button className="btn btn-ghost btn-sm" onClick={()=>setHide(v=>!v)}>{hide?<Eye size={15}/>:<EyeOff size={15}/>} {hide?"Show values":"Hide values"}</button>
       </div></div>
+
+    {/* ── Live price refresh bar ── */}
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+      {isFinnhubConfigured
+        ? <button className="btn btn-pri btn-sm" disabled={priceRefresh.busy} onClick={refreshPrices} style={{gap:7}}>
+            {priceRefresh.busy
+              ? <><Loader size={14} className="spin"/> Refreshing all prices…</>
+              : <><RefreshCw size={14}/> Refresh live prices</>}
+          </button>
+        : <button className="btn btn-soft btn-sm" disabled title="Add VITE_FINNHUB_KEY to .env to enable live prices" style={{gap:7,opacity:.55}}>
+            <RefreshCw size={14}/> Refresh live prices
+          </button>}
+      {!isFinnhubConfigured &&
+        <span className="muted small">Live prices disabled — add <code style={{background:"var(--surface-2,#f0f0f8)",padding:"1px 6px",borderRadius:5,fontFamily:"monospace"}}>VITE_FINNHUB_KEY</code> to <code style={{background:"var(--surface-2,#f0f0f8)",padding:"1px 6px",borderRadius:5,fontFamily:"monospace"}}>.env</code> to enable. See <b>README</b>.</span>}
+      {isFinnhubConfigured && priceRefresh.lastAt &&
+        <span className="muted small"><span className="hl green" style={{fontSize:12}}>✓ Updated {fmtTime(priceRefresh.lastAt)}</span></span>}
+      {isFinnhubConfigured && !priceRefresh.lastAt && !priceRefresh.busy &&
+        <span className="muted small">Prices are mock data — click to pull live quotes from Finnhub.</span>}
+      {priceRefresh.errors.length>0 &&
+        <span className="muted small" style={{color:"var(--loss)"}}>{priceRefresh.errors.length} symbol{priceRefresh.errors.length>1?"s":""} had no data (kept existing price)</span>}
+    </div>
     <div className="hero-grad"><div>
       <div className="lbl">Total balance · {acct==="all"?"all accounts":ACCOUNTS.find(a=>a.id===acct)?.name}</div>
       <div className="balance tnum">{mask(fmt(sTotal))}</div>
