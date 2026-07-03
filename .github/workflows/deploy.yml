@@ -31,6 +31,7 @@ jobs:
         # (repo Settings → Secrets → Actions) and expose it here:
         env:
           VITE_DATABASE_URL: ${{ secrets.VITE_DATABASE_URL }}
+          VITE_FINNHUB_KEY: ${{ secrets.VITE_FINNHUB_KEY }}
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
