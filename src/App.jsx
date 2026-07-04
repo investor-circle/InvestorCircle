@@ -259,7 +259,10 @@ const recoStats = (recs, pred) => {
 };
 
 const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;
-const Avatar = ({ f, size=40 }) => <div className="av" style={{ width:size, height:size, background:f.color||"var(--grad)", fontSize:size*0.38 }}>{f.initials||initialsOf(f.name||"?")}</div>;
+const Avatar = ({ f, size=40 }) => {
+  if (!f) return <div className="av" style={{ width:size, height:size, background:"var(--grad)", fontSize:size*0.38 }}>?</div>;
+  return <div className="av" style={{ width:size, height:size, background:f.color||"var(--grad)", fontSize:size*0.38 }}>{f.initials||initialsOf(f.name||"?")}</div>;
+};
 
 /* permission helpers (outbound = what I share with them) */
 const PERM_ORDER = { off:0, names:1, full:2 };
@@ -1541,35 +1544,95 @@ function SharePreview({ id, name, cfg, holdings, onClose }) {
 /* =================================================================== HOME */
 function HomeFeed({ setPage, recsReceived, configs, holdings, contacts }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
-  const feed = [
-    { id:"f1", who:"priya", action:"recommended NVDA to Tech Bulls", sym:"NVDA", perf:0.46, time:"2h", body:"AI datacenter demand still underpriced. Adding on dips.", type:"reco" },
-    { id:"f2", who:"elena", action:"shared an update on her crypto allocation", time:"5h", body:"Trimmed ETH and rotated into BTC ahead of the ETF flows. Up 52% on the position.", type:"update" },
-    { id:"f3", who:"marcus", action:"recommended SCHD to Dividend Investors", sym:"SCHD", perf:0.03, time:"1d", body:"Quality dividend growth at a low fee. Good ballast for any book.", type:"reco" },
-    { id:"f4", who:"aisha", action:"started following you", time:"2d", type:"social" },
-  ];
+  // Build feed from real received recommendations (most recent 5, not hidden)
+  const feedRecs = recsReceived.filter(r=>!r.hidden).slice(0,5);
+
+  const contactFor = (r) => {
+    const found = contacts.find(x=>x.id===r.from);
+    if (found) return found;
+    const name = r.byName || "Someone";
+    return { name, initials: initialsOf(name), color:"#8d90ad" };
+  };
+
   return (<div style={{ display:"grid", gridTemplateColumns:"1fr 300px", gap:22 }}>
-    <div><div className="page-head"><div><div className="eyebrow">Welcome back, Jordan</div><div className="page-title">Here's what's moving today</div></div>
-      <button className="btn btn-pri btn-sm" onClick={()=>setPage("recs")}><Lightbulb size={15}/> Recommend an idea</button></div>
-      {feed.map(item=>{ const f=contacts.find(x=>x.id===item.who);
-        return (<div key={item.id} className="feed-card"><div className="feed-head"><Avatar f={f} size={42}/>
-          <div style={{flex:1}}><div><b>{f?.name}</b> <span className="muted">{item.action}</span></div><div className="muted small">{item.time} ago</div></div>
-          {item.type==="reco" && <span className={"pill "+(item.perf>=0?"gain":"loss")}>{item.sym} {fmtPct(item.perf)}</span>}</div>
-          {item.body && <div style={{ fontSize:14.5, color:"var(--ink-soft)", lineHeight:1.55 }}>{item.body}</div>}
-          <div style={{ display:"flex", gap:20, marginTop:14 }}>
-            <span className="feed-act"><MessageSquare size={15}/> Comment</span><span className="feed-act"><Bookmark size={15}/> Save</span>
-            {item.type==="reco" && <span className="feed-act" style={{color:"var(--accent-ink)"}} onClick={()=>setPage("recs")}>Track this <ChevronRight size={14}/></span>}</div>
-        </div>); })}
+    <div>
+      <div className="page-head">
+        <div><div className="eyebrow">Welcome back</div><div className="page-title">Recent activity</div>
+          <div className="page-sub">{recsReceived.length} recommendations received · {contacts.length} connections</div></div>
+        <button className="btn btn-pri btn-sm" onClick={()=>setPage("recs")}><Lightbulb size={15}/> Recommend an idea</button>
+      </div>
+
+      {feedRecs.length===0
+        ? <div className="card"><div className="card-body" style={{padding:"48px 32px",textAlign:"center"}}>
+            <div style={{fontSize:36,marginBottom:12}}>👋</div>
+            <div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Your feed is empty</div>
+            <div className="muted small" style={{marginBottom:20,maxWidth:340,margin:"0 auto 20px"}}>
+              Add people to your network and start receiving investment recommendations — they'll show up here.
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+              <button className="btn btn-pri btn-sm" onClick={()=>setPage("network")}><Users size={15}/> Add connections</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setPage("recs")}><Plus size={15}/> Add a recommendation</button>
+            </div>
+          </div></div>
+        : feedRecs.map(r=>{
+            const cf = contactFor(r);
+            const itm = r.price > r.priceAt;
+            return (<div key={r.id} className="feed-card">
+              <div className="feed-head">
+                <Avatar f={cf} size={42}/>
+                <div style={{flex:1}}>
+                  <div><b>{cf.name}</b> <span className="muted">recommended {r.ticker} — {r.assetName}</span></div>
+                  <div className="muted small">{fmtDate(r.date)}</div>
+                </div>
+                <span className={"pill "+(itm?"gain":"loss")}>{r.ticker} {fmtPct((r.price-r.priceAt)/r.priceAt)}</span>
+              </div>
+              {r.thesis && <div style={{fontSize:14,color:"var(--ink-soft)",lineHeight:1.6,marginBottom:10}}>{r.thesis}</div>}
+              {r.horizon && <div style={{display:"flex",gap:8,marginBottom:10}}>
+                <span className="pill accent" style={{fontSize:11}}>Horizon: {r.horizon}</span>
+                {r.targetPrice && <span className="pill" style={{fontSize:11}}>Target: {fmt(r.targetPrice)}</span>}
+              </div>}
+              <div style={{display:"flex",gap:20,marginTop:4}}>
+                <span className="feed-act"><MessageSquare size={15}/> Comment</span>
+                <span className="feed-act"><Bookmark size={15}/> Save</span>
+                <span className="feed-act" style={{color:"var(--accent-ink)"}} onClick={()=>setPage("recs")}>Track this <ChevronRight size={14}/></span>
+              </div>
+            </div>);
+          })
+      }
     </div>
-    <div><div className="card" style={{ marginBottom:16 }}><div className="card-head">Your portfolio</div><div className="card-body">
-      <div className="balance tnum" style={{ fontSize:30 }}>{fmt(total)}</div>
-      <div className={"delta "+(pnl>=0?"pos":"neg")} style={{marginTop:8, marginBottom:14}}>{pnl>=0?<ArrowUpRight size={16}/>:<ArrowDownRight size={16}/>} {fmtSigned(pnl)} ({fmtPct(pnlPct)})</div>
-      <Sparkline data={SPARK} w={252} h={48}/>
-      <button className="btn btn-ghost btn-sm" style={{width:"100%", justifyContent:"center", marginTop:14}} onClick={()=>setPage("portfolio")}>Open portfolio</button></div></div>
-      <div className="card"><div className="card-head">New for you</div><div className="card-body" style={{ fontSize:13.5 }}>
-        {recsReceived.filter(r=>!r.invested && !r.hidden).slice(0,3).map(r=>{ const f=contacts.find(x=>x.id===r.from), perf=(r.price-r.priceAt)/r.priceAt, who=(f?f.name:(r.byName||"someone")).split(" ")[0];
-          return <div key={r.id} style={{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:"1px solid var(--line)" }}>
-            <span><b>{r.ticker}</b> <span className="muted">from {who}</span></span><span className={"tnum "+(perf>=0?"pos":"neg")}>{fmtPct(perf)}</span></div>; })}
-        <button className="btn btn-soft btn-sm" style={{ width:"100%", justifyContent:"center", marginTop:12 }} onClick={()=>setPage("recs")}>See all recommendations</button></div></div>
+
+    <div>
+      <div className="card" style={{marginBottom:16}}><div className="card-head">Your portfolio</div><div className="card-body">
+        {holdings.length===0
+          ? <div style={{textAlign:"center",padding:"20px 0"}}>
+              <div className="muted small" style={{marginBottom:12}}>No holdings yet</div>
+              <button className="btn btn-soft btn-sm" onClick={()=>setPage("portfolio")}><Plus size={14}/> Add holdings</button>
+            </div>
+          : <>
+              <div className="balance tnum" style={{fontSize:30}}>{fmt(total)}</div>
+              <div className={"delta "+(pnl>=0?"pos":"neg")} style={{marginTop:8,marginBottom:14}}>
+                {pnl>=0?<ArrowUpRight size={16}/>:<ArrowDownRight size={16}/>} {fmtSigned(pnl)} ({fmtPct(pnlPct)})</div>
+              <Sparkline data={SPARK} w={252} h={48}/>
+            </>}
+        <button className="btn btn-ghost btn-sm" style={{width:"100%",justifyContent:"center",marginTop:14}} onClick={()=>setPage("portfolio")}>Open portfolio</button>
+      </div></div>
+
+      <div className="card"><div className="card-head">New for you</div><div className="card-body" style={{fontSize:13.5}}>
+        {recsReceived.filter(r=>!r.invested&&!r.hidden).length===0
+          ? <div className="muted small" style={{padding:"8px 0"}}>No pending recommendations.</div>
+          : recsReceived.filter(r=>!r.invested&&!r.hidden).slice(0,3).map(r=>{
+              const cf = contactFor(r);
+              const perf = r.priceAt ? (r.price-r.priceAt)/r.priceAt : 0;
+              return <div key={r.id} style={{display:"flex",justifyContent:"space-between",padding:"9px 0",borderBottom:"1px solid var(--line)"}}>
+                <span><b>{r.ticker}</b> <span className="muted">from {cf.name.split(" ")[0]}</span></span>
+                <span className={"tnum "+(perf>=0?"pos":"neg")}>{fmtPct(perf)}</span>
+              </div>;
+            })
+        }
+        <button className="btn btn-soft btn-sm" style={{width:"100%",justifyContent:"center",marginTop:12}} onClick={()=>setPage("recs")}>
+          See all recommendations
+        </button>
+      </div></div>
     </div>
   </div>);
 }
