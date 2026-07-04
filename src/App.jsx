@@ -393,12 +393,26 @@ export default function App() {
     if (!user || !sql) return;
     const load = async () => {
       try {
-        const [recv, made] = await Promise.all([
+        const [recv, made, grps, ctcts] = await Promise.all([
           sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='recs_received'`,
           sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='recs_made'`,
+          sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='groups'`,
+          sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='contacts'`,
         ]);
-        if (recv[0]?.data?.length) setRecsReceived(recv[0].data);
-        if (made[0]?.data?.length) setRecsMade(made[0].data);
+        if (recv[0]?.data?.length)  setRecsReceived(recv[0].data);
+        if (made[0]?.data?.length)  setRecsMade(made[0].data);
+        if (grps[0]?.data?.length)  setGroups(grps[0].data);
+        if (ctcts[0]?.data?.length) setContacts(ctcts[0].data);
+        // Load all registered users from user_profiles (created when each user first logs in).
+        // This is the authoritative source — always up to date regardless of in-memory state.
+        try {
+          const profiles = await sql`SELECT * FROM user_profiles ORDER BY created_at`;
+          if (profiles.length) setUsers(profiles.map(p => ({
+            id: p.id, name: p.full_name, email: p.email,
+            role: p.is_admin ? "Admin" : "Investor", status: "Active",
+            accounts: 0, joined: new Date(p.created_at).toLocaleDateString("en-US", { month:"short", year:"numeric" }),
+          })));
+        } catch(e) { /* user_profiles not yet populated — will fill on first login */ }
       } catch(e) {
         console.warn("Data load skipped (Neon not configured or migration not run):", e.message);
       }
@@ -436,6 +450,36 @@ export default function App() {
     }, 800);
     return () => clearTimeout(t);
   }, [recsMade, user?.uid]);
+
+  useEffect(() => {
+    if (!user || !sql) return;
+    const t = setTimeout(async () => {
+      try {
+        await sql`
+          INSERT INTO user_data (user_id, data_type, data)
+          VALUES (${user.uid}, 'groups', ${JSON.stringify(groups)})
+          ON CONFLICT (user_id, data_type)
+          DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+        `;
+      } catch(e) { /* silent */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [groups, user?.uid]);
+
+  useEffect(() => {
+    if (!user || !sql) return;
+    const t = setTimeout(async () => {
+      try {
+        await sql`
+          INSERT INTO user_data (user_id, data_type, data)
+          VALUES (${user.uid}, 'contacts', ${JSON.stringify(contacts)})
+          ON CONFLICT (user_id, data_type)
+          DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+        `;
+      } catch(e) { /* silent */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [contacts, user?.uid]);
 
   // ── Auth gate ───────────────────────────────────────────────────────────────
   if (authLoading) return (
@@ -524,13 +568,13 @@ export default function App() {
             {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
             {isInv && page==="network" && <Network contacts={contacts} setContacts={setContacts} groups={groups} setGroups={setGroups}
                 sharing={sharing} setSharing={setSharing} configs={configs} canCreateGroups={canCreateGroups}
-                pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
+                pendingInvites={pendingInvites} setPendingInvites={setPendingInvites} me={ME}
                 recsReceived={recsReceived} onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}/>}
             {isInv && page==="recs" && <Recommendations recsReceived={recsReceived} setRecsReceived={setRecsReceived} recsMade={recsMade} setRecsMade={setRecsMade}
                 contacts={contacts} groups={groups} assetClasses={assetClasses} setAssetClasses={setAssetClasses} initFilter={recoInit} holdings={holdings}/>}
             {isInv && page==="sharing" && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups}/>}
             {!isInv && page==="users" && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={setContacts}/>}
-            {!isInv && page==="groups" && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts}/>}
+            {!isInv && page==="groups" && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
             {!isInv && page==="configs" && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
           </div>
         </div>
@@ -566,9 +610,10 @@ function RecoBreakdown({ stats, onPnl, pnlLabel }) {
   );
 }
 
-function Network({ contacts, setContacts, groups, setGroups, sharing, setSharing, configs, canCreateGroups, pendingInvites, setPendingInvites, recsReceived, onOpenRecos }) {
+function Network({ contacts, setContacts, groups, setGroups, sharing, setSharing, configs, canCreateGroups, pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me }) {
   const [tab, setTab] = useState("contacts");
-  const myGroups = groups.filter(g=>g.members.includes("me"));
+  const myId = me?.id || "me";
+  const myGroups = groups.filter(g=>g.members.includes("me")||g.members.includes(myId));
   return (
     <>
       <div className="page-head">
@@ -582,7 +627,7 @@ function Network({ contacts, setContacts, groups, setGroups, sharing, setSharing
       {tab==="contacts"
         ? <ContactsSection contacts={contacts} setContacts={setContacts} groups={groups} sharing={sharing} setSharing={setSharing} configs={configs}
             pendingInvites={pendingInvites} setPendingInvites={setPendingInvites} recsReceived={recsReceived} onOpenRecos={onOpenRecos}/>
-        : <GroupsSection groups={groups} setGroups={setGroups} contacts={contacts} configs={configs} canCreateGroups={canCreateGroups}
+        : <GroupsSection groups={groups} setGroups={setGroups} contacts={contacts} configs={configs} canCreateGroups={canCreateGroups} me={me}
             recsReceived={recsReceived} onOpenRecos={onOpenRecos}/>}
     </>
   );
@@ -761,15 +806,16 @@ function PortfolioModal({ contact, onClose }) {
 }
 
 /* ---------- groups ---------- */
-function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, recsReceived, onOpenRecos }) {
+function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, recsReceived, onOpenRecos, me }) {
   const [q, setQ] = useState("");
   const [fAdmin, setFAdmin] = useState("all");
   const [sort, setSort] = useState({ key:"name", dir:"asc" });
   const [expanded, setExpanded] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [addTo, setAddTo] = useState(null);
-  const nameOf = (id) => id==="me" ? "You" : (contacts.find(c=>c.id===id)?.name) || (id==="admin"?"Admin Root":id);
-  const avOf = (id) => id==="me" ? {name:"You",initials:"JA",color:"#6d5df5"} : contacts.find(c=>c.id===id) || {name:id,initials:initialsOf(id),color:"#8d90ad"};
+  const myId = me?.id || "me";
+  const nameOf = (id) => (id==="me"||id===myId) ? (me?.name||"You") : (contacts.find(c=>c.id===id)?.name) || (id==="admin"?"Admin Root":id);
+  const avOf = (id) => (id==="me"||id===myId) ? {name:me?.name||"You",initials:me?.initials||"ME",color:"#6d5df5"} : contacts.find(c=>c.id===id) || {name:id,initials:initialsOf(id),color:"#8d90ad"};
   const statsOf = (g) => recoStats(recsReceived, r => r.shareType==="group" && r.groupId===g.id);
   const myGroups = groups.filter(g=>g.members.includes("me"));
   const rows = useMemo(()=>{
@@ -1573,9 +1619,11 @@ function AddUserModal({ onClose, onAdd }) {
     setBusy(true); setErr("");
     try {
       // Create user in Firebase via secondary app — does NOT sign out admin
-      await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password);
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password);
       await secondaryAuth.signOut();
-      onAdd({ name:name.trim(), email:email.trim(), role, status:"Active", accounts:0, joined:new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
+      // Also write to Neon user_profiles so they appear in the admin list immediately
+      if (sql) { try { await sql`INSERT INTO user_profiles (id, email, full_name, is_admin) VALUES (${cred.user.uid}, ${email.trim()}, ${name.trim()}, false) ON CONFLICT (id) DO NOTHING`; } catch(e) {} }
+      onAdd({ id:cred.user.uid, name:name.trim(), email:email.trim(), role, status:"Active", accounts:0, joined:new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
     } catch(e) {
       const msg = e.code==="auth/email-already-in-use" ? "That email already has an account."
         : e.code==="auth/invalid-email" ? "Please enter a valid email address."
@@ -1598,9 +1646,9 @@ function AddUserModal({ onClose, onAdd }) {
       <button className="btn btn-pri" disabled={!valid||busy} onClick={save}>{busy?<><Loader size={14} className="spin"/> Creating…</>:<><Plus size={14}/> Create account</>}</button></div></div>
   </div></div>);
 }
-function AdminGroups({ groups, setGroups, contacts }) {
+function AdminGroups({ groups, setGroups, contacts, me }) {
   const [showNew, setShowNew] = useState(false);
-  const nameOfM = (id)=> id==="me"?"Jordan Avery":(contacts.find(c=>c.id===id)?.name)||(id==="admin"?"Admin Root":id);
+  const nameOfM = (id) => (id==="me"||id===me?.id) ? (me?.name||"You") : (contacts.find(c=>c.id===id)?.name)||(id==="admin"?"Admin Root":id);
   const removeMember=(gid,mid)=>setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:g.members.filter(m=>m!==mid)}:g));
   return (<>
     <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">Groups</div><div className="page-sub">All groups on the platform · used for sharing and recommendations</div></div>
