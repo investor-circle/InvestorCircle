@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   Home, PieChart, Users, Lightbulb, Shield, Search, Bell, Settings,
   Lock, Eye, EyeOff, TrendingUp, TrendingDown, Plus, X, Check, Send,
@@ -12,6 +12,11 @@ import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
 import { fetchHoldingsByPAN, isValidPAN } from "./services/pan";
 import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
+import { useAuth } from "./AuthContext";
+import { sql } from "./supabaseClient";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { secondaryAuth } from "./firebase";
+import LoginPage from "./LoginPage";
 
 /* ============================================================
    InvestorCircle — social space for investors.
@@ -212,7 +217,6 @@ tr.hiddenrow > td{opacity:.55;}
 `;
 
 /* ---------- mock data ---------- */
-const ME = { id:"me", name:"Jordan Avery", initials:"JA" };
 const TODAY = "2026-06-28";
 
 const ACCOUNTS = [
@@ -307,6 +311,17 @@ const PermBadge = ({ p }) => p==="full" ? <span className="pill accent">Amounts 
 
 /* =================================================================== */
 export default function App() {
+  const { user, profile, logout, isAdmin: userIsAdmin, loading: authLoading } = useAuth();
+
+  // Dynamic ME from the signed-in user
+  const ME = {
+    id: user?.uid || "me",
+    name: profile?.full_name || user?.email?.split("@")[0] || "You",
+    initials: (profile?.full_name || user?.email || "U")
+      .split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),
+    email: user?.email || "",
+  };
+
   const [role, setRole] = useState("investor");
   const [investorPage, setInvestorPage] = useState("home");
   const [adminPage, setAdminPage] = useState("users");
@@ -332,7 +347,6 @@ export default function App() {
   const [pendingInvites, setPendingInvites] = useState([]);
 
   const [sharing, setSharing] = useState(() => {
-    // outbound defaults: every contact "Not shared"; groups keep a demo mix for the Sharing page
     const s = {};
     FRIENDS.forEach(f => s[f.id] = { visibility:"off", level:"names", selected:[] });
     s.g1={visibility:"all",level:"full",selected:[]}; s.g2={visibility:"all",level:"names",selected:[]};
@@ -357,7 +371,7 @@ export default function App() {
       actedList:[{name:"Elena Ruiz",date:"2026-04-07"}], likes:["Elena Ruiz"], dislikes:[], exit:true, exitDate:"2026-06-20" },
   ]);
   const [assetClasses, setAssetClasses] = useState(DEFAULT_CLASSES);
-  const [recoInit, setRecoInit] = useState(null); // {by} or {groupId} to pre-filter Recommendations
+  const [recoInit, setRecoInit] = useState(null);
 
   const [users, setUsers] = useState([
     { id:"u1", name:"Jordan Avery", email:"jordan@circle.io", role:"Investor", status:"Active", accounts:4, joined:"Jan 2026" },
@@ -366,21 +380,81 @@ export default function App() {
     { id:"u4", name:"Elena Ruiz", email:"elena@circle.io", role:"Moderator", status:"Active", accounts:2, joined:"Feb 2026" },
     { id:"u5", name:"David Okafor", email:"david@circle.io", role:"Investor", status:"Suspended", accounts:1, joined:"Mar 2026" },
     { id:"u6", name:"Aisha Khan", email:"aisha@circle.io", role:"Investor", status:"Active", accounts:3, joined:"Mar 2026" },
-    { id:"u7", name:"Sam Patel", email:"sam@circle.io", role:"Investor", status:"Pending", accounts:0, joined:"Jun 2026" },
-    { id:"u8", name:"Admin Root", email:"admin@circle.io", role:"Admin", status:"Active", accounts:0, joined:"Jan 2026" },
   ]);
   const [configs, setConfigs] = useState({
     enableRecommendations:true, allowCryptoAccounts:true, publicFeed:true,
     requireAccountApproval:true, allowAmountSharing:true, defaultDisclosure:"names",
-    maxGroupMembers:8, groupCreationPolicy:"all", // all | mods | admins
+    maxGroupMembers:8, groupCreationPolicy:"all",
   });
   const [providers, setProviders] = useState(["Fidelity","Vanguard","Robinhood","Coinbase","Schwab","E*TRADE"]);
+
+  // ── Load persisted data from Neon on login ──────────────────────────────────
+  useEffect(() => {
+    if (!user || !sql) return;
+    const load = async () => {
+      try {
+        const [recv, made] = await Promise.all([
+          sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='recs_received'`,
+          sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='recs_made'`,
+        ]);
+        if (recv[0]?.data?.length) setRecsReceived(recv[0].data);
+        if (made[0]?.data?.length) setRecsMade(made[0].data);
+      } catch(e) {
+        console.warn("Data load skipped (Neon not configured or migration not run):", e.message);
+      }
+    };
+    load();
+  }, [user?.uid]);
+
+  // ── Sync recommendations to Neon on any change (debounced 800ms) ────────────
+  useEffect(() => {
+    if (!user || !sql) return;
+    const t = setTimeout(async () => {
+      try {
+        await sql`
+          INSERT INTO user_data (user_id, data_type, data)
+          VALUES (${user.uid}, 'recs_received', ${JSON.stringify(recsReceived)})
+          ON CONFLICT (user_id, data_type)
+          DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+        `;
+      } catch(e) { /* silent — Neon not wired yet */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [recsReceived, user?.uid]);
+
+  useEffect(() => {
+    if (!user || !sql) return;
+    const t = setTimeout(async () => {
+      try {
+        await sql`
+          INSERT INTO user_data (user_id, data_type, data)
+          VALUES (${user.uid}, 'recs_made', ${JSON.stringify(recsMade)})
+          ON CONFLICT (user_id, data_type)
+          DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+        `;
+      } catch(e) { /* silent */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [recsMade, user?.uid]);
+
+  // ── Auth gate ───────────────────────────────────────────────────────────────
+  if (authLoading) return (
+    <div style={{ minHeight:"100vh", background:"#0a0b18", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div style={{ color:"#8a8daa", fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:15 }}>Loading…</div>
+    </div>
+  );
+  if (!user) return <LoginPage />;
 
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
   const isInv = role==="investor";
   const page = isInv ? investorPage : adminPage;
   const setPage = isInv ? setInvestorPage : setAdminPage;
-  const canCreateGroups = configs.groupCreationPolicy==="all"; // current user is an Investor
+  const canCreateGroups = configs.groupCreationPolicy==="all";
+
+  // Add signed-in user to contacts if they're not already there
+  const allContacts = contacts.some(c=>c.id===ME.id)
+    ? contacts
+    : [...contacts, { id:ME.id, name:ME.name, initials:ME.initials, color:"#6d5df5", title:"You", shared:{ level:"full", holdings:[] } }];
 
   const nav = isInv ? [
     { id:"home", label:"Home", icon:Home },
@@ -393,6 +467,7 @@ export default function App() {
     { id:"groups", label:"Groups", icon:Layers },
     { id:"configs", label:"App Configuration", icon:Settings },
   ];
+
   const stats = isInv
     ? [["Connections",contacts.length],["Groups",groups.filter(g=>g.members.includes("me")).length],["Accounts",ACCOUNTS.length]]
     : [["Users",users.length],["Active",users.filter(u=>u.status==="Active").length],["Groups",groups.length]];
@@ -404,17 +479,30 @@ export default function App() {
         <div className="sidebar">
           <div className="brand"><div className="mark">ic</div>
             <div><div className="nm">InvestorCircle</div><div className="tag">Social Investing</div></div></div>
-          <div className="viewing" onClick={()=>setRole(isInv?"admin":"investor")} title="Switch role">
-            <div className="ava">{isInv?ME.initials:"AR"}</div>
+          {userIsAdmin && <div className="viewing" onClick={()=>setRole(isInv?"admin":"investor")} title="Switch view">
+            <div className="ava">{isInv ? ME.initials : "AD"}</div>
             <div style={{flex:1}}><div className="vs">Viewing as</div><div className="role">{isInv?"Investor":"Admin"}</div></div>
             <ChevronsUpDown size={17} color="rgba(255,255,255,.85)"/>
-          </div>
+          </div>}
+          {!userIsAdmin && <div className="viewing" style={{cursor:"default"}}>
+            <div className="ava">{ME.initials}</div>
+            <div style={{flex:1}}><div className="vs">Signed in as</div><div className="role">{ME.name}</div></div>
+          </div>}
           <div className="side-label">{isInv?"Menu":"Admin"}</div>
           {nav.map(n=>(
             <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>setPage(n.id)}>
               <n.icon size={19}/> {n.label}{n.badge>0 && <span className="nav-badge">{n.badge}</span>}</div>
           ))}
-          <div className="side-foot">{stats.map(([l,v])=><div key={l} className="side-stat"><span>{l}</span><b>{v}</b></div>)}</div>
+          <div className="side-foot">
+            {stats.map(([l,v])=><div key={l} className="side-stat"><span>{l}</span><b>{v}</b></div>)}
+            <div className="side-stat" style={{marginTop:8,borderTop:"1px solid rgba(255,255,255,.08)",paddingTop:8}}>
+              <span style={{fontSize:11,color:"rgba(255,255,255,.4)"}}>{ME.email}</span></div>
+            <button onClick={logout} style={{
+              marginTop:10, width:"100%", background:"rgba(255,255,255,.07)", border:"1px solid rgba(255,255,255,.1)",
+              borderRadius:8, padding:"7px 10px", color:"rgba(255,255,255,.65)", fontSize:12.5, fontWeight:600,
+              cursor:"pointer", display:"flex", alignItems:"center", gap:7,
+            }}><LogOut size={14}/> Sign out</button>
+          </div>
         </div>
 
         <div className="main">
@@ -422,9 +510,13 @@ export default function App() {
             <div className="searchbox" style={{width:300,maxWidth:"40vw"}}><Search size={16} color="var(--muted)"/><input placeholder="Search investors, tickers…"/></div>
             <div className="tb-right">
               <button className="icon-btn"><Bell size={18}/></button>
-              <div className="avatar-pill"><div className="gava">{isInv?ME.initials:"AR"}</div>
-                <div style={{paddingRight:6}}><div style={{fontSize:13,fontWeight:700,lineHeight:1.2}}>{isInv?ME.name:"Admin Root"}</div>
-                  <div style={{fontSize:11,color:"var(--muted)"}}>{isInv?"Investor":"Administrator"}</div></div></div>
+              <div className="avatar-pill">
+                <div className="gava">{isInv ? ME.initials : "AD"}</div>
+                <div style={{paddingRight:6}}>
+                  <div style={{fontSize:13,fontWeight:700,lineHeight:1.2}}>{isInv ? ME.name : "Admin"}</div>
+                  <div style={{fontSize:11,color:"var(--muted)"}}>{isInv ? "Investor" : "Administrator"}</div>
+                </div>
+              </div>
             </div>
           </div>
           <div className="content">
@@ -437,7 +529,7 @@ export default function App() {
             {isInv && page==="recs" && <Recommendations recsReceived={recsReceived} setRecsReceived={setRecsReceived} recsMade={recsMade} setRecsMade={setRecsMade}
                 contacts={contacts} groups={groups} assetClasses={assetClasses} setAssetClasses={setAssetClasses} initFilter={recoInit} holdings={holdings}/>}
             {isInv && page==="sharing" && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups}/>}
-            {!isInv && page==="users" && <AdminUsers users={users} setUsers={setUsers}/>}
+            {!isInv && page==="users" && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={setContacts}/>}
             {!isInv && page==="groups" && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts}/>}
             {!isInv && page==="configs" && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
           </div>
@@ -1439,7 +1531,7 @@ function HomeFeed({ setPage, recsReceived, configs, holdings, contacts }) {
 }
 
 /* =================================================================== ADMIN */
-function AdminUsers({ users, setUsers }) {
+function AdminUsers({ users, setUsers, contacts, setContacts }) {
   const [q, setQ] = useState(""); const [showAdd, setShowAdd] = useState(false);
   const filtered = users.filter(u=>(u.name+u.email).toLowerCase().includes(q.toLowerCase()));
   const setStatus=(id,status)=>setUsers(us=>us.map(u=>u.id===id?{...u,status}:u));
@@ -1460,19 +1552,50 @@ function AdminUsers({ users, setUsers }) {
           <td style={{textAlign:"center"}}>{u.accounts}</td><td className="muted small">{u.joined}</td>
           <td style={{textAlign:"right"}}>{u.status==="Active"?<button className="btn btn-ghost btn-sm" onClick={()=>setStatus(u.id,"Suspended")}>Suspend</button>:<button className="btn btn-ghost btn-sm" onClick={()=>setStatus(u.id,"Active")}>Activate</button>}</td>
         </tr>))}</tbody></table></div></div>
-    {showAdd && <AddUserModal onClose={()=>setShowAdd(false)} onAdd={(u)=>{ setUsers(us=>[{...u,id:"u"+Date.now()},...us]); setShowAdd(false); }}/>}
+    {showAdd && <AddUserModal onClose={()=>setShowAdd(false)} onAdd={(u)=>{
+      const newUser = {...u, id:"u"+Date.now()};
+      setUsers(us=>[newUser,...us]);
+      setContacts(cs=>[...cs, {
+        id: u.email, name:u.name, initials:initialsOf(u.name),
+        color: CONTACT_COLORS[cs.length % CONTACT_COLORS.length],
+        title: u.role, shared:{ level:"none", holdings:[] }
+      }]);
+      setShowAdd(false);
+    }}/>}
   </>);
 }
 function AddUserModal({ onClose, onAdd }) {
-  const [name,setName]=useState(""); const [email,setEmail]=useState(""); const [role,setRole]=useState("Investor");
+  const [name,setName]=useState(""); const [email,setEmail]=useState("");
+  const [password,setPassword]=useState(""); const [role,setRole]=useState("Investor");
+  const [busy,setBusy]=useState(false); const [err,setErr]=useState("");
+  const valid = name.trim() && email.trim() && password.length>=6;
+  const save = async () => {
+    setBusy(true); setErr("");
+    try {
+      // Create user in Firebase via secondary app — does NOT sign out admin
+      await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password);
+      await secondaryAuth.signOut();
+      onAdd({ name:name.trim(), email:email.trim(), role, status:"Active", accounts:0, joined:new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
+    } catch(e) {
+      const msg = e.code==="auth/email-already-in-use" ? "That email already has an account."
+        : e.code==="auth/invalid-email" ? "Please enter a valid email address."
+        : e.code==="auth/weak-password" ? "Password must be at least 6 characters."
+        : "Could not create user: "+e.message;
+      setErr(msg); setBusy(false);
+    }
+  };
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-head"><h3>Add user</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">
-      <div className="field"><label>Full name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Jane Doe"/></div>
-      <div className="field"><label>Email</label><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="jane@circle.io"/></div>
-      <div className="field"><label>Role</label><select value={role} onChange={e=>setRole(e.target.value)}>{["Investor","Moderator","Admin"].map(r=><option key={r}>{r}</option>)}</select></div></div>
+      <div className="note info" style={{marginBottom:14}}><Shield size={16}/><div>Creates a real login account. The user will be able to sign in immediately with the password you set.</div></div>
+      <div className="field"><label>Full name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Jane Doe" autoFocus/></div>
+      <div className="field"><label>Email address</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="jane@example.com"/></div>
+      <div className="field"><label>Temporary password <span className="muted small">(min 6 characters)</span></label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="They can change it after logging in"/></div>
+      <div className="field"><label>Role</label><select value={role} onChange={e=>setRole(e.target.value)}>{["Investor","Moderator","Admin"].map(r=><option key={r}>{r}</option>)}</select></div>
+      {err && <div className="note warn"><AlertTriangle size={15}/><div>{err}</div></div>}
+    </div>
     <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      <button className="btn btn-pri" disabled={!name||!email} onClick={()=>onAdd({name,email,role,status:"Pending",accounts:0,joined:"Jun 2026"})}>Create user</button></div></div>
+      <button className="btn btn-pri" disabled={!valid||busy} onClick={save}>{busy?<><Loader size={14} className="spin"/> Creating…</>:<><Plus size={14}/> Create account</>}</button></div></div>
   </div></div>);
 }
 function AdminGroups({ groups, setGroups, contacts }) {
