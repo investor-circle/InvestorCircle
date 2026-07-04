@@ -233,7 +233,6 @@ const FRIENDS = []; // starts empty — users add contacts
 
 const GROUPS0 = []; // starts empty — users create groups
 
-const PLATFORM_USERS = {}; // populated from real user_profiles
 
 const SPARK = [62,61,64,63,67,66,69,72,70,74,77,76,80,84,83,88,92,90,95,100];
 
@@ -328,16 +327,19 @@ export default function App() {
     if (!user || !sql) return;
     const load = async () => {
       try {
-        const [recv, made, grps, ctcts] = await Promise.all([
+        const [recv, made, grps, ctcts, shr] = await Promise.all([
           sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='recs_received'`,
           sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='recs_made'`,
           sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='groups'`,
           sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='contacts'`,
+          sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='sharing'`,
         ]);
         if (recv[0]?.data?.length)  setRecsReceived(recv[0].data);
         if (made[0]?.data?.length)  setRecsMade(made[0].data);
         if (grps[0]?.data?.length)  setGroups(grps[0].data);
         if (ctcts[0]?.data?.length) setContacts(ctcts[0].data);
+        if (shr[0]?.data && Object.keys(shr[0].data).length) setSharing(shr[0].data);
+        // Load all registered users from user_profiles
         try {
           const profiles = await sql`SELECT * FROM user_profiles ORDER BY created_at`;
           if (profiles.length) setUsers(profiles.map(p => ({
@@ -384,6 +386,14 @@ export default function App() {
     }, 800);
     return () => clearTimeout(t);
   }, [contacts, user?.uid]);
+
+  useEffect(() => {
+    if (!user || !sql) return;
+    const t = setTimeout(async () => {
+      try { await sql`INSERT INTO user_data (user_id, data_type, data) VALUES (${user.uid}, 'sharing', ${JSON.stringify(sharing)}) ON CONFLICT (user_id, data_type) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`; } catch(e) {}
+    }, 800);
+    return () => clearTimeout(t);
+  }, [sharing, user?.uid]);
 
   // ── Auth gate ───────────────────────────────────────────────────────────────
   if (authLoading) return (
@@ -470,7 +480,7 @@ export default function App() {
                 pendingInvites={pendingInvites} setPendingInvites={setPendingInvites} me={ME}
                 recsReceived={recsReceived} onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}/>}
             {isInv && page==="recs" && <Recommendations recsReceived={recsReceived} setRecsReceived={setRecsReceived} recsMade={recsMade} setRecsMade={setRecsMade}
-                contacts={contacts} groups={groups} assetClasses={assetClasses} setAssetClasses={setAssetClasses} initFilter={recoInit} holdings={holdings}/>}
+                contacts={contacts} groups={groups} assetClasses={assetClasses} setAssetClasses={setAssetClasses} initFilter={recoInit} holdings={holdings} me={ME}/>}
             {isInv && page==="sharing" && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups}/>}
             {!isInv && page==="users" && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={setContacts}/>}
             {!isInv && page==="groups" && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
@@ -525,7 +535,7 @@ function Network({ contacts, setContacts, groups, setGroups, sharing, setSharing
       </div>
       {tab==="contacts"
         ? <ContactsSection contacts={contacts} setContacts={setContacts} groups={groups} sharing={sharing} setSharing={setSharing} configs={configs}
-            pendingInvites={pendingInvites} setPendingInvites={setPendingInvites} recsReceived={recsReceived} onOpenRecos={onOpenRecos}/>
+            pendingInvites={pendingInvites} setPendingInvites={setPendingInvites} recsReceived={recsReceived} onOpenRecos={onOpenRecos} me={me}/>
         : <GroupsSection groups={groups} setGroups={setGroups} contacts={contacts} configs={configs} canCreateGroups={canCreateGroups} me={me}
             recsReceived={recsReceived} onOpenRecos={onOpenRecos}/>}
     </>
@@ -533,7 +543,7 @@ function Network({ contacts, setContacts, groups, setGroups, sharing, setSharing
 }
 
 /* ---------- contacts ---------- */
-function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, configs, pendingInvites, setPendingInvites, recsReceived, onOpenRecos }) {
+function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, configs, pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me }) {
   const [view, setView] = useState("table");
   const [q, setQ] = useState("");
   const [fStyle, setFStyle] = useState("all");
@@ -544,8 +554,9 @@ function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, c
   const [showAdd, setShowAdd] = useState(false);
   const [openContact, setOpenContact] = useState(null);
   const [expandId, setExpandId] = useState(null);
+  const myId = me?.id || "me";
   const styles = [...new Set(contacts.map(c=>c.title))];
-  const commonGroups = (id) => groups.filter(g=>g.members.includes("me") && g.members.includes(id));
+  const commonGroups = (id) => groups.filter(g=>(g.members.includes("me")||g.members.includes(myId)) && g.members.includes(id));
   const statsOf = (c) => recoStats(recsReceived, r => r.from===c.id || (r.byName && r.byName===c.name));
   const rows = useMemo(()=>{
     let r = contacts.map(c=>({ ...c, their: normLevel(c.shared.level), mine: myPerm(sharing,c.id), common: commonGroups(c.id), stats: statsOf(c) }));
@@ -637,20 +648,33 @@ function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, c
         ))}
       </div>
     )}
-    {showAdd && <AddConnectionModal existing={contacts} onClose={()=>setShowAdd(false)} onAddExisting={addExisting} onInvite={addInvite}/>}
+    {showAdd && <AddConnectionModal existing={contacts} me={me} onClose={()=>setShowAdd(false)} onAddExisting={addExisting} onInvite={addInvite}/>}
     {openContact && <PortfolioModal contact={openContact} onClose={()=>setOpenContact(null)}/>}
   </>);
 }
-function AddConnectionModal({ existing, onClose, onAddExisting, onInvite }) {
+function AddConnectionModal({ existing, me, onClose, onAddExisting, onInvite }) {
   const [email, setEmail] = useState("");
   const [result, setResult] = useState(null);
-  const submit = () => {
+  const [busy, setBusy] = useState(false);
+  const myName = me?.name || "your admin";
+  const submit = async () => {
     const e = email.trim().toLowerCase();
     if(!/^\S+@\S+\.\S+$/.test(e)){ setResult({type:"warn", msg:"Please enter a valid email address."}); return; }
-    if(existing.some(c=>c.id===e)){ setResult({type:"warn", msg:"That person is already in your network."}); return; }
-    const user = PLATFORM_USERS[e];
-    if(user){ onAddExisting(e,user); setResult({type:"ok", msg:`${user.name} is already on InvestorCircle and has been added to your network.`}); }
-    else { onInvite(e); setResult({type:"info", msg:`No account found for ${e}. We’ve emailed them an invitation from Jordan Avery to join InvestorCircle — they’ll be added to your network once they sign up.`}); }
+    if(existing.some(c=>c.id===e||c.email===e)){ setResult({type:"warn", msg:"That person is already in your network."}); return; }
+    setBusy(true);
+    if (sql) {
+      try {
+        const rows = await sql`SELECT id, email, full_name FROM user_profiles WHERE email = ${e} LIMIT 1`;
+        if (rows[0]) {
+          onAddExisting(rows[0].id, { name:rows[0].full_name, title:"InvestorCircle member" });
+          setResult({type:"ok", msg:`${rows[0].full_name} is already on InvestorCircle and has been added to your network.`});
+          setBusy(false); return;
+        }
+      } catch(_) {}
+    }
+    onInvite(e);
+    setResult({type:"info", msg:`No account found for ${e}. An invitation will be sent from ${myName} — they will appear in your network once they sign up.`});
+    setBusy(false);
   };
   return (
     <div className="overlay" onClick={onClose}>
@@ -658,21 +682,23 @@ function AddConnectionModal({ existing, onClose, onAddExisting, onInvite }) {
         <div className="modal-head"><h3><UserPlus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add connection</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
         <div className="modal-body">
           <div className="field"><label>Email address</label>
-            <input value={email} onChange={e=>{setEmail(e.target.value);setResult(null);}} placeholder="name@example.com" onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
-          <div className="muted small" style={{marginBottom:result?14:0}}>If they already have an account they’re added instantly. Otherwise they’ll get an email invite mentioning your name.
-            <div style={{marginTop:6}}>Try <b>sam@circle.io</b> (existing user) or any other email (invite).</div></div>
+            <input value={email} onChange={e=>{setEmail(e.target.value);setResult(null);}} placeholder="name@example.com" onKeyDown={e=>e.key==="Enter"&&!busy&&submit()} autoFocus/></div>
+          <div className="muted small" style={{marginBottom:result?14:0}}>
+            If they already have an InvestorCircle account they are added instantly. Otherwise an invitation will be sent mentioning your name.
+          </div>
           {result && <div className={"note "+result.type}>{result.type==="ok"?<Check size={16}/>:<Mail size={16}/>}<div>{result.msg}</div></div>}
         </div>
         <div className="modal-foot"><span/>
           <div style={{display:"flex",gap:10}}>
             <button className="btn btn-ghost" onClick={onClose}>{result?.type==="ok"||result?.type==="info"?"Done":"Cancel"}</button>
-            <button className="btn btn-pri" disabled={!email} onClick={submit}><Send size={15}/> Send</button></div>
+            <button className="btn btn-pri" disabled={!email||busy} onClick={submit}>
+              {busy?<><Loader size={14} className="spin"/> Checking…</>:<><Send size={15}/> Send</>}
+            </button></div>
         </div>
       </div>
     </div>
   );
 }
-
 function PortfolioModal({ contact, onClose }) {
   const full = contact.shared.level==="full";
   return (
@@ -979,7 +1005,7 @@ function Portfolio({ configs, holdings, setHoldings, refreshPrices, priceRefresh
 /* =================================================================== RECOMMENDATIONS */
 const Money = ({ itm }) => <span className={"pill "+(itm?"gain":"loss")}>{itm?<TrendingUp size={12}/>:<TrendingDown size={12}/>} {itm?"In the money":"Out of the money"}</span>;
 const ClassTag = ({ c }) => <span className="ttag nowrap"><span className="dot" style={{ background:classColor(c) }}/>{c}</span>;
-const ret = (r) => (r.price-r.priceAt)/r.priceAt;
+const ret = (r) => (r.priceAt && r.priceAt !== 0) ? (r.price - r.priceAt) / r.priceAt : 0;
 
 const HORIZONS = ["3m","6m","12m",">2Y"];
 const calcTargetDate = (date, horizon) => {
@@ -995,12 +1021,20 @@ const calcTargetDate = (date, horizon) => {
 const getTargetDate = (r) => r.targetDate || calcTargetDate(r.date, r.horizon) || null;
 const isExpired = (r) => { const td=getTargetDate(r); return td ? td < TODAY : false; };
 
-function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade, contacts, groups, assetClasses, setAssetClasses, initFilter, holdings }) {
+function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade, contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me }) {
   const [tab, setTab] = useState("received");
-  const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id==="me"?"You":id);
+  const myId = me?.id || "me";
+  const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id==="me"||id===myId?"You":id);
   const groupName = (id) => groups.find(g=>g.id===id)?.name || id;
   const recipientName = (id) => groups.find(g=>g.id===id)?.name || contactName(id);
-  const reach = (ids) => { const s=new Set(); ids.forEach(id=>{ const g=groups.find(x=>x.id===id); if(g) g.members.filter(m=>m!=="me").forEach(m=>s.add(m)); else s.add(id); }); return s.size; };
+  const reach = (ids) => {
+    const s=new Set();
+    ids.forEach(id=>{ const g=groups.find(x=>x.id===id);
+      if(g) g.members.filter(m=>m!=="me"&&m!==myId).forEach(m=>s.add(m));
+      else if(id!=="me"&&id!==myId) s.add(id);
+    });
+    return s.size;
+  };
   const forwardReco = (r, targetIds, note) => {
     const orig = r.byName || contactName(r.from);
     setRecsMade(ms=>[{ id:"m"+Date.now(), assetName:r.assetName, ticker:r.ticker, assetClass:r.assetClass, date:TODAY, recipients:targetIds,
@@ -1015,7 +1049,7 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
       <button className={tab==="made"?"active":""} onClick={()=>setTab("made")}>Made by me · {recsMade.length}</button></div>
     {tab==="received"
       ? <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} contactName={contactName} groupName={groupName} assetClasses={assetClasses} contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId} onForward={forwardReco}/>
-      : <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName} reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses} setAssetClasses={setAssetClasses} holdings={holdings}/>}
+      : <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName} reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses} setAssetClasses={setAssetClasses} holdings={holdings} me={me}/>}
   </>);
 }
 
@@ -1269,7 +1303,7 @@ function PanPullModal({ onClose, onApply }) {
   </div></div>);
 }
 
-function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings }) {
+function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings, me }) {
   const [q,setQ]=useState(""); const [fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fHorizon,setFHorizon]=useState("all");
   const [showExpired,setShowExpired]=useState(false);
   const [sort,setSort]=useState({key:"date",dir:"desc"}); const [expanded,setExpanded]=useState(null); const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
@@ -1377,7 +1411,7 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
         </React.Fragment>);
       })}</tbody>
     </table></div></div></div>}
-    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecs(rs=>[rec,...rs]); setShowNew(false); }}/>}
+    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} me={me} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecs(rs=>[rec,...rs]); setShowNew(false); }}/>}
     {share && <ShareRecoModal reco={share} mode="share" contacts={contacts} groups={groups} onClose={()=>setShare(null)}
         onShare={(targets)=>{ reShare(share,targets); setShare(null); }}/>}
   </>);
@@ -1419,7 +1453,9 @@ function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAdd }) {
   </div></div>);
 }
 
-function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, onClose, onCreate }) {
+function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, me, onClose, onCreate }) {
+  const myId = me?.id || "me";
+  const myGroups = groups.filter(g=>g.members.includes("me")||g.members.includes(myId));
   const [assetName,setAssetName]=useState(""); const [ticker,setTicker]=useState(""); const [cls,setCls]=useState(assetClasses[0]);
   const [recoPrice,setRecoPrice]=useState(""); const [targetPrice,setTargetPrice]=useState(""); const [horizon,setHorizon]=useState("12m");
   const [thesis,setThesis]=useState(""); const [targets,setTargets]=useState([]); const [adding,setAdding]=useState(false); const [newCat,setNewCat]=useState("");
@@ -1472,8 +1508,8 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
         {contacts.length===0 ? <div className="muted small">No contacts yet — add contacts first.</div> :
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{contacts.map(c=><span key={c.id} className={"chip"+(targets.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{targets.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}</div>}</div>
       <div className="field"><label>Send to groups</label>
-        {groups.length===0 ? <div className="muted small">No groups yet — create a group first.</div> :
-        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{groups.map(g=><span key={g.id} className={"chip"+(targets.includes(g.id)?" sel":"")} onClick={()=>toggle(g.id)}>{targets.includes(g.id)&&<Check size={13}/>}<Layers size={13}/>{g.name}</span>)}</div>}</div>
+        {myGroups.length===0 ? <div className="muted small">No groups yet — create a group first.</div> :
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{myGroups.map(g=><span key={g.id} className={"chip"+(targets.includes(g.id)?" sel":"")} onClick={()=>toggle(g.id)}>{targets.includes(g.id)&&<Check size={13}/>}<Layers size={13}/>{g.name}</span>)}</div>}</div>
     </div>
     <div className="modal-foot">
       <span className="muted small">Target date: {calcTargetDate(TODAY,horizon) ? fmtDate(calcTargetDate(TODAY,horizon)) : "—"}</span>
@@ -1679,18 +1715,31 @@ function AddUserModal({ onClose, onAdd }) {
   const save = async () => {
     setBusy(true); setErr("");
     try {
-      // Create user in Firebase via secondary app — does NOT sign out admin
       const cred = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password);
       await secondaryAuth.signOut();
-      // Also write to Neon user_profiles so they appear in the admin list immediately
-      if (sql) { try { await sql`INSERT INTO user_profiles (id, email, full_name, is_admin) VALUES (${cred.user.uid}, ${email.trim()}, ${name.trim()}, false) ON CONFLICT (id) DO NOTHING`; } catch(e) {} }
+      if (sql) { try { await sql`INSERT INTO user_profiles (id, email, full_name, is_admin) VALUES (${cred.user.uid}, ${email.trim()}, ${name.trim()}, false) ON CONFLICT (id) DO NOTHING`; } catch(e) { console.warn("user_profiles insert failed:", e.message); } }
       onAdd({ id:cred.user.uid, name:name.trim(), email:email.trim(), role, status:"Active", accounts:0, joined:new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
     } catch(e) {
-      const msg = e.code==="auth/email-already-in-use" ? "That email already has an account."
-        : e.code==="auth/invalid-email" ? "Please enter a valid email address."
-        : e.code==="auth/weak-password" ? "Password must be at least 6 characters."
-        : "Could not create user: "+e.message;
-      setErr(msg); setBusy(false);
+      if (e.code === "auth/email-already-in-use") {
+        // User exists in Firebase but may not be in Neon user_profiles yet.
+        // Try to look them up and surface them in the admin list.
+        if (sql) {
+          try {
+            const rows = await sql`SELECT * FROM user_profiles WHERE email = ${email.trim().toLowerCase()} LIMIT 1`;
+            if (rows[0]) {
+              onAdd({ id:rows[0].id, name:rows[0].full_name, email:rows[0].email, role:rows[0].is_admin?"Admin":"Investor", status:"Active", accounts:0, joined:new Date(rows[0].created_at).toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
+              setBusy(false); return; // successfully recovered
+            }
+          } catch(_) {}
+        }
+        setErr("An account with this email already exists in Firebase. If they are not showing in the list they have not logged in yet — ask them to sign in and they will appear automatically.");
+      } else {
+        const msg = e.code==="auth/invalid-email" ? "Please enter a valid email address."
+          : e.code==="auth/weak-password" ? "Password must be at least 6 characters."
+          : "Could not create user: " + (e.message || "unknown error");
+        setErr(msg);
+      }
+      setBusy(false);
     }
   };
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
