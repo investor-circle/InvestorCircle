@@ -6,7 +6,7 @@ import {
   Bookmark, ChevronRight, ChevronDown, ChevronsUpDown, Sparkles, ArrowUpDown,
   List, Table as TableIcon, Mail, UserPlus, Calendar, Crown,
   ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
-  Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw
+  Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil
 } from "lucide-react";
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
@@ -217,64 +217,22 @@ tr.hiddenrow > td{opacity:.55;}
 `;
 
 /* ---------- mock data ---------- */
-const TODAY = "2026-06-28";
+const TODAY = new Date().toISOString().slice(0, 10); // always today
 
-const ACCOUNTS = [
-  { id:"fid", name:"Fidelity 401(k)" }, { id:"van", name:"Vanguard Roth IRA" },
-  { id:"rh", name:"Robinhood Individual" }, { id:"cb", name:"Coinbase" },
-];
+const ACCOUNTS = []; // populated when user links accounts
 
-const HOLDINGS = [
-  { id:"h1", sym:"AAPL", name:"Apple Inc.", type:"Stock",  acct:"rh",  sh:50,  cost:145, price:213.4 },
-  { id:"h2", sym:"MSFT", name:"Microsoft Corp.", type:"Stock", acct:"fid", sh:30, cost:280, price:478 },
-  { id:"h3", sym:"VOO",  name:"Vanguard S&P 500 ETF", type:"ETF", acct:"van", sh:40, cost:380, price:545 },
-  { id:"h4", sym:"NVDA", name:"NVIDIA Corp.", type:"Stock", acct:"rh", sh:120, cost:95, price:172 },
-  { id:"h5", sym:"VTSAX",name:"Vanguard Total Stock Mkt", type:"Fund", acct:"van", sh:120, cost:105, price:142 },
-  { id:"h6", sym:"TSLA", name:"Tesla Inc.", type:"Stock", acct:"rh", sh:15, cost:240, price:205 },
-  { id:"h7", sym:"JEPI", name:"JPMorgan Equity Premium ETF", type:"ETF", acct:"fid", sh:200, cost:55, price:58.2 },
-  { id:"h8", sym:"BTC",  name:"Bitcoin", type:"Crypto", acct:"cb", sh:0.5, cost:42000, price:61000 },
-];
+const HOLDINGS = []; // starts empty — user adds holdings or imports
 const TYPE_COLORS = { Stock:"#6d5df5", ETF:"#9a55ee", Fund:"#cf52d8", Crypto:"#2b2b40" };
 const CONTACT_COLORS = ["#6d5df5","#15924e","#cf52d8","#9a55ee","#5a49e6","#0ea5b7","#d97706","#be185d"];
 const DEFAULT_CLASSES = ["Equity","Bonds","ETF","Mutual Funds","Crypto","Metals","F&P","Others"];
 const CLASS_COLOR = { Equity:"#6d5df5", Bonds:"#0ea5b7", ETF:"#9a55ee", "Mutual Funds":"#cf52d8", Crypto:"#d97706", Metals:"#64748b", "F&P":"#15924e", Others:"#8d90ad" };
 const classColor = (c) => CLASS_COLOR[c] || "#8d90ad";
 
-const FRIENDS = [
-  { id:"priya", name:"Priya Sharma", initials:"PS", color:"#6d5df5", title:"Growth investor",
-    shared:{ level:"full", holdings:[
-      { sym:"NVDA", name:"NVIDIA", type:"Stock", value:41280, pnlPct:0.81 },
-      { sym:"PLTR", name:"Palantir", type:"Stock", value:18600, pnlPct:1.34 },
-      { sym:"VOO", name:"Vanguard S&P 500", type:"ETF", value:54500, pnlPct:0.43 }]}},
-  { id:"marcus", name:"Marcus Lee", initials:"ML", color:"#15924e", title:"Dividend & income",
-    shared:{ level:"names", holdings:[
-      { sym:"SCHD", name:"Schwab US Dividend" }, { sym:"O", name:"Realty Income" },
-      { sym:"JEPI", name:"JPMorgan Equity Prem." }, { sym:"KO", name:"Coca-Cola" }]}},
-  { id:"elena", name:"Elena Ruiz", initials:"ER", color:"#cf52d8", title:"Crypto & alts",
-    shared:{ level:"full", holdings:[
-      { sym:"BTC", name:"Bitcoin", type:"Crypto", value:122000, pnlPct:0.52 },
-      { sym:"ETH", name:"Ethereum", type:"Crypto", value:38000, pnlPct:-0.12 }]}},
-  { id:"david", name:"David Okafor", initials:"DO", color:"#9a55ee", title:"Index & chill",
-    shared:{ level:"none", holdings:[] }},
-  { id:"aisha", name:"Aisha Khan", initials:"AK", color:"#5a49e6", title:"Small-cap value",
-    shared:{ level:"full", holdings:[
-      { sym:"VBR", name:"Vanguard Small-Cap Value", type:"ETF", value:29000, pnlPct:0.22 },
-      { sym:"AAPL", name:"Apple", type:"Stock", value:21300, pnlPct:0.47 }]}},
-];
+const FRIENDS = []; // starts empty — users add contacts
 
-const GROUPS0 = [
-  { id:"g1", name:"Tech Bulls", created:"2026-02-03", members:["me","priya","aisha"], admins:["me"], color:"#6d5df5" },
-  { id:"g2", name:"Dividend Investors", created:"2026-01-18", members:["me","marcus","david"], admins:["marcus"], color:"#15924e" },
-  { id:"g3", name:"Crypto Crew", created:"2026-03-22", members:["me","elena"], admins:["elena"], color:"#cf52d8" },
-  { id:"g4", name:"College Buddies", created:"2026-01-05", members:["me","priya","marcus","david","elena","aisha"], admins:["me","priya"], color:"#9a55ee" },
-];
+const GROUPS0 = []; // starts empty — users create groups
 
-/* people who already have an account (for the "add by email" flow) */
-const PLATFORM_USERS = {
-  "sam@circle.io":{ name:"Sam Patel", title:"ETF indexer" },
-  "noah@circle.io":{ name:"Noah Kim", title:"Momentum trader" },
-  "lena@circle.io":{ name:"Lena Brooks", title:"Value & dividends" },
-};
+const PLATFORM_USERS = {}; // populated from real user_profiles
 
 const SPARK = [62,61,64,63,67,66,69,72,70,74,77,76,80,84,83,88,92,90,95,100];
 
@@ -346,41 +304,14 @@ export default function App() {
   };
   const [pendingInvites, setPendingInvites] = useState([]);
 
-  const [sharing, setSharing] = useState(() => {
-    const s = {};
-    FRIENDS.forEach(f => s[f.id] = { visibility:"off", level:"names", selected:[] });
-    s.g1={visibility:"all",level:"full",selected:[]}; s.g2={visibility:"all",level:"names",selected:[]};
-    s.g3={visibility:"off",level:"names",selected:[]}; s.g4={visibility:"selected",level:"names",selected:["h1","h2","h3"]};
-    return s;
-  });
+  const [sharing, setSharing] = useState({});
 
-  const [recsReceived, setRecsReceived] = useState([
-    { id:"r1", from:"priya", sharedBy:"marcus", assetName:"NVIDIA Corp.", ticker:"NVDA", assetClass:"Equity", date:"2026-04-02", priceAt:118, price:172, invested:true, investedPrice:120, recoActed:4, shareType:"group", groupId:"g1", reaction:"like", likes:12, dislikes:1, exitSignal:false, exitDate:null, hidden:false, thesis:"AI datacenter demand is still underpriced by the street. Margins expanding as Blackwell ramps; I'm adding on any dip below 120." },
-    { id:"r2", from:"elena", assetName:"Bitcoin", ticker:"BTC", assetClass:"Crypto", date:"2026-05-09", priceAt:52000, price:61000, invested:true, investedPrice:53000, recoActed:2, shareType:"one", reaction:"none", likes:8, dislikes:0, exitSignal:true, exitDate:"2026-06-27", hidden:false, thesis:"ETF inflows are structurally changing demand. Sized as a core alt position — but I've now flagged an exit as we hit my target." },
-    { id:"r3", from:"marcus", assetName:"Schwab US Dividend", ticker:"SCHD", assetClass:"ETF", date:"2026-05-20", priceAt:79, price:81.5, invested:false, recoActed:6, shareType:"group", groupId:"g2", reaction:"none", likes:5, dislikes:2, exitSignal:false, exitDate:null, hidden:false, thesis:"Quality dividend growth at a low fee. Good ballast for any book; reinvest the distributions." },
-    { id:"r4", from:"aisha", assetName:"Tesla Inc.", ticker:"TSLA", assetClass:"Equity", date:"2026-03-11", priceAt:248, price:205, invested:false, recoActed:1, shareType:"one", reaction:"dislike", likes:3, dislikes:4, exitSignal:false, exitDate:null, hidden:false, thesis:"Energy + robotaxi optionality. High volatility — only size this if you can stomach the drawdowns." },
-    { id:"r5", from:"priya", assetName:"Palantir", ticker:"PLTR", assetClass:"Equity", date:"2026-04-22", priceAt:24, price:31, invested:false, recoActed:3, shareType:"group", groupId:"g1", reaction:"none", likes:9, dislikes:1, exitSignal:false, exitDate:null, hidden:false, thesis:"Commercial AIP traction is the real story, not the government book. Watch net dollar retention." },
-    { id:"r6", from:"marcus", assetName:"Coca-Cola", ticker:"KO", assetClass:"Equity", date:"2026-02-15", priceAt:60, price:63, invested:false, recoActed:2, shareType:"one", reaction:"none", likes:2, dislikes:0, exitSignal:false, exitDate:null, hidden:true, thesis:"Defensive compounder with pricing power. Nothing exciting — a sleep-well-at-night holding." },
-  ]);
-  const [recsMade, setRecsMade] = useState([
-    { id:"m1", assetName:"Vanguard S&P 500 ETF", ticker:"VOO", assetClass:"ETF", date:"2026-02-14", recipients:["g4"], priceAt:498, price:545, thesis:"Boring beats clever. A fine core holding for everyone.",
-      actedList:[{name:"Priya Sharma",date:"2026-02-16"},{name:"David Okafor",date:"2026-02-20"},{name:"Aisha Khan",date:"2026-03-01"}], likes:["Priya Sharma","Elena Ruiz","Aisha Khan","Marcus Lee"], dislikes:["David Okafor"], exit:false, exitDate:null },
-    { id:"m2", assetName:"Microsoft", ticker:"MSFT", assetClass:"Equity", date:"2026-01-30", recipients:["priya","aisha"], priceAt:410, price:478, thesis:"Copilot monetization ramping faster than consensus.",
-      actedList:[{name:"Aisha Khan",date:"2026-02-02"}], likes:["Priya Sharma"], dislikes:[], exit:false, exitDate:null },
-    { id:"m3", assetName:"SPDR Gold Shares", ticker:"GLD", assetClass:"Metals", date:"2026-04-05", recipients:["g3"], priceAt:210, price:222, thesis:"Hedge against rate-cut risk. Taking profits now.",
-      actedList:[{name:"Elena Ruiz",date:"2026-04-07"}], likes:["Elena Ruiz"], dislikes:[], exit:true, exitDate:"2026-06-20" },
-  ]);
+  const [recsReceived, setRecsReceived] = useState([]);
+  const [recsMade, setRecsMade] = useState([]);
   const [assetClasses, setAssetClasses] = useState(DEFAULT_CLASSES);
   const [recoInit, setRecoInit] = useState(null);
 
-  const [users, setUsers] = useState([
-    { id:"u1", name:"Jordan Avery", email:"jordan@circle.io", role:"Investor", status:"Active", accounts:4, joined:"Jan 2026" },
-    { id:"u2", name:"Priya Sharma", email:"priya@circle.io", role:"Investor", status:"Active", accounts:3, joined:"Jan 2026" },
-    { id:"u3", name:"Marcus Lee", email:"marcus@circle.io", role:"Investor", status:"Active", accounts:2, joined:"Feb 2026" },
-    { id:"u4", name:"Elena Ruiz", email:"elena@circle.io", role:"Moderator", status:"Active", accounts:2, joined:"Feb 2026" },
-    { id:"u5", name:"David Okafor", email:"david@circle.io", role:"Investor", status:"Suspended", accounts:1, joined:"Mar 2026" },
-    { id:"u6", name:"Aisha Khan", email:"aisha@circle.io", role:"Investor", status:"Active", accounts:3, joined:"Mar 2026" },
-  ]);
+  const [users, setUsers] = useState([]);
   const [configs, setConfigs] = useState({
     enableRecommendations:true, allowCryptoAccounts:true, publicFeed:true,
     requireAccountApproval:true, allowAmountSharing:true, defaultDisclosure:"names",
@@ -403,8 +334,6 @@ export default function App() {
         if (made[0]?.data?.length)  setRecsMade(made[0].data);
         if (grps[0]?.data?.length)  setGroups(grps[0].data);
         if (ctcts[0]?.data?.length) setContacts(ctcts[0].data);
-        // Load all registered users from user_profiles (created when each user first logs in).
-        // This is the authoritative source — always up to date regardless of in-memory state.
         try {
           const profiles = await sql`SELECT * FROM user_profiles ORDER BY created_at`;
           if (profiles.length) setUsers(profiles.map(p => ({
@@ -412,26 +341,18 @@ export default function App() {
             role: p.is_admin ? "Admin" : "Investor", status: "Active",
             accounts: 0, joined: new Date(p.created_at).toLocaleDateString("en-US", { month:"short", year:"numeric" }),
           })));
-        } catch(e) { /* user_profiles not yet populated — will fill on first login */ }
+        } catch(e) {}
       } catch(e) {
-        console.warn("Data load skipped (Neon not configured or migration not run):", e.message);
+        console.warn("Data load skipped:", e.message);
       }
     };
     load();
   }, [user?.uid]);
 
-  // ── Sync recommendations to Neon on any change (debounced 800ms) ────────────
   useEffect(() => {
     if (!user || !sql) return;
     const t = setTimeout(async () => {
-      try {
-        await sql`
-          INSERT INTO user_data (user_id, data_type, data)
-          VALUES (${user.uid}, 'recs_received', ${JSON.stringify(recsReceived)})
-          ON CONFLICT (user_id, data_type)
-          DO UPDATE SET data = EXCLUDED.data, updated_at = now()
-        `;
-      } catch(e) { /* silent — Neon not wired yet */ }
+      try { await sql`INSERT INTO user_data (user_id, data_type, data) VALUES (${user.uid}, 'recs_received', ${JSON.stringify(recsReceived)}) ON CONFLICT (user_id, data_type) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`; } catch(e) {}
     }, 800);
     return () => clearTimeout(t);
   }, [recsReceived, user?.uid]);
@@ -439,14 +360,7 @@ export default function App() {
   useEffect(() => {
     if (!user || !sql) return;
     const t = setTimeout(async () => {
-      try {
-        await sql`
-          INSERT INTO user_data (user_id, data_type, data)
-          VALUES (${user.uid}, 'recs_made', ${JSON.stringify(recsMade)})
-          ON CONFLICT (user_id, data_type)
-          DO UPDATE SET data = EXCLUDED.data, updated_at = now()
-        `;
-      } catch(e) { /* silent */ }
+      try { await sql`INSERT INTO user_data (user_id, data_type, data) VALUES (${user.uid}, 'recs_made', ${JSON.stringify(recsMade)}) ON CONFLICT (user_id, data_type) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`; } catch(e) {}
     }, 800);
     return () => clearTimeout(t);
   }, [recsMade, user?.uid]);
@@ -454,14 +368,7 @@ export default function App() {
   useEffect(() => {
     if (!user || !sql) return;
     const t = setTimeout(async () => {
-      try {
-        await sql`
-          INSERT INTO user_data (user_id, data_type, data)
-          VALUES (${user.uid}, 'groups', ${JSON.stringify(groups)})
-          ON CONFLICT (user_id, data_type)
-          DO UPDATE SET data = EXCLUDED.data, updated_at = now()
-        `;
-      } catch(e) { /* silent */ }
+      try { await sql`INSERT INTO user_data (user_id, data_type, data) VALUES (${user.uid}, 'groups', ${JSON.stringify(groups)}) ON CONFLICT (user_id, data_type) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`; } catch(e) {}
     }, 800);
     return () => clearTimeout(t);
   }, [groups, user?.uid]);
@@ -469,14 +376,7 @@ export default function App() {
   useEffect(() => {
     if (!user || !sql) return;
     const t = setTimeout(async () => {
-      try {
-        await sql`
-          INSERT INTO user_data (user_id, data_type, data)
-          VALUES (${user.uid}, 'contacts', ${JSON.stringify(contacts)})
-          ON CONFLICT (user_id, data_type)
-          DO UPDATE SET data = EXCLUDED.data, updated_at = now()
-        `;
-      } catch(e) { /* silent */ }
+      try { await sql`INSERT INTO user_data (user_id, data_type, data) VALUES (${user.uid}, 'contacts', ${JSON.stringify(contacts)}) ON CONFLICT (user_id, data_type) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`; } catch(e) {}
     }, 800);
     return () => clearTimeout(t);
   }, [contacts, user?.uid]);
@@ -495,11 +395,6 @@ export default function App() {
   const setPage = isInv ? setInvestorPage : setAdminPage;
   const canCreateGroups = configs.groupCreationPolicy==="all";
 
-  // Add signed-in user to contacts if they're not already there
-  const allContacts = contacts.some(c=>c.id===ME.id)
-    ? contacts
-    : [...contacts, { id:ME.id, name:ME.name, initials:ME.initials, color:"#6d5df5", title:"You", shared:{ level:"full", holdings:[] } }];
-
   const nav = isInv ? [
     { id:"home", label:"Home", icon:Home },
     { id:"portfolio", label:"My Portfolio", icon:PieChart },
@@ -513,7 +408,7 @@ export default function App() {
   ];
 
   const stats = isInv
-    ? [["Connections",contacts.length],["Groups",groups.filter(g=>g.members.includes("me")).length],["Accounts",ACCOUNTS.length]]
+    ? [["Connections",contacts.length],["Groups",groups.filter(g=>g.members.includes("me")||g.members.includes(ME.id)).length],["Accounts",ACCOUNTS.length]]
     : [["Users",users.length],["Active",users.filter(u=>u.status==="Active").length],["Groups",groups.length]];
 
   return (
@@ -618,7 +513,7 @@ function Network({ contacts, setContacts, groups, setGroups, sharing, setSharing
     <>
       <div className="page-head">
         <div><div className="eyebrow">Network</div><div className="page-title">Your circle</div>
-          <div className="page-sub">Manage who you’re connected to and the groups you share with</div></div>
+          <div className="page-sub">Manage who you're connected to and the groups you share with</div></div>
       </div>
       <div className="seg" style={{ marginBottom:20 }}>
         <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}><Users size={15}/> Contacts · {contacts.length}</button>
@@ -669,13 +564,12 @@ function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, c
   },[contacts,sharing,groups,recsReceived,q,fStyle,fGroup,fTheir,fMine,sort]);
   const addExisting = (email,info) => {
     setContacts(cs=>[...cs,{ id:email, name:info.name, initials:initialsOf(info.name), color:CONTACT_COLORS[cs.length%CONTACT_COLORS.length], title:info.title||"New connection", shared:{ level:"none", holdings:[] } }]);
-    // Apply the admin-configured default disclosure level for new connections (App Configuration → Privacy defaults).
     const dflt = configs.defaultDisclosure || "names";
     setSharing(s=>({ ...s, [email]: { visibility: dflt==="none"?"off":"all", level: dflt==="full"?"full":"names", selected:[] } }));
   };
   const addInvite = (email) => setPendingInvites(p=> p.some(x=>x.email===email)?p:[...p,{email,date:TODAY}]);
   return (<>
-    {pendingInvites.length>0 && <div className="note info" style={{marginBottom:14}}><Mail size={16}/><div>Pending email invitations: {pendingInvites.map(p=>p.email).join(", ")}. They’ll join your network once they create an account.</div></div>}
+    {pendingInvites.length>0 && <div className="note info" style={{marginBottom:14}}><Mail size={16}/><div>Pending email invitations: {pendingInvites.map(p=>p.email).join(", ")}. They'll join your network once they create an account.</div></div>}
     <div className="toolbar">
       <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search contacts by name or style…"/></div>
       <div className="fl"><span className="lab">Style</span><select className="inline-select sm" value={fStyle} onChange={e=>setFStyle(e.target.value)}><option value="all">All</option>{styles.map(s=><option key={s}>{s}</option>)}</select></div>
@@ -685,7 +579,7 @@ function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, c
       <div className="seg tiny"><button className={view==="list"?"active":""} onClick={()=>setView("list")}><List size={14}/> List</button><button className={view==="table"?"active":""} onClick={()=>setView("table")}><TableIcon size={14}/> Table</button></div>
       <button className="btn btn-pri btn-sm" onClick={()=>setShowAdd(true)}><UserPlus size={15}/> Add connection</button>
     </div>
-    {rows.length===0 && <div className="card"><div className="empty">No contacts match your filters.</div></div>}
+    {rows.length===0 && <div className="card"><div className="empty">{contacts.length===0 ? "No contacts yet. Add people from your network to get started." : "No contacts match your filters."}</div></div>}
     {view==="table" && rows.length>0 && (
       <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:1080}}>
         <thead><tr>
@@ -731,9 +625,6 @@ function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, c
               <div><div className="small muted">I acted on</div><div style={{fontWeight:800,fontSize:18}}>{c.stats.acted}</div></div>
               <div onClick={()=>onOpenRecos({by:c.name})} style={{cursor:"pointer"}}><div className="small muted" style={{color:"var(--accent-ink)"}}>My P&L ↗</div><div className={"tnum "+(c.stats.pnl>=0?"pos":"neg")} style={{fontWeight:800,fontSize:18}}>{fmtSigned(c.stats.pnl)}</div></div>
             </div>
-            <div className="small muted" style={{marginBottom:6}}>Groups in common</div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:13}}>{c.common.length===0 ? <span className="muted small">None yet</span> : c.common.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>
-            <div className="small muted" style={{marginBottom:6}}>I share with them</div>
             <div className="seg tiny" style={{marginBottom:14,width:"100%"}}>
               {["off","names","full"].map(v=><button key={v} style={{flex:1,justifyContent:"center"}} className={c.mine===v?"active":""} onClick={()=>setMyPerm(setSharing,c.id,v)}>{v==="off"?"Not shared":v==="names"?"Names":"+ P&L"}</button>)}</div>
             <button className="btn btn-soft btn-sm" style={{width:"100%",justifyContent:"center"}} disabled={c.their==="off"} onClick={()=>setOpenContact(c)}>
@@ -746,7 +637,6 @@ function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, c
     {openContact && <PortfolioModal contact={openContact} onClose={()=>setOpenContact(null)}/>}
   </>);
 }
-
 function AddConnectionModal({ existing, onClose, onAddExisting, onInvite }) {
   const [email, setEmail] = useState("");
   const [result, setResult] = useState(null);
@@ -813,15 +703,16 @@ function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, 
   const [expanded, setExpanded] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [addTo, setAddTo] = useState(null);
+  const [editGroup, setEditGroup] = useState(null);
   const myId = me?.id || "me";
   const nameOf = (id) => (id==="me"||id===myId) ? (me?.name||"You") : (contacts.find(c=>c.id===id)?.name) || (id==="admin"?"Admin Root":id);
   const avOf = (id) => (id==="me"||id===myId) ? {name:me?.name||"You",initials:me?.initials||"ME",color:"#6d5df5"} : contacts.find(c=>c.id===id) || {name:id,initials:initialsOf(id),color:"#8d90ad"};
   const statsOf = (g) => recoStats(recsReceived, r => r.shareType==="group" && r.groupId===g.id);
-  const myGroups = groups.filter(g=>g.members.includes("me"));
+  const myGroups = groups.filter(g=>g.members.includes("me")||g.members.includes(myId));
   const rows = useMemo(()=>{
     let r = myGroups.map(g=>({ ...g, stats: statsOf(g) }));
     if(q.trim()){ const s=q.toLowerCase(); r=r.filter(g=>(g.name+" "+g.admins.map(nameOf).join(" ")).toLowerCase().includes(s)); }
-    if(fAdmin==="mine") r=r.filter(g=>g.admins.includes("me"));
+    if(fAdmin==="mine") r=r.filter(g=>g.admins.includes("me")||g.admins.includes(myId));
     const dir = sort.dir==="asc"?1:-1;
     r.sort((a,b)=>{ let av,bv;
       if(sort.key==="name"){av=a.name.toLowerCase();bv=b.name.toLowerCase();}
@@ -833,7 +724,14 @@ function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, 
       return av<bv?-dir:av>bv?dir:0; });
     return r;
   },[groups,q,fAdmin,sort,contacts,recsReceived]);
-  const createGroup = (name, memberIds) => setGroups(gs=>[...gs,{ id:"g"+Date.now(), name, created:TODAY, members:["me",...memberIds], admins:["me"], color:CONTACT_COLORS[gs.length%CONTACT_COLORS.length] }]);
+  const createGroup = (name, memberIds) => {
+    const dup = groups.some(g=>(g.admins.includes("me")||g.admins.includes(myId)) && g.name.toLowerCase()===name.toLowerCase());
+    if(dup){ alert(`You already have a group named "${name}". Please choose a different name.`); return; }
+    setGroups(gs=>[...gs,{ id:"g"+Date.now(), name, created:TODAY, members:[myId,...memberIds], admins:[myId], color:CONTACT_COLORS[gs.length%CONTACT_COLORS.length] }]);
+    setShowNew(false);
+  };
+  const renameGroup = (gid, newName) => setGroups(gs=>gs.map(g=>g.id===gid?{...g,name:newName}:g));
+  const deleteGroup = (g) => { if(confirm(`Delete "${g.name}"? This cannot be undone.`)) setGroups(gs=>gs.filter(x=>x.id!==g.id)); };
   const addMembers = (gid, ids) => setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:[...g.members,...ids]}:g));
   const removeMember = (gid, id) => setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:g.members.filter(m=>m!==id)}:g));
   return (<>
@@ -843,7 +741,7 @@ function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, 
       <button className="btn btn-pri btn-sm" disabled={!canCreateGroups} title={canCreateGroups?"":"Group creation is restricted by your administrator"} onClick={()=>setShowNew(true)}><Plus size={15}/> New group</button>
     </div>
     {!canCreateGroups && <div className="note warn" style={{marginBottom:14}}><Lock size={16}/><div>Your administrator has restricted who can create groups, so the New group button is disabled.</div></div>}
-    {rows.length===0 ? <div className="card"><div className="empty">No groups match your search.</div></div> :
+    {rows.length===0 ? <div className="card"><div className="empty">{myGroups.length===0 ? "No groups yet — create one to start sharing recommendations." : "No groups match your search."}</div></div> :
     <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:980}}>
       <thead><tr>
         <SortTh label="Group name" k="name" sort={sort} setSort={setSort}/>
@@ -853,7 +751,7 @@ function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, 
         <SortTh label="Recos made" k="recos" sort={sort} setSort={setSort}/>
         <SortTh label="My P&L" k="pnl" sort={sort} setSort={setSort} align="right"/>
       </tr></thead>
-      <tbody>{rows.map(g=>{ const open=expanded===g.id;
+      <tbody>{rows.map(g=>{ const open=expanded===g.id; const iAmAdmin=g.admins.includes("me")||g.admins.includes(myId);
         return (<React.Fragment key={g.id}>
           <tr className="hoverable" style={{cursor:"pointer"}} onClick={()=>setExpanded(open?null:g.id)}>
             <td><span className="clickable nowrap"><span className="av" style={{width:30,height:30,background:g.color,fontSize:12}}><Layers size={14}/></span>{g.name}
@@ -865,16 +763,23 @@ function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, 
             <td style={{textAlign:"right"}} onClick={(e)=>{e.stopPropagation(); onOpenRecos({groupId:g.id});}}><span className="clickable tnum nowrap">{fmtSigned(g.stats.pnl)} ↗</span></td>
           </tr>
           {open && <tr className="expand-row"><td colSpan={6}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
-            <b style={{fontSize:14,display:"block",marginBottom:12}}>{g.name} · recommendations shared in this group</b>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <b style={{fontSize:14}}>{g.name} · recommendations shared in this group</b>
+              {iAmAdmin && <div style={{display:"flex",gap:8}}>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setEditGroup(g)}><Pencil size={13}/> Rename</button>
+                <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>deleteGroup(g)}><Trash2 size={13}/> Delete</button>
+              </div>}
+            </div>
             <RecoBreakdown stats={g.stats} pnlLabel="My P&L from this group" onPnl={()=>onOpenRecos({groupId:g.id})}/>
             <div style={{height:18}}/>
-            <MemberPanel group={g} nameOf={nameOf} avOf={avOf} canManage={g.admins.includes("me")} max={configs.maxGroupMembers} onAdd={()=>setAddTo(g.id)} onRemove={(id)=>removeMember(g.id,id)}/>
+            <MemberPanel group={g} nameOf={nameOf} avOf={avOf} canManage={iAmAdmin} max={configs.maxGroupMembers} onAdd={()=>setAddTo(g.id)} onRemove={(id)=>removeMember(g.id,id)}/>
           </div></td></tr>}
         </React.Fragment>);
       })}</tbody>
     </table></div></div></div>}
-    {showNew && <GroupModal title="New group" contacts={contacts} max={configs.maxGroupMembers} alreadyIn={["me"]} onClose={()=>setShowNew(false)} onSave={(name,ids)=>{ createGroup(name,ids); setShowNew(false); }}/>}
-    {addTo && <GroupModal title="Add members" addOnly contacts={contacts} max={configs.maxGroupMembers} alreadyIn={groups.find(g=>g.id===addTo).members} onClose={()=>setAddTo(null)} onSave={(_,ids)=>{ addMembers(addTo,ids); setAddTo(null); }}/>}
+    {showNew && <GroupModal title="New group" contacts={contacts} max={configs.maxGroupMembers} alreadyIn={[myId,"me"]} onClose={()=>setShowNew(false)} onSave={(name,ids)=>createGroup(name,ids)}/>}
+    {addTo && <GroupModal title="Add members" addOnly contacts={contacts} max={configs.maxGroupMembers} alreadyIn={groups.find(g=>g.id===addTo)?.members||[]} onClose={()=>setAddTo(null)} onSave={(_,ids)=>{ addMembers(addTo,ids); setAddTo(null); }}/>}
+    {editGroup && <EditGroupModal group={editGroup} groups={groups} myId={myId} onClose={()=>setEditGroup(null)} onSave={(newName)=>{ renameGroup(editGroup.id,newName); setEditGroup(null); }}/>}
   </>);
 }
 
@@ -1648,36 +1553,79 @@ function AddUserModal({ onClose, onAdd }) {
 }
 function AdminGroups({ groups, setGroups, contacts, me }) {
   const [showNew, setShowNew] = useState(false);
+  const [editGroup, setEditGroup] = useState(null);
+  const myId = me?.id || "me";
   const nameOfM = (id) => (id==="me"||id===me?.id) ? (me?.name||"You") : (contacts.find(c=>c.id===id)?.name)||(id==="admin"?"Admin Root":id);
   const removeMember=(gid,mid)=>setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:g.members.filter(m=>m!==mid)}:g));
+  const renameGroup=(gid,newName)=>setGroups(gs=>gs.map(g=>g.id===gid?{...g,name:newName}:g));
+  const deleteGroup=(g)=>{ if(confirm(`Delete "${g.name}"? All members will lose access. This cannot be undone.`)) setGroups(gs=>gs.filter(x=>x.id!==g.id)); };
   return (<>
     <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">Groups</div><div className="page-sub">All groups on the platform · used for sharing and recommendations</div></div>
       <button className="btn btn-pri" onClick={()=>setShowNew(true)}><Plus size={16}/> Create group</button></div>
+    {groups.length===0 && <div className="card"><div className="empty">No groups yet. Create one to get started.</div></div>}
     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))", gap:16 }}>
-      {groups.map(g=>(<div key={g.id} className="card"><div className="card-body">
-        <div style={{ display:"flex", gap:12, alignItems:"center", marginBottom:13 }}>
-          <div className="av" style={{ width:44, height:44, background:g.color }}><Layers size={19}/></div>
-          <div><div style={{fontWeight:700,fontSize:15}}>{g.name}</div><div className="muted small">{g.members.length} members · created {fmtDate(g.created)}</div></div></div>
-        <div className="small muted" style={{marginBottom:8}}>Admins: {g.admins.map(nameOfM).join(", ")||"—"}</div>
-        <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
-          {g.members.map(mid=><span key={mid} className="pill">{nameOfM(mid)} <X size={13} style={{cursor:"pointer"}} onClick={()=>removeMember(g.id,mid)}/></span>)}
-          {g.members.length===0 && <span className="muted small">No members yet</span>}</div>
-      </div></div>))}
+      {groups.map(g=>{
+        const iAmAdmin=g.admins.includes("me")||g.admins.includes(myId);
+        return (<div key={g.id} className="card"><div className="card-body">
+          <div style={{ display:"flex", gap:12, alignItems:"center", marginBottom:13 }}>
+            <div className="av" style={{ width:44, height:44, background:g.color }}><Layers size={19}/></div>
+            <div style={{flex:1}}><div style={{fontWeight:700,fontSize:15}}>{g.name}</div><div className="muted small">{g.members.length} members · created {fmtDate(g.created)}</div></div>
+            {iAmAdmin && <div style={{display:"flex",gap:6}}>
+              <button className="iconbtn" title="Rename group" onClick={()=>setEditGroup(g)}><Pencil size={14}/></button>
+              <button className="iconbtn danger" title="Delete group" onClick={()=>deleteGroup(g)}><Trash2 size={14}/></button>
+            </div>}
+          </div>
+          <div className="small muted" style={{marginBottom:8}}>Admins: {g.admins.map(nameOfM).join(", ")||"—"}</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
+            {g.members.map(mid=><span key={mid} className="pill">{nameOfM(mid)} <X size={13} style={{cursor:"pointer"}} onClick={()=>removeMember(g.id,mid)}/></span>)}
+            {g.members.length===0 && <span className="muted small">No members yet</span>}</div>
+        </div></div>);})}
     </div>
-    {showNew && <CreateGroupModal contacts={contacts} onClose={()=>setShowNew(false)} onCreate={(g)=>{ setGroups(gs=>[...gs,{...g,id:"g"+Date.now(),created:TODAY,admins:["admin"],color:CONTACT_COLORS[gs.length%CONTACT_COLORS.length]}]); setShowNew(false); }}/>}
+    {showNew && <CreateGroupModal contacts={contacts} groups={groups} myId={myId} onClose={()=>setShowNew(false)} onCreate={(g)=>{ setGroups(gs=>[...gs,{...g,id:"g"+Date.now(),created:TODAY,admins:[myId],color:CONTACT_COLORS[gs.length%CONTACT_COLORS.length]}]); setShowNew(false); }}/>}
+    {editGroup && <EditGroupModal group={editGroup} groups={groups} myId={myId} onClose={()=>setEditGroup(null)} onSave={(newName)=>{ renameGroup(editGroup.id,newName); setEditGroup(null); }}/>}
   </>);
 }
-function CreateGroupModal({ contacts, onClose, onCreate }) {
+function EditGroupModal({ group, groups, myId, onClose, onSave }) {
+  const [name, setName] = useState(group.name);
+  const trimmed = name.trim();
+  const isSame = trimmed.toLowerCase() === group.name.toLowerCase();
+  const isDuplicate = !isSame && groups.some(g =>
+    g.id !== group.id &&
+    (g.admins.includes("me")||g.admins.includes(myId)) &&
+    g.name.toLowerCase() === trimmed.toLowerCase()
+  );
+  const valid = trimmed && !isDuplicate;
+  return (<div className="overlay" onClick={onClose}><div className="modal" style={{width:420}} onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3>Rename group</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      <div className="field"><label>Group name</label>
+        <input value={name} autoFocus onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&valid&&onSave(trimmed)} placeholder="Group name"/>
+        {isDuplicate && <div className="neg small" style={{marginTop:6}}>You already have a group with this name. Please choose a different name.</div>}
+      </div>
+    </div>
+    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}>
+      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-pri" disabled={!valid||isSame} onClick={()=>onSave(trimmed)}><Check size={14}/> Save</button>
+    </div></div>
+  </div></div>);
+}
+function CreateGroupModal({ contacts, groups, myId, onClose, onCreate }) {
   const [name,setName]=useState(""); const [members,setMembers]=useState([]);
+  const trimmed = name.trim();
+  const isDuplicate = trimmed && groups.some(g=>(g.admins.includes("me")||g.admins.includes(myId)) && g.name.toLowerCase()===trimmed.toLowerCase());
   const toggle=(id)=>setMembers(m=>m.includes(id)?m.filter(x=>x!==id):[...m,id]);
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-head"><h3>Create group</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">
-      <div className="field"><label>Group name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Value Hunters"/></div>
+      <div className="field"><label>Group name</label>
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Value Hunters" autoFocus/>
+        {isDuplicate && <div className="neg small" style={{marginTop:6}}>You already have a group with this name.</div>}
+      </div>
       <div className="field"><label>Members</label><div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-        {contacts.map(f=><span key={f.id} className={"chip"+(members.includes(f.id)?" sel":"")} onClick={()=>toggle(f.id)}>{members.includes(f.id)&&<Check size={13}/>}{f.name}</span>)}</div></div></div>
+        {contacts.length===0 ? <span className="muted small">Add contacts first, then you can add them to groups.</span> :
+        contacts.map(f=><span key={f.id} className={"chip"+(members.includes(f.id)?" sel":"")} onClick={()=>toggle(f.id)}>{members.includes(f.id)&&<Check size={13}/>}{f.name}</span>)}</div></div></div>
     <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      <button className="btn btn-pri" disabled={!name} onClick={()=>onCreate({name,members})}>Create group</button></div></div>
+      <button className="btn btn-pri" disabled={!trimmed||isDuplicate} onClick={()=>onCreate({name:trimmed,members})}>Create group</button></div></div>
   </div></div>);
 }
 function AdminConfigs({ configs, setConfigs, providers, setProviders }) {
