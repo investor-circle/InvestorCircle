@@ -577,12 +577,27 @@ function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, c
       return av<bv?-dir:av>bv?dir:0; });
     return r;
   },[contacts,sharing,groups,recsReceived,q,fStyle,fGroup,fTheir,fMine,sort]);
-  const addExisting = (email,info) => {
-    setContacts(cs=>[...cs,{ id:email, name:info.name, initials:initialsOf(info.name), color:CONTACT_COLORS[cs.length%CONTACT_COLORS.length], title:info.title||"New connection", shared:{ level:"none", holdings:[] } }]);
+  const addExisting = (uid, info) => {
+    // Guard: don't add if already in contacts by UID or email
+    if (contacts.some(c => c.id === uid || (info.email && c.email === info.email))) return;
+    setContacts(cs=>[...cs,{
+      id: uid,
+      email: info.email || "",
+      name: info.name,
+      initials: initialsOf(info.name),
+      color: CONTACT_COLORS[cs.length % CONTACT_COLORS.length],
+      title: info.title || "New connection",
+      shared:{ level:"none", holdings:[] }
+    }]);
     const dflt = configs.defaultDisclosure || "names";
-    setSharing(s=>({ ...s, [email]: { visibility: dflt==="none"?"off":"all", level: dflt==="full"?"full":"names", selected:[] } }));
+    setSharing(s=>({ ...s, [uid]: { visibility: dflt==="none"?"off":"all", level: dflt==="full"?"full":"names", selected:[] } }));
   };
   const addInvite = (email) => setPendingInvites(p=> p.some(x=>x.email===email)?p:[...p,{email,date:TODAY}]);
+  const deleteContact = (c) => {
+    if (!confirm(`Remove ${c.name} from your network? Their sharing settings will also be cleared. This cannot be undone.`)) return;
+    setContacts(cs => cs.filter(x => x.id !== c.id));
+    setSharing(s => { const ns = {...s}; delete ns[c.id]; return ns; });
+  };
   return (<>
     {pendingInvites.length>0 && <div className="note info" style={{marginBottom:14}}><Mail size={16}/><div>Pending email invitations: {pendingInvites.map(p=>p.email).join(", ")}. They'll join your network once they create an account.</div></div>}
     <div className="toolbar">
@@ -605,6 +620,7 @@ function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, c
           <SortTh label="My P&L" k="pnl" sort={sort} setSort={setSort} align="right"/>
           <SortTh label="They shared with me" k="their" sort={sort} setSort={setSort}/>
           <SortTh label="I share with them" k="mine" sort={sort} setSort={setSort}/>
+          <th></th>
         </tr></thead>
         <tbody>{rows.map(c=>{ const open=expandId===c.id;
           return (<React.Fragment key={c.id}>
@@ -618,11 +634,18 @@ function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, c
               <td onClick={e=>e.stopPropagation()}><PermBadge p={c.their}/></td>
               <td onClick={e=>e.stopPropagation()}><select className="inline-select sm" value={c.mine} onChange={e=>setMyPerm(setSharing,c.id,e.target.value)}>
                 <option value="off">Not shared</option><option value="names">Only names</option><option value="full">Amounts & P&L</option></select></td>
+              <td onClick={e=>e.stopPropagation()}>
+                <button className="iconbtn danger" title="Remove from network" onClick={()=>deleteContact(c)}><Trash2 size={14}/></button>
+              </td>
             </tr>
-            {open && <tr className="expand-row"><td colSpan={7}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
+            {open && <tr className="expand-row"><td colSpan={8}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:10}}>
                 <b style={{fontSize:14}}>{c.name}'s recommendations to you</b>
-                <button className="btn btn-ghost btn-sm" disabled={c.their==="off"} onClick={()=>setOpenContact(c)}><Eye size={14}/> View portfolio</button></div>
+                <div style={{display:"flex",gap:8}}>
+                  <button className="btn btn-ghost btn-sm" disabled={c.their==="off"} onClick={()=>setOpenContact(c)}><Eye size={14}/> View portfolio</button>
+                  <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>deleteContact(c)}><Trash2 size={13}/> Remove</button>
+                </div>
+              </div>
               <RecoBreakdown stats={c.stats} pnlLabel="My P&L from their recos" onPnl={()=>onOpenRecos({by:c.name})}/>
             </div></td></tr>}
           </React.Fragment>);
@@ -644,6 +667,8 @@ function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, c
               {["off","names","full"].map(v=><button key={v} style={{flex:1,justifyContent:"center"}} className={c.mine===v?"active":""} onClick={()=>setMyPerm(setSharing,c.id,v)}>{v==="off"?"Not shared":v==="names"?"Names":"+ P&L"}</button>)}</div>
             <button className="btn btn-soft btn-sm" style={{width:"100%",justifyContent:"center"}} disabled={c.their==="off"} onClick={()=>setOpenContact(c)}>
               {c.their==="off"?"Portfolio not shared":"View portfolio"} {c.their!=="off" && <ChevronRight size={15}/>}</button>
+            <button className="btn btn-ghost btn-sm" style={{width:"100%",justifyContent:"center",marginTop:8,color:"var(--loss)"}} onClick={()=>deleteContact(c)}>
+              <Trash2 size={13}/> Remove from network</button>
           </div></div>
         ))}
       </div>
@@ -666,7 +691,12 @@ function AddConnectionModal({ existing, me, onClose, onAddExisting, onInvite }) 
       try {
         const rows = await sql`SELECT id, email, full_name FROM user_profiles WHERE email = ${e} LIMIT 1`;
         if (rows[0]) {
-          onAddExisting(rows[0].id, { name:rows[0].full_name, title:"InvestorCircle member" });
+          // Check for duplicate by UID (catches same person added twice from different flows)
+          if(existing.some(c=>c.id===rows[0].id||c.email===rows[0].email)) {
+            setResult({type:"warn", msg:"That person is already in your network."});
+            setBusy(false); return;
+          }
+          onAddExisting(rows[0].id, { name:rows[0].full_name, title:"InvestorCircle member", email:rows[0].email });
           setResult({type:"ok", msg:`${rows[0].full_name} is already on InvestorCircle and has been added to your network.`});
           setBusy(false); return;
         }
