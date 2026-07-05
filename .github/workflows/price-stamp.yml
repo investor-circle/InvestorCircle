@@ -1,0 +1,63 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# price-stamp.yml — Nightly market price stamping
+#
+# Runs at 9:00pm IST (3:30pm UTC) on every trading weekday.
+# Downloads NSE Bhavcopy and updates Neon with:
+#   - current_price for all active recommendations
+#   - expiry_price for recommendations whose target_date is today
+#   - exit_price backfill for any exited recs missing a price
+#
+# Required secrets (set in GitHub → Settings → Secrets → Actions):
+#   NEON_DATABASE_URL   Neon direct connection string
+#
+# Optional secrets:
+#   TWELVE_DATA_KEY     Twelve Data API key (paid fallback provider)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Nightly Price Stamp
+
+on:
+  schedule:
+    # 9:00pm IST = 3:30pm UTC. Weekdays only (NSE is closed weekends).
+    # NSE publishes Bhavcopy by ~8pm IST, so 9pm gives it an hour to appear.
+    - cron: '30 15 * * 1-5'
+
+  # Allow manual trigger from GitHub UI (useful for backfills and testing)
+  workflow_dispatch:
+    inputs:
+      stamp_date:
+        description: 'Date to stamp (YYYY-MM-DD). Leave empty for today.'
+        required: false
+        default: ''
+
+jobs:
+  stamp-prices:
+    name: Stamp market prices
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install batch dependencies
+        run: |
+          cd scripts
+          npm install --no-save pg
+
+      - name: Run price stamping batch
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          TWELVE_DATA_KEY:   ${{ secrets.TWELVE_DATA_KEY }}
+          STAMP_DATE:        ${{ github.event.inputs.stamp_date }}
+        run: node scripts/stamp-prices.js
+
+      - name: Report result
+        if: always()
+        run: echo "Price stamp job finished with status ${{ job.status }}"
