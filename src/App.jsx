@@ -25,6 +25,7 @@ import {
   addGroupMembers as dbAddGroupMembers, removeGroupMember as dbRemoveGroupMember,
   getMyReceivedRecos, getMyMadeRecos, createRecommendation as dbCreateReco,
   updateDelivery, toggleExitSignal as dbToggleExit, forwardRecommendation as dbForwardReco,
+  deleteRecommendation as dbDeleteReco, deleteDelivery as dbDeleteDelivery,
   getMyNotifications, markNotifRead, markAllNotifRead,
   getSharingPrefs, upsertSharingPref,
 } from "./db";
@@ -1401,7 +1402,11 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
   const react=(r,val)=>{ const next=r.reaction===val?"none":val; patch(r,{reaction:next}); };
   const toggleHide=(r)=>patch(r,{isHidden:!r.hidden,hidden:!r.hidden});
   const toggleExit=(r)=>{ /* Exit signal lives on the recommendation row, only recommender can toggle */ };
-  const del=(r)=>{ if(confirm("Remove this recommendation from your received list?")) setRecs(rs=>rs.filter(x=>x.deliveryId!==r.deliveryId)); };
+  const del=async(r)=>{
+    if(!confirm("Remove this recommendation from your received list? This only removes it for you.")) return;
+    setRecs(rs=>rs.filter(x=>x.deliveryId!==r.deliveryId));   // optimistic UI
+    await dbDeleteDelivery(r.deliveryId, myId);                // persist to Neon
+  };
 
   const rows = useMemo(()=>{
     let r=recs.filter(x=>showHidden||!x.hidden);
@@ -1634,7 +1639,11 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
   const [q,setQ]=useState(""); const [fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fHorizon,setFHorizon]=useState("all");
   const [showExpired,setShowExpired]=useState(false);
   const [sort,setSort]=useState({key:"date",dir:"desc"}); const [expanded,setExpanded]=useState(null); const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
-  const del=(r)=>{ if(confirm("Delete this recommendation you made?")) setRecs(rs=>rs.filter(x=>x.id!==r.id)); };
+  const del=async(r)=>{
+    if(!confirm("Delete this recommendation? This will remove it from all recipients' lists too.")) return;
+    setRecs(rs=>rs.filter(x=>x.id!==r.id));          // optimistic UI
+    await dbDeleteReco(r.id, me?.id);                 // persist to Neon (CASCADE removes deliveries)
+  };
   const toggleExit=async(r)=>{
     setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:!x.exit,exitDate:!x.exit?TODAY:null}:x));
     if(sql && me?.id){ try{ await dbToggleExit(r.id,me.id); await onReload(); }catch(_){} }
