@@ -308,6 +308,7 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [notifOpen,     setNotifOpen]     = useState(false);
   const [profileOpen,   setProfileOpen]   = useState(false);
+  const [connectConfirm, setConnectConfirm] = useState(null); // { name, username } after auto-connect
 
   // ── Hash routing — for public profile URLs (#/investor/username) ─────────────
   const [pageHash, setPageHash] = useState(window.location.hash);
@@ -317,16 +318,25 @@ export default function App() {
     return () => window.removeEventListener("hashchange", h);
   }, []);
 
-  // ── Post-login: auto-send connection request if user came from a public profile ─
+  // ── Post-login/signup: auto-send connection request if user came from a public profile ─
   useEffect(() => {
     if (!user || !sql) return;
     const pending = sessionStorage.getItem("pending_connect_username");
     if (!pending) return;
     sessionStorage.removeItem("pending_connect_username");
-    sql`SELECT id FROM user_profiles WHERE username = ${pending} LIMIT 1`.then(rows => {
-      if (rows[0] && rows[0].id !== user.uid)
-        return sendConnectionRequest(user.uid, rows[0].id);
-    }).catch(()=>{});
+    sql`SELECT id, full_name, first_name, last_name FROM user_profiles WHERE username = ${pending} LIMIT 1`
+      .then(rows => {
+        if (!rows[0] || rows[0].id === user.uid) return;
+        const targetId = rows[0].id;
+        const targetName = rows[0].first_name
+          ? `${rows[0].first_name} ${rows[0].last_name || ""}`.trim()
+          : rows[0].full_name || `@${pending}`;
+        return sendConnectionRequest(user.uid, targetId).then(() => {
+          setConnectConfirm({ name: targetName, username: pending });
+          setTimeout(() => setConnectConfirm(null), 10000); // auto-dismiss after 10s
+        });
+      })
+      .catch(console.warn);
   }, [user?.uid]);
   const [holdings,      setHoldings]      = useState(HOLDINGS);
   const [assetClasses,  setAssetClasses]  = useState(DEFAULT_CLASSES);
@@ -575,6 +585,27 @@ export default function App() {
           </div>
 
           <div className="content">
+            {/* Connection-request confirmation banner — shown after signup from a public profile */}
+            {connectConfirm && isInv && (
+              <div style={{
+                display:"flex",alignItems:"flex-start",gap:12,
+                background:"var(--gain-soft)",border:"1px solid var(--gain)",
+                borderRadius:14,padding:"14px 16px",marginBottom:20,
+              }}>
+                <div style={{width:36,height:36,borderRadius:10,background:"var(--gain)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <Check size={18} color="#fff"/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:14,marginBottom:3}}>
+                    Connection request sent to {connectConfirm.name}!
+                  </div>
+                  <div className="muted small">
+                    They'll receive a notification and can accept your request. Once accepted, you can share recommendations with each other.
+                  </div>
+                </div>
+                <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
+              </div>
+            )}
             {isInv && page==="home"      && <HomeFeed setPage={setPage} recsReceived={recsReceived} configs={configs} holdings={holdings} contacts={contacts}/>}
             {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
             {isInv && page==="network"   && <Network
