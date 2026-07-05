@@ -295,11 +295,12 @@ export async function createRecommendation(reco, senderId, recipients) {
   const rec = await sql`
     INSERT INTO ic_recommendations
       (recommender_id, asset_name, ticker, asset_class,
-       reco_price, current_price, target_price, horizon, target_date, thesis)
+       reco_price, current_price, target_price, horizon, target_date, thesis, is_public)
     VALUES
       (${senderId}, ${reco.assetName}, ${reco.ticker}, ${reco.assetClass},
        ${reco.priceAt || null}, ${reco.price || null}, ${reco.targetPrice || null},
-       ${reco.horizon || null}, ${reco.targetDate || null}, ${reco.thesis || null})
+       ${reco.horizon || null}, ${reco.targetDate || null}, ${reco.thesis || null},
+       ${reco.isPublic !== false})
     RETURNING *
   `;
   const recId = rec[0].id;
@@ -365,6 +366,7 @@ export async function getMyReceivedRecos(userId) {
       r.reco_price        AS price_at,
       r.current_price     AS price,
       r.target_price, r.horizon, r.target_date, r.thesis,
+      r.is_public,
       r.exit_signal, r.exit_date,
       r.created_at        AS reco_date,
       rec_up.full_name    AS from_name,
@@ -477,6 +479,7 @@ export async function getMyMadeRecos(userId) {
     actedList:   actedByRec[r.id] || [],
     likes:       Number(r.like_count    || 0),
     dislikes:    Number(r.dislike_count || 0),
+    isPublic:    r.is_public !== false, // default true if column missing
     recipients:  [], // populated separately if needed
   }));
 }
@@ -650,5 +653,38 @@ export async function deleteDelivery(deliveryId, userId) {
   await sql`
     DELETE FROM recommendation_deliveries
     WHERE id = ${deliveryId} AND delivered_to_user_id = ${userId}
+  `;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USERNAME
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Check whether a username is available.
+ * Returns true if nobody else has it, false if taken.
+ * Excludes the current user's own ID so they can "re-save" their existing username.
+ */
+export async function checkUsername(username, myId) {
+  if (!sql) return true; // can't check without DB — assume available
+  const rows = await sql`
+    SELECT id FROM user_profiles
+    WHERE username = ${username}
+      AND id != ${myId}
+    LIMIT 1
+  `;
+  return rows.length === 0; // true = available
+}
+
+/**
+ * Persist a username for the current user.
+ * Should only be called once the caller has verified availability.
+ */
+export async function saveUsername(userId, username) {
+  if (!sql) throw new Error("Neon not configured");
+  await sql`
+    UPDATE user_profiles
+    SET username = ${username}, updated_at = now()
+    WHERE id = ${userId}
   `;
 }
