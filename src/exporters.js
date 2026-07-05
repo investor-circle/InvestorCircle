@@ -17,40 +17,60 @@ function totals(rows) {
 }
 
 export function exportPortfolioExcel(rows) {
+  const HEADERS = [
+    "Symbol", "Name", "Type", "Account",
+    "Shares", "Cost / Share", "Price",
+    "Cost Basis", "Market Value", "Unrealized P&L", "Return %",
+  ];
+
   const data = rows.map((r) => {
     const value = r.sh * r.price;
-    const cost = r.sh * r.cost;
+    const cost  = r.sh * r.cost;
     return {
-      Symbol: r.sym,
-      Name: r.name,
-      Type: r.type,
-      Account: r.acctName || r.acct || "",
-      Shares: r.sh,
-      "Cost / Share": +(+r.cost).toFixed(2),
-      Price: +(+r.price).toFixed(2),
-      "Cost Basis": +cost.toFixed(2),
-      "Market Value": +value.toFixed(2),
-      "Unrealized P&L": +(value - cost).toFixed(2),
-      "Return %": +(((r.price - r.cost) / r.cost) * 100).toFixed(2),
+      Symbol:            r.sym,
+      Name:              r.name,
+      Type:              r.type,
+      Account:           r.acctName || r.acct || "",
+      Shares:            r.sh,
+      "Cost / Share":    +(+r.cost).toFixed(2),
+      Price:             +(+r.price).toFixed(2),
+      "Cost Basis":      +cost.toFixed(2),
+      "Market Value":    +value.toFixed(2),
+      "Unrealized P&L":  +(value - cost).toFixed(2),
+      "Return %":        +(((r.price - r.cost) / r.cost) * 100).toFixed(2),
     };
   });
 
-  const ws = XLSX.utils.json_to_sheet(data);
-  const t = totals(rows);
-  // append a totals row
-  XLSX.utils.sheet_add_aoa(
-    ws,
-    [["", "", "", "", "", "", "Total", +t.cost.toFixed(2), +t.value.toFixed(2), +t.pnl.toFixed(2), +(t.ret * 100).toFixed(2)]],
-    { origin: -1 }
-  );
+  let ws;
+  if (data.length === 0) {
+    // Empty portfolio — write headers-only template so the user knows the import format
+    ws = XLSX.utils.aoa_to_sheet([HEADERS]);
+    // Add a sample row in grey to make the format obvious
+    XLSX.utils.sheet_add_aoa(ws, [
+      ["RELIANCE", "Reliance Industries", "Stock", "Zerodha", 10, 2400, 2550, 24000, 25500, 1500, 6.25],
+    ], { origin: "A2" });
+  } else {
+    ws = XLSX.utils.json_to_sheet(data);
+    const t = totals(rows);
+    XLSX.utils.sheet_add_aoa(
+      ws,
+      [["", "", "", "", "", "", "Total",
+        +t.cost.toFixed(2), +t.value.toFixed(2), +t.pnl.toFixed(2), +(t.ret * 100).toFixed(2)]],
+      { origin: -1 }
+    );
+  }
+
   ws["!cols"] = [
     { wch: 10 }, { wch: 28 }, { wch: 9 }, { wch: 20 }, { wch: 9 },
     { wch: 12 }, { wch: 11 }, { wch: 13 }, { wch: 14 }, { wch: 15 }, { wch: 10 },
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Portfolio");
-  XLSX.writeFile(wb, `investorcircle_portfolio_${stamp()}.xlsx`);
+  XLSX.utils.book_append_sheet(wb, ws, rows.length === 0 ? "Template" : "Portfolio");
+  XLSX.writeFile(wb, rows.length === 0
+    ? `investorcircle_portfolio_template.xlsx`
+    : `investorcircle_portfolio_${stamp()}.xlsx`
+  );
 }
 
 export function exportPortfolioPDF(rows) {
