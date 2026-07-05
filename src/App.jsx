@@ -576,7 +576,7 @@ export default function App() {
                 </button>
                 {profileOpen && isInv && (
                   <ProfileModal
-                    me={ME} updateProfile={updateProfile} patchProfile={patchProfile}
+                    me={ME} profile={profile} updateProfile={updateProfile} patchProfile={patchProfile}
                     onClose={()=>setProfileOpen(false)}
                   />
                 )}
@@ -2583,18 +2583,23 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
 }
 
 /* =================================================================== PROFILE */
-function ProfileModal({ me, updateProfile, patchProfile, onClose }) {
+function ProfileModal({ me, profile, updateProfile, patchProfile, onClose }) {
   const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 
   // ── Name ──────────────────────────────────────────────────────────────────
+  // Initialise from raw DB values (empty string when not yet set) so the user
+  // sees a blank field rather than the email-prefix fallback that ME uses for display.
+  const rawFirst = profile?.first_name || "";
+  const rawLast  = profile?.last_name  || "";
+
   const [editing,   setEditing]   = useState(false);
-  const [firstName, setFirstName] = useState(me.firstName || "");
-  const [lastName,  setLastName]  = useState(me.lastName  || "");
+  const [firstName, setFirstName] = useState(rawFirst);
+  const [lastName,  setLastName]  = useState(rawLast);
   const [saving,    setSaving]    = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
   const [nameErr,   setNameErr]   = useState("");
 
-  const startEdit  = () => { setFirstName(me.firstName||""); setLastName(me.lastName||""); setEditing(true); setNameErr(""); setNameSaved(false); };
+  const startEdit  = () => { setFirstName(rawFirst); setLastName(rawLast); setEditing(true); setNameErr(""); setNameSaved(false); };
   const cancelEdit = () => { setEditing(false); setNameErr(""); };
   const saveName   = async () => {
     if (!firstName.trim()) { setNameErr("First name is required."); return; }
@@ -3240,7 +3245,26 @@ function AddUserModal({ onClose, onAdd }) {
     try {
       const cred = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password);
       await secondaryAuth.signOut();
-      if (sql) { try { await sql`INSERT INTO user_profiles (id, email, full_name, is_admin, username) VALUES (${cred.user.uid}, ${email.trim()}, ${name.trim()}, false, ${username.trim()||null}) ON CONFLICT (id) DO NOTHING`; } catch(e) { console.warn("user_profiles insert failed:", e.message); } }
+      if (sql) {
+        try {
+          const nameParts = name.trim().split(/\s+/);
+          const fn = nameParts[0] || "";
+          const ln = nameParts.slice(1).join(" ") || "";
+          await sql`
+            INSERT INTO user_profiles (id, email, full_name, first_name, last_name, is_admin, username)
+            VALUES (
+              ${cred.user.uid}, ${email.trim()}, ${name.trim()},
+              ${fn}, ${ln}, false, ${username.trim() || null}
+            )
+            ON CONFLICT (id) DO UPDATE SET
+              full_name  = EXCLUDED.full_name,
+              first_name = COALESCE(NULLIF(user_profiles.first_name, ''), EXCLUDED.first_name),
+              last_name  = COALESCE(NULLIF(user_profiles.last_name,  ''), EXCLUDED.last_name),
+              username   = COALESCE(user_profiles.username, EXCLUDED.username),
+              updated_at = now()
+          `;
+        } catch(e) { console.warn("user_profiles insert failed:", e.message); }
+      }
       onAdd({ id:cred.user.uid, name:name.trim(), email:email.trim(), role, status:"Active", accounts:0, joined:new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
     } catch(e) {
       if (e.code === "auth/email-already-in-use") {
