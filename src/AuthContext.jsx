@@ -45,8 +45,19 @@ export function AuthProvider({ children }) {
                 ${fullName.split(" ")[0]},
                 ${fullName.split(" ").slice(1).join(" ") || ""}
               )
-              ON CONFLICT (id) DO UPDATE
-                SET email = EXCLUDED.email, updated_at = now()
+              ON CONFLICT (id) DO UPDATE SET
+                email      = EXCLUDED.email,
+                first_name = CASE
+                               WHEN user_profiles.first_name IS NULL OR user_profiles.first_name = ''
+                               THEN EXCLUDED.first_name
+                               ELSE user_profiles.first_name
+                             END,
+                last_name  = CASE
+                               WHEN user_profiles.last_name IS NULL OR user_profiles.last_name = ''
+                               THEN EXCLUDED.last_name
+                               ELSE user_profiles.last_name
+                             END,
+                updated_at = now()
               RETURNING *
             `;
             setProfile(rows[0] ?? { id: firebaseUser.uid, email: firebaseUser.email,
