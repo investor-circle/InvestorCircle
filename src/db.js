@@ -688,3 +688,151 @@ export async function saveUsername(userId, username) {
     WHERE id = ${userId}
   `;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC PROFILE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Load everything needed to render a user's public profile page.
+ * No authentication required — called with just a username string.
+ *
+ * Return logic for "in/out of money":
+ *   • Active rec (not expired, no exit signal): compare current_price to reco_price
+ *   • Expired OR exited: still compare current_price (best available; no historical prices stored)
+ *   • No price at all: treat as 0% return (not in money, not out of money)
+ *
+ * All stats filter to is_public = true only.
+ */
+export async function getPublicProfile(username) {
+  if (!sql || !username) return null;
+
+  // 1. User basics + connection/group counts
+  const users = await sql`
+    SELECT
+      up.id, up.full_name, up.first_name, up.last_name,
+      up.username, up.created_at,
+      (SELECT COUNT(*) FROM connections
+       WHERE (requester_id = up.id OR addressee_id = up.id)
+         AND status = 'accepted')                                     AS connection_count,
+      (SELECT COUNT(*) FROM group_members
+       WHERE user_id = up.id AND status = 'active')                  AS group_count
+    FROM user_profiles up
+    WHERE up.username = ${username}
+    LIMIT 1
+  `;
+  if (!users[0]) return null;
+  const userId = users[0].id;
+
+  // 2. Recommendation stats (public only)
+  //    Returns separately for: all / active (not expired, no exit) / closed (exited or expired)
+  const stats = await sql`
+    SELECT
+      COUNT(*)                                                        AS total,
+
+      -- In / out of money (using last known price)
+      COUNT(CASE WHEN COALESCE(r.current_price, r.reco_price) > COALESCE(r.reco_price, 0)
+                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS in_money,
+      COUNT(CASE WHEN COALESCE(r.current_price, r.reco_price) <= COALESCE(r.reco_price, 0)
+                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS out_money,
+
+      -- Active = not exited AND (no target date OR target date in future)
+      COUNT(CASE WHEN NOT r.exit_signal
+                      AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)
+                 THEN 1 END)                                         AS active_count,
+
+      -- Closed = exited OR target date passed
+      COUNT(CASE WHEN r.exit_signal
+                      OR (r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE)
+                 THEN 1 END)                                         AS closed_count,
+
+      -- Average return across ALL public recos
+      ROUND(AVG(
+        CASE WHEN COALESCE(r.reco_price, 0) > 0
+             THEN (COALESCE(r.current_price, r.reco_price) - r.reco_price)
+                  / r.reco_price * 100
+        END
+      )::numeric, 2)                                                 AS avg_return_pct,
+
+      -- Average return for ACTIVE only
+      ROUND(AVG(
+        CASE WHEN COALESCE(r.reco_price, 0) > 0
+                  AND NOT r.exit_signal
+                  AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)
+             THEN (COALESCE(r.current_price, r.reco_price) - r.reco_price)
+                  / r.reco_price * 100
+        END
+      )::numeric, 2)                                                 AS active_return_pct,
+
+      -- Average return for CLOSED only
+      ROUND(AVG(
+        CASE WHEN COALESCE(r.reco_price, 0) > 0
+                  AND (r.exit_signal
+                       OR (r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE))
+             THEN (COALESCE(r.current_price, r.reco_price) - r.reco_price)
+                  / r.reco_price * 100
+        END
+      )::numeric, 2)                                                 AS closed_return_pct,
+
+      -- In money / out of money split for ACTIVE only
+      COUNT(CASE WHEN NOT r.exit_signal
+                      AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)
+                      AND COALESCE(r.current_price, r.reco_price) > COALESCE(r.reco_price, 0)
+                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS active_in_money,
+      COUNT(CASE WHEN NOT r.exit_signal
+                      AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)
+                      AND COALESCE(r.current_price, r.reco_price) <= COALESCE(r.reco_price, 0)
+                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS active_out_money,
+
+      -- In money / out of money split for CLOSED only
+      COUNT(CASE WHEN (r.exit_signal OR (r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE))
+                      AND COALESCE(r.current_price, r.reco_price) > COALESCE(r.reco_price, 0)
+                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS closed_in_money,
+      COUNT(CASE WHEN (r.exit_signal OR (r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE))
+                      AND COALESCE(r.current_price, r.reco_price) <= COALESCE(r.reco_price, 0)
+                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS closed_out_money,
+
+      -- Social signals across public recos
+      COALESCE((SELECT SUM(cnt) FROM (
+        SELECT recommendation_id, COUNT(*) AS cnt
+        FROM recommendation_deliveries WHERE reaction = 'like'
+        GROUP BY recommendation_id
+      ) lk WHERE lk.recommendation_id IN (
+        SELECT id FROM ic_recommendations WHERE recommender_id = ${userId} AND is_public = true
+      )), 0)                                                         AS total_likes,
+
+      COALESCE((SELECT SUM(cnt) FROM (
+        SELECT recommendation_id, COUNT(*) AS cnt
+        FROM recommendation_deliveries WHERE reaction = 'dislike'
+        GROUP BY recommendation_id
+      ) dk WHERE dk.recommendation_id IN (
+        SELECT id FROM ic_recommendations WHERE recommender_id = ${userId} AND is_public = true
+      )), 0)                                                         AS total_dislikes
+
+    FROM ic_recommendations r
+    WHERE r.recommender_id = ${userId} AND r.is_public = true
+  `;
+
+  // 3. List of public recommendations (most recent 50)
+  const recos = await sql`
+    SELECT
+      r.id, r.asset_name, r.ticker, r.asset_class,
+      r.reco_price, r.current_price, r.target_price,
+      r.horizon, r.target_date, r.thesis,
+      r.exit_signal, r.exit_date, r.created_at,
+      CASE WHEN COALESCE(r.reco_price, 0) > 0
+           THEN ROUND(((COALESCE(r.current_price, r.reco_price) - r.reco_price)
+                       / r.reco_price * 100)::numeric, 2)
+           ELSE 0 END                                               AS return_pct,
+      (SELECT COUNT(*) FROM recommendation_deliveries
+       WHERE recommendation_id = r.id AND reaction = 'like')        AS like_count,
+      (SELECT COUNT(*) FROM recommendation_deliveries
+       WHERE recommendation_id = r.id AND reaction = 'dislike')     AS dislike_count
+    FROM ic_recommendations r
+    WHERE r.recommender_id = ${userId} AND r.is_public = true
+    ORDER BY r.created_at DESC
+    LIMIT 50
+  `;
+
+  return { profile: users[0], stats: stats[0], recos };
+}
