@@ -7,7 +7,7 @@ import {
   List, Table as TableIcon, Mail, UserPlus, Calendar, Crown,
   ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
   Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil, Database,
-  Globe, Trophy, Copy, ExternalLink, ArrowLeft
+  Globe, Trophy, Copy, ExternalLink, ArrowLeft, Link
 } from "lucide-react";
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
@@ -415,14 +415,16 @@ export default function App() {
   }, [user?.uid]);
 
   // ── Public profile route — no auth required ────────────────────────────────
-  // Matches: #/investor/username (with or without trailing /reco/id for Phase 3)
-  const publicMatch = pageHash.match(/^#\/investor\/([a-z0-9_]+)/i);
+  // Matches: #/investor/username  OR  #/investor/username/reco/recoId
+  const publicMatch = pageHash.match(/^#\/investor\/([a-z0-9_]+)(?:\/reco\/([a-zA-Z0-9-]+))?/i);
   if (publicMatch && !authLoading) {
     const pubUsername = publicMatch[1];
+    const pubRecoId   = publicMatch[2] || null;
     return (
       <div className="app"><style>{STYLES}</style>
         <PublicProfilePage
           username={pubUsername}
+          recoId={pubRecoId}
           viewerUser={user}
           viewerConnections={connections}
           mode="standalone"
@@ -1720,6 +1722,7 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
   const [q,setQ]=useState(""); const [fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fHorizon,setFHorizon]=useState("all");
   const [showExpired,setShowExpired]=useState(false);
   const [sort,setSort]=useState({key:"date",dir:"desc"}); const [expanded,setExpanded]=useState(null); const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
+  const [sharePopId, setSharePopId] = useState(null); // ID of reco whose public-share popover is open
   const del=async(r)=>{
     if(!confirm("Delete this recommendation? This will remove it from all recipients' lists too.")) return;
     setRecs(rs=>rs.filter(x=>x.id!==r.id));          // optimistic UI
@@ -1814,6 +1817,13 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
             <td><span className="clickable" onClick={()=>exp(r.id,"likes")}><ThumbsUp size={13}/> {r.likes.length}</span></td>
             <td><span className="clickable" onClick={()=>exp(r.id,"dislikes")}><ThumbsDown size={13}/> {r.dislikes.length}</span></td>
             <td><div className="actions">
+              {/* Share publicly (copy link / WhatsApp) — only for public recommendations */}
+              {r.isPublic && (
+                <div style={{position:"relative"}}>
+                  <button className="iconbtn" title="Copy public link / share" onClick={()=>setSharePopId(sharePopId===r.id?null:r.id)}><Link size={14}/></button>
+                  {sharePopId===r.id && <SharePublicPopover reco={r} username={me.username} onClose={()=>setSharePopId(null)}/>}
+                </div>
+              )}
               <button className="iconbtn" title="Share with more contacts or groups" onClick={()=>setShare(r)}><Share2 size={14}/></button>
               <button className={"btn btn-sm "+(r.exit?"btn-ghost":"btn-soft")} onClick={()=>toggleExit(r)}><LogOut size={13}/> {r.exit?"Cancel exit":"Send exit"}</button>
               <button className="iconbtn danger" title="Delete" onClick={()=>del(r)}><Trash2 size={14}/></button></div></td>
@@ -2067,7 +2077,76 @@ function SharePreview({ id, name, cfg, holdings, onClose }) {
 
 /* =================================================================== PUBLIC PROFILE */
 
-/** Stat card used inside the public profile track record section */
+/** Small popover for sharing a public recommendation link */
+function SharePublicPopover({ reco, username, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const ref = useRef(null);
+
+  // Close on outside click
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const popStyle = {
+    position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 300,
+    background: "var(--surface)", border: "1px solid var(--line)",
+    borderRadius: 14, boxShadow: "0 6px 24px rgba(0,0,0,.14)",
+    padding: "14px 16px", minWidth: 280,
+  };
+
+  if (!username) return (
+    <div ref={ref} style={popStyle} onClick={e=>e.stopPropagation()}>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>Share publicly</div>
+      <div className="note warn" style={{fontSize:12}}>
+        <AlertTriangle size={13}/>
+        <div>Set a username in your profile first — your public URL requires one.</div>
+      </div>
+      <button className="btn btn-ghost btn-sm" style={{marginTop:10,width:"100%"}} onClick={onClose}>Close</button>
+    </div>
+  );
+
+  const url = `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${reco.id}`;
+  const waMsg = encodeURIComponent(
+    `Check out ${reco.ticker} (${reco.assetName}) by @${username} on InvestorCircle:\n${url}`
+  );
+  const waUrl = `https://wa.me/?text=${waMsg}`;
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => { setCopied(false); onClose(); }, 1600);
+    });
+  };
+
+  return (
+    <div ref={ref} style={popStyle} onClick={e=>e.stopPropagation()}>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+        <Globe size={14} color="var(--accent)"/> Share publicly
+      </div>
+      {/* URL preview */}
+      <div style={{background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:9,padding:"8px 10px",fontSize:11,color:"var(--muted)",marginBottom:12,wordBreak:"break-all",lineHeight:1.4}}>
+        {url}
+      </div>
+      {/* Actions */}
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        <button className="btn btn-pri btn-sm" style={{justifyContent:"center"}} onClick={copyLink}>
+          {copied ? <><Check size={14}/> Copied to clipboard!</> : <><Copy size={14}/> Copy link</>}
+        </button>
+        <a href={waUrl} target="_blank" rel="noopener noreferrer"
+           className="btn btn-soft btn-sm" style={{justifyContent:"center",textDecoration:"none"}}
+           onClick={onClose}>
+          {/* WhatsApp green */}
+          <span style={{fontSize:15,lineHeight:1}}>💬</span> Share on WhatsApp
+        </a>
+      </div>
+      <div className="muted small" style={{marginTop:10,fontSize:11}}>
+        Anyone with this link can view this recommendation on your public profile — no login needed.
+      </div>
+    </div>
+  );
+}
 function StatCard({ label, value, sub, accent }) {
   return (
     <div style={{
@@ -2095,13 +2174,15 @@ function fmtRet(pct) {
  * mode = "embedded"  → inside app shell (Track Record nav item)
  * isOwnProfile       → true when logged-in user is viewing their own profile
  */
-function PublicProfilePage({ username, viewerUser, viewerConnections, mode, isOwnProfile, onBack, onRequestConnect }) {
-  const [data,       setData]       = useState(null);   // { profile, stats, recos }
+function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, onBack, onRequestConnect }) {
+  const [data,       setData]       = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [notFound,   setNotFound]   = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connected,  setConnected]  = useState(false);
   const [copied,     setCopied]     = useState(false);
+  const [expandedId, setExpandedId] = useState(recoId || null); // reco row expanded to show thesis
+  const expandedRef = useRef(null);
 
   useEffect(() => {
     setLoading(true); setNotFound(false); setData(null);
@@ -2112,17 +2193,20 @@ function PublicProfilePage({ username, viewerUser, viewerConnections, mode, isOw
     }).catch(() => { setNotFound(true); setLoading(false); });
   }, [username]);
 
-  // Derive connection status between viewer and profile owner
+  // Auto-scroll to the linked recommendation after data loads
+  useEffect(() => {
+    if (recoId && data && expandedRef.current) {
+      setTimeout(() => expandedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+    }
+  }, [recoId, data]);
+
   const profileUserId = data?.profile?.id;
   const connStatus = useMemo(() => {
     if (!profileUserId || !viewerConnections?.length) return "none";
     const c = viewerConnections.find(c => c.user_id === profileUserId);
     return c?.status || "none";
   }, [profileUserId, viewerConnections]);
-
-  useEffect(() => {
-    if (connStatus === "accepted") setConnected(true);
-  }, [connStatus]);
+  useEffect(() => { if (connStatus === "accepted") setConnected(true); }, [connStatus]);
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -2306,6 +2390,17 @@ function PublicProfilePage({ username, viewerUser, viewerConnections, mode, isOw
         <div className="card">
           <div className="card-head"><Globe size={15} color="var(--accent)"/> Public Recommendations</div>
           <div className="card-body" style={{ padding: "8px 0" }}>
+            {/* Private recommendation banner — shown when a specific recoId was linked but not in public list */}
+            {recoId && data && !data.recos.find(r => r.id === recoId) && (
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", margin: "12px 16px", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 16px" }}>
+                <Lock size={16} color="var(--muted)" style={{ flexShrink: 0, marginTop: 1 }}/>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>Recommendation not publicly visible</div>
+                  <div className="muted small">This recommendation is only visible to the investor's network. You can view it if you connect with @{username}.</div>
+                </div>
+              </div>
+            )}
+
             {recos.length === 0
               ? <div className="empty" style={{ padding: 24 }}>No public recommendations yet.</div>
               : <table className="grid">
@@ -2318,31 +2413,83 @@ function PublicProfilePage({ username, viewerUser, viewerConnections, mode, isOw
                     <th>Date</th>
                   </tr></thead>
                   <tbody>{recos.map(r => {
-                    const ret = Number(r.return_pct || 0);
+                    const retPct   = Number(r.return_pct || 0);
                     const isActive = !r.exit_signal && (!r.target_date || new Date(r.target_date) >= new Date());
-                    const isClosed = r.exit_signal || (r.target_date && new Date(r.target_date) < new Date());
+                    const isLinked = r.id === recoId;
+                    const isExpanded = r.id === expandedId;
+
                     return (
-                      <tr key={r.id} className="hoverable">
-                        <td>
-                          <div className="sym">{r.ticker}</div>
-                          <div className="muted small" style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.asset_name}</div>
-                        </td>
-                        <td><span className="ttag">{r.asset_class}</span></td>
-                        <td className="muted small">{r.horizon || "—"}</td>
-                        <td style={{ textAlign: "right" }} className="tnum">{r.reco_price ? fmt(Number(r.reco_price)) : "—"}</td>
-                        <td style={{ textAlign: "right" }} className={"tnum " + (ret >= 0 ? "pos" : "neg")}>{fmtRet(ret)}</td>
-                        <td style={{ textAlign: "right" }}>
-                          <span style={{ fontSize: 12 }}>👍 {r.like_count || 0} · 👎 {r.dislike_count || 0}</span>
-                        </td>
-                        <td>
-                          {r.exit_signal
-                            ? <span className="pill loss" style={{ fontSize: 11 }}>Exited</span>
-                            : isActive
-                              ? <span className="pill gain" style={{ fontSize: 11 }}>Active</span>
-                              : <span className="pill" style={{ fontSize: 11 }}>Expired</span>}
-                        </td>
-                        <td className="muted small">{r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</td>
-                      </tr>
+                      <React.Fragment key={r.id}>
+                        <tr
+                          ref={isLinked ? expandedRef : null}
+                          className="hoverable"
+                          style={{
+                            cursor: "pointer",
+                            background: isLinked ? "var(--accent-soft)" : undefined,
+                            outline: isLinked ? "2px solid var(--accent)" : undefined,
+                            outlineOffset: -2,
+                          }}
+                          onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                        >
+                          <td>
+                            <div className="sym">{r.ticker}</div>
+                            <div className="muted small" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.asset_name}</div>
+                          </td>
+                          <td><span className="ttag">{r.asset_class}</span></td>
+                          <td className="muted small">{r.horizon || "—"}</td>
+                          <td style={{ textAlign: "right" }} className="tnum">{r.reco_price ? fmt(Number(r.reco_price)) : "—"}</td>
+                          <td style={{ textAlign: "right" }} className={"tnum " + (retPct >= 0 ? "pos" : "neg")}>{fmtRet(retPct)}</td>
+                          <td style={{ textAlign: "right" }}>
+                            <span style={{ fontSize: 12 }}>👍 {r.like_count || 0} · 👎 {r.dislike_count || 0}</span>
+                          </td>
+                          <td>
+                            {r.exit_signal
+                              ? <span className="pill loss" style={{ fontSize: 11 }}>Exited</span>
+                              : isActive
+                                ? <span className="pill gain" style={{ fontSize: 11 }}>Active</span>
+                                : <span className="pill" style={{ fontSize: 11 }}>Expired</span>}
+                          </td>
+                          <td className="muted small">
+                            <div>{r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</div>
+                            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{isExpanded ? "▲ less" : "▼ more"}</div>
+                          </td>
+                        </tr>
+                        {/* Expanded row — thesis and additional details */}
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={8} style={{ padding: 0 }}>
+                              <div style={{ background: isLinked ? "var(--accent-soft)" : "var(--surface-2)", borderTop: "1px solid var(--line)", padding: "14px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+                                <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+                                  {r.target_price && (
+                                    <div>
+                                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5 }}>Target price</div>
+                                      <div style={{ fontWeight: 700, marginTop: 3 }}>{fmt(Number(r.target_price))}</div>
+                                    </div>
+                                  )}
+                                  {r.target_date && (
+                                    <div>
+                                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5 }}>Target date</div>
+                                      <div style={{ fontWeight: 700, marginTop: 3 }}>{new Date(r.target_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
+                                    </div>
+                                  )}
+                                  {r.exit_date && (
+                                    <div>
+                                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5 }}>Exit date</div>
+                                      <div style={{ fontWeight: 700, marginTop: 3 }}>{new Date(r.exit_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
+                                    </div>
+                                  )}
+                                </div>
+                                {r.thesis && r.thesis !== "—" && (
+                                  <div>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5, marginBottom: 5 }}>Thesis</div>
+                                    <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-soft)", maxWidth: 660 }}>{r.thesis}</div>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}</tbody>
                 </table>}
