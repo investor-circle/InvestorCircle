@@ -17,6 +17,16 @@ import { sql } from "./supabaseClient";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { secondaryAuth } from "./firebase";
 import LoginPage from "./LoginPage";
+import {
+  getMyConnections, sendConnectionRequest, acceptConnection, rejectConnection, removeConnection,
+  getMyGroups, createGroup as dbCreateGroup, renameGroup as dbRenameGroup,
+  deleteGroup as dbDeleteGroup, exitGroup as dbExitGroup,
+  addGroupMembers as dbAddGroupMembers, removeGroupMember as dbRemoveGroupMember,
+  getMyReceivedRecos, getMyMadeRecos, createRecommendation as dbCreateReco,
+  updateDelivery, toggleExitSignal as dbToggleExit, forwardRecommendation as dbForwardReco,
+  getMyNotifications, markNotifRead, markAllNotifRead,
+  getSharingPrefs, upsertSharingPref,
+} from "./db";
 
 /* ============================================================
    InvestorCircle — social space for investors.
@@ -229,9 +239,7 @@ const DEFAULT_CLASSES = ["Equity","Bonds","ETF","Mutual Funds","Crypto","Metals"
 const CLASS_COLOR = { Equity:"#6d5df5", Bonds:"#0ea5b7", ETF:"#9a55ee", "Mutual Funds":"#cf52d8", Crypto:"#d97706", Metals:"#64748b", "F&P":"#15924e", Others:"#8d90ad" };
 const classColor = (c) => CLASS_COLOR[c] || "#8d90ad";
 
-const FRIENDS = []; // starts empty — users add contacts
 
-const GROUPS0 = []; // starts empty — users create groups
 
 
 const SPARK = [62,61,64,63,67,66,69,72,70,74,77,76,80,84,83,88,92,90,95,100];
@@ -272,136 +280,116 @@ const PermBadge = ({ p }) => p==="full" ? <span className="pill accent">Amounts 
 
 /* =================================================================== */
 export default function App() {
-  const { user, profile, logout, isAdmin: userIsAdmin, loading: authLoading } = useAuth();
+  const { user, role, setRole, userIsAdmin, logout, authLoading } = useAuth();
+  const ME = useMemo(() => {
+    if (!user) return { id:"", name:"", initials:"", email:"" };
+    const name = user.displayName || user.email?.split("@")[0] || "You";
+    return { id:user.uid, name, initials:initialsOf(name), email:user.email||"" };
+  }, [user?.uid]);
 
-  // Dynamic ME from the signed-in user
-  const ME = {
-    id: user?.uid || "me",
-    name: profile?.full_name || user?.email?.split("@")[0] || "You",
-    initials: (profile?.full_name || user?.email || "U")
-      .split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),
-    email: user?.email || "",
-  };
-
-  const [role, setRole] = useState("investor");
+  // ── Page navigation ─────────────────────────────────────────────────────────
   const [investorPage, setInvestorPage] = useState("home");
-  const [adminPage, setAdminPage] = useState("users");
+  const [adminPage,    setAdminPage]    = useState("users");
+  const [recoInit,     setRecoInit]     = useState(null);
 
-  const [contacts, setContacts] = useState(FRIENDS);
-  const [holdings, setHoldings] = useState(HOLDINGS);
-  const [groups, setGroups] = useState(GROUPS0);
-  const [priceRefresh, setPriceRefresh] = useState({ busy:false, lastAt:null, errors:[] });
-
-  const refreshPrices = async () => {
-    setPriceRefresh(s=>({...s, busy:true, errors:[]}));
-    try {
-      const { results, errors } = await fetchLivePrices(holdings);
-      setHoldings(prev => prev.map(h => {
-        const r = results[h.sym];
-        return (r && r.price !== null) ? { ...h, price: r.price } : h;
-      }));
-      setPriceRefresh({ busy:false, lastAt:new Date(), errors });
-    } catch(err) {
-      setPriceRefresh({ busy:false, lastAt:null, errors:[err.message] });
-    }
-  };
-  const [pendingInvites, setPendingInvites] = useState([]);
-
-  const [sharing, setSharing] = useState({});
-
-  const [recsReceived, setRecsReceived] = useState([]);
-  const [recsMade, setRecsMade] = useState([]);
-  const [assetClasses, setAssetClasses] = useState(DEFAULT_CLASSES);
-  const [recoInit, setRecoInit] = useState(null);
-
-  const [users, setUsers] = useState([]);
-  const [configs, setConfigs] = useState({
+  // ── App-level state ─────────────────────────────────────────────────────────
+  const [connections,   setConnections]   = useState([]); // all connections (all statuses)
+  const [groups,        setGroups]        = useState([]); // shared groups from ic_groups
+  const [recsReceived,  setRecsReceived]  = useState([]); // from recommendation_deliveries
+  const [recsMade,      setRecsMade]      = useState([]); // from ic_recommendations
+  const [sharing,       setSharing]       = useState({});
+  const [notifications, setNotifications] = useState([]);
+  const [notifOpen,     setNotifOpen]     = useState(false);
+  const [holdings,      setHoldings]      = useState(HOLDINGS);
+  const [assetClasses,  setAssetClasses]  = useState(DEFAULT_CLASSES);
+  const [users,         setUsers]         = useState([]);
+  const [configs,       setConfigs]       = useState({
     enableRecommendations:true, allowCryptoAccounts:true, publicFeed:true,
     requireAccountApproval:true, allowAmountSharing:true, defaultDisclosure:"names",
     maxGroupMembers:8, groupCreationPolicy:"all",
   });
   const [providers, setProviders] = useState(["Fidelity","Vanguard","Robinhood","Coinbase","Schwab","E*TRADE"]);
+  const [priceRefresh, setPriceRefresh] = useState(null);
+  const [pendingInvites, setPendingInvites] = useState([]);
 
-  // ── Load persisted data from Neon on login ──────────────────────────────────
+  // Derived: confirmed contacts only (accepted connections, shaped for UI backward compat)
+  const contacts = useMemo(() =>
+    connections
+      .filter(c => c.status === "accepted")
+      .map((c, i) => ({
+        id:           c.user_id,
+        connectionId: c.connection_id,
+        name:         c.name,
+        email:        c.email,
+        initials:     initialsOf(c.name),
+        color:        CONTACT_COLORS[i % CONTACT_COLORS.length],
+        title:        "InvestorCircle member",
+        shared:       { level:"none", holdings:[] },
+      })),
+    [connections]
+  );
+  const unreadCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
+
+  const refreshPrices = async () => {
+    if (!isFinnhubConfigured()) return;
+    setPriceRefresh("loading");
+    const syms = [...new Set(holdings.map(h=>h.sym))];
+    const prices = await fetchLivePrices(syms);
+    setHoldings(hs => hs.map(h => prices[h.sym] != null ? {...h, price:prices[h.sym]} : h));
+    setPriceRefresh("done");
+    setTimeout(()=>setPriceRefresh(null),3000);
+  };
+
+  // ── Load all shared data from Neon on login ─────────────────────────────────
   useEffect(() => {
     if (!user || !sql) return;
     const load = async () => {
       try {
-        const [recv, made, grps, ctcts, shr] = await Promise.all([
-          sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='recs_received'`,
-          sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='recs_made'`,
-          sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='groups'`,
-          sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='contacts'`,
-          sql`SELECT data FROM user_data WHERE user_id=${user.uid} AND data_type='sharing'`,
+        const [conns, grps, recv, made, notifs, shr] = await Promise.all([
+          getMyConnections(user.uid),
+          getMyGroups(user.uid),
+          getMyReceivedRecos(user.uid),
+          getMyMadeRecos(user.uid),
+          getMyNotifications(user.uid),
+          getSharingPrefs(user.uid),
         ]);
-        if (recv[0]?.data?.length)  setRecsReceived(recv[0].data);
-        if (made[0]?.data?.length)  setRecsMade(made[0].data);
-        if (grps[0]?.data?.length)  setGroups(grps[0].data);
-        if (ctcts[0]?.data?.length) setContacts(ctcts[0].data);
-        if (shr[0]?.data && Object.keys(shr[0].data).length) setSharing(shr[0].data);
-        // Load all registered users from user_profiles
-        try {
-          const profiles = await sql`SELECT * FROM user_profiles ORDER BY created_at`;
-          if (profiles.length) setUsers(profiles.map(p => ({
-            id: p.id, name: p.full_name, email: p.email,
-            role: p.is_admin ? "Admin" : "Investor", status: "Active",
-            accounts: 0, joined: new Date(p.created_at).toLocaleDateString("en-US", { month:"short", year:"numeric" }),
-          })));
-        } catch(e) {}
-      } catch(e) {
-        console.warn("Data load skipped:", e.message);
-      }
+        setConnections(conns);
+        setGroups(grps);
+        setRecsReceived(recv);
+        setRecsMade(made);
+        setNotifications(notifs);
+        setSharing(shr);
+      } catch(e) { console.warn("Data load failed:", e.message); }
+      // Load registered users for admin panel
+      try {
+        const profiles = await sql`SELECT * FROM user_profiles ORDER BY created_at`;
+        if (profiles.length) setUsers(profiles.map(p => ({
+          id: p.id, name: p.full_name, email: p.email,
+          role: p.is_admin ? "Admin" : "Investor", status: "Active", accounts: 0,
+          joined: new Date(p.created_at).toLocaleDateString("en-US",{month:"short",year:"numeric"}),
+        })));
+      } catch(_) {}
     };
     load();
   }, [user?.uid]);
 
+  // Poll notifications every 30 seconds to surface new connection requests etc.
   useEffect(() => {
     if (!user || !sql) return;
-    const t = setTimeout(async () => {
-      try { await sql`INSERT INTO user_data (user_id, data_type, data) VALUES (${user.uid}, 'recs_received', ${JSON.stringify(recsReceived)}) ON CONFLICT (user_id, data_type) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`; } catch(e) {}
-    }, 800);
-    return () => clearTimeout(t);
-  }, [recsReceived, user?.uid]);
-
-  useEffect(() => {
-    if (!user || !sql) return;
-    const t = setTimeout(async () => {
-      try { await sql`INSERT INTO user_data (user_id, data_type, data) VALUES (${user.uid}, 'recs_made', ${JSON.stringify(recsMade)}) ON CONFLICT (user_id, data_type) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`; } catch(e) {}
-    }, 800);
-    return () => clearTimeout(t);
-  }, [recsMade, user?.uid]);
-
-  useEffect(() => {
-    if (!user || !sql) return;
-    const t = setTimeout(async () => {
-      try { await sql`INSERT INTO user_data (user_id, data_type, data) VALUES (${user.uid}, 'groups', ${JSON.stringify(groups)}) ON CONFLICT (user_id, data_type) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`; } catch(e) {}
-    }, 800);
-    return () => clearTimeout(t);
-  }, [groups, user?.uid]);
-
-  useEffect(() => {
-    if (!user || !sql) return;
-    const t = setTimeout(async () => {
-      try { await sql`INSERT INTO user_data (user_id, data_type, data) VALUES (${user.uid}, 'contacts', ${JSON.stringify(contacts)}) ON CONFLICT (user_id, data_type) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`; } catch(e) {}
-    }, 800);
-    return () => clearTimeout(t);
-  }, [contacts, user?.uid]);
-
-  useEffect(() => {
-    if (!user || !sql) return;
-    const t = setTimeout(async () => {
-      try { await sql`INSERT INTO user_data (user_id, data_type, data) VALUES (${user.uid}, 'sharing', ${JSON.stringify(sharing)}) ON CONFLICT (user_id, data_type) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`; } catch(e) {}
-    }, 800);
-    return () => clearTimeout(t);
-  }, [sharing, user?.uid]);
+    const iv = setInterval(async () => {
+      try { setNotifications(await getMyNotifications(user.uid)); } catch(_) {}
+    }, 30000);
+    return () => clearInterval(iv);
+  }, [user?.uid]);
 
   // ── Auth gate ───────────────────────────────────────────────────────────────
   if (authLoading) return (
-    <div style={{ minHeight:"100vh", background:"#0a0b18", display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ color:"#8a8daa", fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:15 }}>Loading…</div>
+    <div style={{minHeight:"100vh",background:"#0a0b18",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{color:"#8a8daa",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15}}>Loading…</div>
     </div>
   );
   if (!user) return <LoginPage />;
+
 
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
   const isInv = role==="investor";
@@ -410,20 +398,20 @@ export default function App() {
   const canCreateGroups = configs.groupCreationPolicy==="all";
 
   const nav = isInv ? [
-    { id:"home", label:"Home", icon:Home },
-    { id:"portfolio", label:"My Portfolio", icon:PieChart },
-    { id:"network", label:"Network", icon:Users },
+    { id:"home",      label:"Home",            icon:Home },
+    { id:"portfolio", label:"My Portfolio",     icon:PieChart },
+    { id:"network",   label:"Network",          icon:Users },
     ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", icon:Lightbulb, badge:newRecs }] : []),
-    { id:"sharing", label:"Sharing & Privacy", icon:Shield },
+    { id:"sharing",   label:"Sharing & Privacy",icon:Shield },
   ] : [
-    { id:"users", label:"Users", icon:UserCog },
-    { id:"groups", label:"Groups", icon:Layers },
+    { id:"users",   label:"Users",             icon:UserCog },
+    { id:"groups",  label:"Groups",            icon:Layers },
     { id:"configs", label:"App Configuration", icon:Settings },
   ];
 
   const stats = isInv
-    ? [["Connections",contacts.length],["Groups",groups.filter(g=>g.members.includes("me")||g.members.includes(ME.id)).length],["Accounts",ACCOUNTS.length]]
-    : [["Users",users.length],["Active",users.filter(u=>u.status==="Active").length],["Groups",groups.length]];
+    ? [["Connections", contacts.length], ["Groups", groups.length], ["Accounts", ACCOUNTS.length]]
+    : [["Users", users.length], ["Active", users.filter(u=>u.status==="Active").length], ["Groups", groups.length]];
 
   return (
     <div className="app">
@@ -444,17 +432,15 @@ export default function App() {
           <div className="side-label">{isInv?"Menu":"Admin"}</div>
           {nav.map(n=>(
             <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>setPage(n.id)}>
-              <n.icon size={19}/> {n.label}{n.badge>0 && <span className="nav-badge">{n.badge}</span>}</div>
+              <n.icon size={19}/> {n.label}{n.badge>0 && <span className="nav-badge">{n.badge}</span>}
+            </div>
           ))}
           <div className="side-foot">
             {stats.map(([l,v])=><div key={l} className="side-stat"><span>{l}</span><b>{v}</b></div>)}
             <div className="side-stat" style={{marginTop:8,borderTop:"1px solid rgba(255,255,255,.08)",paddingTop:8}}>
               <span style={{fontSize:11,color:"rgba(255,255,255,.4)"}}>{ME.email}</span></div>
-            <button onClick={logout} style={{
-              marginTop:10, width:"100%", background:"rgba(255,255,255,.07)", border:"1px solid rgba(255,255,255,.1)",
-              borderRadius:8, padding:"7px 10px", color:"rgba(255,255,255,.65)", fontSize:12.5, fontWeight:600,
-              cursor:"pointer", display:"flex", alignItems:"center", gap:7,
-            }}><LogOut size={14}/> Sign out</button>
+            <button onClick={logout} style={{marginTop:10,width:"100%",background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,padding:"7px 10px",color:"rgba(255,255,255,.65)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
+              <LogOut size={14}/> Sign out</button>
           </div>
         </div>
 
@@ -462,7 +448,38 @@ export default function App() {
           <div className="topbar">
             <div className="searchbox" style={{width:300,maxWidth:"40vw"}}><Search size={16} color="var(--muted)"/><input placeholder="Search investors, tickers…"/></div>
             <div className="tb-right">
-              <button className="icon-btn"><Bell size={18}/></button>
+              {/* Notification bell */}
+              <div style={{position:"relative"}}>
+                <button className="icon-btn" onClick={()=>setNotifOpen(v=>!v)}>
+                  <Bell size={18}/>
+                  {unreadCount>0 && <span style={{position:"absolute",top:0,right:0,background:"var(--accent)",color:"#fff",borderRadius:"50%",fontSize:10,fontWeight:800,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{unreadCount>9?"9+":unreadCount}</span>}
+                </button>
+                {notifOpen && <NotificationPanel
+                  notifications={notifications}
+                  myId={ME.id}
+                  onAccept={async (n) => {
+                    await acceptConnection(n.reference_id, ME.id);
+                    await markNotifRead(n.id, ME.id);
+                    const [conns, notifs] = await Promise.all([getMyConnections(ME.id), getMyNotifications(ME.id)]);
+                    setConnections(conns); setNotifications(notifs);
+                  }}
+                  onReject={async (n) => {
+                    await rejectConnection(n.reference_id, ME.id);
+                    await markNotifRead(n.id, ME.id);
+                    const [conns, notifs] = await Promise.all([getMyConnections(ME.id), getMyNotifications(ME.id)]);
+                    setConnections(conns); setNotifications(notifs);
+                  }}
+                  onRead={async (n) => {
+                    await markNotifRead(n.id, ME.id);
+                    setNotifications(ns => ns.map(x => x.id===n.id ? {...x,is_read:true} : x));
+                  }}
+                  onReadAll={async () => {
+                    await markAllNotifRead(ME.id);
+                    setNotifications(ns => ns.map(x => ({...x,is_read:true})));
+                  }}
+                  onClose={()=>setNotifOpen(false)}
+                />}
+              </div>
               <div className="avatar-pill">
                 <div className="gava">{isInv ? ME.initials : "AD"}</div>
                 <div style={{paddingRight:6}}>
@@ -472,25 +489,36 @@ export default function App() {
               </div>
             </div>
           </div>
+
           <div className="content">
-            {isInv && page==="home" && <HomeFeed setPage={setPage} recsReceived={recsReceived} configs={configs} holdings={holdings} contacts={contacts}/>}
+            {isInv && page==="home"      && <HomeFeed setPage={setPage} recsReceived={recsReceived} configs={configs} holdings={holdings} contacts={contacts}/>}
             {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
-            {isInv && page==="network" && <Network contacts={contacts} setContacts={setContacts} groups={groups} setGroups={setGroups}
-                sharing={sharing} setSharing={setSharing} configs={configs} canCreateGroups={canCreateGroups}
-                pendingInvites={pendingInvites} setPendingInvites={setPendingInvites} me={ME}
-                recsReceived={recsReceived} onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}/>}
-            {isInv && page==="recs" && <Recommendations recsReceived={recsReceived} setRecsReceived={setRecsReceived} recsMade={recsMade} setRecsMade={setRecsMade}
-                contacts={contacts} groups={groups} assetClasses={assetClasses} setAssetClasses={setAssetClasses} initFilter={recoInit} holdings={holdings} me={ME}/>}
-            {isInv && page==="sharing" && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups}/>}
-            {!isInv && page==="users" && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={setContacts}/>}
-            {!isInv && page==="groups" && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
-            {!isInv && page==="configs" && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
+            {isInv && page==="network"   && <Network
+                connections={connections} setConnections={setConnections}
+                groups={groups} setGroups={setGroups}
+                sharing={sharing} setSharing={setSharing}
+                configs={configs} canCreateGroups={canCreateGroups}
+                pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
+                recsReceived={recsReceived} me={ME}
+                onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}/>}
+            {isInv && page==="recs"      && <Recommendations
+                recsReceived={recsReceived} setRecsReceived={setRecsReceived}
+                recsMade={recsMade} setRecsMade={setRecsMade}
+                contacts={contacts} groups={groups}
+                assetClasses={assetClasses} setAssetClasses={setAssetClasses}
+                initFilter={recoInit} holdings={holdings} me={ME}
+                onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/>}
+            {isInv && page==="sharing"   && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id}/>}
+            {!isInv && page==="users"    && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={()=>{}}/>}
+            {!isInv && page==="groups"   && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
+            {!isInv && page==="configs"  && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
           </div>
         </div>
       </div>
     </div>
   );
 }
+
 
 /* =================================================================== NETWORK */
 function SortTh({ label, k, sort, setSort, align }) {
@@ -512,171 +540,263 @@ function RecoBreakdown({ stats, onPnl, pnlLabel }) {
       <div className="stat"><div className="v">{stats.disliked}</div><div className="l">I disliked</div></div>
       <div className="stat"><div className="v pos">{stats.inMoney}</div><div className="l">In the money</div></div>
       <div className="stat"><div className="v neg">{stats.outMoney}</div><div className="l">Out of money</div></div>
-      <div className="stat click" onClick={(e)=>{ e.stopPropagation(); onPnl(); }} title="Open these recommendations">
+      <div className="stat click" onClick={(e)=>{ e.stopPropagation(); onPnl(); }}>
         <div className={"v "+(stats.pnl>=0?"pos":"neg")}>{fmtSigned(stats.pnl)}</div>
         <div className="l" style={{color:"var(--accent-ink)"}}>{pnlLabel||"My P&L"} ↗</div></div>
     </div>
   );
 }
 
-function Network({ contacts, setContacts, groups, setGroups, sharing, setSharing, configs, canCreateGroups, pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me }) {
+/* ── Notification Panel ─────────────────────────────────────────────────────── */
+function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, onReadAll, onClose }) {
+  const unread = notifications.filter(n => !n.is_read);
+  const TYPE_LABEL = {
+    connection_request:  "wants to connect with you",
+    connection_accepted: "accepted your connection request",
+    connection_rejected: "declined your connection request",
+    group_added:         "added you to a group",
+    group_member_exit:   "left your group",
+    recommendation:      "shared a recommendation with you",
+    exit_signal:         "issued an exit signal",
+  };
+  return (
+    <div style={{position:"absolute",top:44,right:0,width:380,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:16,boxShadow:"0 8px 32px rgba(0,0,0,.12)",zIndex:200,maxHeight:520,display:"flex",flexDirection:"column"}}
+         onClick={e=>e.stopPropagation()}>
+      <div style={{padding:"14px 18px",borderBottom:"1px solid var(--line)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <b style={{fontSize:14}}>Notifications {unread.length>0 && <span className="nav-badge" style={{position:"static",marginLeft:6}}>{unread.length}</span>}</b>
+        <div style={{display:"flex",gap:8}}>
+          {unread.length>0 && <button className="btn btn-ghost btn-sm" onClick={onReadAll}>Mark all read</button>}
+          <button className="icon-btn" onClick={onClose}><X size={16}/></button>
+        </div>
+      </div>
+      <div style={{overflowY:"auto",flex:1}}>
+        {notifications.length===0 && <div className="empty" style={{padding:32}}>No notifications yet</div>}
+        {notifications.map(n=>(
+          <div key={n.id} style={{padding:"12px 18px",borderBottom:"1px solid var(--line)",background:n.is_read?"transparent":"var(--surface-2)",display:"flex",gap:12,alignItems:"flex-start"}}>
+            <div className="av" style={{width:36,height:36,flexShrink:0,background:"#6d5df5",fontSize:13}}>{initialsOf(n.from_name||"?")}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,lineHeight:1.5}}><b>{n.from_name||"Someone"}</b> {TYPE_LABEL[n.type]||n.type}
+                {n.metadata?.groupName && <> — <b>{n.metadata.groupName}</b></>}
+                {n.metadata?.ticker    && <> — <b>{n.metadata.ticker}</b></>}
+              </div>
+              <div className="muted small">{fmtDate(n.created_at?.toString?.()?.slice(0,10)||"")}</div>
+              {/* Action buttons for connection requests */}
+              {n.type==="connection_request" && !n.is_read && (
+                <div style={{display:"flex",gap:8,marginTop:8}}>
+                  <button className="btn btn-pri btn-sm" onClick={()=>onAccept(n)}><Check size={13}/> Accept</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>onReject(n)}><X size={13}/> Decline</button>
+                </div>
+              )}
+              {n.type==="connection_request" && n.is_read && (
+                <span className="pill muted" style={{fontSize:11,marginTop:4}}>Responded</span>
+              )}
+            </div>
+            {!n.is_read && n.type!=="connection_request" && (
+              <button className="icon-btn" title="Mark read" onClick={()=>onRead(n)}><Check size={14}/></button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Network shell ─────────────────────────────────────────────────────────── */
+function Network({ connections, setConnections, groups, setGroups, sharing, setSharing, configs,
+    canCreateGroups, pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me }) {
   const [tab, setTab] = useState("contacts");
-  const myId = me?.id || "me";
-  const myGroups = groups.filter(g=>g.members.includes("me")||g.members.includes(myId));
+  const pendingReceived = connections.filter(c=>c.status==="pending"&&c.direction==="received").length;
   return (
     <>
       <div className="page-head">
         <div><div className="eyebrow">Network</div><div className="page-title">Your circle</div>
-          <div className="page-sub">Manage who you're connected to and the groups you share with</div></div>
+          <div className="page-sub">Manage connections and groups</div></div>
       </div>
-      <div className="seg" style={{ marginBottom:20 }}>
-        <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}><Users size={15}/> Contacts · {contacts.length}</button>
-        <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}><Layers size={15}/> Groups · {myGroups.length}</button>
+      <div className="seg" style={{marginBottom:20}}>
+        <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}>
+          <Users size={15}/> Contacts · {connections.filter(c=>c.status==="accepted").length}
+          {pendingReceived>0 && <span className="nav-badge" style={{position:"static",marginLeft:6}}>{pendingReceived}</span>}
+        </button>
+        <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}>
+          <Layers size={15}/> Groups · {groups.length}
+        </button>
       </div>
       {tab==="contacts"
-        ? <ContactsSection contacts={contacts} setContacts={setContacts} groups={groups} sharing={sharing} setSharing={setSharing} configs={configs}
-            pendingInvites={pendingInvites} setPendingInvites={setPendingInvites} recsReceived={recsReceived} onOpenRecos={onOpenRecos} me={me}/>
-        : <GroupsSection groups={groups} setGroups={setGroups} contacts={contacts} configs={configs} canCreateGroups={canCreateGroups} me={me}
+        ? <ContactsSection connections={connections} setConnections={setConnections}
+            groups={groups} sharing={sharing} setSharing={setSharing} configs={configs}
+            pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
+            recsReceived={recsReceived} onOpenRecos={onOpenRecos} me={me}/>
+        : <GroupsSection groups={groups} setGroups={setGroups}
+            contacts={connections.filter(c=>c.status==="accepted").map((c,i)=>({id:c.user_id,name:c.name,color:CONTACT_COLORS[i%CONTACT_COLORS.length],connectionId:c.connection_id}))}
+            configs={configs} canCreateGroups={canCreateGroups} me={me}
             recsReceived={recsReceived} onOpenRecos={onOpenRecos}/>}
     </>
   );
 }
 
-/* ---------- contacts ---------- */
-function ContactsSection({ contacts, setContacts, groups, sharing, setSharing, configs, pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me }) {
-  const [view, setView] = useState("table");
+/* ── Contacts section ─────────────────────────────────────────────────────── */
+function ContactsSection({ connections, setConnections, groups, sharing, setSharing, configs,
+    pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me }) {
   const [q, setQ] = useState("");
-  const [fStyle, setFStyle] = useState("all");
-  const [fGroup, setFGroup] = useState("all");
-  const [fTheir, setFTheir] = useState("all");
-  const [fMine, setFMine] = useState("all");
-  const [sort, setSort] = useState({ key:"name", dir:"asc" });
+  const [sort, setSort] = useState({key:"name",dir:"asc"});
   const [showAdd, setShowAdd] = useState(false);
   const [openContact, setOpenContact] = useState(null);
   const [expandId, setExpandId] = useState(null);
+  const [busy, setBusy] = useState({});
   const myId = me?.id || "me";
-  const styles = [...new Set(contacts.map(c=>c.title))];
-  const commonGroups = (id) => groups.filter(g=>(g.members.includes("me")||g.members.includes(myId)) && g.members.includes(id));
-  const statsOf = (c) => recoStats(recsReceived, r => r.from===c.id || (r.byName && r.byName===c.name));
-  const rows = useMemo(()=>{
-    let r = contacts.map(c=>({ ...c, their: normLevel(c.shared.level), mine: myPerm(sharing,c.id), common: commonGroups(c.id), stats: statsOf(c) }));
-    if(q.trim()){ const s=q.toLowerCase(); r=r.filter(c=>(c.name+c.title).toLowerCase().includes(s)); }
-    if(fStyle!=="all") r=r.filter(c=>c.title===fStyle);
-    if(fGroup!=="all") r=r.filter(c=>c.common.some(g=>g.id===fGroup));
-    if(fTheir!=="all") r=r.filter(c=>c.their===fTheir);
-    if(fMine!=="all") r=r.filter(c=>c.mine===fMine);
-    const dir = sort.dir==="asc"?1:-1;
-    r.sort((a,b)=>{ let av,bv;
-      if(sort.key==="name"){av=a.name.toLowerCase();bv=b.name.toLowerCase();}
-      else if(sort.key==="style"){av=a.title.toLowerCase();bv=b.title.toLowerCase();}
-      else if(sort.key==="common"){av=a.common.length;bv=b.common.length;}
-      else if(sort.key==="recos"){av=a.stats.count;bv=b.stats.count;}
-      else if(sort.key==="pnl"){av=a.stats.pnl;bv=b.stats.pnl;}
-      else if(sort.key==="their"){av=PERM_ORDER[a.their];bv=PERM_ORDER[b.their];}
-      else if(sort.key==="mine"){av=PERM_ORDER[a.mine];bv=PERM_ORDER[b.mine];}
-      return av<bv?-dir:av>bv?dir:0; });
+
+  // ALL connections shown (all statuses) so user can see pending/rejected
+  const rows = useMemo(() => {
+    let r = [...connections];
+    if (q.trim()) { const s=q.toLowerCase(); r=r.filter(c=>c.name.toLowerCase().includes(s)||c.email.toLowerCase().includes(s)); }
+    const dir=sort.dir==="asc"?1:-1;
+    r.sort((a,b)=>{
+      if(sort.key==="name")   return a.name.localeCompare(b.name)*dir;
+      if(sort.key==="status") return a.status.localeCompare(b.status)*dir;
+      return 0;
+    });
     return r;
-  },[contacts,sharing,groups,recsReceived,q,fStyle,fGroup,fTheir,fMine,sort]);
-  const addExisting = (uid, info) => {
-    // Guard: don't add if already in contacts by UID or email
-    if (contacts.some(c => c.id === uid || (info.email && c.email === info.email))) return;
-    setContacts(cs=>[...cs,{
-      id: uid,
-      email: info.email || "",
-      name: info.name,
-      initials: initialsOf(info.name),
-      color: CONTACT_COLORS[cs.length % CONTACT_COLORS.length],
-      title: info.title || "New connection",
-      shared:{ level:"none", holdings:[] }
-    }]);
-    const dflt = configs.defaultDisclosure || "names";
-    setSharing(s=>({ ...s, [uid]: { visibility: dflt==="none"?"off":"all", level: dflt==="full"?"full":"names", selected:[] } }));
+  }, [connections, q, sort]);
+
+  const statsOf = (c) => recoStats(recsReceived, r => r.from===c.user_id||(r.byName&&r.byName===c.name));
+  const commonGroups = (c) => groups.filter(g=>g.members?.some(m=>m.user_id===c.user_id));
+  const myPermFor = (c) => {
+    const s = sharing[c.user_id];
+    if (!s) return "off";
+    if (s.visibility==="off") return "off";
+    return s.level==="full"?"full":"names";
   };
-  const addInvite = (email) => setPendingInvites(p=> p.some(x=>x.email===email)?p:[...p,{email,date:TODAY}]);
-  const deleteContact = (c) => {
-    if (!confirm(`Remove ${c.name} from your network? Their sharing settings will also be cleared. This cannot be undone.`)) return;
-    setContacts(cs => cs.filter(x => x.id !== c.id));
-    setSharing(s => { const ns = {...s}; delete ns[c.id]; return ns; });
+
+  const doAccept = async (c) => {
+    setBusy(b=>({...b,[c.connection_id]:true}));
+    await acceptConnection(c.connection_id, myId);
+    setConnections(await getMyConnections(myId));
+    setBusy(b=>({...b,[c.connection_id]:false}));
   };
+  const doReject = async (c) => {
+    setBusy(b=>({...b,[c.connection_id]:true}));
+    await rejectConnection(c.connection_id, myId);
+    setConnections(await getMyConnections(myId));
+    setBusy(b=>({...b,[c.connection_id]:false}));
+  };
+  const doRemove = async (c) => {
+    if(!confirm(`Remove ${c.name} from your network?`)) return;
+    await removeConnection(c.connection_id, myId);
+    setConnections(cs=>cs.filter(x=>x.connection_id!==c.connection_id));
+    setSharing(s=>{const ns={...s}; delete ns[c.user_id]; return ns;});
+  };
+  const setMyPerm_ = async (userId, val) => {
+    const next = { visibility: val==="off"?"off":"all", level: val==="full"?"full":"names", selected:[] };
+    setSharing(s=>({...s,[userId]:next}));
+    await upsertSharingPref(myId, userId, "user", next);
+  };
+
+  const accepted = rows.filter(c=>c.status==="accepted");
+  const pendingReceived = rows.filter(c=>c.status==="pending"&&c.direction==="received");
+  const pendingSent = rows.filter(c=>c.status==="pending"&&c.direction==="sent");
+  const rejected = rows.filter(c=>c.status==="rejected");
+
+  const ContactRow = ({c, showActions}) => {
+    const stats = statsOf(c);
+    const mine = myPermFor(c);
+    const open = expandId===c.connection_id;
+    const cg = commonGroups(c);
+    const av = {name:c.name,initials:initialsOf(c.name),color:CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
+    return (<React.Fragment key={c.connection_id}>
+      <tr className={"hoverable"+(c.status!=="accepted"?" hiddenrow":"")} style={{cursor:"pointer"}} onClick={()=>setExpandId(open?null:c.connection_id)}>
+        <td><div style={{display:"flex",gap:11,alignItems:"center"}}>
+          <Avatar f={av} size={36}/>
+          <div className="sym">{c.name}</div>
+          {c.status==="pending"&&c.direction==="sent"     && <span className="pill" style={{fontSize:11,background:"#f59e0b22",color:"#b45309"}}>Pending</span>}
+          {c.status==="pending"&&c.direction==="received" && <span className="pill accent" style={{fontSize:11}}>Wants to connect</span>}
+          {c.status==="rejected" && <span className="pill loss" style={{fontSize:11}}>Rejected</span>}
+          <ChevronDown size={14} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s"}}/>
+        </div></td>
+        <td className="muted small">{c.email}</td>
+        <td>{cg.length===0?<span className="muted small">—</span>:<div style={{display:"flex",flexWrap:"wrap",gap:5}}>{cg.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}</td>
+        <td className="tnum">{c.status==="accepted"?stats.count:<span className="muted">—</span>}</td>
+        <td style={{textAlign:"right"}}>
+          {c.status==="accepted"
+            ? <span className="clickable tnum nowrap" onClick={(e)=>{e.stopPropagation();onOpenRecos({by:c.name});}}>{fmtSigned(stats.pnl)} ↗</span>
+            : <span className="muted">—</span>}</td>
+        <td onClick={e=>e.stopPropagation()}>
+          {c.status==="accepted"
+            ? <select className="inline-select sm" value={mine} onChange={e=>setMyPerm_(c.user_id,e.target.value)}>
+                <option value="off">Not shared</option><option value="names">Names only</option><option value="full">Amounts & P&L</option>
+              </select>
+            : <span className="muted small">—</span>}</td>
+        <td onClick={e=>e.stopPropagation()}>
+          {c.status==="pending"&&c.direction==="received" && (
+            <div style={{display:"flex",gap:6}}>
+              <button className="btn btn-pri btn-sm" disabled={busy[c.connection_id]} onClick={()=>doAccept(c)}><Check size={13}/> Accept</button>
+              <button className="btn btn-ghost btn-sm" disabled={busy[c.connection_id]} onClick={()=>doReject(c)}><X size={13}/> Decline</button>
+            </div>)}
+          {(c.status==="pending"&&c.direction==="sent"||c.status==="rejected") && (
+            <button className="iconbtn danger" title="Remove" onClick={()=>doRemove(c)}><Trash2 size={14}/></button>)}
+          {c.status==="accepted" && (
+            <button className="iconbtn danger" title="Remove from network" onClick={()=>doRemove(c)}><Trash2 size={14}/></button>)}
+        </td>
+      </tr>
+      {open && c.status==="accepted" && <tr className="expand-row"><td colSpan={7}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <b style={{fontSize:14}}>{c.name}&apos;s recommendations to you</b>
+          <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>
+        </div>
+        <RecoBreakdown stats={statsOf(c)} pnlLabel="My P&L" onPnl={()=>onOpenRecos({by:c.name})}/>
+      </div></td></tr>}
+    </React.Fragment>);
+  };
+
   return (<>
-    {pendingInvites.length>0 && <div className="note info" style={{marginBottom:14}}><Mail size={16}/><div>Pending email invitations: {pendingInvites.map(p=>p.email).join(", ")}. They'll join your network once they create an account.</div></div>}
+    {pendingInvites.length>0 && <div className="note info" style={{marginBottom:14}}><Mail size={16}/><div>Pending email invitations: {pendingInvites.map(p=>p.email).join(", ")}.</div></div>}
     <div className="toolbar">
-      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search contacts by name or style…"/></div>
-      <div className="fl"><span className="lab">Style</span><select className="inline-select sm" value={fStyle} onChange={e=>setFStyle(e.target.value)}><option value="all">All</option>{styles.map(s=><option key={s}>{s}</option>)}</select></div>
-      <div className="fl"><span className="lab">Group</span><select className="inline-select sm" value={fGroup} onChange={e=>setFGroup(e.target.value)}><option value="all">All</option>{groups.filter(g=>g.members.includes("me")).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
-      <div className="fl"><span className="lab">They share</span><select className="inline-select sm" value={fTheir} onChange={e=>setFTheir(e.target.value)}><option value="all">All</option><option value="off">Not shared</option><option value="names">Only names</option><option value="full">Amounts & P&L</option></select></div>
-      <div className="fl"><span className="lab">I share</span><select className="inline-select sm" value={fMine} onChange={e=>setFMine(e.target.value)}><option value="all">All</option><option value="off">Not shared</option><option value="names">Only names</option><option value="full">Amounts & P&L</option></select></div>
-      <div className="seg tiny"><button className={view==="list"?"active":""} onClick={()=>setView("list")}><List size={14}/> List</button><button className={view==="table"?"active":""} onClick={()=>setView("table")}><TableIcon size={14}/> Table</button></div>
+      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by name or email…"/></div>
       <button className="btn btn-pri btn-sm" onClick={()=>setShowAdd(true)}><UserPlus size={15}/> Add connection</button>
     </div>
-    {rows.length===0 && <div className="card"><div className="empty">{contacts.length===0 ? "No contacts yet. Add people from your network to get started." : "No contacts match your filters."}</div></div>}
-    {view==="table" && rows.length>0 && (
-      <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:1080}}>
-        <thead><tr>
-          <SortTh label="Name" k="name" sort={sort} setSort={setSort}/>
-          <SortTh label="Investor style" k="style" sort={sort} setSort={setSort}/>
-          <SortTh label="Groups in common" k="common" sort={sort} setSort={setSort}/>
-          <SortTh label="Recos made" k="recos" sort={sort} setSort={setSort}/>
-          <SortTh label="My P&L" k="pnl" sort={sort} setSort={setSort} align="right"/>
-          <SortTh label="They shared with me" k="their" sort={sort} setSort={setSort}/>
-          <SortTh label="I share with them" k="mine" sort={sort} setSort={setSort}/>
-          <th></th>
-        </tr></thead>
-        <tbody>{rows.map(c=>{ const open=expandId===c.id;
-          return (<React.Fragment key={c.id}>
-            <tr className="hoverable" style={{cursor:"pointer"}} onClick={()=>setExpandId(open?null:c.id)}>
-              <td><div style={{display:"flex",gap:11,alignItems:"center"}}><Avatar f={c} size={36}/><div className="sym">{c.name}</div>
-                <ChevronDown size={15} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s"}}/></div></td>
-              <td className="muted">{c.title}</td>
-              <td>{c.common.length===0 ? <span className="muted small">—</span> : <div style={{display:"flex",flexWrap:"wrap",gap:5}}>{c.common.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}</td>
-              <td className="tnum">{c.stats.count}</td>
-              <td style={{textAlign:"right"}} onClick={(e)=>{e.stopPropagation(); onOpenRecos({by:c.name});}}><span className="clickable tnum nowrap">{fmtSigned(c.stats.pnl)} ↗</span></td>
-              <td onClick={e=>e.stopPropagation()}><PermBadge p={c.their}/></td>
-              <td onClick={e=>e.stopPropagation()}><select className="inline-select sm" value={c.mine} onChange={e=>setMyPerm(setSharing,c.id,e.target.value)}>
-                <option value="off">Not shared</option><option value="names">Only names</option><option value="full">Amounts & P&L</option></select></td>
-              <td onClick={e=>e.stopPropagation()}>
-                <button className="iconbtn danger" title="Remove from network" onClick={()=>deleteContact(c)}><Trash2 size={14}/></button>
-              </td>
-            </tr>
-            {open && <tr className="expand-row"><td colSpan={8}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:10}}>
-                <b style={{fontSize:14}}>{c.name}'s recommendations to you</b>
-                <div style={{display:"flex",gap:8}}>
-                  <button className="btn btn-ghost btn-sm" disabled={c.their==="off"} onClick={()=>setOpenContact(c)}><Eye size={14}/> View portfolio</button>
-                  <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>deleteContact(c)}><Trash2 size={13}/> Remove</button>
-                </div>
-              </div>
-              <RecoBreakdown stats={c.stats} pnlLabel="My P&L from their recos" onPnl={()=>onOpenRecos({by:c.name})}/>
-            </div></td></tr>}
-          </React.Fragment>);
-        })}</tbody>
-      </table></div></div></div>
-    )}
-    {view==="list" && rows.length>0 && (
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))", gap:16 }}>
-        {rows.map(c=>(
-          <div key={c.id} className="card lift"><div className="card-body">
-            <div style={{ display:"flex", gap:13, alignItems:"center" }}><Avatar f={c} size={48}/>
-              <div><div style={{ fontWeight:700 }}>{c.name}</div><div className="muted small">{c.title}</div></div></div>
-            <div style={{display:"flex",gap:18,margin:"14px 0"}}>
-              <div><div className="small muted">Recos made</div><div style={{fontWeight:800,fontSize:18}}>{c.stats.count}</div></div>
-              <div><div className="small muted">I acted on</div><div style={{fontWeight:800,fontSize:18}}>{c.stats.acted}</div></div>
-              <div onClick={()=>onOpenRecos({by:c.name})} style={{cursor:"pointer"}}><div className="small muted" style={{color:"var(--accent-ink)"}}>My P&L ↗</div><div className={"tnum "+(c.stats.pnl>=0?"pos":"neg")} style={{fontWeight:800,fontSize:18}}>{fmtSigned(c.stats.pnl)}</div></div>
-            </div>
-            <div className="seg tiny" style={{marginBottom:14,width:"100%"}}>
-              {["off","names","full"].map(v=><button key={v} style={{flex:1,justifyContent:"center"}} className={c.mine===v?"active":""} onClick={()=>setMyPerm(setSharing,c.id,v)}>{v==="off"?"Not shared":v==="names"?"Names":"+ P&L"}</button>)}</div>
-            <button className="btn btn-soft btn-sm" style={{width:"100%",justifyContent:"center"}} disabled={c.their==="off"} onClick={()=>setOpenContact(c)}>
-              {c.their==="off"?"Portfolio not shared":"View portfolio"} {c.their!=="off" && <ChevronRight size={15}/>}</button>
-            <button className="btn btn-ghost btn-sm" style={{width:"100%",justifyContent:"center",marginTop:8,color:"var(--loss)"}} onClick={()=>deleteContact(c)}>
-              <Trash2 size={13}/> Remove from network</button>
-          </div></div>
-        ))}
+
+    {/* Pending incoming requests */}
+    {pendingReceived.length>0 && (
+      <div className="card" style={{marginBottom:16,border:"2px solid var(--accent)"}}>
+        <div className="card-head" style={{color:"var(--accent)"}}><Bell size={15}/> {pendingReceived.length} pending connection request{pendingReceived.length>1?"s":""}</div>
+        <div className="card-body" style={{padding:"8px 0"}}><table className="grid" style={{minWidth:800}}>
+          <tbody>{pendingReceived.map(c=><ContactRow key={c.connection_id} c={c}/>)}</tbody>
+        </table></div>
       </div>
     )}
-    {showAdd && <AddConnectionModal existing={contacts} me={me} onClose={()=>setShowAdd(false)} onAddExisting={addExisting} onInvite={addInvite}/>}
+
+    {/* Accepted contacts */}
+    {connections.length===0
+      ? <div className="card"><div className="empty">No connections yet. Use &ldquo;Add connection&rdquo; to invite people.</div></div>
+      : <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:900}}>
+          <thead><tr>
+            <SortTh label="Name"            k="name"   sort={sort} setSort={setSort}/>
+            <th>Email</th>
+            <th>Common groups</th>
+            <SortTh label="Recos to me"     k="recos"  sort={sort} setSort={setSort}/>
+            <SortTh label="My P&amp;L"      k="pnl"    sort={sort} setSort={setSort} align="right"/>
+            <th>I share</th>
+            <th>Actions</th>
+          </tr></thead>
+          <tbody>
+            {accepted.map(c=><ContactRow key={c.connection_id} c={c}/>)}
+            {pendingSent.map(c=><ContactRow key={c.connection_id} c={c}/>)}
+            {rejected.map(c=><ContactRow key={c.connection_id} c={c}/>)}
+          </tbody>
+        </table></div></div></div>}
+
+    {showAdd && <AddConnectionModal existing={connections} me={me} onClose={()=>setShowAdd(false)}
+        onAddExisting={async(uid,info)=>{
+          const res = await sendConnectionRequest(myId, uid);
+          if (res.error==="already_exists") return;
+          const conns = await getMyConnections(myId);
+          setConnections(conns);
+        }}
+        onInvite={(email)=>setPendingInvites(p=>p.some(x=>x.email===email)?p:[...p,{email,date:TODAY}])}/>}
     {openContact && <PortfolioModal contact={openContact} onClose={()=>setOpenContact(null)}/>}
   </>);
 }
+
+/* ── Add connection modal ──────────────────────────────────────────────────── */
 function AddConnectionModal({ existing, me, onClose, onAddExisting, onInvite }) {
   const [email, setEmail] = useState("");
   const [result, setResult] = useState(null);
@@ -684,51 +804,43 @@ function AddConnectionModal({ existing, me, onClose, onAddExisting, onInvite }) 
   const myName = me?.name || "your admin";
   const submit = async () => {
     const e = email.trim().toLowerCase();
-    if(!/^\S+@\S+\.\S+$/.test(e)){ setResult({type:"warn", msg:"Please enter a valid email address."}); return; }
-    if(existing.some(c=>c.id===e||c.email===e)){ setResult({type:"warn", msg:"That person is already in your network."}); return; }
+    if(!/^\S+@\S+\.\S+$/.test(e)){ setResult({type:"warn",msg:"Please enter a valid email address."}); return; }
+    if(existing.some(c=>c.email===e)){ setResult({type:"warn",msg:"You already have a connection with this person."}); return; }
     setBusy(true);
-    if (sql) {
-      try {
-        const rows = await sql`SELECT id, email, full_name FROM user_profiles WHERE email = ${e} LIMIT 1`;
-        if (rows[0]) {
-          // Check for duplicate by UID (catches same person added twice from different flows)
-          if(existing.some(c=>c.id===rows[0].id||c.email===rows[0].email)) {
-            setResult({type:"warn", msg:"That person is already in your network."});
-            setBusy(false); return;
-          }
-          onAddExisting(rows[0].id, { name:rows[0].full_name, title:"InvestorCircle member", email:rows[0].email });
-          setResult({type:"ok", msg:`${rows[0].full_name} is already on InvestorCircle and has been added to your network.`});
-          setBusy(false); return;
-        }
-      } catch(_) {}
-    }
-    onInvite(e);
-    setResult({type:"info", msg:`No account found for ${e}. An invitation will be sent from ${myName} — they will appear in your network once they sign up.`});
+    try {
+      if (!sql){ setResult({type:"warn",msg:"Database not configured."}); setBusy(false); return; }
+      const rows = await sql`SELECT id, email, full_name FROM user_profiles WHERE email=${e} LIMIT 1`;
+      if (rows[0]) {
+        if (rows[0].id === me?.id){ setResult({type:"warn",msg:"That is your own email address."}); setBusy(false); return; }
+        await onAddExisting(rows[0].id, {name:rows[0].full_name,email:rows[0].email});
+        setResult({type:"ok",msg:`Connection request sent to ${rows[0].full_name}. They will see it in their notifications.`});
+      } else {
+        onInvite(e);
+        setResult({type:"info",msg:`${e} is not on InvestorCircle yet. An invitation note from ${myName} will be shared with them.`});
+      }
+    } catch(err) { setResult({type:"warn",msg:"Could not reach database: "+err.message}); }
     setBusy(false);
   };
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><h3><UserPlus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add connection</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
-        <div className="modal-body">
-          <div className="field"><label>Email address</label>
-            <input value={email} onChange={e=>{setEmail(e.target.value);setResult(null);}} placeholder="name@example.com" onKeyDown={e=>e.key==="Enter"&&!busy&&submit()} autoFocus/></div>
-          <div className="muted small" style={{marginBottom:result?14:0}}>
-            If they already have an InvestorCircle account they are added instantly. Otherwise an invitation will be sent mentioning your name.
-          </div>
-          {result && <div className={"note "+result.type}>{result.type==="ok"?<Check size={16}/>:<Mail size={16}/>}<div>{result.msg}</div></div>}
-        </div>
-        <div className="modal-foot"><span/>
-          <div style={{display:"flex",gap:10}}>
-            <button className="btn btn-ghost" onClick={onClose}>{result?.type==="ok"||result?.type==="info"?"Done":"Cancel"}</button>
-            <button className="btn btn-pri" disabled={!email||busy} onClick={submit}>
-              {busy?<><Loader size={14} className="spin"/> Checking…</>:<><Send size={15}/> Send</>}
-            </button></div>
-        </div>
+  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3><UserPlus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add connection</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      <div className="field"><label>Email address</label>
+        <input value={email} onChange={e=>{setEmail(e.target.value);setResult(null);}} placeholder="name@example.com" onKeyDown={e=>e.key==="Enter"&&!busy&&submit()} autoFocus/></div>
+      <div className="muted small" style={{marginBottom:result?14:0}}>If they have an InvestorCircle account a connection request is sent. They must accept before you can share recommendations.</div>
+      {result && <div className={"note "+result.type}>{result.type==="ok"?<Check size={16}/>:<Mail size={16}/>}<div>{result.msg}</div></div>}
+    </div>
+    <div className="modal-foot"><span/>
+      <div style={{display:"flex",gap:10}}>
+        <button className="btn btn-ghost" onClick={onClose}>{result?"Done":"Cancel"}</button>
+        <button className="btn btn-pri" disabled={!email||busy} onClick={submit}>
+          {busy?<><Loader size={14} className="spin"/> Checking…</>:<><Send size={15}/> Send request</>}
+        </button>
       </div>
     </div>
-  );
+  </div></div>);
 }
+
+
 function PortfolioModal({ contact, onClose }) {
   const full = contact.shared.level==="full";
   return (
@@ -758,159 +870,171 @@ function PortfolioModal({ contact, onClose }) {
 /* ---------- groups ---------- */
 function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, recsReceived, onOpenRecos, me }) {
   const [q, setQ] = useState("");
-  const [fAdmin, setFAdmin] = useState("all");
-  const [sort, setSort] = useState({ key:"name", dir:"asc" });
   const [expanded, setExpanded] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [addTo, setAddTo] = useState(null);
   const [editGroup, setEditGroup] = useState(null);
+  const [busy, setBusy] = useState({});
   const myId = me?.id || "me";
-  const nameOf = (id) => (id==="me"||id===myId) ? (me?.name||"You") : (contacts.find(c=>c.id===id)?.name) || (id==="admin"?"Admin Root":id);
-  const avOf = (id) => (id==="me"||id===myId) ? {name:me?.name||"You",initials:me?.initials||"ME",color:"#6d5df5"} : contacts.find(c=>c.id===id) || {name:id,initials:initialsOf(id),color:"#8d90ad"};
-  const statsOf = (g) => recoStats(recsReceived, r => r.shareType==="group" && r.groupId===g.id);
-  const myGroups = groups.filter(g=>g.members.includes("me")||g.members.includes(myId));
-  const rows = useMemo(()=>{
-    let r = myGroups.map(g=>({ ...g, stats: statsOf(g) }));
-    if(q.trim()){ const s=q.toLowerCase(); r=r.filter(g=>(g.name+" "+g.admins.map(nameOf).join(" ")).toLowerCase().includes(s)); }
-    if(fAdmin==="mine") r=r.filter(g=>g.admins.includes("me")||g.admins.includes(myId));
-    const dir = sort.dir==="asc"?1:-1;
-    r.sort((a,b)=>{ let av,bv;
-      if(sort.key==="name"){av=a.name.toLowerCase();bv=b.name.toLowerCase();}
-      else if(sort.key==="created"){av=a.created;bv=b.created;}
-      else if(sort.key==="members"){av=a.members.length;bv=b.members.length;}
-      else if(sort.key==="admins"){av=a.admins.map(nameOf).join(",").toLowerCase();bv=b.admins.map(nameOf).join(",").toLowerCase();}
-      else if(sort.key==="recos"){av=a.stats.count;bv=b.stats.count;}
-      else if(sort.key==="pnl"){av=a.stats.pnl;bv=b.stats.pnl;}
-      return av<bv?-dir:av>bv?dir:0; });
-    return r;
-  },[groups,q,fAdmin,sort,contacts,recsReceived]);
-  const createGroup = (name, memberIds) => {
-    const dup = groups.some(g=>(g.admins.includes("me")||g.admins.includes(myId)) && g.name.toLowerCase()===name.toLowerCase());
-    if(dup){ alert(`You already have a group named "${name}". Please choose a different name.`); return; }
-    setGroups(gs=>[...gs,{ id:"g"+Date.now(), name, created:TODAY, members:[myId,...memberIds], admins:[myId], color:CONTACT_COLORS[gs.length%CONTACT_COLORS.length] }]);
-    setShowNew(false);
+
+  const nameOf = (id) => {
+    if(id===myId||id==="me") return me?.name||"You";
+    return contacts.find(c=>c.id===id)?.name || id;
   };
-  const renameGroup = (gid, newName) => setGroups(gs=>gs.map(g=>g.id===gid?{...g,name:newName}:g));
-  const deleteGroup = (g) => { if(confirm(`Delete "${g.name}"? This cannot be undone.`)) setGroups(gs=>gs.filter(x=>x.id!==g.id)); };
-  const addMembers = (gid, ids) => setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:[...g.members,...ids]}:g));
-  const removeMember = (gid, id) => setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:g.members.filter(m=>m!==id)}:g));
+  const avOf = (id) => {
+    if(id===myId||id==="me") return {name:me?.name||"You",initials:me?.initials||"ME",color:"#6d5df5"};
+    const c = contacts.find(x=>x.id===id);
+    return c || {name:id,initials:initialsOf(id),color:"#8d90ad"};
+  };
+  const statsOf = (g) => recoStats(recsReceived, r=>r.shareType==="group"&&r.groupId===g.id);
+
+  const rows = useMemo(()=>{
+    let r = [...groups];
+    if(q.trim()){ const s=q.toLowerCase(); r=r.filter(g=>g.name.toLowerCase().includes(s)); }
+    return r;
+  },[groups,q]);
+
+  const doCreateGroup = async (name, memberIds, color) => {
+    if(groups.some(g=>g.my_role==="admin"&&g.name.toLowerCase()===name.toLowerCase())){
+      alert(`You already have a group named "${name}".`); return;
+    }
+    setBusy(b=>({...b,create:true}));
+    const g = await dbCreateGroup(name, color||"#6d5df5", myId, memberIds);
+    setGroups(await getMyGroups(myId));
+    setBusy(b=>({...b,create:false}));
+    setShowNew(false);
+    return g;
+  };
+  const doRenameGroup = async (gid, newName) => {
+    await dbRenameGroup(gid, newName, myId);
+    setGroups(gs=>gs.map(g=>g.id===gid?{...g,name:newName}:g));
+    setEditGroup(null);
+  };
+  const doDeleteGroup = async (g) => {
+    if(!confirm(`Delete "${g.name}"?`)) return;
+    await dbDeleteGroup(g.id, myId);
+    setGroups(gs=>gs.filter(x=>x.id!==g.id));
+  };
+  const doExitGroup = async (g) => {
+    if(!confirm(`Exit "${g.name}"? You will stop receiving recommendations shared in this group.`)) return;
+    await dbExitGroup(g.id, myId);
+    setGroups(gs=>gs.filter(x=>x.id!==g.id));
+  };
+  const doAddMembers = async (gid, ids) => {
+    await dbAddGroupMembers(gid, ids, myId);
+    setGroups(await getMyGroups(myId));
+    setAddTo(null);
+  };
+  const doRemoveMember = async (gid, uid) => {
+    await dbRemoveGroupMember(gid, uid);
+    setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:g.members.filter(m=>m.user_id!==uid)}:g));
+  };
+
   return (<>
     <div className="toolbar">
-      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search groups by name or admin…"/></div>
-      <div className="fl"><span className="lab">Show</span><select className="inline-select sm" value={fAdmin} onChange={e=>setFAdmin(e.target.value)}><option value="all">All my groups</option><option value="mine">Groups I admin</option></select></div>
-      <button className="btn btn-pri btn-sm" disabled={!canCreateGroups} title={canCreateGroups?"":"Group creation is restricted by your administrator"} onClick={()=>setShowNew(true)}><Plus size={15}/> New group</button>
+      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search groups…"/></div>
+      <button className="btn btn-pri btn-sm" disabled={!canCreateGroups||!sql} onClick={()=>setShowNew(true)}><Plus size={15}/> New group</button>
     </div>
-    {!canCreateGroups && <div className="note warn" style={{marginBottom:14}}><Lock size={16}/><div>Your administrator has restricted who can create groups, so the New group button is disabled.</div></div>}
-    {rows.length===0 ? <div className="card"><div className="empty">{myGroups.length===0 ? "No groups yet — create one to start sharing recommendations." : "No groups match your search."}</div></div> :
-    <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:980}}>
+    {rows.length===0 ? <div className="card"><div className="empty">No groups yet. Create one to start sharing recommendations with multiple people at once.</div></div> :
+    <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:820}}>
       <thead><tr>
-        <SortTh label="Group name" k="name" sort={sort} setSort={setSort}/>
-        <SortTh label="Created on" k="created" sort={sort} setSort={setSort}/>
-        <SortTh label="Members" k="members" sort={sort} setSort={setSort}/>
-        <SortTh label="Admins" k="admins" sort={sort} setSort={setSort}/>
-        <SortTh label="Recos made" k="recos" sort={sort} setSort={setSort}/>
-        <SortTh label="My P&L" k="pnl" sort={sort} setSort={setSort} align="right"/>
+        <th>Group name</th><th>Created on</th><th>Members</th><th>My role</th><th>Recos</th><th style={{textAlign:"right"}}>Actions</th>
       </tr></thead>
-      <tbody>{rows.map(g=>{ const open=expanded===g.id; const iAmAdmin=g.admins.includes("me")||g.admins.includes(myId);
+      <tbody>{rows.map(g=>{ const open=expanded===g.id; const iAmAdmin=g.my_role==="admin";
         return (<React.Fragment key={g.id}>
           <tr className="hoverable" style={{cursor:"pointer"}} onClick={()=>setExpanded(open?null:g.id)}>
-            <td><span className="clickable nowrap"><span className="av" style={{width:30,height:30,background:g.color,fontSize:12}}><Layers size={14}/></span>{g.name}
-              <ChevronDown size={15} style={{transform:open?"rotate(180deg)":"none",transition:".15s"}}/></span></td>
-            <td className="muted nowrap"><Calendar size={13} style={{verticalAlign:-2,marginRight:5}}/>{fmtDate(g.created)}</td>
-            <td><span className="pill">{g.members.length} members</span></td>
-            <td className="muted">{g.admins.map(nameOf).join(", ")}</td>
-            <td className="tnum">{g.stats.count}</td>
-            <td style={{textAlign:"right"}} onClick={(e)=>{e.stopPropagation(); onOpenRecos({groupId:g.id});}}><span className="clickable tnum nowrap">{fmtSigned(g.stats.pnl)} ↗</span></td>
+            <td><span className="nowrap"><span className="av" style={{width:28,height:28,background:g.color,fontSize:12,marginRight:8,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:8}}><Layers size={13}/></span>
+              <b>{g.name}</b><ChevronDown size={14} style={{transform:open?"rotate(180deg)":"none",transition:".15s",marginLeft:6}}/></span></td>
+            <td className="muted small">{fmtDate(g.created_at?.toString?.()?.slice(0,10)||"")}</td>
+            <td><span className="pill">{(g.members||[]).filter(m=>m.status==="active").length} members</span></td>
+            <td>{iAmAdmin ? <span className="pill accent">Admin</span> : <span className="pill">Member</span>}</td>
+            <td className="tnum">{statsOf(g).count}</td>
+            <td onClick={e=>e.stopPropagation()}>
+              <div className="actions" style={{justifyContent:"flex-end",gap:6}}>
+                {iAmAdmin && <><button className="iconbtn" title="Rename" onClick={()=>setEditGroup(g)}><Pencil size={14}/></button>
+                <button className="iconbtn danger" title="Delete group" onClick={()=>doDeleteGroup(g)}><Trash2 size={14}/></button></>}
+                {!iAmAdmin && <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doExitGroup(g)}>Exit group</button>}
+              </div>
+            </td>
           </tr>
           {open && <tr className="expand-row"><td colSpan={6}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <b style={{fontSize:14}}>{g.name} · recommendations shared in this group</b>
-              {iAmAdmin && <div style={{display:"flex",gap:8}}>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setEditGroup(g)}><Pencil size={13}/> Rename</button>
-                <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>deleteGroup(g)}><Trash2 size={13}/> Delete</button>
-              </div>}
+              <b style={{fontSize:14}}>Members of {g.name}</b>
+              {iAmAdmin && <button className="btn btn-soft btn-sm" onClick={()=>setAddTo(g)}><UserPlus size={14}/> Add members</button>}
             </div>
-            <RecoBreakdown stats={g.stats} pnlLabel="My P&L from this group" onPnl={()=>onOpenRecos({groupId:g.id})}/>
-            <div style={{height:18}}/>
-            <MemberPanel group={g} nameOf={nameOf} avOf={avOf} canManage={iAmAdmin} max={configs.maxGroupMembers} onAdd={()=>setAddTo(g.id)} onRemove={(id)=>removeMember(g.id,id)}/>
+            <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
+              {(g.members||[]).filter(m=>m.status==="active").map(m=>(
+                <div key={m.user_id} style={{display:"flex",alignItems:"center",gap:8,background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10,padding:"6px 12px"}}>
+                  <Avatar f={avOf(m.user_id)} size={28}/>
+                  <div><div style={{fontWeight:600,fontSize:13}}>{m.name||nameOf(m.user_id)}</div>
+                    <div className="muted" style={{fontSize:11}}>{m.role==="admin"?"Admin":"Member"}</div></div>
+                  {iAmAdmin && m.user_id!==myId && <button className="iconbtn danger" style={{marginLeft:4}} onClick={()=>doRemoveMember(g.id,m.user_id)}><X size={13}/></button>}
+                  {!iAmAdmin && m.user_id===myId && <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)",marginLeft:4}} onClick={()=>doExitGroup(g)}>Exit</button>}
+                </div>
+              ))}
+            </div>
           </div></td></tr>}
         </React.Fragment>);
       })}</tbody>
     </table></div></div></div>}
-    {showNew && <GroupModal title="New group" contacts={contacts} max={configs.maxGroupMembers} alreadyIn={[myId,"me"]} onClose={()=>setShowNew(false)} onSave={(name,ids)=>createGroup(name,ids)}/>}
-    {addTo && <GroupModal title="Add members" addOnly contacts={contacts} max={configs.maxGroupMembers} alreadyIn={groups.find(g=>g.id===addTo)?.members||[]} onClose={()=>setAddTo(null)} onSave={(_,ids)=>{ addMembers(addTo,ids); setAddTo(null); }}/>}
-    {editGroup && <EditGroupModal group={editGroup} groups={groups} myId={myId} onClose={()=>setEditGroup(null)} onSave={(newName)=>{ renameGroup(editGroup.id,newName); setEditGroup(null); }}/>}
+    {showNew && <GroupModal title="New group" contacts={contacts} max={configs.maxGroupMembers} alreadyIn={[myId,"me"]}
+        onClose={()=>setShowNew(false)} onSave={(name,ids)=>doCreateGroup(name,ids)}/>}
+    {addTo && <GroupModal title="Add members" addOnly contacts={contacts} max={configs.maxGroupMembers}
+        alreadyIn={(addTo.members||[]).filter(m=>m.status==="active").map(m=>m.user_id)}
+        onClose={()=>setAddTo(null)} onSave={(_,ids)=>doAddMembers(addTo.id,ids)}/>}
+    {editGroup && <EditGroupModal group={editGroup} groups={groups} myId={myId}
+        onClose={()=>setEditGroup(null)} onSave={(name)=>doRenameGroup(editGroup.id,name)}/>}
   </>);
 }
 
 function MemberPanel({ group, nameOf, avOf, canManage, max, onAdd, onRemove }) {
-  const [mq, setMq] = useState("");
-  const [msort, setMsort] = useState("asc");
-  let members = group.members.map(id=>({ id, name:nameOf(id), av:avOf(id), isAdmin:group.admins.includes(id) }));
-  if(mq.trim()) members = members.filter(m=>m.name.toLowerCase().includes(mq.toLowerCase()));
-  members.sort((a,b)=> msort==="asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
+  const active = (group.members||[]).filter(m=>m.status==="active");
   return (
-    <>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
-        <b style={{fontSize:13}}>Members</b>
-        <span className="counter">{group.members.length} / {max} (max set by admin)</span>
-        <div className="searchbox" style={{marginLeft:"auto",width:200,padding:"7px 11px"}}><Search size={14} color="var(--muted)"/><input value={mq} onChange={e=>setMq(e.target.value)} placeholder="Search members…" style={{fontSize:13}}/></div>
-        <button className="inline-select sm" style={{display:"flex",alignItems:"center",gap:6}} onClick={()=>setMsort(s=>s==="asc"?"desc":"asc")}><ArrowUpDown size={13}/> {msort==="asc"?"A–Z":"Z–A"}</button>
-        {canManage && <button className="btn btn-soft btn-sm" disabled={group.members.length>=max} onClick={onAdd}><UserPlus size={14}/> Add members</button>}
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <b style={{fontSize:13}}>Members ({active.length}/{max})</b>
+        {canManage && active.length<max && <button className="btn btn-soft btn-sm" onClick={onAdd}><UserPlus size={14}/> Add members</button>}
       </div>
-      <div style={{background:"var(--surface)",border:"1px solid var(--line)",borderRadius:12,overflow:"hidden"}}>
-        {members.length===0 ? <div className="empty" style={{padding:20}}>No members found.</div> :
-        members.map(m=>(
-          <div key={m.id} className="member-row">
-            <Avatar f={m.av} size={34}/>
-            <div style={{flex:1}}><span style={{fontWeight:600}}>{m.name}</span>{m.id==="me" && <span className="muted small"> · that’s you</span>}</div>
-            {m.isAdmin && <span className="pill amber"><Crown size={11}/> Admin</span>}
-            {canManage && m.id!=="me" && !m.isAdmin && <button className="icon-btn" style={{width:30,height:30,border:"none"}} title="Remove" onClick={()=>onRemove(m.id)}><X size={16}/></button>}
+      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {active.map(m=>(
+          <div key={m.user_id} style={{display:"flex",alignItems:"center",gap:7,background:"var(--surface-2)",borderRadius:10,padding:"5px 10px",border:"1px solid var(--line)"}}>
+            <Avatar f={avOf(m.user_id)} size={26}/>
+            <span style={{fontSize:13,fontWeight:600}}>{m.name||nameOf(m.user_id)}</span>
+            {m.role==="admin" && <Crown size={12} color="#f59e0b"/>}
+            {canManage && m.role!=="admin" && <X size={13} style={{cursor:"pointer",color:"var(--muted)"}} onClick={()=>onRemove(m.user_id)}/>}
           </div>
         ))}
       </div>
-    </>
+    </div>
   );
 }
 
 function GroupModal({ title, contacts, max, alreadyIn, onClose, onSave, addOnly }) {
   const [name, setName] = useState("");
-  const [sel, setSel] = useState([]);
-  const [mq, setMq] = useState("");
+  const [members, setMembers] = useState([]);
   const available = contacts.filter(c=>!alreadyIn.includes(c.id));
-  const filtered = mq.trim() ? available.filter(c=>c.name.toLowerCase().includes(mq.toLowerCase())) : available;
-  const currentCount = alreadyIn.length; // includes "me" / existing members
-  const remaining = max - currentCount;
-  const atLimit = sel.length >= remaining;
-  const toggle = (id) => setSel(s=> s.includes(id) ? s.filter(x=>x!==id) : (s.length<remaining ? [...s,id] : s));
-  const valid = addOnly ? sel.length>0 : (name.trim() && true);
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><h3>{title}</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
-        <div className="modal-body">
-          {!addOnly && <div className="field"><label>Group name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Value Hunters"/></div>}
-          <div className="field"><label style={{display:"flex",justifyContent:"space-between"}}>
-            <span>Add members from your network</span><span className="counter">{currentCount+sel.length} / {max}</span></label>
-            <div className="searchbox" style={{marginBottom:10}}><Search size={15} color="var(--muted)"/><input value={mq} onChange={e=>setMq(e.target.value)} placeholder="Search your contacts…"/></div>
-            {available.length===0 ? <div className="muted small">Everyone in your network is already in this group.</div> :
-            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-              {filtered.map(c=>{ const on=sel.includes(c.id); const dim=!on&&atLimit;
-                return <span key={c.id} className={"chip"+(on?" sel":"")} style={dim?{opacity:.4,cursor:"not-allowed"}:null} onClick={()=>!dim&&toggle(c.id)}>{on&&<Check size={13}/>}{c.name}</span>; })}
+  const toggle = (id) => setMembers(m=>m.includes(id)?m.filter(x=>x!==id):[...m,id]);
+  const valid = (addOnly||name.trim()) && (addOnly ? members.length>0 : true);
+  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-head"><h3>{title}</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-body">
+      {!addOnly && <div className="field"><label>Group name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Value Hunters" autoFocus/></div>}
+      <div className="field"><label>Add from confirmed contacts {members.length>0&&`(${members.length} selected)`}</label>
+        {available.length===0
+          ? <div className="muted small">No confirmed contacts available to add. Only accepted connections can join groups.</div>
+          : <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {available.map(c=><span key={c.id} className={"chip"+(members.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{members.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}
             </div>}
-            {atLimit && <div className="note warn" style={{marginTop:12}}><Lock size={15}/><div>This group has reached the maximum of {max} members set by your administrator.</div></div>}
-          </div>
-        </div>
-        <div className="modal-foot"><span className="counter">Max group size: {max}</span>
-          <div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button className="btn btn-pri" disabled={!valid} onClick={()=>onSave(name.trim(),sel)}>{addOnly?`Add ${sel.length}`:"Create group"}</button></div>
-        </div>
       </div>
     </div>
-  );
+    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}>
+      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-pri" disabled={!valid} onClick={()=>onSave(name.trim(),members)}>{addOnly?"Add members":"Create group"}</button>
+    </div></div>
+  </div></div>);
 }
 
-/* =================================================================== PORTFOLIO */
+
 function useDerivedHoldings(holdings, includeCrypto = true) {
   return useMemo(()=>{
     const rows = holdings.filter(h=>includeCrypto || h.type!=="Crypto").map(h=>{
@@ -1051,90 +1175,105 @@ const calcTargetDate = (date, horizon) => {
 const getTargetDate = (r) => r.targetDate || calcTargetDate(r.date, r.horizon) || null;
 const isExpired = (r) => { const td=getTargetDate(r); return td ? td < TODAY : false; };
 
-function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade, contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me }) {
+function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
+    contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload }) {
   const [tab, setTab] = useState("received");
   const myId = me?.id || "me";
-  const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id==="me"||id===myId?"You":id);
-  const groupName = (id) => groups.find(g=>g.id===id)?.name || id;
+  const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id===myId?"You":id);
+  const groupName   = (id) => groups.find(g=>g.id===id)?.name || id;
   const recipientName = (id) => groups.find(g=>g.id===id)?.name || contactName(id);
   const reach = (ids) => {
     const s=new Set();
     ids.forEach(id=>{ const g=groups.find(x=>x.id===id);
-      if(g) g.members.filter(m=>m!=="me"&&m!==myId).forEach(m=>s.add(m));
-      else if(id!=="me"&&id!==myId) s.add(id);
+      if(g) (g.members||[]).filter(m=>m.status==="active"&&m.user_id!==myId).forEach(m=>s.add(m.user_id));
+      else if(id!==myId&&id!=="me") s.add(id);
     });
     return s.size;
   };
-  const forwardReco = (r, targetIds, note) => {
-    const orig = r.byName || contactName(r.from);
-    setRecsMade(ms=>[{ id:"m"+Date.now(), assetName:r.assetName, ticker:r.ticker, assetClass:r.assetClass, date:TODAY, recipients:targetIds,
-      priceAt:r.price, price:r.price, thesis:(note&&note.trim())||r.thesis||"(forwarded)", actedList:[], likes:[], dislikes:[], exit:false, exitDate:null, forwardedFrom:orig }, ...ms]);
+  const forwardReco = async (r, targetIds, note) => {
+    const recipients = targetIds.map(id=>({type:"user",id}));
+    await dbForwardReco(r.id, myId, recipients);
+    await onReload();
     setTab("made");
   };
   return (<>
-    <div className="page-head"><div><div className="eyebrow">Recommendations</div><div className="page-title">Ideas worth tracking</div>
+    <div className="page-head"><div><div className="eyebrow">Recommendations</div>
+      <div className="page-title">Ideas worth tracking</div>
       <div className="page-sub">From your network, and the ones you share</div></div></div>
-    <div className="seg" style={{ marginBottom:20 }}>
+    <div className="seg" style={{marginBottom:20}}>
       <button className={tab==="received"?"active":""} onClick={()=>setTab("received")}>Received · {recsReceived.filter(r=>!r.hidden).length}</button>
-      <button className={tab==="made"?"active":""} onClick={()=>setTab("made")}>Made by me · {recsMade.length}</button></div>
+      <button className={tab==="made"?"active":""} onClick={()=>setTab("made")}>Made by me · {recsMade.length}</button>
+    </div>
     {tab==="received"
-      ? <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} contactName={contactName} groupName={groupName} assetClasses={assetClasses} contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId} onForward={forwardReco}/>
-      : <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName} reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses} setAssetClasses={setAssetClasses} holdings={holdings} me={me}/>}
+      ? <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} myId={myId}
+          contactName={contactName} groupName={groupName} assetClasses={assetClasses}
+          contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId}
+          onForward={forwardReco} onReload={onReload}/>
+      : <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName}
+          reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses}
+          setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload}/>}
   </>);
 }
 
-function ReceivedSection({ recs, setRecs, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward }) {
+
+function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload }) {
   const [q,setQ]=useState(""); const [sort,setSort]=useState({key:"date",dir:"desc"});
-  const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fInv,setFInv]=useState("all"),[fShare,setFShare]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
+  const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
+  const [fInv,setFInv]=useState("all"),[fShare,setFShare]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
   const [showHidden,setShowHidden]=useState(false); const [showExpired,setShowExpired]=useState(false);
   const [showAdd,setShowAdd]=useState(false); const [investing,setInvesting]=useState(null);
   const [openRow,setOpenRow]=useState(null); const [fwd,setFwd]=useState(null);
+
   const recName = (r) => r.byName || contactName(r.from);
   const isForwarded = (r) => r.sharedBy && r.sharedBy!==r.from;
-  const sharedByName = (r) => isForwarded(r) ? contactName(r.sharedBy) : null;
+  const sharedByName = (r) => isForwarded(r) ? (r.sharedByName||contactName(r.sharedBy)) : null;
   const byOptions = [...new Set(recs.map(recName))];
-  const groupOptions = [...new Set(recs.filter(r=>r.shareType==="group").map(r=>r.groupId))];
-  const doInvest=(r,price)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,invested:true,investedPrice:price,recoActed:x.recoActed+1}:x));
-  const unInvest=(r)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,invested:false,investedPrice:null,recoActed:Math.max(0,x.recoActed-1)}:x));
+  const groupOptions = [...new Set(recs.filter(r=>r.shareType==="group").map(r=>r.groupId).filter(Boolean))];
+
+  // All mutations go through updateDelivery → update local state optimistically
+  const patch = async (r, updates) => {
+    setRecs(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,...updates}:x));
+    if (sql && r.deliveryId) {
+      try { await updateDelivery(r.deliveryId, updates, myId); } catch(e) { await onReload(); }
+    }
+  };
+  const doInvest=(r,price)=>patch(r,{isInvested:true,investedPrice:price,invested:true,investedPrice:price});
+  const unInvest=(r)=>patch(r,{isInvested:false,investedPrice:null,invested:false});
   const onInvestClick=(r)=>{ if(r.invested) unInvest(r); else setInvesting(r); };
-  const react=(r,val)=>setRecs(rs=>rs.map(x=>{ if(x.id!==r.id) return x; let {reaction,likes,dislikes}=x; const cur=reaction||"none";
-    if(cur==="like")likes--; if(cur==="dislike")dislikes--; const next=cur===val?"none":val; if(next==="like")likes++; if(next==="dislike")dislikes++;
-    return {...x,reaction:next,likes,dislikes}; }));
-  const toggleHide=(r)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,hidden:!x.hidden}:x));
-  const del=(r)=>{ if(confirm("Delete this recommendation permanently?")) setRecs(rs=>rs.filter(x=>x.id!==r.id)); };
-  const toggleExit=(r)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exitSignal:!x.exitSignal,exitDate:!x.exitSignal?TODAY:null}:x));
+  const react=(r,val)=>{ const next=r.reaction===val?"none":val; patch(r,{reaction:next}); };
+  const toggleHide=(r)=>patch(r,{isHidden:!r.hidden,hidden:!r.hidden});
+  const toggleExit=(r)=>{ /* Exit signal lives on the recommendation row, only recommender can toggle */ };
+  const del=(r)=>{ if(confirm("Remove this recommendation from your received list?")) setRecs(rs=>rs.filter(x=>x.deliveryId!==r.deliveryId)); };
+
   const rows = useMemo(()=>{
-    let r = recs.filter(x=>showHidden || !x.hidden);
+    let r=recs.filter(x=>showHidden||!x.hidden);
     if(!showExpired) r=r.filter(x=>!isExpired(x));
     if(q.trim()){ const s=q.toLowerCase(); r=r.filter(x=>(x.assetName+" "+x.ticker+" "+recName(x)).toLowerCase().includes(s)); }
     if(fBy!=="all") r=r.filter(x=>recName(x)===fBy);
-    if(fGroup!=="all") r=r.filter(x=>x.shareType==="group" && x.groupId===fGroup);
+    if(fGroup!=="all") r=r.filter(x=>x.shareType==="group"&&x.groupId===fGroup);
     if(fCls!=="all") r=r.filter(x=>x.assetClass===fCls);
     if(fHorizon!=="all") r=r.filter(x=>x.horizon===fHorizon);
-    if(fMoney!=="all") r=r.filter(x=> fMoney==="in" ? ret(x)>=0 : ret(x)<0);
-    if(fInv!=="all") r=r.filter(x=> fInv==="yes" ? x.invested : !x.invested);
+    if(fMoney!=="all") r=r.filter(x=>fMoney==="in"?ret(x)>=0:ret(x)<0);
+    if(fInv!=="all") r=r.filter(x=>fInv==="yes"?x.invested:!x.invested);
     if(fShare!=="all") r=r.filter(x=>x.shareType===fShare);
     const dir=sort.dir==="asc"?1:-1; const k=sort.key;
-    r=[...r].sort((a,b)=>{ let av,bv;
+    r=[...r].sort((a,b)=>{let av,bv;
       if(k==="assetName"){av=a.assetName.toLowerCase();bv=b.assetName.toLowerCase();}
       else if(k==="ticker"){av=a.ticker.toLowerCase();bv=b.ticker.toLowerCase();}
       else if(k==="by"){av=recName(a).toLowerCase();bv=recName(b).toLowerCase();}
-      else if(k==="sharedby"){av=(sharedByName(a)||"").toLowerCase();bv=(sharedByName(b)||"").toLowerCase();}
-      else if(k==="cls"){av=a.assetClass.toLowerCase();bv=b.assetClass.toLowerCase();}
-      else if(k==="date"){av=a.date;bv=b.date;}
+      else if(k==="date"){av=a.date||"";bv=b.date||"";}
       else if(k==="reco"){av=a.priceAt;bv=b.priceAt;}
       else if(k==="cur"){av=a.price;bv=b.price;}
       else if(k==="ret"){av=ret(a);bv=ret(b);}
       else if(k==="target"){av=a.targetPrice||0;bv=b.targetPrice||0;}
       else if(k==="horizon"){av=HORIZONS.indexOf(a.horizon);bv=HORIZONS.indexOf(b.horizon);}
       else if(k==="tdate"){av=getTargetDate(a)||"";bv=getTargetDate(b)||"";}
-      else if(k==="shared"){av=a.shareType;bv=b.shareType;}
-      else if(k==="inv"){av=a.invested?1:0;bv=b.invested?1:0;}
-      return av<bv?-dir:av>bv?dir:0; });
+      return av<bv?-dir:av>bv?dir:0;});
     return r;
   },[recs,q,fBy,fGroup,fCls,fHorizon,fMoney,fInv,fShare,showHidden,showExpired,sort]);
-  const expiredCount = recs.filter(x=>!x.hidden && isExpired(x)).length;
-  const activeFilterNote = fBy!=="all" ? `Showing recommendations from ${fBy}.` : fGroup!=="all" ? `Showing recommendations shared via ${groupName(fGroup)}.` : null;
+
+  const expiredCount = recs.filter(x=>!x.hidden&&isExpired(x)).length;
+  const activeFilterNote = fBy!=="all"?`Showing recommendations from ${fBy}.`:fGroup!=="all"?`Showing recommendations shared via ${groupName(fGroup)}.`:null;
   return (<>
     {activeFilterNote && <div className="note info" style={{marginBottom:14}}><Filter size={16}/><div>{activeFilterNote} <span className="clickable" onClick={()=>{setFBy("all");setFGroup("all");}}>Clear filter</span></div></div>}
     {recs.some(r=>r.exitSignal && (showHidden||!r.hidden)) &&
@@ -1333,12 +1472,15 @@ function PanPullModal({ onClose, onApply }) {
   </div></div>);
 }
 
-function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings, me }) {
+function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings, me, onReload }) {
   const [q,setQ]=useState(""); const [fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fHorizon,setFHorizon]=useState("all");
   const [showExpired,setShowExpired]=useState(false);
   const [sort,setSort]=useState({key:"date",dir:"desc"}); const [expanded,setExpanded]=useState(null); const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
   const del=(r)=>{ if(confirm("Delete this recommendation you made?")) setRecs(rs=>rs.filter(x=>x.id!==r.id)); };
-  const toggleExit=(r)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:!x.exit,exitDate:!x.exit?TODAY:null}:x));
+  const toggleExit=async(r)=>{
+    setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:!x.exit,exitDate:!x.exit?TODAY:null}:x));
+    if(sql && me?.id){ try{ await dbToggleExit(r.id,me.id); await onReload(); }catch(_){} }
+  };
   const reShare=(r,targets)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,recipients:[...new Set([...x.recipients,...targets])]}:x));
   const exp=(id,which)=>setExpanded(e=> e&&e.id===id&&e.which===which?null:{id,which});
   const rows = useMemo(()=>{
@@ -1485,27 +1627,31 @@ function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAdd }) {
 
 function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, me, onClose, onCreate }) {
   const myId = me?.id || "me";
-  const myGroups = groups.filter(g=>g.members.includes("me")||g.members.includes(myId));
+  // Only groups where user is an active member
+  const myGroups = groups.filter(g=>g.my_role==="admin"||g.members?.some(m=>m.user_id===myId&&m.status==="active"));
   const [assetName,setAssetName]=useState(""); const [ticker,setTicker]=useState(""); const [cls,setCls]=useState(assetClasses[0]);
   const [recoPrice,setRecoPrice]=useState(""); const [targetPrice,setTargetPrice]=useState(""); const [horizon,setHorizon]=useState("12m");
   const [thesis,setThesis]=useState(""); const [targets,setTargets]=useState([]); const [adding,setAdding]=useState(false); const [newCat,setNewCat]=useState("");
   const toggle=(id)=>setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
   const addCat=()=>{ const c=newCat.trim(); if(c && !assetClasses.includes(c)){ setAssetClasses(a=>[...a,c]); setCls(c); } setNewCat(""); setAdding(false); };
   const known = holdings.find(x=>x.sym===ticker.toUpperCase());
-  // Pre-fill reco price from portfolio if ticker is found there
   const suggestedPrice = known?.price;
   const effectiveRecoPrice = recoPrice || (suggestedPrice||"");
-  const create=()=>{
+  const create=async()=>{
     const rp = +effectiveRecoPrice;
     const td = calcTargetDate(TODAY, horizon);
-    onCreate({
-      id:"m"+Date.now(),
+    const recoData = {
       assetName:assetName.trim()||(known?known.name:ticker.toUpperCase()),
-      ticker:(ticker||"—").toUpperCase(), assetClass:cls, date:TODAY, recipients:targets,
+      ticker:(ticker||"—").toUpperCase(), assetClass:cls,
       priceAt:rp, price:known?known.price:rp,
-      targetPrice:targetPrice?+targetPrice:null, horizon, targetDate:td,
-      thesis:thesis||"—", actedList:[], likes:[], dislikes:[], exit:false, exitDate:null
-    });
+      targetPrice:targetPrice?+targetPrice:null, horizon, targetDate:td, thesis:thesis||"—",
+    };
+    const recipients = targets.map(id=>({ type:groups.some(g=>g.id===id)?"group":"user", id }));
+    if (sql && me?.id) {
+      try { await dbCreateReco(recoData, me.id, recipients); await onCreate?.reload?.(); }
+      catch(e) { console.error("create reco:", e); }
+    }
+    onCreate({ id:"m"+Date.now(), ...recoData, date:TODAY, recipients:targets, actedList:[], likes:[], dislikes:[], exit:false, exitDate:null });
   };
   const valid = (assetName.trim()||ticker.trim()) && targets.length>0 && effectiveRecoPrice;
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
