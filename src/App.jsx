@@ -391,8 +391,10 @@ export default function App() {
   if (!user) return <LoginPage />;
 
 
+  // Non-admin users are ALWAYS investors, regardless of role state.
+  // Admin users can toggle between "investor" and "admin" views via the sidebar button.
+  const isInv = !userIsAdmin || role === "investor";
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
-  const isInv = role==="investor";
   const page = isInv ? investorPage : adminPage;
   const setPage = isInv ? setInvestorPage : setAdminPage;
   const canCreateGroups = configs.groupCreationPolicy==="all";
