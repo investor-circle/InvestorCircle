@@ -622,3 +622,33 @@ export async function upsertSharingPref(userId, targetId, targetType, prefs) {
       updated_at           = now()
   `;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETION
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Hard-delete a recommendation the current user made.
+ * CASCADE removes all delivery rows and notifications automatically.
+ * Only the recommender can delete their own recommendation.
+ */
+export async function deleteRecommendation(recommendationId, userId) {
+  if (!sql) return;
+  await sql`
+    DELETE FROM ic_recommendations
+    WHERE id = ${recommendationId} AND recommender_id = ${userId}
+  `;
+}
+
+/**
+ * Remove a received recommendation from this user's list.
+ * Deletes only THIS user's delivery row — other recipients are unaffected.
+ * The underlying recommendation (and the recommender's record) is preserved.
+ */
+export async function deleteDelivery(deliveryId, userId) {
+  if (!sql) return;
+  await sql`
+    DELETE FROM recommendation_deliveries
+    WHERE id = ${deliveryId} AND delivered_to_user_id = ${userId}
+  `;
+}
