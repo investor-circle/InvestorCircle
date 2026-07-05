@@ -99,10 +99,13 @@ export function AuthProvider({ children }) {
 
   const userIsAdmin = ADMIN_EMAILS.includes(user?.email?.toLowerCase()) || profile?.is_admin === true;
 
+  // Allow components to patch the profile state directly after a username save
+  const patchProfile = (patch) => setProfile(p => ({ ...p, ...patch }));
+
   return (
     <AuthContext.Provider value={{
       user, profile, authLoading, login, logout,
-      userIsAdmin, role, setRole, updateProfile,
+      userIsAdmin, role, setRole, updateProfile, patchProfile,
     }}>
       {children}
     </AuthContext.Provider>
