@@ -6,7 +6,8 @@ import {
   Bookmark, ChevronRight, ChevronDown, ChevronsUpDown, Sparkles, ArrowUpDown,
   List, Table as TableIcon, Mail, UserPlus, Calendar, Crown,
   ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
-  Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil, Database
+  Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil, Database,
+  Globe, Trophy, Copy, ExternalLink, ArrowLeft
 } from "lucide-react";
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
@@ -27,6 +28,7 @@ import {
   updateDelivery, toggleExitSignal as dbToggleExit, forwardRecommendation as dbForwardReco,
   deleteRecommendation as dbDeleteReco, deleteDelivery as dbDeleteDelivery,
   checkUsername as dbCheckUsername, saveUsername as dbSaveUsername,
+  getPublicProfile as dbGetPublicProfile,
   getMyNotifications, markNotifRead, markAllNotifRead,
   getSharingPrefs, upsertSharingPref,
 } from "./db";
@@ -306,6 +308,26 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [notifOpen,     setNotifOpen]     = useState(false);
   const [profileOpen,   setProfileOpen]   = useState(false);
+
+  // ── Hash routing — for public profile URLs (#/investor/username) ─────────────
+  const [pageHash, setPageHash] = useState(window.location.hash);
+  useEffect(() => {
+    const h = () => setPageHash(window.location.hash);
+    window.addEventListener("hashchange", h);
+    return () => window.removeEventListener("hashchange", h);
+  }, []);
+
+  // ── Post-login: auto-send connection request if user came from a public profile ─
+  useEffect(() => {
+    if (!user || !sql) return;
+    const pending = sessionStorage.getItem("pending_connect_username");
+    if (!pending) return;
+    sessionStorage.removeItem("pending_connect_username");
+    sql`SELECT id FROM user_profiles WHERE username = ${pending} LIMIT 1`.then(rows => {
+      if (rows[0] && rows[0].id !== user.uid)
+        return sendConnectionRequest(user.uid, rows[0].id);
+    }).catch(()=>{});
+  }, [user?.uid]);
   const [holdings,      setHoldings]      = useState(HOLDINGS);
   const [assetClasses,  setAssetClasses]  = useState(DEFAULT_CLASSES);
   const [users,         setUsers]         = useState([]);
@@ -392,6 +414,34 @@ export default function App() {
     return () => clearInterval(iv);
   }, [user?.uid]);
 
+  // ── Public profile route — no auth required ────────────────────────────────
+  // Matches: #/investor/username (with or without trailing /reco/id for Phase 3)
+  const publicMatch = pageHash.match(/^#\/investor\/([a-z0-9_]+)/i);
+  if (publicMatch && !authLoading) {
+    const pubUsername = publicMatch[1];
+    return (
+      <div className="app"><style>{STYLES}</style>
+        <PublicProfilePage
+          username={pubUsername}
+          viewerUser={user}
+          viewerConnections={connections}
+          mode="standalone"
+          onBack={()=>{ window.location.hash=""; }}
+          onRequestConnect={async(targetId)=>{
+            if (!user) {
+              sessionStorage.setItem("pending_connect_username", pubUsername);
+              window.location.hash="";
+              return;
+            }
+            await sendConnectionRequest(user.uid, targetId);
+            const c = await getMyConnections(user.uid);
+            setConnections(c);
+          }}
+        />
+      </div>
+    );
+  }
+
   // ── Auth gate ───────────────────────────────────────────────────────────────
   if (authLoading) return (
     <div style={{minHeight:"100vh",background:"#0a0b18",display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -410,11 +460,12 @@ export default function App() {
   const canCreateGroups = configs.groupCreationPolicy==="all";
 
   const nav = isInv ? [
-    { id:"home",      label:"Home",            icon:Home },
-    { id:"portfolio", label:"My Portfolio",     icon:PieChart },
-    { id:"network",   label:"Network",          icon:Users },
+    { id:"home",        label:"Home",             icon:Home },
+    { id:"portfolio",   label:"My Portfolio",      icon:PieChart },
+    { id:"network",     label:"Network",           icon:Users },
     ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", icon:Lightbulb, badge:newRecs }] : []),
-    { id:"sharing",   label:"Sharing & Privacy",icon:Shield },
+    { id:"sharing",     label:"Sharing & Privacy", icon:Shield },
+    { id:"trackrecord", label:"Track Record",       icon:Globe },
   ] : [
     { id:"users",       label:"Users",             icon:UserCog },
     { id:"groups",      label:"Groups",            icon:Layers },
@@ -539,7 +590,36 @@ export default function App() {
                 assetClasses={assetClasses} setAssetClasses={setAssetClasses}
                 initFilter={recoInit} holdings={holdings} me={ME}
                 onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/>}
-            {isInv && page==="sharing"   && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id}/>}
+            {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id}/>}
+            {isInv && page==="trackrecord" && (
+              ME.username
+                ? <PublicProfilePage
+                    username={ME.username}
+                    viewerUser={user}
+                    viewerConnections={connections}
+                    mode="embedded"
+                    isOwnProfile
+                    onRequestConnect={()=>{}}
+                    onBack={()=>setPage("home")}
+                  />
+                : <div style={{maxWidth:520}}>
+                    <div className="page-head"><div>
+                      <div className="eyebrow">Track Record</div>
+                      <div className="page-title">Your public profile</div>
+                    </div></div>
+                    <div className="card"><div className="card-body" style={{textAlign:"center",padding:"40px 32px"}}>
+                      <Globe size={36} color="var(--muted)" style={{marginBottom:14}}/>
+                      <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>Set a username first</div>
+                      <div className="muted small" style={{marginBottom:20}}>
+                        Your public profile URL uses your username (e.g. app/#/investor/yourname).
+                        Set one in your profile to enable the Track Record page.
+                      </div>
+                      <button className="btn btn-pri" onClick={()=>setProfileOpen(true)}>
+                        <Pencil size={15}/> Set username in profile
+                      </button>
+                    </div></div>
+                  </div>
+            )}
             {!isInv && page==="users"       && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={()=>{}}/>}
             {!isInv && page==="groups"      && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
             {!isInv && page==="instruments" && <AdminInstruments/>}
@@ -1985,7 +2065,345 @@ function SharePreview({ id, name, cfg, holdings, onClose }) {
   </div></div>);
 }
 
-/* =================================================================== PROFILE */
+/* =================================================================== PUBLIC PROFILE */
+
+/** Stat card used inside the public profile track record section */
+function StatCard({ label, value, sub, accent }) {
+  return (
+    <div style={{
+      background: accent ? "var(--accent-soft)" : "var(--surface-2)",
+      border: "1px solid var(--line)",
+      borderRadius: 14, padding: "14px 18px", flex: 1, minWidth: 120,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: accent ? "var(--accent-ink)" : "var(--ink)", lineHeight: 1 }}>{value ?? "—"}</div>
+      {sub && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+/** Format a return percentage for display */
+function fmtRet(pct) {
+  if (pct == null || isNaN(pct)) return "—";
+  const n = Number(pct);
+  return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
+}
+
+/**
+ * PublicProfilePage
+ * mode = "standalone" → full-page, no sidebar (hash URL from WhatsApp/email)
+ * mode = "embedded"  → inside app shell (Track Record nav item)
+ * isOwnProfile       → true when logged-in user is viewing their own profile
+ */
+function PublicProfilePage({ username, viewerUser, viewerConnections, mode, isOwnProfile, onBack, onRequestConnect }) {
+  const [data,       setData]       = useState(null);   // { profile, stats, recos }
+  const [loading,    setLoading]    = useState(true);
+  const [notFound,   setNotFound]   = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connected,  setConnected]  = useState(false);
+  const [copied,     setCopied]     = useState(false);
+
+  useEffect(() => {
+    setLoading(true); setNotFound(false); setData(null);
+    dbGetPublicProfile(username).then(d => {
+      if (!d) setNotFound(true);
+      else    setData(d);
+      setLoading(false);
+    }).catch(() => { setNotFound(true); setLoading(false); });
+  }, [username]);
+
+  // Derive connection status between viewer and profile owner
+  const profileUserId = data?.profile?.id;
+  const connStatus = useMemo(() => {
+    if (!profileUserId || !viewerConnections?.length) return "none";
+    const c = viewerConnections.find(c => c.user_id === profileUserId);
+    return c?.status || "none";
+  }, [profileUserId, viewerConnections]);
+
+  useEffect(() => {
+    if (connStatus === "accepted") setConnected(true);
+  }, [connStatus]);
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    await onRequestConnect(data.profile.id);
+    setConnected(true);
+    setConnecting(false);
+  };
+
+  const profileUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}`;
+  const copyLink = () => {
+    navigator.clipboard.writeText(profileUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  // ── Shared content (profile body) ─────────────────────────────────────────
+  const renderBody = () => {
+    if (loading) return (
+      <div style={{ textAlign: "center", padding: "60px 0", color: "var(--muted)" }}>
+        <Loader size={28} className="spin" style={{ marginBottom: 14 }}/><div>Loading profile…</div>
+      </div>
+    );
+    if (notFound) return (
+      <div style={{ textAlign: "center", padding: "60px 0" }}>
+        <Globe size={36} color="var(--muted)" style={{ marginBottom: 14 }}/>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Profile not found</div>
+        <div className="muted small">@{username} doesn't exist or hasn't set a public profile yet.</div>
+      </div>
+    );
+
+    const { profile, stats, recos } = data;
+    const displayName = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.full_name || username;
+    const memberSince = profile.created_at
+      ? new Date(profile.created_at).toLocaleDateString("en-IN", { month: "long", year: "numeric" })
+      : null;
+
+    // Connection button state
+    const showConnectBtn = !isOwnProfile && viewerUser;
+    const alreadyPending = connStatus === "pending";
+
+    return (
+      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+
+        {/* ── Profile header ── */}
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div style={{ background: "var(--grad)", borderRadius: "16px 16px 0 0", padding: "28px 28px 22px", display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ width: 64, height: 64, borderRadius: 20, background: "rgba(255,255,255,.22)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 800, color: "#fff", flexShrink: 0 }}>
+              {initialsOf(displayName)}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 20, color: "#fff", lineHeight: 1.2 }}>{displayName}</div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,.8)", marginTop: 3 }}>@{username}</div>
+              {memberSince && <div style={{ fontSize: 12, color: "rgba(255,255,255,.6)", marginTop: 2 }}>Member since {memberSince}</div>}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {isOwnProfile && (
+                <>
+                  <button className="btn btn-soft btn-sm" style={{ background: "rgba(255,255,255,.18)", color: "#fff", border: "none" }} onClick={copyLink}>
+                    {copied ? <><Check size={14}/> Copied!</> : <><Copy size={14}/> Copy profile link</>}
+                  </button>
+                  <a href={profileUrl} target="_blank" rel="noopener noreferrer"
+                     style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,.8)", textDecoration: "none" }}>
+                    <ExternalLink size={14}/> View as public
+                  </a>
+                </>
+              )}
+              {showConnectBtn && !connected && !alreadyPending && (
+                <button className="btn btn-pri btn-sm" style={{ background: "#fff", color: "var(--accent)" }} disabled={connecting} onClick={handleConnect}>
+                  {connecting ? <><Loader size={13} className="spin"/> Sending…</> : <><UserPlus size={14}/> Add to network</>}
+                </button>
+              )}
+              {showConnectBtn && (connected || alreadyPending) && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "rgba(255,255,255,.8)", background: "rgba(255,255,255,.15)", borderRadius: 8, padding: "6px 12px" }}>
+                  <Check size={13}/> {connected ? "Connected" : "Request sent"}
+                </span>
+              )}
+              {!viewerUser && !isOwnProfile && (
+                <button className="btn btn-pri btn-sm" style={{ background: "#fff", color: "var(--accent)" }} onClick={() => onRequestConnect(data.profile.id)}>
+                  <UserPlus size={14}/> Join to connect
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Circle stats row */}
+          <div style={{ display: "flex", gap: 0, padding: "16px 28px", borderTop: "1px solid var(--line)", flexWrap: "wrap" }}>
+            {[
+              { label: "Connections",          val: Number(profile.connection_count || 0) },
+              { label: "Groups",               val: Number(profile.group_count      || 0) },
+              { label: "Public recommendations", val: Number(stats.total             || 0) },
+              { label: "Total likes",           val: Number(stats.total_likes        || 0) },
+              { label: "Total dislikes",        val: Number(stats.total_dislikes     || 0) },
+            ].map((item, i, arr) => (
+              <div key={item.label} style={{ flex: 1, minWidth: 100, textAlign: "center", padding: "8px 12px", borderRight: i < arr.length - 1 ? "1px solid var(--line)" : "none" }}>
+                <div style={{ fontSize: 20, fontWeight: 800 }}>{item.val}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{item.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Track Record ── */}
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div className="card-head" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Trophy size={16} color="var(--accent)"/> Track Record
+          </div>
+          <div className="card-body" style={{ padding: "0 20px 20px" }}>
+            {/* Disclaimer */}
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: 12, color: "var(--muted)" }}>
+              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }}/>
+              <div>Stats cover <b>public recommendations only</b>. Returns use last known price as approximation — historical prices at exit or expiration dates are not stored.</div>
+            </div>
+
+            {Number(stats.total) === 0 ? (
+              <div className="empty" style={{ padding: "24px 0" }}>No public recommendations yet.</div>
+            ) : (
+              <>
+                {/* Total row */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5, marginBottom: 10 }}>Overall</div>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <StatCard label="Total recs" value={stats.total}/>
+                    <StatCard label="Avg return" value={fmtRet(stats.avg_return_pct)} accent/>
+                    <StatCard label="In the money"  value={stats.in_money}  sub={`${stats.out_money} out of money`}/>
+                    <StatCard label="Total likes"   value={stats.total_likes} sub={`${stats.total_dislikes} dislikes`}/>
+                  </div>
+                </div>
+
+                {/* Active vs Closed */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                  {/* Active */}
+                  <div style={{ background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 14, padding: "14px 16px" }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span className="dot" style={{ background: "var(--gain)", width: 8, height: 8 }}/> Active
+                      <span className="muted small" style={{ marginLeft: "auto" }}>{stats.active_count} recs</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span className="muted">Avg return</span>
+                        <b style={{ color: Number(stats.active_return_pct) >= 0 ? "var(--gain)" : "var(--loss)" }}>{fmtRet(stats.active_return_pct)}</b>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span className="muted">In the money</span>
+                        <b>{stats.active_in_money}</b>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span className="muted">Out of money</span>
+                        <b>{stats.active_out_money}</b>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Closed */}
+                  <div style={{ background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 14, padding: "14px 16px" }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span className="dot" style={{ background: "var(--muted)", width: 8, height: 8 }}/> Closed
+                      <span className="muted small" style={{ marginLeft: "auto" }}>{stats.closed_count} recs</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span className="muted">Avg return</span>
+                        <b style={{ color: Number(stats.closed_return_pct) >= 0 ? "var(--gain)" : "var(--loss)" }}>{fmtRet(stats.closed_return_pct)}</b>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span className="muted">In the money</span>
+                        <b>{stats.closed_in_money}</b>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span className="muted">Out of money</span>
+                        <b>{stats.closed_out_money}</b>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* ── Public Recommendations ── */}
+        <div className="card">
+          <div className="card-head"><Globe size={15} color="var(--accent)"/> Public Recommendations</div>
+          <div className="card-body" style={{ padding: "8px 0" }}>
+            {recos.length === 0
+              ? <div className="empty" style={{ padding: 24 }}>No public recommendations yet.</div>
+              : <table className="grid">
+                  <thead><tr>
+                    <th>Instrument</th><th>Class</th><th>Horizon</th>
+                    <th style={{ textAlign: "right" }}>Reco price</th>
+                    <th style={{ textAlign: "right" }}>Return</th>
+                    <th style={{ textAlign: "right" }}>Likes</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                  </tr></thead>
+                  <tbody>{recos.map(r => {
+                    const ret = Number(r.return_pct || 0);
+                    const isActive = !r.exit_signal && (!r.target_date || new Date(r.target_date) >= new Date());
+                    const isClosed = r.exit_signal || (r.target_date && new Date(r.target_date) < new Date());
+                    return (
+                      <tr key={r.id} className="hoverable">
+                        <td>
+                          <div className="sym">{r.ticker}</div>
+                          <div className="muted small" style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.asset_name}</div>
+                        </td>
+                        <td><span className="ttag">{r.asset_class}</span></td>
+                        <td className="muted small">{r.horizon || "—"}</td>
+                        <td style={{ textAlign: "right" }} className="tnum">{r.reco_price ? fmt(Number(r.reco_price)) : "—"}</td>
+                        <td style={{ textAlign: "right" }} className={"tnum " + (ret >= 0 ? "pos" : "neg")}>{fmtRet(ret)}</td>
+                        <td style={{ textAlign: "right" }}>
+                          <span style={{ fontSize: 12 }}>👍 {r.like_count || 0} · 👎 {r.dislike_count || 0}</span>
+                        </td>
+                        <td>
+                          {r.exit_signal
+                            ? <span className="pill loss" style={{ fontSize: 11 }}>Exited</span>
+                            : isActive
+                              ? <span className="pill gain" style={{ fontSize: 11 }}>Active</span>
+                              : <span className="pill" style={{ fontSize: 11 }}>Expired</span>}
+                        </td>
+                        <td className="muted small">{r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</td>
+                      </tr>
+                    );
+                  })}</tbody>
+                </table>}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── STANDALONE mode (hash URL, no sidebar) ────────────────────────────────
+  if (mode === "standalone") {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg)", padding: "0 0 48px" }}>
+        {/* Minimal branded top bar */}
+        <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--line)", padding: "12px 24px", display: "flex", alignItems: "center", gap: 16, position: "sticky", top: 0, zIndex: 100 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: "var(--grad)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 14, color: "#fff" }}>IC</div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.1 }}>InvestorCircle</div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Social Investing</div>
+            </div>
+          </div>
+          <div style={{ flex: 1 }}/>
+          {viewerUser
+            ? <button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
+            : <a href={window.location.pathname} style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>Sign in →</a>}
+        </div>
+        <div style={{ maxWidth: 800, margin: "0 auto", padding: "28px 16px 0" }}>
+          {renderBody()}
+        </div>
+      </div>
+    );
+  }
+
+  // ── EMBEDDED mode (Track Record nav item inside app shell) ────────────────
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Track Record</div>
+          <div className="page-title">Your public profile</div>
+          <div className="page-sub">This is exactly what others see when they visit your profile link</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {data && (
+            <>
+              <button className="btn btn-soft btn-sm" onClick={copyLink}>
+                {copied ? <><Check size={14}/> Copied!</> : <><Copy size={14}/> Copy link</>}
+              </button>
+              <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">
+                <ExternalLink size={14}/> Open public URL
+              </a>
+            </>
+          )}
+        </div>
+      </div>
+      {renderBody()}
+    </>
+  );
+}
+
 /* =================================================================== PROFILE */
 function ProfileModal({ me, updateProfile, patchProfile, onClose }) {
   const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
