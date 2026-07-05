@@ -9,19 +9,23 @@ const AuthContext = createContext(null);
 const ADMIN_EMAILS = ["ankur.citm@gmail.com"];
 
 export function AuthProvider({ children }) {
-  const [user, setUser]       = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user,        setUser]        = useState(null);
+  const [profile,     setProfile]     = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  // role: "investor" | "admin" — admins can switch; non-admins are always "investor"
+  const [role,        setRole]        = useState("investor");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        const isAdminEmail = ADMIN_EMAILS.includes(firebaseUser.email);
+        const isAdminEmail = ADMIN_EMAILS.includes(firebaseUser.email?.toLowerCase());
         const fullName = firebaseUser.displayName || firebaseUser.email.split("@")[0];
 
-        // Upsert profile in Neon (silently skips if Neon not configured or
-        // migration_auth.sql hasn't been run yet)
+        // Non-admin users are always "investor".
+        // Admin users start in "admin" view; they can toggle via the sidebar button.
+        setRole(isAdminEmail ? "admin" : "investor");
+
         if (sql) {
           try {
             const rows = await sql`
@@ -33,7 +37,6 @@ export function AuthProvider({ children }) {
             `;
             setProfile(rows[0] ?? { id: firebaseUser.uid, email: firebaseUser.email, full_name: fullName, is_admin: isAdminEmail });
           } catch (e) {
-            // Common on first run before migration_auth.sql is applied
             console.warn("Profile sync skipped — run supabase/migration_auth.sql in Neon:", e.message);
             setProfile({ id: firebaseUser.uid, email: firebaseUser.email, full_name: fullName, is_admin: isAdminEmail });
           }
@@ -43,23 +46,29 @@ export function AuthProvider({ children }) {
       } else {
         setUser(null);
         setProfile(null);
+        setRole("investor");
       }
-      setLoading(false);
+      setAuthLoading(false);
     });
-    return unsub; // cleanup listener on unmount
+    return unsub;
   }, []);
 
   const login  = (email, password) => signInWithEmailAndPassword(auth, email, password);
   const logout = () => signOut(auth);
 
-  // isAdmin: hardcoded email list takes priority; DB is secondary
-  const isAdmin = ADMIN_EMAILS.includes(user?.email) || profile?.is_admin === true;
+  // userIsAdmin: hardcoded email list takes priority; DB profile is secondary
+  const userIsAdmin = ADMIN_EMAILS.includes(user?.email?.toLowerCase()) || profile?.is_admin === true;
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, logout, isAdmin }}>
+    <AuthContext.Provider value={{
+      user, profile, authLoading, login, logout,
+      userIsAdmin,   // ← was "isAdmin" — renamed to match App.jsx
+      role, setRole, // ← new: lets App.jsx toggle investor↔admin view
+    }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export const useAuth = () => useContext(AuthContext);
+
