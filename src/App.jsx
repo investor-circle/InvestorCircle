@@ -12,6 +12,10 @@ import {
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
 import * as XLSX from "xlsx";
+import { getPreviousClose, getTodayClose, sourceName, isPriceServiceConfigured } from "./services/marketData";
+import {
+  setExitSignal as dbSetExit, cancelExitSignal as dbCancelExit,
+} from "./db";
 import { fetchHoldingsByPAN, isValidPAN } from "./services/pan";
 import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 import { useAuth } from "./AuthContext";
@@ -1753,15 +1757,49 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
   const [q,setQ]=useState(""); const [fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fHorizon,setFHorizon]=useState("all");
   const [showExpired,setShowExpired]=useState(false);
   const [sort,setSort]=useState({key:"date",dir:"desc"}); const [expanded,setExpanded]=useState(null); const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
-  const [sharePopId, setSharePopId] = useState(null); // ID of reco whose public-share popover is open
+  const [sharePopId, setSharePopId] = useState(null);
+  const [exitingId,  setExitingId]  = useState(null); // shows loading on that row during price fetch
+
   const del=async(r)=>{
     if(!confirm("Delete this recommendation? This will remove it from all recipients' lists too.")) return;
-    setRecs(rs=>rs.filter(x=>x.id!==r.id));          // optimistic UI
-    await dbDeleteReco(r.id, me?.id);                 // persist to Neon (CASCADE removes deliveries)
+    setRecs(rs=>rs.filter(x=>x.id!==r.id));
+    await dbDeleteReco(r.id, me?.id);
   };
+
   const toggleExit=async(r)=>{
-    setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:!x.exit,exitDate:!x.exit?TODAY:null}:x));
-    if(sql && me?.id){ try{ await dbToggleExit(r.id,me.id); await onReload(); }catch(_){} }
+    if (r.exit) {
+      // ── Cancel exit ─────────────────────────────────────────────────────
+      if(!confirm("Cancel the exit signal for this recommendation?")) return;
+      setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:false,exitDate:null,exitPrice:null}:x));
+      if(sql && me?.id) { try { await dbCancelExit(r.id,me.id); await onReload(); } catch(_){} }
+    } else {
+      // ── Set exit — auto-fetch closing price first ───────────────────────
+      setExitingId(r.id);
+      let exitPriceData = null;
+      try {
+        exitPriceData = await getTodayClose(r.ticker, r.exchange || "NSE");
+      } catch(e) {
+        console.warn("Exit price fetch failed:", e.message);
+      }
+
+      const priceLabel = exitPriceData
+        ? `₹${Number(exitPriceData.price).toLocaleString("en-IN")} (${sourceName(exitPriceData.source)} · ${exitPriceData.date})`
+        : "Price unavailable — will not be stamped (flagged on profile)";
+
+      const confirmed = confirm(
+        `Exit "${r.ticker}"?\n\nExit price: ${priceLabel}\n\nThis records your exit and closes the recommendation.`
+      );
+      setExitingId(null);
+      if (!confirmed) return;
+
+      setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:true,exitDate:TODAY,exitPrice:exitPriceData?.price||null}:x));
+      if(sql && me?.id) {
+        try {
+          await dbSetExit(r.id, me.id, exitPriceData?.price||null, exitPriceData?.source||"unavailable");
+          await onReload();
+        } catch(_){}
+      }
+    }
   };
   const reShare=(r,targets)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,recipients:[...new Set([...x.recipients,...targets])]}:x));
   const exp=(id,which)=>setExpanded(e=> e&&e.id===id&&e.which===which?null:{id,which});
@@ -1856,7 +1894,9 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
                 </div>
               )}
               <button className="iconbtn" title="Share with more contacts or groups" onClick={()=>setShare(r)}><Share2 size={14}/></button>
-              <button className={"btn btn-sm "+(r.exit?"btn-ghost":"btn-soft")} onClick={()=>toggleExit(r)}><LogOut size={13}/> {r.exit?"Cancel exit":"Send exit"}</button>
+              <button className={"btn btn-sm "+(r.exit?"btn-ghost":"btn-soft")} disabled={exitingId===r.id} onClick={()=>toggleExit(r)}>
+                {exitingId===r.id ? <><Loader size={13} className="spin"/> Fetching price…</> : <><LogOut size={13}/> {r.exit?"Cancel exit":"Send exit"}</>}
+              </button>
               <button className="iconbtn danger" title="Delete" onClick={()=>del(r)}><Trash2 size={14}/></button></div></td>
           </tr>
           {isExp && <tr className="expand-row"><td colSpan={COLS}><div className="expand-sub">
@@ -1923,10 +1963,13 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
   const [ticker,      setTicker]      = useState("");
   const [cls,         setCls]         = useState(assetClasses[0]);
   const [currency,    setCurrency]    = useState("INR");
-  const [recType,     setRecType]     = useState("Buy");      // Buy | Sell
-  const [conviction,  setConviction]  = useState("");         // Low | Medium | High
+  const [recType,     setRecType]     = useState("Buy");
+  const [conviction,  setConviction]  = useState("");
   const [sector,      setSector]      = useState("");
-  const [recoPrice,   setRecoPrice]   = useState("");
+  // Auto-stamped entry price
+  const [priceData,   setPriceData]   = useState(null);  // { price, source, date }
+  const [priceLoading,setPriceLoading]= useState(false);
+  const [priceError,  setPriceError]  = useState("");
   const [targetPrice, setTargetPrice] = useState("");
   const [stopLoss,    setStopLoss]    = useState("");
   const [horizon,     setHorizon]     = useState("12m");
@@ -1935,6 +1978,18 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
   const [isPublic,    setIsPublic]    = useState(true);
   const [adding,      setAdding]      = useState(false);
   const [newCat,      setNewCat]      = useState("");
+
+  // Auto-fetch price whenever instrument changes
+  useEffect(() => {
+    if (!selectedInstr) return;
+    setPriceData(null); setPriceError(""); setPriceLoading(true);
+    getPreviousClose(selectedInstr.symbol, selectedInstr.exchange || "NSE")
+      .then(d => { setPriceData(d); setPriceLoading(false); })
+      .catch(e => {
+        setPriceError(e.message || "Could not fetch price");
+        setPriceLoading(false);
+      });
+  }, [selectedInstr?.symbol, selectedInstr?.exchange]);
 
   const CURRENCY_SYMBOL = { INR:"₹", USD:"$", GBP:"£", EUR:"€" };
 
@@ -1949,24 +2004,22 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
 
   const toggle  = (id) => setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
   const addCat  = () => { const c=newCat.trim(); if(c&&!assetClasses.includes(c)){setAssetClasses(a=>[...a,c]);setCls(c);} setNewCat(""); setAdding(false); };
-  const known   = holdings.find(x=>x.sym===ticker.toUpperCase());
-  const suggestedPrice   = known?.price;
-  const effectiveRecoPrice = recoPrice || (suggestedPrice||"");
 
   const create = async () => {
-    const rp = +effectiveRecoPrice;
+    const rp = priceData?.price || 0;
     const td = calcTargetDate(TODAY, horizon);
     const recoData = {
-      assetName: assetName.trim()||(known?known.name:ticker.toUpperCase()),
-      ticker:(ticker||"—").toUpperCase(), assetClass:cls, currency,
-      priceAt:rp, price:known?known.price:rp,
-      targetPrice:targetPrice?+targetPrice:null,
-      stopLoss:stopLoss?+stopLoss:null,
-      horizon, targetDate:td, thesis:thesis||"—",
-      isPublic,
-      recType,
-      conviction: conviction || null,
-      sector:     sector || null,
+      assetName: assetName.trim() || ticker.toUpperCase(),
+      ticker: (ticker||"—").toUpperCase(), assetClass:cls, currency,
+      priceAt: rp, price: rp,
+      targetPrice: targetPrice ? +targetPrice : null,
+      stopLoss:    stopLoss    ? +stopLoss    : null,
+      horizon, targetDate: td, thesis: thesis||"—",
+      isPublic, recType,
+      conviction:  conviction  || null,
+      sector:      sector      || null,
+      exchange:    selectedInstr?.exchange || "NSE",
+      priceSource: priceData?.source || null,
     };
     const recipients = targets.map(id=>({ type:groups.some(g=>g.id===id)?"group":"user", id }));
     if (sql && me?.id) {
@@ -1976,7 +2029,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
     onCreate({ id:"m"+Date.now(), ...recoData, date:TODAY, recipients:targets, actedList:[], likes:[], dislikes:[], exit:false, exitDate:null });
   };
 
-  const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && effectiveRecoPrice;
+  const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && (priceData?.price > 0);
 
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> New recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
@@ -2048,9 +2101,36 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
           <select value={currency} onChange={e=>setCurrency(e.target.value)}>
             {["INR","USD","GBP","EUR"].map(c=><option key={c}>{c}</option>)}
           </select></div>
-        <div className="field">
-          <label>Reco price ({CURRENCY_SYMBOL[currency]||currency}) {known && <span className="muted small">portfolio: {fmt(known.price)}</span>}</label>
-          <input type="number" value={recoPrice} onChange={e=>setRecoPrice(e.target.value)} placeholder={suggestedPrice?String(suggestedPrice):"0"}/>
+        {/* Auto-stamped entry price — non-editable for platform integrity */}
+        <div className="field" style={{gridColumn:"span 2"}}>
+          <label style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Entry price ({CURRENCY_SYMBOL[currency]||currency})</span>
+            <span style={{fontSize:10,fontWeight:600,padding:"2px 6px",borderRadius:4,background:priceData?"var(--gain-soft)":"var(--surface-2)",color:priceData?"var(--gain)":"var(--muted)"}}>
+              {priceData?"Auto-stamped":"Awaiting instrument"}
+            </span>
+          </label>
+          {priceLoading && (
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,background:"var(--surface-2)",fontSize:13,color:"var(--muted)"}}>
+              <Loader size={14} className="spin"/> Fetching previous close…
+            </div>
+          )}
+          {!priceLoading && priceData && (
+            <div style={{padding:"11px 13px",border:"1px solid var(--gain)",borderRadius:11,background:"var(--gain-soft)",fontSize:14,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>
+              {CURRENCY_SYMBOL[currency]||currency}{Number(priceData.price).toLocaleString("en-IN")}
+              <div style={{fontSize:10,fontWeight:400,color:"var(--gain)",marginTop:3}}>{sourceName(priceData.source)} · {priceData.date}</div>
+            </div>
+          )}
+          {!priceLoading && !priceData && !priceError && (
+            <div style={{padding:"11px 13px",border:"1px dashed var(--line-2)",borderRadius:11,background:"var(--surface-2)",fontSize:13,color:"var(--muted)"}}>
+              — Select an instrument above
+            </div>
+          )}
+          {priceError && (
+            <div style={{padding:"11px 13px",border:"1px solid var(--amber)",borderRadius:11,background:"var(--amber-soft)",fontSize:12,color:"var(--amber)"}}>
+              <AlertTriangle size={13}/> {priceError}
+              <div style={{marginTop:3,opacity:.8}}>Price will not be stamped. This recommendation will be flagged.</div>
+            </div>
+          )}
         </div>
         <div className="field"><label>Target price <span className="muted small">(opt.)</span></label>
           <input type="number" value={targetPrice} onChange={e=>setTargetPrice(e.target.value)} placeholder="0"/></div>
