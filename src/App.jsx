@@ -26,6 +26,7 @@ import {
   getMyReceivedRecos, getMyMadeRecos, createRecommendation as dbCreateReco,
   updateDelivery, toggleExitSignal as dbToggleExit, forwardRecommendation as dbForwardReco,
   deleteRecommendation as dbDeleteReco, deleteDelivery as dbDeleteDelivery,
+  checkUsername as dbCheckUsername, saveUsername as dbSaveUsername,
   getMyNotifications, markNotifRead, markAllNotifRead,
   getSharingPrefs, upsertSharingPref,
 } from "./db";
@@ -282,14 +283,14 @@ const PermBadge = ({ p }) => p==="full" ? <span className="pill accent">Amounts 
 
 /* =================================================================== */
 export default function App() {
-  const { user, role, setRole, userIsAdmin, logout, authLoading, profile, updateProfile } = useAuth();
+  const { user, role, setRole, userIsAdmin, logout, authLoading, profile, updateProfile, patchProfile } = useAuth();
   const ME = useMemo(() => {
-    if (!user) return { id:"", name:"", firstName:"", lastName:"", initials:"", email:"" };
+    if (!user) return { id:"", name:"", firstName:"", lastName:"", username:"", initials:"", email:"" };
     const firstName = profile?.first_name || user.email?.split("@")[0] || "User";
     const lastName  = profile?.last_name  || "";
     const name = `${firstName} ${lastName}`.trim();
-    return { id:user.uid, name, firstName, lastName, initials:initialsOf(name), email:user.email||"" };
-  }, [user?.uid, profile?.first_name, profile?.last_name]);
+    return { id:user.uid, name, firstName, lastName, username:profile?.username||"", initials:initialsOf(name), email:user.email||"" };
+  }, [user?.uid, profile?.first_name, profile?.last_name, profile?.username]);
 
   // ── Page navigation ─────────────────────────────────────────────────────────
   const [investorPage, setInvestorPage] = useState("home");
@@ -512,7 +513,7 @@ export default function App() {
                 </button>
                 {profileOpen && isInv && (
                   <ProfileModal
-                    me={ME} updateProfile={updateProfile}
+                    me={ME} updateProfile={updateProfile} patchProfile={patchProfile}
                     onClose={()=>setProfileOpen(false)}
                   />
                 )}
@@ -1716,7 +1717,8 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
       <tbody>{rows.map(r=>{ const itm=ret(r)>=0; const isExp=expanded&&expanded.id===r.id; const expired=isExpired(r); const td=getTargetDate(r);
         return (<React.Fragment key={r.id}>
           <tr className={"hoverable"+(r.exit?" exit":"")+(expired?" expired":"")}>
-            <td className="sym nowrap">{r.assetName}{r.forwardedFrom && <span className="pill accent" style={{marginLeft:8}} title={"Forwarded from "+r.forwardedFrom}><Forward size={11}/> via {r.forwardedFrom}</span>}{expired && <span className="pill loss" style={{marginLeft:8,fontSize:11}}>Expired</span>}</td>
+            <td className="sym nowrap">{r.assetName}{r.forwardedFrom && <span className="pill accent" style={{marginLeft:8}} title={"Forwarded from "+r.forwardedFrom}><Forward size={11}/> via {r.forwardedFrom}</span>}{expired && <span className="pill loss" style={{marginLeft:8,fontSize:11}}>Expired</span>}
+              <span className={r.isPublic?"pill gain":"pill"} style={{marginLeft:8,fontSize:11}}>{r.isPublic?"Public":"Private"}</span></td>
             <td className="sym">{r.ticker}</td>
             <td><ClassTag c={r.assetClass}/></td>
             <td className="muted small nowrap">{fmtDate(r.date)}</td>
@@ -1805,6 +1807,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
   const [horizon,     setHorizon]     = useState("12m");
   const [thesis,      setThesis]      = useState("");
   const [targets,     setTargets]     = useState([]);
+  const [isPublic,    setIsPublic]    = useState(true);    // public by default
   const [adding,      setAdding]      = useState(false);
   const [newCat,      setNewCat]      = useState("");
 
@@ -1834,6 +1837,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
       ticker:(ticker||"—").toUpperCase(), assetClass:cls, currency,
       priceAt:rp, price:known?known.price:rp,
       targetPrice:targetPrice?+targetPrice:null, horizon, targetDate:td, thesis:thesis||"—",
+      isPublic,
     };
     const recipients = targets.map(id=>({ type:groups.some(g=>g.id===id)?"group":"user", id }));
     if (sql && me?.id) {
@@ -1905,6 +1909,15 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
       <div className="field"><label>Send to groups</label>
         {myGroups.length===0 ? <div className="muted small">No groups yet.</div> :
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{myGroups.map(g=><span key={g.id} className={"chip"+(targets.includes(g.id)?" sel":"")} onClick={()=>toggle(g.id)}>{targets.includes(g.id)&&<Check size={13}/>}<Layers size={13}/>{g.name}</span>)}</div>}</div>
+      <label style={{display:"flex",alignItems:"flex-start",gap:10,fontSize:13,fontWeight:600,cursor:"pointer",padding:"12px 0 0",borderTop:"1px solid var(--line)",marginTop:8}}>
+        <input type="checkbox" checked={isPublic} onChange={e=>setIsPublic(e.target.checked)} style={{width:16,height:16,accentColor:"var(--accent)",marginTop:1,flexShrink:0}}/>
+        <div>
+          Make this recommendation public
+          <div style={{fontWeight:400,color:"var(--muted)",fontSize:12,marginTop:2}}>
+            Visible to anyone who visits your public profile page, not just your network.
+          </div>
+        </div>
+      </label>
     </div>
     <div className="modal-foot">
       <span className="muted small">Target date: {calcTargetDate(TODAY,horizon)?fmtDate(calcTargetDate(TODAY,horizon)):"—"}</span>
@@ -1973,88 +1986,169 @@ function SharePreview({ id, name, cfg, holdings, onClose }) {
 }
 
 /* =================================================================== PROFILE */
-function ProfileModal({ me, updateProfile, onClose }) {
+/* =================================================================== PROFILE */
+function ProfileModal({ me, updateProfile, patchProfile, onClose }) {
+  const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
+
+  // ── Name ──────────────────────────────────────────────────────────────────
   const [editing,   setEditing]   = useState(false);
   const [firstName, setFirstName] = useState(me.firstName || "");
   const [lastName,  setLastName]  = useState(me.lastName  || "");
   const [saving,    setSaving]    = useState(false);
-  const [err,       setErr]       = useState("");
-  const [saved,     setSaved]     = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
+  const [nameErr,   setNameErr]   = useState("");
 
-  const startEdit = () => { setFirstName(me.firstName||""); setLastName(me.lastName||""); setEditing(true); setErr(""); setSaved(false); };
-  const cancel    = () => { setEditing(false); setErr(""); };
-
-  const save = async () => {
-    if (!firstName.trim()) { setErr("First name is required."); return; }
-    setSaving(true); setErr("");
+  const startEdit  = () => { setFirstName(me.firstName||""); setLastName(me.lastName||""); setEditing(true); setNameErr(""); setNameSaved(false); };
+  const cancelEdit = () => { setEditing(false); setNameErr(""); };
+  const saveName   = async () => {
+    if (!firstName.trim()) { setNameErr("First name is required."); return; }
+    setSaving(true); setNameErr("");
     const result = await updateProfile(firstName, lastName);
-    if (result?.error) { setErr(result.error); setSaving(false); return; }
-    setSaving(false);
-    setEditing(false);
-    setSaved(true);
+    if (result?.error) { setNameErr(result.error); setSaving(false); return; }
+    setSaving(false); setEditing(false); setNameSaved(true);
+  };
+
+  // ── Username ───────────────────────────────────────────────────────────────
+  const hasUsername = !!me.username;
+  const [unInput,  setUnInput]  = useState("");
+  const [unStatus, setUnStatus] = useState("idle"); // idle|checking|available|taken|invalid
+  const [unSaving, setUnSaving] = useState(false);
+  const [unSaved,  setUnSaved]  = useState(false);
+  const [unErr,    setUnErr]    = useState("");
+
+  useEffect(() => {
+    if (!unInput) { setUnStatus("idle"); return; }
+    if (!USERNAME_RE.test(unInput)) { setUnStatus("invalid"); return; }
+    setUnStatus("checking");
+    const t = setTimeout(async () => {
+      const ok = await dbCheckUsername(unInput, me.id);
+      setUnStatus(ok ? "available" : "taken");
+    }, 500);
+    return () => clearTimeout(t);
+  }, [unInput]);
+
+  const saveUsername = async () => {
+    if (unStatus !== "available") return;
+    setUnSaving(true); setUnErr("");
+    try {
+      await dbSaveUsername(me.id, unInput);
+      patchProfile({ username: unInput });
+      setUnSaved(true);
+    } catch(e) { setUnErr("Could not save: " + e.message); }
+    setUnSaving(false);
+  };
+
+  const UN_UI = {
+    idle:      null,
+    checking:  <span className="muted small"><Loader size={12} className="spin"/> Checking…</span>,
+    available: <span style={{color:"var(--gain)",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><Check size={12}/> Available</span>,
+    taken:     <span style={{color:"var(--loss)",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:4}}><X size={12}/> Already taken — try another</span>,
+    invalid:   <span style={{color:"var(--loss)",fontSize:12}}>5–20 characters, lowercase letters, numbers and underscores only</span>,
   };
 
   return (
-    <div style={{
-      position:"absolute", top:50, right:0, width:360,
-      background:"var(--surface)", border:"1px solid var(--line)",
-      borderRadius:18, boxShadow:"0 8px 32px rgba(0,0,0,.13)",
-      zIndex:200, overflow:"hidden",
-    }} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"absolute",top:50,right:0,width:390,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:18,boxShadow:"0 8px 32px rgba(0,0,0,.14)",zIndex:200,overflow:"hidden"}}
+         onClick={e=>e.stopPropagation()}>
 
       {/* Header */}
-      <div style={{background:"var(--grad)",padding:"24px 22px 20px",display:"flex",gap:14,alignItems:"center"}}>
-        <div style={{width:52,height:52,borderRadius:16,background:"rgba(255,255,255,.22)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:800,color:"#fff",flexShrink:0}}>
-          {me.initials}
-        </div>
+      <div style={{background:"var(--grad)",padding:"22px 22px 18px",display:"flex",gap:14,alignItems:"center"}}>
+        <div style={{width:50,height:50,borderRadius:15,background:"rgba(255,255,255,.22)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,fontWeight:800,color:"#fff",flexShrink:0}}>{me.initials}</div>
         <div style={{flex:1}}>
-          <div style={{fontWeight:800,fontSize:17,color:"#fff",lineHeight:1.2}}>{me.name}</div>
-          <div style={{fontSize:12,color:"rgba(255,255,255,.75)",marginTop:3}}>Investor</div>
+          <div style={{fontWeight:800,fontSize:16,color:"#fff",lineHeight:1.2}}>{me.name}</div>
+          {me.username
+            ? <div style={{fontSize:12,color:"rgba(255,255,255,.78)",marginTop:2}}>@{me.username}</div>
+            : <div style={{fontSize:12,color:"rgba(255,255,255,.55)",marginTop:2}}>No username set yet</div>}
         </div>
         <button className="icon-btn" style={{background:"rgba(255,255,255,.18)",border:"none",color:"#fff"}} onClick={onClose}><X size={18}/></button>
       </div>
 
-      {/* Body */}
-      <div style={{padding:"20px 22px"}}>
-        {saved && <div className="note ok" style={{marginBottom:14}}><Check size={15}/><div>Profile updated successfully.</div></div>}
-        {err   && <div className="note warn" style={{marginBottom:14}}><AlertTriangle size={15}/><div>{err}</div></div>}
+      <div style={{padding:"16px 22px 20px",display:"flex",flexDirection:"column",gap:16}}>
 
-        {/* First name */}
-        <div className="field">
-          <label>First name <span style={{color:"var(--loss)"}}>*</span></label>
-          {editing
-            ? <input value={firstName} onChange={e=>setFirstName(e.target.value)} autoFocus placeholder="First name"/>
-            : <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,fontSize:14,background:"var(--surface-2)"}}>{me.firstName || <span className="muted">—</span>}</div>}
+        {/* ── NAME ── */}
+        <div style={{paddingBottom:16,borderBottom:"1px solid var(--line)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <span style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:.6}}>Display name</span>
+            {!editing && <button className="btn btn-ghost btn-sm" style={{padding:"4px 10px",fontSize:12}} onClick={startEdit}><Pencil size={12}/> Edit</button>}
+          </div>
+          {nameSaved && <div className="note ok" style={{marginBottom:8,padding:"8px 12px"}}><Check size={14}/><div>Name updated.</div></div>}
+          {nameErr   && <div className="note warn" style={{marginBottom:8,padding:"8px 12px"}}><AlertTriangle size={14}/><div>{nameErr}</div></div>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div>
+              <div style={{fontSize:12,fontWeight:600,color:"var(--ink-soft)",marginBottom:5}}>First name *</div>
+              {editing
+                ? <input value={firstName} onChange={e=>setFirstName(e.target.value)} autoFocus placeholder="First name" style={{width:"100%",border:"1px solid var(--line-2)",borderRadius:10,padding:"9px 12px",fontSize:13,outline:"none"}}/>
+                : <div style={{padding:"9px 12px",border:"1px solid var(--line)",borderRadius:10,fontSize:13,background:"var(--surface-2)"}}>{me.firstName||<span className="muted">—</span>}</div>}
+            </div>
+            <div>
+              <div style={{fontSize:12,fontWeight:600,color:"var(--ink-soft)",marginBottom:5}}>Last name</div>
+              {editing
+                ? <input value={lastName} onChange={e=>setLastName(e.target.value)} placeholder="Last name" onKeyDown={e=>e.key==="Enter"&&saveName()} style={{width:"100%",border:"1px solid var(--line-2)",borderRadius:10,padding:"9px 12px",fontSize:13,outline:"none"}}/>
+                : <div style={{padding:"9px 12px",border:"1px solid var(--line)",borderRadius:10,fontSize:13,background:"var(--surface-2)"}}>{me.lastName||<span className="muted">—</span>}</div>}
+            </div>
+          </div>
+          {editing && (
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10}}>
+              <button className="btn btn-ghost btn-sm" onClick={cancelEdit}>Cancel</button>
+              <button className="btn btn-pri btn-sm" disabled={saving||!firstName.trim()} onClick={saveName}>
+                {saving?<><Loader size={13} className="spin"/> Saving…</>:<><Check size={13}/> Save</>}
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Last name */}
-        <div className="field">
-          <label>Last name <span className="muted small">(optional)</span></label>
-          {editing
-            ? <input value={lastName} onChange={e=>setLastName(e.target.value)} placeholder="Last name" onKeyDown={e=>e.key==="Enter"&&save()}/>
-            : <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,fontSize:14,background:"var(--surface-2)"}}>{me.lastName || <span className="muted">—</span>}</div>}
+        {/* ── USERNAME ── */}
+        <div style={{paddingBottom:16,borderBottom:"1px solid var(--line)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <span style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:.6}}>Username</span>
+            {hasUsername && <span style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:"var(--muted)"}}><Lock size={11}/> Cannot be changed</span>}
+          </div>
+
+          {hasUsername ? (
+            <div style={{padding:"10px 13px",border:"1px solid var(--line)",borderRadius:11,fontSize:14,background:"var(--surface-2)",display:"flex",alignItems:"center",gap:8}}>
+              <span style={{color:"var(--muted)",flexShrink:0}}>@</span>
+              <span style={{fontWeight:700}}>{me.username}</span>
+              <span className="muted small" style={{marginLeft:"auto",fontSize:11}}>investor/{me.username}</span>
+            </div>
+          ) : unSaved ? (
+            <div className="note ok" style={{padding:"10px 12px"}}><Check size={15}/><div>@{unInput} set! This is your permanent username.</div></div>
+          ) : (
+            <>
+              <div className="note warn" style={{marginBottom:10,padding:"9px 12px",fontSize:12}}>
+                <AlertTriangle size={14}/>
+                <div><b>Choose carefully.</b> Username cannot be changed once set — it becomes part of your permanent public profile URL.</div>
+              </div>
+              {unErr && <div className="note warn" style={{marginBottom:8,padding:"8px 12px",fontSize:12}}><X size={13}/><div>{unErr}</div></div>}
+              <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                <div style={{flex:1,position:"relative"}}>
+                  <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"var(--muted)",fontSize:14,pointerEvents:"none",userSelect:"none"}}>@</span>
+                  <input
+                    value={unInput}
+                    onChange={e=>setUnInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,""))}
+                    placeholder="your_username"
+                    maxLength={20}
+                    style={{width:"100%",border:"1px solid var(--line-2)",borderRadius:11,padding:"10px 13px 10px 28px",fontSize:13,outline:"none"}}
+                  />
+                </div>
+                <button className="btn btn-pri btn-sm" disabled={unStatus!=="available"||unSaving} onClick={saveUsername} style={{flexShrink:0,alignSelf:"center"}}>
+                  {unSaving?<><Loader size={13} className="spin"/> Saving…</>:<><Check size={13}/> Set username</>}
+                </button>
+              </div>
+              <div style={{marginTop:5,minHeight:18,display:"flex",alignItems:"center"}}>{UN_UI[unStatus]}</div>
+            </>
+          )}
         </div>
 
-        {/* Email — read-only */}
-        <div className="field" style={{marginBottom:0}}>
-          <label>Email address <span className="muted small">(cannot be changed)</span></label>
-          <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,fontSize:14,color:"var(--muted)",background:"var(--surface-2)"}}>{me.email}</div>
+        {/* ── EMAIL ── */}
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:.6,marginBottom:10}}>Email address</div>
+          <div style={{padding:"10px 13px",border:"1px solid var(--line)",borderRadius:11,fontSize:14,color:"var(--muted)",background:"var(--surface-2)"}}>{me.email}</div>
+          <div className="muted small" style={{marginTop:4}}>Email cannot be changed</div>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{padding:"14px 22px",borderTop:"1px solid var(--line)",display:"flex",justifyContent:"flex-end",gap:10}}>
-        {!editing && <button className="btn btn-pri btn-sm" onClick={startEdit}><Pencil size={14}/> Edit profile</button>}
-        {editing  && <>
-          <button className="btn btn-ghost btn-sm" onClick={cancel}>Cancel</button>
-          <button className="btn btn-pri btn-sm" disabled={saving||!firstName.trim()} onClick={save}>
-            {saving ? <><Loader size={14} className="spin"/> Saving…</> : <><Check size={14}/> Save</>}
-          </button>
-        </>}
       </div>
     </div>
   );
 }
+
 
 /* =================================================================== HOME */
 function HomeFeed({ setPage, recsReceived, configs, holdings, contacts }) {
@@ -2521,16 +2615,36 @@ function AdminUsers({ users, setUsers, contacts, setContacts }) {
   </>);
 }
 function AddUserModal({ onClose, onAdd }) {
-  const [name,setName]=useState(""); const [email,setEmail]=useState("");
-  const [password,setPassword]=useState(""); const [role,setRole]=useState("Investor");
-  const [busy,setBusy]=useState(false); const [err,setErr]=useState("");
-  const valid = name.trim() && email.trim() && password.length>=6;
+  const [name,     setName]     = useState("");
+  const [email,    setEmail]    = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [role,     setRole]     = useState("Investor");
+  const [busy,     setBusy]     = useState(false);
+  const [err,      setErr]      = useState("");
+  const [unStatus, setUnStatus] = useState("idle"); // idle|checking|available|taken|invalid
+
+  const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
+
+  useEffect(() => {
+    if (!username) { setUnStatus("idle"); return; }
+    if (!USERNAME_RE.test(username)) { setUnStatus("invalid"); return; }
+    setUnStatus("checking");
+    const t = setTimeout(async () => {
+      const ok = await dbCheckUsername(username, "admin-new-user");
+      setUnStatus(ok ? "available" : "taken");
+    }, 500);
+    return () => clearTimeout(t);
+  }, [username]);
+
+  const usernameOk = !username || unStatus === "available"; // username is optional in admin form
+  const valid = name.trim() && email.trim() && password.length >= 6 && usernameOk;
   const save = async () => {
     setBusy(true); setErr("");
     try {
       const cred = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password);
       await secondaryAuth.signOut();
-      if (sql) { try { await sql`INSERT INTO user_profiles (id, email, full_name, is_admin) VALUES (${cred.user.uid}, ${email.trim()}, ${name.trim()}, false) ON CONFLICT (id) DO NOTHING`; } catch(e) { console.warn("user_profiles insert failed:", e.message); } }
+      if (sql) { try { await sql`INSERT INTO user_profiles (id, email, full_name, is_admin, username) VALUES (${cred.user.uid}, ${email.trim()}, ${name.trim()}, false, ${username.trim()||null}) ON CONFLICT (id) DO NOTHING`; } catch(e) { console.warn("user_profiles insert failed:", e.message); } }
       onAdd({ id:cred.user.uid, name:name.trim(), email:email.trim(), role, status:"Active", accounts:0, joined:new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
     } catch(e) {
       if (e.code === "auth/email-already-in-use") {
@@ -2561,6 +2675,22 @@ function AddUserModal({ onClose, onAdd }) {
       <div className="note info" style={{marginBottom:14}}><Shield size={16}/><div>Creates a real login account. The user will be able to sign in immediately with the password you set.</div></div>
       <div className="field"><label>Full name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Jane Doe" autoFocus/></div>
       <div className="field"><label>Email address</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="jane@example.com"/></div>
+      <div className="field">
+        <label>Username <span className="muted small">(optional — 5–20 chars, lowercase, letters/numbers/underscores)</span></label>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <div style={{position:"relative",flex:1}}>
+            <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"var(--muted)",pointerEvents:"none"}}>@</span>
+            <input value={username} onChange={e=>setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,""))}
+                   maxLength={20} placeholder="jane_doe"
+                   style={{paddingLeft:28,width:"100%",border:"1px solid var(--line-2)",borderRadius:11,padding:"11px 13px 11px 28px",fontSize:14,outline:"none"}}/>
+          </div>
+          {unStatus==="checking"  && <Loader size={15} className="spin" color="var(--muted)"/>}
+          {unStatus==="available" && <Check  size={15} color="var(--gain)"/>}
+          {unStatus==="taken"     && <X      size={15} color="var(--loss)"/>}
+        </div>
+        {unStatus==="invalid" && <div style={{color:"var(--loss)",fontSize:12,marginTop:4}}>5–20 characters, lowercase letters, numbers and underscores only</div>}
+        {unStatus==="taken"   && <div style={{color:"var(--loss)",fontSize:12,marginTop:4}}>This username is already taken</div>}
+      </div>
       <div className="field"><label>Temporary password <span className="muted small">(min 6 characters)</span></label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="They can change it after logging in"/></div>
       <div className="field"><label>Role</label><select value={role} onChange={e=>setRole(e.target.value)}>{["Investor","Moderator","Admin"].map(r=><option key={r}>{r}</option>)}</select></div>
       {err && <div className="note warn"><AlertTriangle size={15}/><div>{err}</div></div>}
