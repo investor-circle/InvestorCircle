@@ -28,7 +28,7 @@ import {
   updateDelivery, toggleExitSignal as dbToggleExit, forwardRecommendation as dbForwardReco,
   deleteRecommendation as dbDeleteReco, deleteDelivery as dbDeleteDelivery,
   checkUsername as dbCheckUsername, saveUsername as dbSaveUsername,
-  getPublicProfile as dbGetPublicProfile,
+  getPublicProfile as dbGetPublicProfile, computeIci,
   getMyNotifications, markNotifRead, markAllNotifRead,
   getSharingPrefs, upsertSharingPref,
 } from "./db";
@@ -1918,25 +1918,28 @@ function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAdd }) {
 function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, me, onClose, onCreate }) {
   const myId = me?.id || "me";
   const myGroups = groups.filter(g=>g.my_role==="admin"||g.members?.some(m=>m.user_id===myId&&m.status==="active"));
-  const [selectedInstr, setSelectedInstr] = useState(null); // from InstrumentSearch
+  const [selectedInstr, setSelectedInstr] = useState(null);
   const [assetName,   setAssetName]   = useState("");
   const [ticker,      setTicker]      = useState("");
   const [cls,         setCls]         = useState(assetClasses[0]);
   const [currency,    setCurrency]    = useState("INR");
+  const [recType,     setRecType]     = useState("Buy");      // Buy | Sell
+  const [conviction,  setConviction]  = useState("");         // Low | Medium | High
+  const [sector,      setSector]      = useState("");
   const [recoPrice,   setRecoPrice]   = useState("");
   const [targetPrice, setTargetPrice] = useState("");
+  const [stopLoss,    setStopLoss]    = useState("");
   const [horizon,     setHorizon]     = useState("12m");
   const [thesis,      setThesis]      = useState("");
   const [targets,     setTargets]     = useState([]);
-  const [isPublic,    setIsPublic]    = useState(true);    // public by default
+  const [isPublic,    setIsPublic]    = useState(true);
   const [adding,      setAdding]      = useState(false);
   const [newCat,      setNewCat]      = useState("");
 
   const CURRENCY_SYMBOL = { INR:"₹", USD:"$", GBP:"£", EUR:"€" };
 
-  // When user picks an instrument from search — auto-fill all fields
   const onInstrSelect = (inst) => {
-    if (!inst) return; // cleared
+    if (!inst) return;
     setSelectedInstr(inst);
     setTicker(inst.symbol);
     setAssetName(inst.name);
@@ -1957,8 +1960,13 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
       assetName: assetName.trim()||(known?known.name:ticker.toUpperCase()),
       ticker:(ticker||"—").toUpperCase(), assetClass:cls, currency,
       priceAt:rp, price:known?known.price:rp,
-      targetPrice:targetPrice?+targetPrice:null, horizon, targetDate:td, thesis:thesis||"—",
+      targetPrice:targetPrice?+targetPrice:null,
+      stopLoss:stopLoss?+stopLoss:null,
+      horizon, targetDate:td, thesis:thesis||"—",
       isPublic,
+      recType,
+      conviction: conviction || null,
+      sector:     sector || null,
     };
     const recipients = targets.map(id=>({ type:groups.some(g=>g.id===id)?"group":"user", id }));
     if (sql && me?.id) {
@@ -1974,7 +1982,21 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
     <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> New recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">
 
-      {/* Instrument search — primary entry point */}
+      {/* Recommendation type — Buy / Sell */}
+      <div className="field"><label>Recommendation type</label>
+        <div style={{display:"flex",gap:8}}>
+          {["Buy","Sell"].map(t=>(
+            <button key={t} onClick={()=>setRecType(t)}
+              style={{flex:1,padding:"10px 0",borderRadius:10,fontWeight:700,fontSize:14,cursor:"pointer",border:"1.5px solid",
+                background: recType===t ? (t==="Buy"?"var(--gain-soft)":"var(--loss-soft)") : "var(--surface)",
+                color:      recType===t ? (t==="Buy"?"var(--gain)":"var(--loss)") : "var(--muted)",
+                borderColor:recType===t ? (t==="Buy"?"var(--gain)":"var(--loss)") : "var(--line)",
+              }}>{t}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Instrument search */}
       <div className="field"><label>Search instrument <span className="muted small">(type symbol or company name)</span></label>
         <InstrumentSearch onSelect={onInstrSelect} placeholder="e.g. RELIANCE or Reliance Industries…"/>
       </div>
@@ -2008,7 +2030,20 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
           ? <div style={{display:"flex",gap:8}}><input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="New category name" onKeyDown={e=>e.key==="Enter"&&addCat()}/><button className="btn btn-pri btn-sm" onClick={addCat}>Add</button></div>
           : <select value={cls} onChange={e=>setCls(e.target.value)}>{assetClasses.map(c=><option key={c}>{c}</option>)}</select>}</div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",columnGap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14}}>
+        <div className="field"><label>Sector <span className="muted small">(optional)</span></label>
+          <select value={sector} onChange={e=>setSector(e.target.value)}>
+            <option value="">— Select sector —</option>
+            {["Banking & Finance","Technology","Pharmaceuticals","Energy","FMCG","Automobiles","Defence","Capital Goods","Real Estate","Chemicals","Telecom","Metals & Mining","PSU","Healthcare","Infrastructure","Media","Retail","Others"].map(s=><option key={s}>{s}</option>)}
+          </select></div>
+        <div className="field"><label>Conviction <span className="muted small">(optional)</span></label>
+          <select value={conviction} onChange={e=>setConviction(e.target.value)}>
+            <option value="">— Not specified —</option>
+            <option>Low</option><option>Medium</option><option>High</option>
+          </select></div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",columnGap:14}}>
         <div className="field"><label>Currency</label>
           <select value={currency} onChange={e=>setCurrency(e.target.value)}>
             {["INR","USD","GBP","EUR"].map(c=><option key={c}>{c}</option>)}
@@ -2019,6 +2054,8 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
         </div>
         <div className="field"><label>Target price <span className="muted small">(opt.)</span></label>
           <input type="number" value={targetPrice} onChange={e=>setTargetPrice(e.target.value)} placeholder="0"/></div>
+        <div className="field"><label>Stop loss <span className="muted small">(opt.)</span></label>
+          <input type="number" value={stopLoss} onChange={e=>setStopLoss(e.target.value)} placeholder="0"/></div>
         <div className="field"><label>Horizon</label>
           <select value={horizon} onChange={e=>setHorizon(e.target.value)}>{HORIZONS.map(h=><option key={h} value={h}>{h}</option>)}</select></div>
       </div>
@@ -2108,127 +2145,141 @@ function SharePreview({ id, name, cfg, holdings, onClose }) {
 
 /* =================================================================== PUBLIC PROFILE */
 
-/** Small popover for sharing a public recommendation link */
+const SECTORS_LIST = ["Banking & Finance","Technology","Pharmaceuticals","Energy","FMCG",
+  "Automobiles","Defence","Capital Goods","Real Estate","Chemicals","Telecom",
+  "Metals & Mining","PSU","Healthcare","Infrastructure","Media","Retail","Others"];
+
+const SECTOR_EMOJI = {
+  "Banking & Finance":"🏦","Technology":"💻","Pharmaceuticals":"💊","Energy":"⚡",
+  "FMCG":"🛒","Automobiles":"🚗","Defence":"🛡","Capital Goods":"⚙️",
+  "Real Estate":"🏗","Chemicals":"🧪","Telecom":"📡","Metals & Mining":"⛏",
+  "PSU":"🏛","Healthcare":"🏥","Infrastructure":"🌉","Media":"📺","Retail":"🏪",
+  "Others":"•••","Uncategorised":"•••",
+};
+
+// ─── small reusable helpers ───────────────────────────────────────────────────
+
+function IciDonut({ score, band }) {
+  const r = 44, circ = 2 * Math.PI * r, filled = (score / 100) * circ;
+  const col = score >= 70 ? "#16a34a" : score >= 50 ? "#6d5df5" : score >= 30 ? "#f59e0b" : "#dc2626";
+  return (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+      <svg width={108} height={108} viewBox="0 0 108 108">
+        <circle cx={54} cy={54} r={r} fill="none" stroke="#e5e7eb" strokeWidth={10}/>
+        <circle cx={54} cy={54} r={r} fill="none" stroke={col} strokeWidth={10}
+          strokeDasharray={`${filled} ${circ}`}
+          strokeDashoffset={circ/4} strokeLinecap="round"/>
+        <text x={54} y={50} textAnchor="middle" fontSize={24} fontWeight={800} fill="#0f1117" fontFamily="'JetBrains Mono',monospace">{score}</text>
+        <text x={54} y={65} textAnchor="middle" fontSize={10} fill="#9ca3af">/100</text>
+      </svg>
+      <div style={{fontSize:12,fontWeight:700,color:col}}>{band}</div>
+    </div>
+  );
+}
+
+function RetBadge({ pct, size=13 }) {
+  const n = Number(pct||0), pos = n >= 0;
+  return <span style={{fontWeight:700,fontSize:size,color:pos?"var(--gain)":"var(--loss)",fontFamily:"'JetBrains Mono',monospace"}}>{pos?"+":""}{n.toFixed(1)}%</span>;
+}
+
+function StripStat({ val, label, sub, col }) {
+  return (
+    <div style={{textAlign:"center",padding:"16px 8px"}}>
+      <div style={{fontSize:26,fontWeight:800,color:col||"var(--ink)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1}}>{val}</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",marginTop:4,textTransform:"uppercase",letterSpacing:.05}}>{label}</div>
+      {sub && <div style={{fontSize:10,color:"var(--muted)",opacity:.7,marginTop:2}}>{sub}</div>}
+    </div>
+  );
+}
+
+function ScoreBox({ val, label, big, col }) {
+  return (
+    <div style={{textAlign:"center",padding:"12px 8px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10}}>
+      <div style={{fontSize:big?22:18,fontWeight:800,color:col||"var(--ink)",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{val}</div>
+      <div style={{fontSize:10.5,color:"var(--muted)",marginTop:4,lineHeight:1.3}}>{label}</div>
+    </div>
+  );
+}
+
+function TypeBadge({ t }) {
+  return <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:5,background:t==="Sell"?"var(--loss-soft)":"var(--gain-soft)",color:t==="Sell"?"var(--loss)":"var(--gain)"}}>{t||"Buy"}</span>;
+}
+
+function ConvBadge({ level }) {
+  if (!level) return null;
+  const col = level==="High"?"var(--accent)":level==="Medium"?"var(--amber)":"var(--muted)";
+  return <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:5,border:`1px solid ${col}`,color:col}}>{level}</span>;
+}
+
+function StatusBadge2({ status }) {
+  const cfg = {
+    Active:  {bg:"#dbeafe",col:"#1d4ed8"},
+    Closed:  {bg:"var(--gain-soft)",col:"var(--gain)"},
+    Expired: {bg:"#f3f4f6",col:"var(--muted)"},
+  }[status] || {bg:"#f3f4f6",col:"var(--muted)"};
+  return <span style={{fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:5,background:cfg.bg,color:cfg.col}}>{status}</span>;
+}
+
+// ─── Share Popover (unchanged from previous) ──────────────────────────────────
 function SharePublicPopover({ reco, username, onClose }) {
   const [copied, setCopied] = useState(false);
   const ref = useRef(null);
-
-  // Close on outside click
   useEffect(() => {
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
-
   const popStyle = {
-    position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 300,
-    background: "var(--surface)", border: "1px solid var(--line)",
-    borderRadius: 14, boxShadow: "0 6px 24px rgba(0,0,0,.14)",
-    padding: "14px 16px", minWidth: 280,
+    position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:300,
+    background:"var(--surface)",border:"1px solid var(--line)",
+    borderRadius:14,boxShadow:"0 6px 24px rgba(0,0,0,.14)",padding:"14px 16px",minWidth:280,
   };
-
   if (!username) return (
     <div ref={ref} style={popStyle} onClick={e=>e.stopPropagation()}>
-      <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>Share publicly</div>
-      <div className="note warn" style={{fontSize:12}}>
-        <AlertTriangle size={13}/>
-        <div>Set a username in your profile first — your public URL requires one.</div>
-      </div>
+      <div className="note warn" style={{fontSize:12}}><AlertTriangle size={13}/><div>Set a username in your profile first.</div></div>
       <button className="btn btn-ghost btn-sm" style={{marginTop:10,width:"100%"}} onClick={onClose}>Close</button>
     </div>
   );
-
   const url = `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${reco.id}`;
-  const waMsg = encodeURIComponent(
-    `Check out ${reco.ticker} (${reco.assetName}) by @${username} on InvestorCircle:\n${url}`
-  );
+  const waMsg = encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) by @${username} on InvestorCircle:\n${url}`);
   const waUrl = `https://wa.me/?text=${waMsg}`;
-
-  const copyLink = () => {
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => { setCopied(false); onClose(); }, 1600);
-    });
-  };
-
+  const copyLink = () => { navigator.clipboard.writeText(url).then(()=>{ setCopied(true); setTimeout(()=>{ setCopied(false); onClose(); },1600); }); };
   return (
     <div ref={ref} style={popStyle} onClick={e=>e.stopPropagation()}>
-      <div style={{fontWeight:700,fontSize:13,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
-        <Globe size={14} color="var(--accent)"/> Share publicly
-      </div>
-      {/* URL preview */}
-      <div style={{background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:9,padding:"8px 10px",fontSize:11,color:"var(--muted)",marginBottom:12,wordBreak:"break-all",lineHeight:1.4}}>
-        {url}
-      </div>
-      {/* Actions */}
+      <div style={{fontWeight:700,fontSize:13,marginBottom:12,display:"flex",alignItems:"center",gap:6}}><Globe size={14} color="var(--accent)"/> Share publicly</div>
+      <div style={{background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:9,padding:"8px 10px",fontSize:11,color:"var(--muted)",marginBottom:12,wordBreak:"break-all",lineHeight:1.4}}>{url}</div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        <button className="btn btn-pri btn-sm" style={{justifyContent:"center"}} onClick={copyLink}>
-          {copied ? <><Check size={14}/> Copied to clipboard!</> : <><Copy size={14}/> Copy link</>}
-        </button>
-        <a href={waUrl} target="_blank" rel="noopener noreferrer"
-           className="btn btn-soft btn-sm" style={{justifyContent:"center",textDecoration:"none"}}
-           onClick={onClose}>
-          {/* WhatsApp green */}
-          <span style={{fontSize:15,lineHeight:1}}>💬</span> Share on WhatsApp
-        </a>
+        <button className="btn btn-pri btn-sm" style={{justifyContent:"center"}} onClick={copyLink}>{copied?<><Check size={14}/> Copied!</>:<><Copy size={14}/> Copy link</>}</button>
+        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{justifyContent:"center",textDecoration:"none"}} onClick={onClose}><span style={{fontSize:15,lineHeight:1}}>💬</span> Share on WhatsApp</a>
       </div>
-      <div className="muted small" style={{marginTop:10,fontSize:11}}>
-        Anyone with this link can view this recommendation on your public profile — no login needed.
-      </div>
-    </div>
-  );
-}
-function StatCard({ label, value, sub, accent }) {
-  return (
-    <div style={{
-      background: accent ? "var(--accent-soft)" : "var(--surface-2)",
-      border: "1px solid var(--line)",
-      borderRadius: 14, padding: "14px 18px", flex: 1, minWidth: 120,
-    }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: accent ? "var(--accent-ink)" : "var(--ink)", lineHeight: 1 }}>{value ?? "—"}</div>
-      {sub && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>{sub}</div>}
+      <div className="muted small" style={{marginTop:10,fontSize:11}}>Anyone with this link can view this — no login needed.</div>
     </div>
   );
 }
 
-/** Format a return percentage for display */
-function fmtRet(pct) {
-  if (pct == null || isNaN(pct)) return "—";
-  const n = Number(pct);
-  return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
-}
-
-/**
- * PublicProfilePage
- * mode = "standalone" → full-page, no sidebar (hash URL from WhatsApp/email)
- * mode = "embedded"  → inside app shell (Track Record nav item)
- * isOwnProfile       → true when logged-in user is viewing their own profile
- */
+// ─── Main public profile page ─────────────────────────────────────────────────
 function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, onBack, onRequestConnect }) {
   const [data,       setData]       = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [notFound,   setNotFound]   = useState(false);
+  const [recTab,     setRecTab]     = useState("All");
   const [connecting, setConnecting] = useState(false);
   const [connected,  setConnected]  = useState(false);
   const [copied,     setCopied]     = useState(false);
-  const [expandedId, setExpandedId] = useState(recoId || null); // reco row expanded to show thesis
-  const expandedRef = useRef(null);
+  const [expandedId, setExpandedId] = useState(recoId || null);
+  const expandedRef  = useRef(null);
 
   useEffect(() => {
     setLoading(true); setNotFound(false); setData(null);
     dbGetPublicProfile(username).then(d => {
-      if (!d) setNotFound(true);
-      else    setData(d);
+      if (!d) setNotFound(true); else setData(d);
       setLoading(false);
     }).catch(() => { setNotFound(true); setLoading(false); });
   }, [username]);
 
-  // Auto-scroll to the linked recommendation after data loads
   useEffect(() => {
-    if (recoId && data && expandedRef.current) {
-      setTimeout(() => expandedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
-    }
+    if (recoId && data && expandedRef.current)
+      setTimeout(() => expandedRef.current?.scrollIntoView({ behavior:"smooth", block:"center" }), 200);
   }, [recoId, data]);
 
   const profileUserId = data?.profile?.id;
@@ -2237,352 +2288,372 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     const c = viewerConnections.find(c => c.user_id === profileUserId);
     return c?.status || "none";
   }, [profileUserId, viewerConnections]);
-  useEffect(() => { if (connStatus === "accepted") setConnected(true); }, [connStatus]);
+  useEffect(() => { if (connStatus==="accepted") setConnected(true); }, [connStatus]);
 
   const handleConnect = async () => {
     setConnecting(true);
     await onRequestConnect(data.profile.id);
-    setConnected(true);
-    setConnecting(false);
+    setConnected(true); setConnecting(false);
   };
 
   const profileUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}`;
-  const copyLink = () => {
-    navigator.clipboard.writeText(profileUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+  const copyLink = () => { navigator.clipboard.writeText(profileUrl).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false), 2000); }); };
 
-  // ── Shared content (profile body) ─────────────────────────────────────────
-  const renderBody = () => {
-    if (loading) return (
-      <div style={{ textAlign: "center", padding: "60px 0", color: "var(--muted)" }}>
-        <Loader size={28} className="spin" style={{ marginBottom: 14 }}/><div>Loading profile…</div>
-      </div>
-    );
-    if (notFound) return (
-      <div style={{ textAlign: "center", padding: "60px 0" }}>
-        <Globe size={36} color="var(--muted)" style={{ marginBottom: 14 }}/>
-        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Profile not found</div>
-        <div className="muted small">@{username} doesn't exist or hasn't set a public profile yet.</div>
-      </div>
-    );
+  // ── Content ───────────────────────────────────────────────────────────────
+  const renderContent = () => {
+    if (loading) return <div style={{textAlign:"center",padding:"60px 0",color:"var(--muted)"}}><Loader size={28} className="spin" style={{marginBottom:14}}/><div>Loading public investment record…</div></div>;
+    if (notFound) return <div style={{textAlign:"center",padding:"60px 0"}}><Globe size={36} color="var(--muted)" style={{marginBottom:14}}/><div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Record not found</div><div className="muted small">@{username} hasn't set up a public profile yet.</div></div>;
 
-    const { profile, stats, recos } = data;
+    const { profile, summary, live, realized, sectors, recos } = data;
     const displayName = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.full_name || username;
-    const memberSince = profile.created_at
-      ? new Date(profile.created_at).toLocaleDateString("en-IN", { month: "long", year: "numeric" })
-      : null;
+    const memberSince = profile.created_at ? new Date(profile.created_at).toLocaleDateString("en-IN",{month:"short",year:"numeric"}) : null;
 
-    // Connection button state
-    const showConnectBtn = !isOwnProfile && viewerUser;
-    const alreadyPending = connStatus === "pending";
+    const ici = computeIci({
+      years_history:        summary.years_history,
+      total:                summary.total,
+      hit_rate_pct:         realized.hit_rate_pct,
+      median_return:        realized.median_return,
+      risk_adjusted_return: realized.risk_adjusted,
+    });
+
+    // Filtered recommendation list for tabs
+    const filteredRecos = recTab === "All" ? recos
+      : recos.filter(r => r.status === recTab);
+    const recoIdNotPublic = recoId && data && !recos.find(r => r.id === recoId);
+
+    // Connection button
+    const showAddBtn    = !isOwnProfile && viewerUser && !connected && connStatus !== "pending";
+    const showPending   = !isOwnProfile && viewerUser && connStatus === "pending";
+    const showConnected = !isOwnProfile && viewerUser && connected;
+    const showJoinBtn   = !isOwnProfile && !viewerUser;
 
     return (
-      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+      <div style={{maxWidth:980,margin:"0 auto"}}>
 
-        {/* ── Profile header ── */}
-        <div className="card" style={{ marginBottom: 18 }}>
-          <div style={{ background: "var(--grad)", borderRadius: "16px 16px 0 0", padding: "28px 28px 22px", display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ width: 64, height: 64, borderRadius: 20, background: "rgba(255,255,255,.22)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 800, color: "#fff", flexShrink: 0 }}>
-              {initialsOf(displayName)}
+        {/* ── Embedded mode banner ── */}
+        {mode==="embedded" && isOwnProfile && (
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,padding:"12px 16px",background:"var(--accent-soft)",border:"1px solid var(--line)",borderRadius:12}}>
+            <div style={{fontSize:13,fontWeight:600,color:"var(--accent-ink)"}}>This is your public investment record as others see it</div>
+            <div style={{display:"flex",gap:8}}>
+              <button className="btn btn-soft btn-sm" onClick={copyLink}>{copied?<><Check size={14}/> Copied!</>:<><Copy size={14}/> Copy link</>}</button>
+              <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm"><ExternalLink size={14}/> Open public URL</a>
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: 20, color: "#fff", lineHeight: 1.2 }}>{displayName}</div>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,.8)", marginTop: 3 }}>@{username}</div>
-              {memberSince && <div style={{ fontSize: 12, color: "rgba(255,255,255,.6)", marginTop: 2 }}>Member since {memberSince}</div>}
+          </div>
+        )}
+
+        {/* ── SECTION 1: Identity header ── */}
+        <div className="card" style={{marginBottom:16,overflow:"hidden"}}>
+          <div style={{background:"#0f1117",padding:"24px 24px 20px"}}>
+            <div style={{display:"flex",gap:18,alignItems:"flex-start",flexWrap:"wrap"}}>
+              {/* Avatar */}
+              <div style={{width:72,height:72,borderRadius:18,background:"linear-gradient(135deg,#6d5df5,#cf52d8)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800,color:"#fff",flexShrink:0}}>
+                {initialsOf(displayName)}
+              </div>
+              {/* Name + badges + bio */}
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span style={{fontSize:20,fontWeight:800,color:"#fff",letterSpacing:"-.3px"}}>{displayName}</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:5,background:"rgba(255,255,255,.12)",color:"rgba(255,255,255,.7)",border:"1px solid rgba(255,255,255,.15)",textTransform:"uppercase",letterSpacing:.05}}>Self-directed Investor</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:5,background:"rgba(244,63,94,.15)",color:"#fb7185",border:"1px solid rgba(244,63,94,.25)",textTransform:"uppercase",letterSpacing:.05}}>Not SEBI Registered</span>
+                </div>
+                <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginTop:3,fontFamily:"'JetBrains Mono',monospace"}}>@{username}</div>
+                {memberSince && <div style={{fontSize:11.5,color:"rgba(255,255,255,.4)",marginTop:6}}>Public investment record since {memberSince}</div>}
+                {/* social stubs */}
+                <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
+                  {["Twitter","LinkedIn","Telegram"].map(s=>(
+                    <span key={s} style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:6,background:"rgba(255,255,255,.08)",color:"rgba(255,255,255,.5)",border:"1px solid rgba(255,255,255,.1)",cursor:"not-allowed"}}>{s}</span>
+                  ))}
+                </div>
+              </div>
+              {/* ICI widget */}
+              <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:"16px 20px",minWidth:300}}>
+                <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.07,marginBottom:12}}>Investor Circle Credibility Index</div>
+                <div style={{display:"flex",gap:16,alignItems:"center"}}>
+                  <IciDonut score={ici.score} band={ici.band}/>
+                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
+                    {ici.components.map(c=>(
+                      <div key={c.label} style={{display:"flex",alignItems:"center",gap:6}}>
+                        <Check size={11} color="rgba(255,255,255,.4)"/>
+                        <span style={{fontSize:10.5,color:"rgba(255,255,255,.6)",flex:1}}>{c.label}</span>
+                        <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.8)",fontFamily:"'JetBrains Mono',monospace"}}>{c.max}%</span>
+                        <span style={{fontSize:10.5,color:"rgba(255,255,255,.5)",fontFamily:"'JetBrains Mono',monospace"}}>{c.score}/{c.max}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{marginTop:10,textAlign:"center"}}><a href="#methodology" style={{fontSize:11,color:"#a99dff",textDecoration:"none"}}>Learn more about ICI methodology →</a></div>
+              </div>
             </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {isOwnProfile && (
-                <>
-                  <button className="btn btn-soft btn-sm" style={{ background: "rgba(255,255,255,.18)", color: "#fff", border: "none" }} onClick={copyLink}>
-                    {copied ? <><Check size={14}/> Copied!</> : <><Copy size={14}/> Copy profile link</>}
-                  </button>
-                  <a href={profileUrl} target="_blank" rel="noopener noreferrer"
-                     style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,.8)", textDecoration: "none" }}>
-                    <ExternalLink size={14}/> View as public
-                  </a>
-                </>
-              )}
-              {showConnectBtn && !connected && !alreadyPending && (
-                <button className="btn btn-pri btn-sm" style={{ background: "#fff", color: "var(--accent)" }} disabled={connecting} onClick={handleConnect}>
-                  {connecting ? <><Loader size={13} className="spin"/> Sending…</> : <><UserPlus size={14}/> Add to network</>}
-                </button>
-              )}
-              {showConnectBtn && (connected || alreadyPending) && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "rgba(255,255,255,.8)", background: "rgba(255,255,255,.15)", borderRadius: 8, padding: "6px 12px" }}>
-                  <Check size={13}/> {connected ? "Connected" : "Request sent"}
-                </span>
-              )}
-              {!viewerUser && !isOwnProfile && (
-                <button className="btn btn-pri btn-sm" style={{ background: "#fff", color: "var(--accent)" }} onClick={() => onRequestConnect(data.profile.id)}>
-                  <UserPlus size={14}/> Join to connect
-                </button>
-              )}
+
+            {/* Action buttons */}
+            <div style={{display:"flex",gap:8,marginTop:16,justifyContent:"flex-end"}}>
+              {showAddBtn && <button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect}>{connecting?<><Loader size={13} className="spin"/> Sending…</>:<><UserPlus size={14}/> Add to network</>}</button>}
+              {showPending && <span style={{fontSize:13,color:"rgba(255,255,255,.6)",display:"flex",alignItems:"center",gap:6}}><Check size={13}/> Request sent</span>}
+              {showConnected && <span style={{fontSize:13,color:"rgba(255,255,255,.6)",display:"flex",alignItems:"center",gap:6}}><Check size={13}/> Connected</span>}
+              {showJoinBtn && <button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)}><UserPlus size={14}/> Join InvestorCircle to connect</button>}
             </div>
           </div>
 
-          {/* Circle stats row */}
-          <div style={{ display: "flex", gap: 0, padding: "16px 28px", borderTop: "1px solid var(--line)", flexWrap: "wrap" }}>
+          {/* ── Stat strip ── */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",background:"#161b27",borderTop:"1px solid rgba(255,255,255,.06)"}}>
             {[
-              { label: "Connections",          val: Number(profile.connection_count || 0) },
-              { label: "Groups",               val: Number(profile.group_count      || 0) },
-              { label: "Public recommendations", val: Number(stats.total             || 0) },
-              { label: "Total likes",           val: Number(stats.total_likes        || 0) },
-              { label: "Total dislikes",        val: Number(stats.total_dislikes     || 0) },
-            ].map((item, i, arr) => (
-              <div key={item.label} style={{ flex: 1, minWidth: 100, textAlign: "center", padding: "8px 12px", borderRight: i < arr.length - 1 ? "1px solid var(--line)" : "none" }}>
-                <div style={{ fontSize: 20, fontWeight: 800 }}>{item.val}</div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{item.label}</div>
+              {val:profile.connection_count||0, label:"Connections"},
+              {val:profile.group_count||0,      label:"Groups"},
+              {val:summary.total,               label:"Total Recommendations"},
+              {val:summary.closed,              label:"Closed"},
+              {val:summary.active,              label:"Active"},
+              {val:`${summary.years_history.toFixed(1)} yrs`, label:"Public History"},
+            ].map((s,i,arr)=>(
+              <div key={s.label} style={{borderRight:i<arr.length-1?"1px solid rgba(255,255,255,.06)":"none"}}>
+                <StripStat val={s.val} label={s.label}/>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── Track Record ── */}
-        <div className="card" style={{ marginBottom: 18 }}>
-          <div className="card-head" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Trophy size={16} color="var(--accent)"/> Track Record
-          </div>
-          <div className="card-body" style={{ padding: "0 20px 20px" }}>
-            {/* Disclaimer */}
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: 12, color: "var(--muted)" }}>
-              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }}/>
-              <div>Stats cover <b>public recommendations only</b>. Returns use last known price as approximation — historical prices at exit or expiration dates are not stored.</div>
+        {/* ── SECTION 2: Scorecards ── */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+
+          {/* Live Scorecard */}
+          <div className="card">
+            <div className="card-head">
+              <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:"var(--gain)",display:"inline-block"}}/><span style={{fontSize:13,fontWeight:700}}>Live Scorecard</span><span className="muted small">Active Recommendations</span></span>
             </div>
-
-            {Number(stats.total) === 0 ? (
-              <div className="empty" style={{ padding: "24px 0" }}>No public recommendations yet.</div>
-            ) : (
-              <>
-                {/* Total row */}
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5, marginBottom: 10 }}>Overall</div>
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <StatCard label="Total recs" value={stats.total}/>
-                    <StatCard label="Avg return" value={fmtRet(stats.avg_return_pct)} accent/>
-                    <StatCard label="In the money"  value={stats.in_money}  sub={`${stats.out_money} out of money`}/>
-                    <StatCard label="Total likes"   value={stats.total_likes} sub={`${stats.total_dislikes} dislikes`}/>
-                  </div>
+            <div className="card-body">
+              {live.count === 0 ? <div className="empty" style={{padding:"20px 0"}}>No active recommendations.</div> : (<>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
+                  <ScoreBox val={live.count} label="Active Recommendations" big/>
+                  <ScoreBox val={`${live.in_profit} (${live.count?Math.round(live.in_profit/live.count*100):0}%)`} label="Currently in Profit" col="var(--gain)" big/>
+                  <ScoreBox val={`${live.in_loss} (${live.count?Math.round(live.in_loss/live.count*100):0}%)`} label="Currently in Loss" col="var(--loss)" big/>
                 </div>
-
-                {/* Active vs Closed */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                  {/* Active */}
-                  <div style={{ background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 14, padding: "14px 16px" }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-                      <span className="dot" style={{ background: "var(--gain)", width: 8, height: 8 }}/> Active
-                      <span className="muted small" style={{ marginLeft: "auto" }}>{stats.active_count} recs</span>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                        <span className="muted">Avg return</span>
-                        <b style={{ color: Number(stats.active_return_pct) >= 0 ? "var(--gain)" : "var(--loss)" }}>{fmtRet(stats.active_return_pct)}</b>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                        <span className="muted">In the money</span>
-                        <b>{stats.active_in_money}</b>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                        <span className="muted">Out of money</span>
-                        <b>{stats.active_out_money}</b>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Closed */}
-                  <div style={{ background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 14, padding: "14px 16px" }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-                      <span className="dot" style={{ background: "var(--muted)", width: 8, height: 8 }}/> Closed
-                      <span className="muted small" style={{ marginLeft: "auto" }}>{stats.closed_count} recs</span>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                        <span className="muted">Avg return</span>
-                        <b style={{ color: Number(stats.closed_return_pct) >= 0 ? "var(--gain)" : "var(--loss)" }}>{fmtRet(stats.closed_return_pct)}</b>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                        <span className="muted">In the money</span>
-                        <b>{stats.closed_in_money}</b>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                        <span className="muted">Out of money</span>
-                        <b>{stats.closed_out_money}</b>
-                      </div>
-                    </div>
-                  </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
+                  <ScoreBox val={<RetBadge pct={live.avg_return}/>} label="Avg Live Return"/>
+                  <ScoreBox val={`${live.avg_holding_days || 0} days`} label="Avg Holding Period"/>
+                  <ScoreBox val="—" label="Alpha vs NIFTY 50"/>
                 </div>
-              </>
-            )}
+                {(live.best || live.worst) && (
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    {live.best  && <ScoreBox val={<><span style={{fontWeight:700}}>{live.best.ticker}</span> <RetBadge pct={live.best.ret_pct}/></>} label="Best Performer"/>}
+                    {live.worst && <ScoreBox val={<><span style={{fontWeight:700}}>{live.worst.ticker}</span> <RetBadge pct={live.worst.ret_pct}/></>} label="Worst Performer"/>}
+                  </div>
+                )}
+              </>)}
+            </div>
+          </div>
+
+          {/* Realized Scorecard */}
+          <div className="card">
+            <div className="card-head">
+              <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:"var(--accent)",display:"inline-block"}}/><span style={{fontSize:13,fontWeight:700}}>Realized Scorecard</span><span className="muted small">Closed Recommendations</span></span>
+            </div>
+            <div className="card-body">
+              {realized.count === 0 ? <div className="empty" style={{padding:"20px 0"}}>No closed recommendations yet.</div> : (<>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
+                  <ScoreBox val={realized.count} label="Closed Recommendations" big/>
+                  <ScoreBox val={`${realized.hit_rate_pct.toFixed(1)}%`} label="Hit Rate" col={realized.hit_rate_pct>=50?"var(--gain)":"var(--loss)"} big/>
+                  <ScoreBox val={<RetBadge pct={realized.median_return}/>} label="Median Return" big/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
+                  <ScoreBox val={<RetBadge pct={realized.avg_return}/>} label="Avg Return"/>
+                  <ScoreBox val={`${realized.avg_holding_days || 0} days`} label="Avg Holding Period"/>
+                  <ScoreBox val={`${realized.win_count} / ${realized.loss_count}`} label="Win / Loss"/>
+                  <ScoreBox val={isNaN(realized.risk_adjusted)?'—':Number(realized.risk_adjusted).toFixed(2)} label="Risk-Adjusted Return"/>
+                </div>
+                {realized.best && (
+                  <div style={{padding:"10px 12px",background:"var(--gain-soft)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:12,fontWeight:600,color:"var(--gain)"}}>Best Closed Trade</span>
+                    <span><b style={{fontWeight:800}}>{realized.best.ticker}</b> <RetBadge pct={realized.best.ret_pct}/></span>
+                  </div>
+                )}
+              </>)}
+            </div>
           </div>
         </div>
 
-        {/* ── Public Recommendations ── */}
-        <div className="card">
-          <div className="card-head"><Globe size={15} color="var(--accent)"/> Public Recommendations</div>
-          <div className="card-body" style={{ padding: "8px 0" }}>
-            {/* Private recommendation banner — shown when a specific recoId was linked but not in public list */}
-            {recoId && data && !data.recos.find(r => r.id === recoId) && (
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", margin: "12px 16px", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 16px" }}>
-                <Lock size={16} color="var(--muted)" style={{ flexShrink: 0, marginTop: 1 }}/>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>Recommendation not publicly visible</div>
-                  <div className="muted small">This recommendation is only visible to the investor's network. You can view it if you connect with @{username}.</div>
-                </div>
+        {/* Scorecard disclaimer */}
+        <div style={{display:"flex",gap:8,alignItems:"center",padding:"9px 14px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10,marginBottom:16,fontSize:12,color:"var(--muted)"}}>
+          <AlertTriangle size={13} style={{flexShrink:0}}/>
+          <span>Hit rate and returns are calculated only on closed recommendations. Active recommendations are marked to market and may change daily.</span>
+        </div>
+
+        {/* ── SECTION 3: Sector Performance ── */}
+        {sectors.length > 0 && (
+          <div className="card" style={{marginBottom:16}}>
+            <div className="card-head">
+              <span style={{fontSize:13,fontWeight:700}}>Sector Performance</span>
+              <div style={{display:"flex",gap:14,fontSize:11,color:"var(--muted)"}}>
+                <span><span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:"var(--gain)",marginRight:4}}/> Active Success % (live)</span>
+                <span><span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:"var(--accent)",marginRight:4}}/> Closed Hit Rate %</span>
               </div>
-            )}
+            </div>
+            <div className="card-body" style={{padding:"16px 20px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:16}}>
+                {sectors.map(s => {
+                  const activePct  = s.active_count  ? Math.round(s.active_in_profit / s.active_count  * 100) : null;
+                  const closedPct  = s.closed_count  ? Math.round(s.closed_wins      / s.closed_count  * 100) : null;
+                  return (
+                    <div key={s.sector} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+                      {/* Bars */}
+                      <div style={{display:"flex",gap:4,alignItems:"flex-end",height:60,width:"100%",justifyContent:"center"}}>
+                        {activePct != null && <div title={`Active success: ${activePct}%`} style={{width:24,height:`${Math.max(activePct,4)}%`,background:"var(--gain)",borderRadius:"4px 4px 0 0",transition:"height .3s"}}/>}
+                        {closedPct != null && <div title={`Closed hit rate: ${closedPct}%`} style={{width:24,height:`${Math.max(closedPct,4)}%`,background:"var(--accent)",borderRadius:"4px 4px 0 0",transition:"height .3s"}}/>}
+                      </div>
+                      {/* Labels */}
+                      <div style={{display:"flex",gap:6,fontSize:10.5,fontWeight:700,color:"var(--muted)"}}>
+                        {activePct != null && <span style={{color:"var(--gain)"}}>{activePct}%</span>}
+                        {closedPct != null && <span style={{color:"var(--accent)"}}>{closedPct}%</span>}
+                      </div>
+                      <div style={{fontSize:11,fontWeight:700,textAlign:"center",lineHeight:1.3}}>{SECTOR_EMOJI[s.sector]||"•"} {s.sector}</div>
+                      <div style={{fontSize:10,color:"var(--muted)"}}>{s.total_recs} rec{s.total_recs!==1?"s":""}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{marginTop:12,fontSize:11,color:"var(--muted)",textAlign:"center"}}>Minimum 2 closed recommendations to calculate hit rate. Active positions use current price.</div>
+            </div>
+          </div>
+        )}
 
-            {recos.length === 0
-              ? <div className="empty" style={{ padding: 24 }}>No public recommendations yet.</div>
-              : <table className="grid">
-                  <thead><tr>
-                    <th>Instrument</th><th>Class</th><th>Horizon</th>
-                    <th style={{ textAlign: "right" }}>Reco price</th>
-                    <th style={{ textAlign: "right" }}>Return</th>
-                    <th style={{ textAlign: "right" }}>Likes</th>
-                    <th>Status</th>
-                    <th>Date</th>
+        {/* ── SECTION 4: Recommendation Timeline ── */}
+        <div className="card" style={{marginBottom:16}}>
+          <div className="card-head">
+            <span style={{fontSize:13,fontWeight:700}}>Recommendation History</span>
+            <span className="muted small">Public record · Permanent &amp; immutable</span>
+          </div>
+
+          {/* Tabs */}
+          <div style={{display:"flex",gap:0,borderBottom:"1px solid var(--line)",padding:"0 16px"}}>
+            {[
+              {key:"All",     count:recos.length},
+              {key:"Active",  count:recos.filter(r=>r.status==="Active").length},
+              {key:"Closed",  count:recos.filter(r=>r.status==="Closed").length},
+              {key:"Expired", count:recos.filter(r=>r.status==="Expired").length},
+            ].map(t=>(
+              <button key={t.key} onClick={()=>setRecTab(t.key)} style={{
+                background:"none",border:"none",cursor:"pointer",padding:"12px 14px",
+                fontWeight:700,fontSize:13,
+                color:recTab===t.key?"var(--accent)":"var(--muted)",
+                borderBottom:recTab===t.key?"2px solid var(--accent)":"2px solid transparent",
+                marginBottom:-1,
+              }}>
+                {t.key} {t.count > 0 && <span style={{fontSize:11,marginLeft:4,opacity:.7}}>({t.count})</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* Private reco banner */}
+          {recoIdNotPublic && (
+            <div style={{display:"flex",gap:10,alignItems:"flex-start",margin:"12px 16px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:12,padding:"12px 16px"}}>
+              <Lock size={15} color="var(--muted)"/><div><div style={{fontWeight:700,fontSize:13,marginBottom:3}}>Recommendation not publicly visible</div><div className="muted small">This recommendation is only visible to the investor's network.</div></div>
+            </div>
+          )}
+
+          {/* Table */}
+          <div style={{overflowX:"auto"}}>
+            {filteredRecos.length === 0
+              ? <div className="empty" style={{padding:"32px 0"}}>No {recTab.toLowerCase()} recommendations.</div>
+              : <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead><tr style={{background:"#f9fafb",borderBottom:"2px solid var(--line)"}}>
+                    {["Date","Instrument","Type","Entry ₹","Current ₹","Target","Stop Loss","Return","Status","Conviction","Holding"].map(h=>(
+                      <th key={h} style={{padding:"10px 12px",textAlign:h==="Return"||h==="Entry ₹"||h==="Current ₹"||h==="Target"||h==="Stop Loss"?"right":"left",fontSize:10.5,fontWeight:700,letterSpacing:.06,textTransform:"uppercase",color:"var(--muted)",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
                   </tr></thead>
-                  <tbody>{recos.map(r => {
-                    const retPct   = Number(r.return_pct || 0);
-                    const isActive = !r.exit_signal && (!r.target_date || new Date(r.target_date) >= new Date());
-                    const isLinked = r.id === recoId;
+                  <tbody>{filteredRecos.map(r=>{
+                    const isLinked   = r.id === recoId;
                     const isExpanded = r.id === expandedId;
-
-                    return (
-                      <React.Fragment key={r.id}>
-                        <tr
-                          ref={isLinked ? expandedRef : null}
+                    const retPct     = Number(r.return_pct || 0);
+                    return (<React.Fragment key={r.id}>
+                      <tr ref={isLinked?expandedRef:null}
+                          style={{cursor:"pointer",background:isLinked?"var(--accent-soft)":undefined,outline:isLinked?"2px solid var(--accent)":undefined,outlineOffset:-2}}
                           className="hoverable"
-                          style={{
-                            cursor: "pointer",
-                            background: isLinked ? "var(--accent-soft)" : undefined,
-                            outline: isLinked ? "2px solid var(--accent)" : undefined,
-                            outlineOffset: -2,
-                          }}
-                          onClick={() => setExpandedId(isExpanded ? null : r.id)}
-                        >
-                          <td>
-                            <div className="sym">{r.ticker}</div>
-                            <div className="muted small" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.asset_name}</div>
-                          </td>
-                          <td><span className="ttag">{r.asset_class}</span></td>
-                          <td className="muted small">{r.horizon || "—"}</td>
-                          <td style={{ textAlign: "right" }} className="tnum">{r.reco_price ? fmt(Number(r.reco_price)) : "—"}</td>
-                          <td style={{ textAlign: "right" }} className={"tnum " + (retPct >= 0 ? "pos" : "neg")}>{fmtRet(retPct)}</td>
-                          <td style={{ textAlign: "right" }}>
-                            <span style={{ fontSize: 12 }}>👍 {r.like_count || 0} · 👎 {r.dislike_count || 0}</span>
-                          </td>
-                          <td>
-                            {r.exit_signal
-                              ? <span className="pill loss" style={{ fontSize: 11 }}>Exited</span>
-                              : isActive
-                                ? <span className="pill gain" style={{ fontSize: 11 }}>Active</span>
-                                : <span className="pill" style={{ fontSize: 11 }}>Expired</span>}
-                          </td>
-                          <td className="muted small">
-                            <div>{r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</div>
-                            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{isExpanded ? "▲ less" : "▼ more"}</div>
-                          </td>
-                        </tr>
-                        {/* Expanded row — thesis and additional details */}
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan={8} style={{ padding: 0 }}>
-                              <div style={{ background: isLinked ? "var(--accent-soft)" : "var(--surface-2)", borderTop: "1px solid var(--line)", padding: "14px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
-                                <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-                                  {r.target_price && (
-                                    <div>
-                                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5 }}>Target price</div>
-                                      <div style={{ fontWeight: 700, marginTop: 3 }}>{fmt(Number(r.target_price))}</div>
-                                    </div>
-                                  )}
-                                  {r.target_date && (
-                                    <div>
-                                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5 }}>Target date</div>
-                                      <div style={{ fontWeight: 700, marginTop: 3 }}>{new Date(r.target_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
-                                    </div>
-                                  )}
-                                  {r.exit_date && (
-                                    <div>
-                                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5 }}>Exit date</div>
-                                      <div style={{ fontWeight: 700, marginTop: 3 }}>{new Date(r.exit_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
-                                    </div>
-                                  )}
-                                </div>
-                                {r.thesis && r.thesis !== "—" && (
-                                  <div>
-                                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5, marginBottom: 5 }}>Thesis</div>
-                                    <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-soft)", maxWidth: 660 }}>{r.thesis}</div>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
+                          onClick={()=>setExpandedId(isExpanded?null:r.id)}>
+                        <td style={{padding:"11px 12px",whiteSpace:"nowrap",color:"var(--muted)",fontSize:12}}>{r.created_at?new Date(r.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"-"}</td>
+                        <td style={{padding:"11px 12px"}}><div style={{fontWeight:700,fontSize:13}}>{r.ticker}</div><div style={{fontSize:11,color:"var(--muted)",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.asset_name}</div></td>
+                        <td style={{padding:"11px 12px"}}><TypeBadge t={r.recommendation_type}/></td>
+                        <td style={{padding:"11px 12px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{r.reco_price?`₹${Number(r.reco_price).toLocaleString("en-IN")}`:"—"}</td>
+                        <td style={{padding:"11px 12px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{r.current_price?`₹${Number(r.current_price).toLocaleString("en-IN")}`:"—"}</td>
+                        <td style={{padding:"11px 12px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--muted)"}}>{r.target_price?`₹${Number(r.target_price).toLocaleString("en-IN")}`:"—"}</td>
+                        <td style={{padding:"11px 12px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--loss)"}}>{r.stop_loss?`₹${Number(r.stop_loss).toLocaleString("en-IN")}`:"—"}</td>
+                        <td style={{padding:"11px 12px",textAlign:"right"}}><RetBadge pct={retPct}/></td>
+                        <td style={{padding:"11px 12px"}}><StatusBadge2 status={r.status}/></td>
+                        <td style={{padding:"11px 12px"}}><ConvBadge level={r.conviction}/></td>
+                        <td style={{padding:"11px 12px",whiteSpace:"nowrap",color:"var(--muted)",fontSize:12}}>{r.holding_days?`${r.holding_days}d`:"—"} {isExpanded?"▲":"▼"}</td>
+                      </tr>
+                      {isExpanded && r.thesis && r.thesis !== "—" && (
+                        <tr><td colSpan={11} style={{padding:0,borderBottom:"1px solid var(--line)"}}>
+                          <div style={{background:isLinked?"var(--accent-soft)":"var(--surface-2)",padding:"12px 16px",display:"flex",gap:16,flexWrap:"wrap"}}>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>Investment Thesis</div>
+                              <div style={{fontSize:13,lineHeight:1.6,color:"var(--ink-soft)"}}>{r.thesis}</div>
+                            </div>
+                            {r.sector && <div><div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>Sector</div><div style={{fontSize:13}}>{SECTOR_EMOJI[r.sector]} {r.sector}</div></div>}
+                          </div>
+                        </td></tr>
+                      )}
+                    </React.Fragment>);
                   })}</tbody>
                 </table>}
           </div>
+          <div style={{padding:"10px 16px",borderTop:"1px solid var(--line)",fontSize:12,color:"var(--muted)"}}>
+            Returns are calculated based on entry price and current/exit price. This is not investment advice.
+          </div>
+        </div>
+
+        {/* ── Methodology ── */}
+        <div id="methodology" className="card" style={{marginBottom:16}}>
+          <div className="card-head"><span style={{fontSize:13,fontWeight:700}}>⚙ How are these metrics calculated?</span><span className="muted small">Methodology v1.0</span></div>
+          <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            {[
+              ["Hit Rate","Percentage of closed recommendations with a positive realized return. Active and expired positions are excluded."],
+              ["Median Return","Median realized return across all closed positions. More robust than average — resistant to outliers."],
+              ["Risk-Adjusted Return","Average return divided by standard deviation of returns (Sharpe-like, no risk-free rate). Rewards consistency."],
+              ["ICI Score","Weighted: track length (15%), volume (15%), hit rate (20%), median return (15%), risk-adjusted (15%), transparency (10%), profile (10%)."],
+              ["Active Position Returns","Use last known price. Indicative only — not included in realized scorecard."],
+              ["Sector Attribution","Based on sector tag set when recommendation was published. Auto-classification coming soon."],
+            ].map(([h,p])=>(
+              <div key={h}><div style={{fontSize:12,fontWeight:700,color:"var(--ink-soft)",marginBottom:4}}>{h}</div><div style={{fontSize:12,color:"var(--muted)",lineHeight:1.6}}>{p}</div></div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Disclaimer ── */}
+        <div style={{background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:14,padding:"16px 20px",fontSize:12,color:"var(--muted)",lineHeight:1.7}}>
+          <strong style={{color:"var(--ink-soft)"}}>Regulatory Disclaimer:</strong> Investor Circle records publicly shared investment opinions and computes historical statistics using a transparent methodology. <strong>Investor Circle does not endorse or recommend any individual or investment.</strong> The individual shown is a self-directed investor and is <strong>not registered as a SEBI Investment Adviser or Research Analyst.</strong> Nothing on this page constitutes investment advice. Past performance is not indicative of future results.
         </div>
       </div>
     );
   };
 
-  // ── STANDALONE mode (hash URL, no sidebar) ────────────────────────────────
+  // ── Wrapper based on mode ─────────────────────────────────────────────────
   if (mode === "standalone") {
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg)", padding: "0 0 48px" }}>
-        {/* Minimal branded top bar */}
-        <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--line)", padding: "12px 24px", display: "flex", alignItems: "center", gap: 16, position: "sticky", top: 0, zIndex: 100 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 10, background: "var(--grad)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 14, color: "#fff" }}>IC</div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.1 }}>InvestorCircle</div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>Social Investing</div>
-            </div>
+      <div style={{minHeight:"100vh",background:"var(--bg)",paddingBottom:48}}>
+        <div style={{background:"var(--surface)",borderBottom:"1px solid var(--line)",padding:"11px 24px",display:"flex",alignItems:"center",gap:14,position:"sticky",top:0,zIndex:100}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:30,height:30,borderRadius:8,background:"linear-gradient(135deg,#6d5df5,#cf52d8)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13,color:"#fff"}}>ic</div>
+            <div><div style={{fontWeight:800,fontSize:13,lineHeight:1.1}}>InvestorCircle</div><div style={{fontSize:10,color:"var(--muted)"}}>Transparency Platform</div></div>
           </div>
-          <div style={{ flex: 1 }}/>
+          <div style={{flex:1}}/>
           {viewerUser
             ? <button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
-            : <a href={window.location.pathname} style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", textDecoration: "none" }}>Sign in →</a>}
+            : <a href={window.location.pathname} style={{fontSize:13,fontWeight:600,color:"var(--accent)",textDecoration:"none"}}>Sign in →</a>}
         </div>
-        <div style={{ maxWidth: 800, margin: "0 auto", padding: "28px 16px 0" }}>
-          {renderBody()}
-        </div>
+        <div style={{maxWidth:1020,margin:"0 auto",padding:"24px 16px 0"}}>{renderContent()}</div>
       </div>
     );
   }
 
-  // ── EMBEDDED mode (Track Record nav item inside app shell) ────────────────
-  return (
-    <>
-      <div className="page-head">
-        <div>
-          <div className="eyebrow">Track Record</div>
-          <div className="page-title">Your public profile</div>
-          <div className="page-sub">This is exactly what others see when they visit your profile link</div>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {data && (
-            <>
-              <button className="btn btn-soft btn-sm" onClick={copyLink}>
-                {copied ? <><Check size={14}/> Copied!</> : <><Copy size={14}/> Copy link</>}
-              </button>
-              <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">
-                <ExternalLink size={14}/> Open public URL
-              </a>
-            </>
-          )}
-        </div>
-      </div>
-      {renderBody()}
-    </>
-  );
+  return (<>
+    <div className="page-head"><div>
+      <div className="eyebrow">Track Record</div>
+      <div className="page-title">Public Investment Record</div>
+      <div className="page-sub">Your permanent, publicly-verifiable investment history</div>
+    </div></div>
+    {renderContent()}
+  </>);
 }
 
-/* =================================================================== PROFILE */
+
 function ProfileModal({ me, profile, updateProfile, patchProfile, onClose }) {
   const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 
