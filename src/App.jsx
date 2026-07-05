@@ -6,10 +6,11 @@ import {
   Bookmark, ChevronRight, ChevronDown, ChevronsUpDown, Sparkles, ArrowUpDown,
   List, Table as TableIcon, Mail, UserPlus, Calendar, Crown,
   ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
-  Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil
+  Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil, Database
 } from "lucide-react";
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
+import * as XLSX from "xlsx";
 import { fetchHoldingsByPAN, isValidPAN } from "./services/pan";
 import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 import { useAuth } from "./AuthContext";
@@ -409,9 +410,10 @@ export default function App() {
     ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", icon:Lightbulb, badge:newRecs }] : []),
     { id:"sharing",   label:"Sharing & Privacy",icon:Shield },
   ] : [
-    { id:"users",   label:"Users",             icon:UserCog },
-    { id:"groups",  label:"Groups",            icon:Layers },
-    { id:"configs", label:"App Configuration", icon:Settings },
+    { id:"users",       label:"Users",             icon:UserCog },
+    { id:"groups",      label:"Groups",            icon:Layers },
+    { id:"instruments", label:"Instruments",        icon:Database },
+    { id:"configs",     label:"App Configuration", icon:Settings },
   ];
 
   const stats = isInv
@@ -532,9 +534,10 @@ export default function App() {
                 initFilter={recoInit} holdings={holdings} me={ME}
                 onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/>}
             {isInv && page==="sharing"   && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id}/>}
-            {!isInv && page==="users"    && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={()=>{}}/>}
-            {!isInv && page==="groups"   && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
-            {!isInv && page==="configs"  && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
+            {!isInv && page==="users"       && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={()=>{}}/>}
+            {!isInv && page==="groups"      && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
+            {!isInv && page==="instruments" && <AdminInstruments/>}
+            {!isInv && page==="configs"     && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
           </div>
         </div>
       </div>
@@ -1650,22 +1653,44 @@ function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAdd }) {
 
 function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, me, onClose, onCreate }) {
   const myId = me?.id || "me";
-  // Only groups where user is an active member
   const myGroups = groups.filter(g=>g.my_role==="admin"||g.members?.some(m=>m.user_id===myId&&m.status==="active"));
-  const [assetName,setAssetName]=useState(""); const [ticker,setTicker]=useState(""); const [cls,setCls]=useState(assetClasses[0]);
-  const [recoPrice,setRecoPrice]=useState(""); const [targetPrice,setTargetPrice]=useState(""); const [horizon,setHorizon]=useState("12m");
-  const [thesis,setThesis]=useState(""); const [targets,setTargets]=useState([]); const [adding,setAdding]=useState(false); const [newCat,setNewCat]=useState("");
-  const toggle=(id)=>setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
-  const addCat=()=>{ const c=newCat.trim(); if(c && !assetClasses.includes(c)){ setAssetClasses(a=>[...a,c]); setCls(c); } setNewCat(""); setAdding(false); };
-  const known = holdings.find(x=>x.sym===ticker.toUpperCase());
-  const suggestedPrice = known?.price;
+  const [selectedInstr, setSelectedInstr] = useState(null); // from InstrumentSearch
+  const [assetName,   setAssetName]   = useState("");
+  const [ticker,      setTicker]      = useState("");
+  const [cls,         setCls]         = useState(assetClasses[0]);
+  const [currency,    setCurrency]    = useState("INR");
+  const [recoPrice,   setRecoPrice]   = useState("");
+  const [targetPrice, setTargetPrice] = useState("");
+  const [horizon,     setHorizon]     = useState("12m");
+  const [thesis,      setThesis]      = useState("");
+  const [targets,     setTargets]     = useState([]);
+  const [adding,      setAdding]      = useState(false);
+  const [newCat,      setNewCat]      = useState("");
+
+  const CURRENCY_SYMBOL = { INR:"₹", USD:"$", GBP:"£", EUR:"€" };
+
+  // When user picks an instrument from search — auto-fill all fields
+  const onInstrSelect = (inst) => {
+    if (!inst) return; // cleared
+    setSelectedInstr(inst);
+    setTicker(inst.symbol);
+    setAssetName(inst.name);
+    setCls(inst.assetClass || assetClasses[0]);
+    setCurrency(inst.currency || "INR");
+  };
+
+  const toggle  = (id) => setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
+  const addCat  = () => { const c=newCat.trim(); if(c&&!assetClasses.includes(c)){setAssetClasses(a=>[...a,c]);setCls(c);} setNewCat(""); setAdding(false); };
+  const known   = holdings.find(x=>x.sym===ticker.toUpperCase());
+  const suggestedPrice   = known?.price;
   const effectiveRecoPrice = recoPrice || (suggestedPrice||"");
-  const create=async()=>{
+
+  const create = async () => {
     const rp = +effectiveRecoPrice;
     const td = calcTargetDate(TODAY, horizon);
     const recoData = {
-      assetName:assetName.trim()||(known?known.name:ticker.toUpperCase()),
-      ticker:(ticker||"—").toUpperCase(), assetClass:cls,
+      assetName: assetName.trim()||(known?known.name:ticker.toUpperCase()),
+      ticker:(ticker||"—").toUpperCase(), assetClass:cls, currency,
       priceAt:rp, price:known?known.price:rp,
       targetPrice:targetPrice?+targetPrice:null, horizon, targetDate:td, thesis:thesis||"—",
     };
@@ -1676,42 +1701,72 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
     }
     onCreate({ id:"m"+Date.now(), ...recoData, date:TODAY, recipients:targets, actedList:[], likes:[], dislikes:[], exit:false, exitDate:null });
   };
+
   const valid = (assetName.trim()||ticker.trim()) && targets.length>0 && effectiveRecoPrice;
+
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> New recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14}}>
-        <div className="field"><label>Ticker</label><input value={ticker} onChange={e=>setTicker(e.target.value)} placeholder="e.g. AAPL" list="myh"/>
-          <datalist id="myh">{holdings.map(h=><option key={h.id} value={h.sym}>{h.name}</option>)}</datalist></div>
-        <div className="field"><label>Asset name {ticker && !known && <span className="muted small">(not in portfolio — name it)</span>}</label>
-          <input value={assetName} onChange={e=>setAssetName(e.target.value)} placeholder="e.g. Apple Inc."/></div>
+
+      {/* Instrument search — primary entry point */}
+      <div className="field"><label>Search instrument <span className="muted small">(type symbol or company name)</span></label>
+        <InstrumentSearch onSelect={onInstrSelect} placeholder="e.g. RELIANCE or Reliance Industries…"/>
       </div>
+
+      {/* Manual override if instrument not in list */}
+      <details style={{marginBottom:14}}>
+        <summary style={{fontSize:12,fontWeight:600,color:"var(--muted)",cursor:"pointer",userSelect:"none",marginBottom:8}}>Not in the list? Enter manually</summary>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14,paddingTop:8}}>
+          <div className="field"><label>Ticker / Symbol</label>
+            <input value={ticker} onChange={e=>setTicker(e.target.value)} placeholder="e.g. AAPL" list="myh"/>
+            <datalist id="myh">{holdings.map(h=><option key={h.id} value={h.sym}>{h.name}</option>)}</datalist></div>
+          <div className="field"><label>Asset name</label>
+            <input value={assetName} onChange={e=>setAssetName(e.target.value)} placeholder="e.g. Apple Inc."/></div>
+        </div>
+      </details>
+
+      {/* Show selected instrument summary */}
+      {selectedInstr && (
+        <div style={{display:"flex",gap:8,marginBottom:14,padding:"10px 12px",background:"var(--accent-soft)",borderRadius:10,alignItems:"center"}}>
+          <Check size={15} color="var(--accent-ink)"/>
+          <span style={{fontSize:13,fontWeight:600,color:"var(--accent-ink)"}}>{selectedInstr.symbol} — {selectedInstr.name}</span>
+          <span className="chip mini" style={{marginLeft:"auto"}}>{selectedInstr.exchange}</span>
+          <span className="chip mini">{selectedInstr.assetClass}</span>
+          <span className="chip mini">{CURRENCY_SYMBOL[selectedInstr.currency]||selectedInstr.currency} {selectedInstr.currency}</span>
+        </div>
+      )}
+
       <div className="field"><label style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Asset class</span>
         <span className="clickable" style={{fontSize:12}} onClick={()=>setAdding(a=>!a)}><Plus size={13}/> Add category</span></label>
         {adding
           ? <div style={{display:"flex",gap:8}}><input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="New category name" onKeyDown={e=>e.key==="Enter"&&addCat()}/><button className="btn btn-pri btn-sm" onClick={addCat}>Add</button></div>
           : <select value={cls} onChange={e=>setCls(e.target.value)}>{assetClasses.map(c=><option key={c}>{c}</option>)}</select>}</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",columnGap:14}}>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",columnGap:14}}>
+        <div className="field"><label>Currency</label>
+          <select value={currency} onChange={e=>setCurrency(e.target.value)}>
+            {["INR","USD","GBP","EUR"].map(c=><option key={c}>{c}</option>)}
+          </select></div>
         <div className="field">
-          <label>Reco price {known && <span className="muted small">(portfolio: {fmt(known.price)})</span>}</label>
-          <input type="number" value={recoPrice} onChange={e=>setRecoPrice(e.target.value)} placeholder={suggestedPrice?String(suggestedPrice):"0"} autoFocus={false}/>
-          {known && !recoPrice && <div className="muted small" style={{marginTop:5}}>Will use current portfolio price ({fmt(known.price)}) if left blank</div>}
+          <label>Reco price ({CURRENCY_SYMBOL[currency]||currency}) {known && <span className="muted small">portfolio: {fmt(known.price)}</span>}</label>
+          <input type="number" value={recoPrice} onChange={e=>setRecoPrice(e.target.value)} placeholder={suggestedPrice?String(suggestedPrice):"0"}/>
         </div>
-        <div className="field"><label>Target price <span className="muted small">(optional)</span></label>
+        <div className="field"><label>Target price <span className="muted small">(opt.)</span></label>
           <input type="number" value={targetPrice} onChange={e=>setTargetPrice(e.target.value)} placeholder="0"/></div>
-        <div className="field"><label>Target horizon</label>
+        <div className="field"><label>Horizon</label>
           <select value={horizon} onChange={e=>setHorizon(e.target.value)}>{HORIZONS.map(h=><option key={h} value={h}>{h}</option>)}</select></div>
       </div>
+
       <div className="field"><label>Your thesis</label><textarea rows={3} value={thesis} onChange={e=>setThesis(e.target.value)} placeholder="Why should they look at this?"/></div>
-      <div className="field"><label>Send to friends</label>
-        {contacts.length===0 ? <div className="muted small">No contacts yet — add contacts first.</div> :
+      <div className="field"><label>Send to contacts</label>
+        {contacts.length===0 ? <div className="muted small">No contacts yet.</div> :
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{contacts.map(c=><span key={c.id} className={"chip"+(targets.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{targets.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}</div>}</div>
       <div className="field"><label>Send to groups</label>
-        {myGroups.length===0 ? <div className="muted small">No groups yet — create a group first.</div> :
+        {myGroups.length===0 ? <div className="muted small">No groups yet.</div> :
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{myGroups.map(g=><span key={g.id} className={"chip"+(targets.includes(g.id)?" sel":"")} onClick={()=>toggle(g.id)}>{targets.includes(g.id)&&<Check size={13}/>}<Layers size={13}/>{g.name}</span>)}</div>}</div>
     </div>
     <div className="modal-foot">
-      <span className="muted small">Target date: {calcTargetDate(TODAY,horizon) ? fmtDate(calcTargetDate(TODAY,horizon)) : "—"}</span>
+      <span className="muted small">Target date: {calcTargetDate(TODAY,horizon)?fmtDate(calcTargetDate(TODAY,horizon)):"—"}</span>
       <div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn btn-pri" disabled={!valid} onClick={create}><Send size={15}/> Send</button></div>
     </div>
@@ -1953,6 +2008,309 @@ function HomeFeed({ setPage, recsReceived, configs, holdings, contacts }) {
         </button>
       </div></div>
     </div>
+  </div>);
+}
+
+/* =================================================================== INSTRUMENTS */
+// Module-level cache — loaded once per browser session from Neon
+let _instrCache = null;
+let _instrLoadPromise = null;
+async function loadInstruments() {
+  if (_instrCache) return _instrCache;
+  if (_instrLoadPromise) return _instrLoadPromise;
+  if (!sql) return [];
+  _instrLoadPromise = sql`SELECT symbol, name, exchange, type, asset_class, currency FROM instruments WHERE is_active = true ORDER BY symbol`
+    .then(rows => { _instrCache = rows; return rows; })
+    .catch(() => { _instrCache = []; return []; });
+  return _instrLoadPromise;
+}
+function clearInstrCache() { _instrCache = null; _instrLoadPromise = null; }
+
+function InstrumentSearch({ onSelect, placeholder, initialValue }) {
+  const [q, setQ] = useState(initialValue || "");
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const ref = useRef(null);
+
+  // Pre-warm cache on mount
+  useEffect(() => { loadInstruments(); }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const doSearch = async (term) => {
+    if (!term || term.length < 2) { setResults([]); setOpen(false); return; }
+    setLoading(true);
+    const all = await loadInstruments();
+    const t = term.toLowerCase();
+    const hits = all.filter(i =>
+      i.symbol.toLowerCase().startsWith(t) ||
+      i.name.toLowerCase().includes(t)
+    ).slice(0, 18);
+    setResults(hits);
+    setOpen(hits.length > 0);
+    setLoading(false);
+  };
+
+  const select = (inst) => {
+    setQ(`${inst.symbol} — ${inst.name}`);
+    setOpen(false);
+    onSelect({
+      symbol:     inst.symbol,
+      name:       inst.name,
+      exchange:   inst.exchange,
+      assetClass: inst.asset_class,
+      currency:   inst.currency,
+    });
+  };
+
+  const CURRENCY_SYMBOL = { INR:"₹", USD:"$", GBP:"£", EUR:"€" };
+
+  return (
+    <div style={{position:"relative"}} ref={ref}>
+      <div style={{display:"flex",alignItems:"center",gap:8,background:"var(--surface)",border:"1px solid var(--line-2)",borderRadius:11,padding:"10px 13px",transition:".12s"}}
+           onFocus={()=>q.length>=2&&setOpen(results.length>0)}>
+        <Search size={15} color="var(--muted)"/>
+        <input
+          value={q}
+          onChange={e=>{ setQ(e.target.value); doSearch(e.target.value); }}
+          placeholder={placeholder || "Search by symbol or name…"}
+          style={{border:"none",outline:"none",background:"transparent",fontSize:14,flex:1}}
+        />
+        {loading && <Loader size={14} className="spin" color="var(--muted)"/>}
+        {q && !loading && <X size={14} style={{cursor:"pointer",color:"var(--muted)"}} onClick={()=>{setQ("");setResults([]);setOpen(false);onSelect(null);}}/>}
+      </div>
+      {open && (
+        <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:12,boxShadow:"0 8px 28px rgba(0,0,0,.13)",zIndex:200,maxHeight:300,overflowY:"auto"}}>
+          {results.map(inst=>(
+            <div key={inst.symbol+inst.exchange}
+                 style={{padding:"10px 14px",cursor:"pointer",borderBottom:"1px solid var(--line)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}
+                 onMouseDown={()=>select(inst)}
+                 onMouseEnter={e=>e.currentTarget.style.background="var(--surface-2)"}
+                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <div style={{minWidth:0}}>
+                <span style={{fontWeight:700,fontSize:13}}>{inst.symbol}</span>
+                <span className="muted" style={{marginLeft:8,fontSize:12,display:"inline-block",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inst.name}</span>
+              </div>
+              <div style={{display:"flex",gap:5,flexShrink:0}}>
+                <span className="chip mini">{inst.exchange}</span>
+                <span className="chip mini">{inst.asset_class}</span>
+                <span className="chip mini">{CURRENCY_SYMBOL[inst.currency]||inst.currency}</span>
+              </div>
+            </div>
+          ))}
+          {results.length===0 && <div className="empty" style={{padding:20,fontSize:13}}>No instruments found</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Admin: Instruments ──────────────────────────────────────────────────── */
+function AdminInstruments() {
+  const [tab, setTab] = useState("browse");
+  return (<>
+    <div className="page-head"><div><div className="eyebrow">Admin</div>
+      <div className="page-title">Instruments</div>
+      <div className="page-sub">Reference data for trading symbols — used in recommendations and portfolio search</div></div></div>
+    <div className="seg" style={{marginBottom:20}}>
+      <button className={tab==="browse"?"active":""} onClick={()=>setTab("browse")}><Database size={14}/> Browse</button>
+      <button className={tab==="upload"?"active":""} onClick={()=>setTab("upload")}><Upload size={14}/> Upload</button>
+      <button className={tab==="add"?"active":""} onClick={()=>setTab("add")}><Plus size={14}/> Add manual</button>
+    </div>
+    {tab==="browse" && <InstrumentBrowser/>}
+    {tab==="upload" && <InstrumentUploader/>}
+    {tab==="add"    && <InstrumentAddForm onAdded={()=>setTab("browse")}/>}
+  </>);
+}
+
+function InstrumentBrowser() {
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [total, setTotal] = useState(null);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
+
+  const load = async (search, pg=0) => {
+    if (!sql) return;
+    setLoading(true);
+    try {
+      const offset = pg * PAGE_SIZE;
+      const data = search
+        ? await sql`SELECT * FROM instruments WHERE is_active=true AND (symbol ILIKE ${'%'+search+'%'} OR name ILIKE ${'%'+search+'%'}) ORDER BY symbol LIMIT ${PAGE_SIZE} OFFSET ${offset}`
+        : await sql`SELECT * FROM instruments WHERE is_active=true ORDER BY symbol LIMIT ${PAGE_SIZE} OFFSET ${offset}`;
+      setRows(data);
+      if (pg===0) {
+        const ct = search
+          ? await sql`SELECT COUNT(*) FROM instruments WHERE is_active=true AND (symbol ILIKE ${'%'+search+'%'} OR name ILIKE ${'%'+search+'%'})`
+          : await sql`SELECT COUNT(*) FROM instruments WHERE is_active=true`;
+        setTotal(Number(ct[0].count));
+      }
+    } catch(e) { console.warn(e); }
+    setLoading(false);
+  };
+
+  useEffect(() => { load("", 0); }, []);
+
+  const search = (v) => { setQ(v); setPage(0); load(v, 0); };
+  const goPage = (p) => { setPage(p); load(q, p); };
+
+  const downloadAll = async () => {
+    if (!sql) return;
+    const all = await sql`SELECT symbol, name, exchange, type, asset_class as "Asset Class", currency FROM instruments WHERE is_active=true ORDER BY symbol`;
+    const ws = XLSX.utils.json_to_sheet(all);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Instruments");
+    XLSX.writeFile(wb, "investorcircle_instruments.xlsx");
+  };
+
+  const del = async (id) => {
+    if (!confirm("Remove this instrument from the reference list?")) return;
+    await sql`UPDATE instruments SET is_active=false WHERE id=${id}`;
+    setRows(r=>r.filter(x=>x.id!==id));
+    setTotal(t=>t-1);
+    clearInstrCache();
+  };
+
+  return (<>
+    <div className="toolbar">
+      <div className="searchbox grow"><Search size={16} color="var(--muted)"/>
+        <input value={q} onChange={e=>search(e.target.value)} placeholder="Search symbol or name…"/>
+      </div>
+      <button className="btn btn-soft btn-sm" onClick={downloadAll}><Download size={14}/> Download Excel</button>
+    </div>
+    {total!==null && <div className="muted small" style={{marginBottom:12}}>{total.toLocaleString()} instruments{q&&` matching "${q}"`}</div>}
+    {loading && <div className="muted small" style={{padding:20,textAlign:"center"}}><Loader size={18} className="spin"/></div>}
+    {!loading && rows.length>0 && (<>
+      <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid">
+        <thead><tr><th>Symbol</th><th>Name</th><th>Exchange</th><th>Type</th><th>Asset Class</th><th>Currency</th><th></th></tr></thead>
+        <tbody>{rows.map(r=>(<tr key={r.id} className="hoverable">
+          <td className="sym">{r.symbol}</td>
+          <td>{r.name}</td>
+          <td><span className="pill">{r.exchange}</span></td>
+          <td><span className="pill accent">{r.type}</span></td>
+          <td>{r.asset_class}</td>
+          <td>{r.currency}</td>
+          <td><button className="iconbtn danger" onClick={()=>del(r.id)}><Trash2 size={13}/></button></td>
+        </tr>))}</tbody>
+      </table></div></div></div>
+      {total > PAGE_SIZE && (
+        <div style={{display:"flex",gap:8,marginTop:14,justifyContent:"center",alignItems:"center"}}>
+          <button className="btn btn-ghost btn-sm" disabled={page===0} onClick={()=>goPage(page-1)}>← Prev</button>
+          <span className="muted small">Page {page+1} of {Math.ceil(total/PAGE_SIZE)}</span>
+          <button className="btn btn-ghost btn-sm" disabled={(page+1)*PAGE_SIZE>=total} onClick={()=>goPage(page+1)}>Next →</button>
+        </div>
+      )}
+    </>)}
+  </>);
+}
+
+function InstrumentUploader() {
+  const [preview, setPreview] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [done, setDone] = useState(false);
+  const fileRef = useRef(null);
+  const REQUIRED_COLS = ["tradingsymbol","name","exchange","instrument_type"];
+  const TYPE_TO_CLASS = { EQ:"Equity", ETF:"ETF", MF:"Mutual Funds", FUT:"Others", CE:"Others", PE:"Others" };
+
+  const onFile = async (e) => {
+    const file = e.target.files?.[0]; e.target.value=""; if(!file) return;
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(ws, {defval:""});
+    if (!data.length) { alert("Empty file"); return; }
+    const cols = Object.keys(data[0]).map(c=>c.toLowerCase());
+    const hasZerodha = cols.includes("tradingsymbol") && cols.includes("instrument_type");
+    const hasCustom  = cols.includes("symbol") && cols.includes("name");
+    if (!hasZerodha && !hasCustom) { alert("File must have either:\n• Zerodha format: tradingsymbol, name, exchange, instrument_type, Currency\n• Custom format: symbol, name, exchange, asset_class, currency"); return; }
+    const mapped = data.map(r=>{
+      if (hasZerodha) {
+        const type = (r['instrument_type']||r['Instrument_type']||'EQ').toString().toUpperCase();
+        return { symbol:(r['tradingsymbol']||'').toString().trim(), name:(r['name']||'').toString().trim(), exchange:(r['exchange']||'NSE').toString().trim(), type, assetClass:TYPE_TO_CLASS[type]||'Others', currency:(r['Currency']||r['currency']||'INR').toString().trim() };
+      } else {
+        return { symbol:(r['symbol']||'').toString().trim(), name:(r['name']||'').toString().trim(), exchange:(r['exchange']||'NSE').toString().trim(), type:(r['type']||'EQ').toString().trim(), assetClass:(r['asset_class']||'Equity').toString().trim(), currency:(r['currency']||'INR').toString().trim() };
+      }
+    }).filter(r=>r.symbol && r.name);
+    setPreview(mapped); setDone(false); setProgress(0);
+  };
+
+  const doImport = async () => {
+    if (!sql || !preview) return;
+    setUploading(true); setProgress(0);
+    let inserted = 0;
+    for (let i=0; i<preview.length; i++) {
+      const r = preview[i];
+      try {
+        await sql`INSERT INTO instruments (symbol,name,exchange,type,asset_class,currency) VALUES (${r.symbol},${r.name},${r.exchange},${r.type},${r.assetClass},${r.currency}) ON CONFLICT (symbol,exchange) DO UPDATE SET name=EXCLUDED.name, asset_class=EXCLUDED.asset_class`;
+        inserted++;
+      } catch(_) {}
+      if (i%50===0) setProgress(Math.round((i/preview.length)*100));
+    }
+    clearInstrCache();
+    setProgress(100); setUploading(false); setDone(true);
+    alert(`Import complete: ${inserted} of ${preview.length} instruments saved.`);
+  };
+
+  return (<div style={{maxWidth:680}}>
+    <div className="note info" style={{marginBottom:16}}><Database size={16}/><div>
+      Accepts <b>Zerodha instruments CSV</b> (tradingsymbol, name, exchange, instrument_type, Currency) or a <b>custom Excel/CSV</b> (symbol, name, exchange, asset_class, currency).
+      Duplicate (symbol + exchange) pairs are updated in place.
+    </div></div>
+    <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{display:"none"}} onChange={onFile}/>
+    <button className="btn btn-pri" onClick={()=>fileRef.current?.click()}><Upload size={15}/> Choose file (CSV or Excel)</button>
+    {preview && !done && (<>
+      <div className="muted small" style={{margin:"14px 0 10px"}}><b>{preview.length}</b> instruments ready to import. First 5 rows:</div>
+      <div className="card" style={{marginBottom:14}}><div className="card-body" style={{padding:"8px 0"}}><table className="grid">
+        <thead><tr><th>Symbol</th><th>Name</th><th>Exchange</th><th>Asset Class</th><th>Currency</th></tr></thead>
+        <tbody>{preview.slice(0,5).map((r,i)=><tr key={i}><td className="sym">{r.symbol}</td><td>{r.name}</td><td>{r.exchange}</td><td>{r.assetClass}</td><td>{r.currency}</td></tr>)}</tbody>
+      </table></div></div>
+      {uploading ? (<>
+        <div style={{background:"var(--surface-2)",borderRadius:999,height:8,overflow:"hidden",marginBottom:8}}>
+          <div style={{width:progress+"%",height:"100%",background:"var(--grad)",transition:"width .2s"}}/>
+        </div>
+        <div className="muted small">{progress}% — importing {preview.length} instruments…</div>
+      </>) : (
+        <button className="btn btn-pri" onClick={doImport}><Check size={15}/> Import {preview.length} instruments</button>
+      )}
+    </>)}
+    {done && <div className="note ok" style={{marginTop:14}}><Check size={16}/><div>Import complete! Instruments are now available in the search.</div></div>}
+  </div>);
+}
+
+function InstrumentAddForm({ onAdded }) {
+  const [f, setF] = useState({ symbol:"", name:"", exchange:"NSE", type:"EQ", assetClass:"Equity", currency:"INR" });
+  const up = (k,v) => setF(s=>({...s,[k]:v}));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const valid = f.symbol.trim() && f.name.trim();
+  const save = async () => {
+    setSaving(true); setErr("");
+    try {
+      await sql`INSERT INTO instruments (symbol,name,exchange,type,asset_class,currency) VALUES (${f.symbol.trim().toUpperCase()},${f.name.trim()},${f.exchange},${f.type},${f.assetClass},${f.currency}) ON CONFLICT (symbol,exchange) DO UPDATE SET name=EXCLUDED.name, asset_class=EXCLUDED.asset_class`;
+      clearInstrCache();
+      setSaving(false);
+      onAdded();
+    } catch(e) { setErr(e.message); setSaving(false); }
+  };
+  return (<div style={{maxWidth:560}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14}}>
+      <div className="field"><label>Symbol <span style={{color:"var(--loss)"}}>*</span></label><input value={f.symbol} onChange={e=>up("symbol",e.target.value.toUpperCase())} placeholder="e.g. RELIANCE"/></div>
+      <div className="field"><label>Name <span style={{color:"var(--loss)"}}>*</span></label><input value={f.name} onChange={e=>up("name",e.target.value)} placeholder="e.g. Reliance Industries"/></div>
+      <div className="field"><label>Exchange</label><select value={f.exchange} onChange={e=>up("exchange",e.target.value)}><option>NSE</option><option>BSE</option><option>MCX</option></select></div>
+      <div className="field"><label>Type</label><select value={f.type} onChange={e=>up("type",e.target.value)}><option>EQ</option><option>ETF</option><option>MF</option><option>Others</option></select></div>
+      <div className="field"><label>Asset Class</label><select value={f.assetClass} onChange={e=>up("assetClass",e.target.value)}><option>Equity</option><option>ETF</option><option>Mutual Funds</option><option>Crypto</option><option>Bonds</option><option>Metals</option><option>Others</option></select></div>
+      <div className="field"><label>Currency</label><select value={f.currency} onChange={e=>up("currency",e.target.value)}><option>INR</option><option>USD</option><option>GBP</option><option>EUR</option></select></div>
+    </div>
+    {err && <div className="note warn" style={{marginBottom:14}}><AlertTriangle size={15}/><div>{err}</div></div>}
+    <button className="btn btn-pri" disabled={!valid||saving} onClick={save}>{saving?<><Loader size={14} className="spin"/> Saving…</>:<><Plus size={14}/> Add instrument</>}</button>
   </div>);
 }
 
