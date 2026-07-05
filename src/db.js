@@ -296,14 +296,17 @@ export async function createRecommendation(reco, senderId, recipients) {
     INSERT INTO ic_recommendations
       (recommender_id, asset_name, ticker, asset_class,
        reco_price, current_price, target_price, horizon, target_date, thesis, is_public,
-       recommendation_type, stop_loss, conviction, sector)
+       recommendation_type, stop_loss, conviction, sector, exchange,
+       price_source, price_stamped_at)
     VALUES
       (${senderId}, ${reco.assetName}, ${reco.ticker}, ${reco.assetClass},
        ${reco.priceAt || null}, ${reco.price || null}, ${reco.targetPrice || null},
        ${reco.horizon || null}, ${reco.targetDate || null}, ${reco.thesis || null},
        ${reco.isPublic !== false},
        ${reco.recType || 'Buy'}, ${reco.stopLoss || null},
-       ${reco.conviction || null}, ${reco.sector || null})
+       ${reco.conviction || null}, ${reco.sector || null},
+       ${reco.exchange || 'NSE'},
+       ${reco.priceSource || null}, ${reco.priceAt ? 'now()' : null})
     RETURNING *
   `;
   const recId = rec[0].id;
@@ -511,32 +514,58 @@ export async function updateDelivery(deliveryId, patch, userId) {
   return row[0];
 }
 
-/** Toggle exit signal on a recommendation (recommender only). */
-export async function toggleExitSignal(recommendationId, userId) {
+/** Set exit signal with an auto-stamped price from the market data service. */
+export async function setExitSignal(recommendationId, userId, exitPrice, exitPriceSource) {
   if (!sql) throw new Error("Neon not configured");
   const row = await sql`
     UPDATE ic_recommendations
-    SET exit_signal = NOT exit_signal,
-        exit_date   = CASE WHEN NOT exit_signal THEN CURRENT_DATE ELSE null END,
-        updated_at  = now()
+    SET exit_signal            = true,
+        exit_date              = CURRENT_DATE,
+        exit_price             = ${exitPrice || null},
+        exit_price_source      = ${exitPriceSource || null},
+        exit_price_stamped_at  = ${exitPrice ? new Date().toISOString() : null},
+        updated_at             = now()
     WHERE id = ${recommendationId} AND recommender_id = ${userId}
     RETURNING *
   `;
-  // Notify all recipients about the exit signal
-  if (row[0]?.exit_signal) {
-    const recipients = await sql`
-      SELECT delivered_to_user_id FROM recommendation_deliveries
-      WHERE recommendation_id = ${recommendationId}
+  // Notify all recipients
+  const recipients = await sql`
+    SELECT delivered_to_user_id FROM recommendation_deliveries
+    WHERE recommendation_id = ${recommendationId}
+  `;
+  for (const r of recipients) {
+    await sql`
+      INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
+      VALUES (${r.delivered_to_user_id}, 'exit_signal', ${userId}, ${recommendationId},
+              ${JSON.stringify({ ticker: row[0]?.ticker })})
     `;
-    for (const r of recipients) {
-      await sql`
-        INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
-        VALUES (${r.delivered_to_user_id}, 'exit_signal', ${userId}, ${recommendationId},
-                ${JSON.stringify({ ticker: row[0].ticker })})
-      `;
-    }
   }
   return row[0];
+}
+
+/** Cancel an exit (undo). Clears all exit fields. */
+export async function cancelExitSignal(recommendationId, userId) {
+  if (!sql) throw new Error("Neon not configured");
+  const row = await sql`
+    UPDATE ic_recommendations
+    SET exit_signal            = false,
+        exit_date              = null,
+        exit_price             = null,
+        exit_price_source      = null,
+        exit_price_stamped_at  = null,
+        updated_at             = now()
+    WHERE id = ${recommendationId} AND recommender_id = ${userId}
+    RETURNING *
+  `;
+  return row[0];
+}
+
+/** @deprecated kept for backward compat — use setExitSignal / cancelExitSignal */
+export async function toggleExitSignal(recommendationId, userId) {
+  const cur = await sql`SELECT exit_signal FROM ic_recommendations WHERE id=${recommendationId} LIMIT 1`;
+  return cur[0]?.exit_signal
+    ? cancelExitSignal(recommendationId, userId)
+    : setExitSignal(recommendationId, userId, null, null);
 }
 
 /** Forward a recommendation to additional recipients. */
