@@ -1968,7 +1968,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
     onCreate({ id:"m"+Date.now(), ...recoData, date:TODAY, recipients:targets, actedList:[], likes:[], dislikes:[], exit:false, exitDate:null });
   };
 
-  const valid = (assetName.trim()||ticker.trim()) && targets.length>0 && effectiveRecoPrice;
+  const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && effectiveRecoPrice;
 
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> New recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
