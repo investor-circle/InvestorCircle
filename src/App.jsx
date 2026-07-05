@@ -1097,6 +1097,7 @@ function Portfolio({ configs, holdings, setHoldings, refreshPrices, priceRefresh
   const [acct, setAcct] = useState("all"); const [hide, setHide] = useState(false);
   const [importRes, setImportRes] = useState(null); const [importBusy, setImportBusy] = useState(false);
   const [showPan, setShowPan] = useState(false); const [menu, setMenu] = useState(false);
+  const [showAddHolding, setShowAddHolding] = useState(false);
   const fileRef = useRef(null);
   const { rows } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const shown = acct==="all" ? rows : rows.filter(r=>r.acct===acct);
@@ -1120,10 +1121,11 @@ function Portfolio({ configs, holdings, setHoldings, refreshPrices, priceRefresh
       <div className="page-sub">{ACCOUNTS.length} accounts aggregated · {rows.length} holdings</div></div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf" style={{display:"none"}} onChange={onPickFile}/>
+        <button className="btn btn-pri btn-sm" onClick={()=>setShowAddHolding(true)}><Plus size={15}/> Add holding</button>
         <div style={{position:"relative"}}>
           <button className="btn btn-soft btn-sm" onClick={()=>setMenu(m=>!m)}><Download size={15}/> Export <ChevronDown size={13}/></button>
           {menu && <div className="menu" onMouseLeave={()=>setMenu(false)}>
-            <div className="menu-item" onClick={()=>{ exportPortfolioExcel(shown); setMenu(false); }}><FileSpreadsheet size={15}/> Excel (.xlsx)</div>
+            <div className="menu-item" onClick={()=>{ exportPortfolioExcel(shown); setMenu(false); }}><FileSpreadsheet size={15}/> {shown.length===0?"Download template (.xlsx)":"Excel (.xlsx)"}</div>
             <div className="menu-item" onClick={()=>{ exportPortfolioPDF(shown); setMenu(false); }}><FileText size={15}/> PDF (.pdf)</div>
           </div>}
         </div>
@@ -1166,14 +1168,27 @@ function Portfolio({ configs, holdings, setHoldings, refreshPrices, priceRefresh
     <div style={{ display:"grid", gridTemplateColumns:"1fr 320px", gap:18 }}>
       <div className="card"><div className="card-head">Holdings
         <select className="inline-select" value={acct} onChange={e=>setAcct(e.target.value)}><option value="all">All accounts</option>{ACCOUNTS.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
-        <div className="card-body" style={{ padding:"8px 10px" }}><table className="grid">
-          <thead><tr><th>Asset</th><th>Account</th><th>Type</th><th style={{textAlign:"right"}}>Value</th><th style={{textAlign:"right"}}>P&L</th></tr></thead>
-          <tbody>{shown.map(r=>(<tr key={r.id} className="hoverable">
-            <td><div className="sym">{r.sym}</div><div className="muted small">{r.name}</div></td>
-            <td className="muted small">{r.acctName}</td><td><TypeTag t={r.type}/></td>
-            <td style={{textAlign:"right"}} className="tnum">{mask(fmt(r.value))}</td>
-            <td style={{textAlign:"right"}} className={"tnum "+(r.pnl>=0?"pos":"neg")}>{hide?"••••":<>{fmtSigned(r.pnl)}<div className="small">{fmtPct(r.pnlPct)}</div></>}</td></tr>))}</tbody>
-        </table></div></div>
+        <div className="card-body" style={{ padding:"8px 10px" }}>
+          {shown.length===0
+            ? <div className="empty" style={{padding:"32px 16px"}}>
+                <div style={{marginBottom:12}}>No holdings yet.</div>
+                <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+                  <button className="btn btn-pri btn-sm" onClick={()=>setShowAddHolding(true)}><Plus size={14}/> Add holding</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>fileRef.current?.click()}><Upload size={14}/> Import Excel</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>{ exportPortfolioExcel([]); }}><Download size={14}/> Download template</button>
+                </div>
+              </div>
+            : <table className="grid">
+                <thead><tr><th>Asset</th><th>Account</th><th>Type</th><th style={{textAlign:"right"}}>Value</th><th style={{textAlign:"right"}}>P&L</th><th></th></tr></thead>
+                <tbody>{shown.map(r=>(<tr key={r.id} className="hoverable">
+                  <td><div className="sym">{r.sym}</div><div className="muted small">{r.name}</div></td>
+                  <td className="muted small">{r.acctName}</td><td><TypeTag t={r.type}/></td>
+                  <td style={{textAlign:"right"}} className="tnum">{mask(fmt(r.value))}</td>
+                  <td style={{textAlign:"right"}} className={"tnum "+(r.pnl>=0?"pos":"neg")}>{hide?"••••":<>{fmtSigned(r.pnl)}<div className="small">{fmtPct(r.pnlPct)}</div></>}</td>
+                  <td><button className="iconbtn danger" title="Remove holding" onClick={()=>setHoldings(hs=>hs.filter(h=>h.id!==r.id))}><Trash2 size={13}/></button></td>
+                </tr>))}</tbody>
+              </table>}
+        </div></div>
       <div className="card" style={{ height:"fit-content" }}><div className="card-head">Allocation</div>
         <div className="card-body" style={{ display:"flex", flexDirection:"column", alignItems:"center" }}><Ring data={byType}/>
           <div style={{ width:"100%", marginTop:18, display:"flex", flexDirection:"column", gap:11 }}>
@@ -1183,7 +1198,120 @@ function Portfolio({ configs, holdings, setHoldings, refreshPrices, priceRefresh
     </div>
     {importRes && <ImportPreviewModal result={importRes} onClose={()=>setImportRes(null)} onApply={applyImport}/>}
     {showPan && <PanPullModal onClose={()=>setShowPan(false)} onApply={(h,mode)=>{ applyImport(h,mode); setShowPan(false); }}/>}
+    {showAddHolding && <AddHoldingModal onClose={()=>setShowAddHolding(false)} onAdd={(h)=>{ setHoldings(hs=>[...hs,h]); setShowAddHolding(false); }}/>}
   </>);
+}
+
+function AddHoldingModal({ onClose, onAdd }) {
+  const [instr,    setInstr]    = useState(null);   // from InstrumentSearch
+  const [sym,      setSym]      = useState("");
+  const [name,     setName]     = useState("");
+  const [type,     setType]     = useState("Stock");
+  const [account,  setAccount]  = useState("");
+  const [shares,   setShares]   = useState("");
+  const [costPer,  setCostPer]  = useState("");     // cost per share
+  const [pricePer, setPricePer] = useState("");     // current price per share (optional)
+
+  const onInstrSelect = (inst) => {
+    if (!inst) { setSym(""); setName(""); setType("Stock"); return; }
+    setInstr(inst);
+    setSym(inst.symbol);
+    setName(inst.name);
+    setType(inst.type==="ETF" ? "ETF" : inst.type==="MF" ? "Fund" : "Stock");
+  };
+
+  const valid = (sym.trim()||name.trim()) && +shares > 0 && +costPer > 0;
+
+  const save = () => {
+    const sh   = +shares;
+    const cost = +costPer;
+    const price = +pricePer || cost;   // default current price to cost if not given
+    onAdd({
+      id:       "h" + Date.now(),
+      sym:      sym.trim().toUpperCase() || name.trim().toUpperCase().slice(0,6),
+      name:     name.trim() || sym.trim(),
+      type,
+      acct:     "manual",
+      acctName: account.trim() || "Manual entry",
+      sh,
+      cost,
+      price,
+    });
+  };
+
+  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-head">
+      <h3><Plus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add holding</h3>
+      <button className="icon-btn" onClick={onClose}><X size={20}/></button>
+    </div>
+    <div className="modal-body">
+
+      {/* Instrument search */}
+      <div className="field">
+        <label>Search instrument <span className="muted small">(type symbol or company name)</span></label>
+        <InstrumentSearch onSelect={onInstrSelect} placeholder="e.g. RELIANCE or Reliance Industries…"/>
+      </div>
+
+      {/* Show selected badge */}
+      {instr && (
+        <div style={{display:"flex",gap:8,marginBottom:14,padding:"9px 12px",background:"var(--accent-soft)",borderRadius:10,alignItems:"center"}}>
+          <Check size={15} color="var(--accent-ink)"/>
+          <span style={{fontSize:13,fontWeight:600,color:"var(--accent-ink)"}}>{instr.symbol} — {instr.name}</span>
+          <span className="chip mini" style={{marginLeft:"auto"}}>{instr.exchange}</span>
+          <span className="chip mini">{instr.assetClass}</span>
+        </div>
+      )}
+
+      {/* Manual override */}
+      <details style={{marginBottom:14}}>
+        <summary style={{fontSize:12,fontWeight:600,color:"var(--muted)",cursor:"pointer",userSelect:"none"}}>Not in the list? Enter manually</summary>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14,paddingTop:10}}>
+          <div className="field"><label>Symbol / Ticker</label><input value={sym} onChange={e=>setSym(e.target.value.toUpperCase())} placeholder="RELIANCE"/></div>
+          <div className="field"><label>Name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Reliance Industries"/></div>
+        </div>
+      </details>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14}}>
+        <div className="field"><label>Type</label>
+          <select value={type} onChange={e=>setType(e.target.value)}>
+            {["Stock","ETF","Fund","Crypto","Bonds","Other"].map(t=><option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Account / Broker <span className="muted small">(optional)</span></label>
+          <input value={account} onChange={e=>setAccount(e.target.value)} placeholder="e.g. Zerodha"/>
+        </div>
+        <div className="field"><label>Number of shares / units <span style={{color:"var(--loss)"}}>*</span></label>
+          <input type="number" min="0" value={shares} onChange={e=>setShares(e.target.value)} placeholder="e.g. 10"/>
+        </div>
+        <div className="field"><label>Average cost per share <span style={{color:"var(--loss)"}}>*</span></label>
+          <input type="number" min="0" value={costPer} onChange={e=>setCostPer(e.target.value)} placeholder="e.g. 2400"/>
+        </div>
+        <div className="field" style={{gridColumn:"1 / span 2"}}>
+          <label>Current price per share <span className="muted small">(optional — defaults to cost if blank)</span></label>
+          <input type="number" min="0" value={pricePer} onChange={e=>setPricePer(e.target.value)} placeholder="e.g. 2550"/>
+        </div>
+      </div>
+
+      {/* Live summary */}
+      {valid && (
+        <div style={{background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:12,padding:"12px 14px",display:"flex",gap:20,flexWrap:"wrap"}}>
+          <div><div className="cap">Cost basis</div><b className="tnum">{fmt(+shares * +costPer)}</b></div>
+          <div><div className="cap">Market value</div><b className="tnum">{fmt(+shares * (+pricePer||+costPer))}</b></div>
+          <div><div className="cap">Unrealised P&L</div>
+            <b className={"tnum "+(+pricePer>=+costPer?"pos":"neg")}>
+              {pricePer ? fmtSigned(+shares*(+pricePer-+costPer)) : "—"}
+            </b>
+          </div>
+        </div>
+      )}
+    </div>
+    <div className="modal-foot"><span/>
+      <div style={{display:"flex",gap:10}}>
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-pri" disabled={!valid} onClick={save}><Check size={14}/> Add to portfolio</button>
+      </div>
+    </div>
+  </div></div>);
 }
 
 /* =================================================================== RECOMMENDATIONS */
