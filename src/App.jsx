@@ -280,12 +280,14 @@ const PermBadge = ({ p }) => p==="full" ? <span className="pill accent">Amounts 
 
 /* =================================================================== */
 export default function App() {
-  const { user, role, setRole, userIsAdmin, logout, authLoading } = useAuth();
+  const { user, role, setRole, userIsAdmin, logout, authLoading, profile, updateProfile } = useAuth();
   const ME = useMemo(() => {
-    if (!user) return { id:"", name:"", initials:"", email:"" };
-    const name = user.displayName || user.email?.split("@")[0] || "You";
-    return { id:user.uid, name, initials:initialsOf(name), email:user.email||"" };
-  }, [user?.uid]);
+    if (!user) return { id:"", name:"", firstName:"", lastName:"", initials:"", email:"" };
+    const firstName = profile?.first_name || user.email?.split("@")[0] || "User";
+    const lastName  = profile?.last_name  || "";
+    const name = `${firstName} ${lastName}`.trim();
+    return { id:user.uid, name, firstName, lastName, initials:initialsOf(name), email:user.email||"" };
+  }, [user?.uid, profile?.first_name, profile?.last_name]);
 
   // ── Page navigation ─────────────────────────────────────────────────────────
   const [investorPage, setInvestorPage] = useState("home");
@@ -300,6 +302,7 @@ export default function App() {
   const [sharing,       setSharing]       = useState({});
   const [notifications, setNotifications] = useState([]);
   const [notifOpen,     setNotifOpen]     = useState(false);
+  const [profileOpen,   setProfileOpen]   = useState(false);
   const [holdings,      setHoldings]      = useState(HOLDINGS);
   const [assetClasses,  setAssetClasses]  = useState(DEFAULT_CLASSES);
   const [users,         setUsers]         = useState([]);
@@ -482,12 +485,30 @@ export default function App() {
                   onClose={()=>setNotifOpen(false)}
                 />}
               </div>
-              <div className="avatar-pill">
-                <div className="gava">{isInv ? ME.initials : "AD"}</div>
-                <div style={{paddingRight:6}}>
-                  <div style={{fontSize:13,fontWeight:700,lineHeight:1.2}}>{isInv ? ME.name : "Admin"}</div>
-                  <div style={{fontSize:11,color:"var(--muted)"}}>{isInv ? "Investor" : "Administrator"}</div>
-                </div>
+              <div style={{position:"relative"}}>
+                <button
+                  onClick={()=>{ setProfileOpen(v=>!v); setNotifOpen(false); }}
+                  style={{background:"none",border:"none",padding:0,cursor:"pointer"}}
+                  title="View / edit profile"
+                >
+                  <div className="avatar-pill">
+                    <div className="gava">{isInv ? ME.initials : "AD"}</div>
+                    <div style={{paddingRight:6}}>
+                      <div style={{fontSize:13,fontWeight:700,lineHeight:1.2}}>
+                        {isInv ? ME.name : "Admin"}
+                      </div>
+                      <div style={{fontSize:11,color:"var(--muted)"}}>
+                        {isInv ? "Investor" : "Administrator"}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+                {profileOpen && isInv && (
+                  <ProfileModal
+                    me={ME} updateProfile={updateProfile}
+                    onClose={()=>setProfileOpen(false)}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -1755,6 +1776,90 @@ function SharePreview({ id, name, cfg, holdings, onClose }) {
   </div></div>);
 }
 
+/* =================================================================== PROFILE */
+function ProfileModal({ me, updateProfile, onClose }) {
+  const [editing,   setEditing]   = useState(false);
+  const [firstName, setFirstName] = useState(me.firstName || "");
+  const [lastName,  setLastName]  = useState(me.lastName  || "");
+  const [saving,    setSaving]    = useState(false);
+  const [err,       setErr]       = useState("");
+  const [saved,     setSaved]     = useState(false);
+
+  const startEdit = () => { setFirstName(me.firstName||""); setLastName(me.lastName||""); setEditing(true); setErr(""); setSaved(false); };
+  const cancel    = () => { setEditing(false); setErr(""); };
+
+  const save = async () => {
+    if (!firstName.trim()) { setErr("First name is required."); return; }
+    setSaving(true); setErr("");
+    const result = await updateProfile(firstName, lastName);
+    if (result?.error) { setErr(result.error); setSaving(false); return; }
+    setSaving(false);
+    setEditing(false);
+    setSaved(true);
+  };
+
+  return (
+    <div style={{
+      position:"absolute", top:50, right:0, width:360,
+      background:"var(--surface)", border:"1px solid var(--line)",
+      borderRadius:18, boxShadow:"0 8px 32px rgba(0,0,0,.13)",
+      zIndex:200, overflow:"hidden",
+    }} onClick={e=>e.stopPropagation()}>
+
+      {/* Header */}
+      <div style={{background:"var(--grad)",padding:"24px 22px 20px",display:"flex",gap:14,alignItems:"center"}}>
+        <div style={{width:52,height:52,borderRadius:16,background:"rgba(255,255,255,.22)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:800,color:"#fff",flexShrink:0}}>
+          {me.initials}
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:800,fontSize:17,color:"#fff",lineHeight:1.2}}>{me.name}</div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,.75)",marginTop:3}}>Investor</div>
+        </div>
+        <button className="icon-btn" style={{background:"rgba(255,255,255,.18)",border:"none",color:"#fff"}} onClick={onClose}><X size={18}/></button>
+      </div>
+
+      {/* Body */}
+      <div style={{padding:"20px 22px"}}>
+        {saved && <div className="note ok" style={{marginBottom:14}}><Check size={15}/><div>Profile updated successfully.</div></div>}
+        {err   && <div className="note warn" style={{marginBottom:14}}><AlertTriangle size={15}/><div>{err}</div></div>}
+
+        {/* First name */}
+        <div className="field">
+          <label>First name <span style={{color:"var(--loss)"}}>*</span></label>
+          {editing
+            ? <input value={firstName} onChange={e=>setFirstName(e.target.value)} autoFocus placeholder="First name"/>
+            : <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,fontSize:14,background:"var(--surface-2)"}}>{me.firstName || <span className="muted">—</span>}</div>}
+        </div>
+
+        {/* Last name */}
+        <div className="field">
+          <label>Last name <span className="muted small">(optional)</span></label>
+          {editing
+            ? <input value={lastName} onChange={e=>setLastName(e.target.value)} placeholder="Last name" onKeyDown={e=>e.key==="Enter"&&save()}/>
+            : <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,fontSize:14,background:"var(--surface-2)"}}>{me.lastName || <span className="muted">—</span>}</div>}
+        </div>
+
+        {/* Email — read-only */}
+        <div className="field" style={{marginBottom:0}}>
+          <label>Email address <span className="muted small">(cannot be changed)</span></label>
+          <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,fontSize:14,color:"var(--muted)",background:"var(--surface-2)"}}>{me.email}</div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{padding:"14px 22px",borderTop:"1px solid var(--line)",display:"flex",justifyContent:"flex-end",gap:10}}>
+        {!editing && <button className="btn btn-pri btn-sm" onClick={startEdit}><Pencil size={14}/> Edit profile</button>}
+        {editing  && <>
+          <button className="btn btn-ghost btn-sm" onClick={cancel}>Cancel</button>
+          <button className="btn btn-pri btn-sm" disabled={saving||!firstName.trim()} onClick={save}>
+            {saving ? <><Loader size={14} className="spin"/> Saving…</> : <><Check size={14}/> Save</>}
+          </button>
+        </>}
+      </div>
+    </div>
+  );
+}
+
 /* =================================================================== HOME */
 function HomeFeed({ setPage, recsReceived, configs, holdings, contacts }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
@@ -1858,6 +1963,30 @@ function AdminUsers({ users, setUsers, contacts, setContacts }) {
   const setStatus=(id,status)=>setUsers(us=>us.map(u=>u.id===id?{...u,status}:u));
   const setRole=(id,role)=>setUsers(us=>us.map(u=>u.id===id?{...u,role}:u));
   const sp=(s)=>s==="Active"?"gain":s==="Suspended"?"loss":"";
+
+  const hardDelete = async (u) => {
+    const confirmed = window.confirm(
+      `PERMANENTLY DELETE "${u.name}" (${u.email})?\n\n` +
+      `This will:\n` +
+      `  • Remove all their Neon data (recommendations, connections, groups)\n` +
+      `  • Block them from logging in again\n` +
+      `  • Their Firebase login credential remains but they will be signed out immediately on next attempt\n\n` +
+      `This CANNOT be undone. Click OK to confirm.`
+    );
+    if (!confirmed) return;
+    if (!sql) { alert("Neon not configured — cannot delete."); return; }
+    try {
+      // Add to blacklist so they're force-signed-out on next login
+      await sql`INSERT INTO deleted_users (id, email) VALUES (${u.id}, ${u.email}) ON CONFLICT DO NOTHING`;
+      // Delete from user_profiles — CASCADE removes all their v2 table data
+      await sql`DELETE FROM user_profiles WHERE id = ${u.id}`;
+      // Remove from local state
+      setUsers(us => us.filter(x => x.id !== u.id));
+      alert(`${u.name} has been permanently deleted. Their data has been removed from the database. Note: their Firebase login credential still exists technically — they will be blocked from accessing the app if they attempt to sign in.`);
+    } catch(e) {
+      alert("Delete failed: " + e.message);
+    }
+  };
   return (<>
     <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">Users</div><div className="page-sub">{users.length} accounts · manage roles, status and access</div></div>
       <button className="btn btn-pri" onClick={()=>setShowAdd(true)}><Plus size={16}/> Add user</button></div>
@@ -1871,7 +2000,14 @@ function AdminUsers({ users, setUsers, contacts, setContacts }) {
           <td><select className="inline-select" value={u.role} onChange={e=>setRole(u.id,e.target.value)}>{["Investor","Moderator","Admin"].map(r=><option key={r}>{r}</option>)}</select></td>
           <td><span className={"pill "+sp(u.status)}>{u.status}</span></td>
           <td style={{textAlign:"center"}}>{u.accounts}</td><td className="muted small">{u.joined}</td>
-          <td style={{textAlign:"right"}}>{u.status==="Active"?<button className="btn btn-ghost btn-sm" onClick={()=>setStatus(u.id,"Suspended")}>Suspend</button>:<button className="btn btn-ghost btn-sm" onClick={()=>setStatus(u.id,"Active")}>Activate</button>}</td>
+          <td style={{textAlign:"right"}}>
+            <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+              {u.status==="Active"
+                ? <button className="btn btn-ghost btn-sm" onClick={()=>setStatus(u.id,"Suspended")}>Suspend</button>
+                : <button className="btn btn-ghost btn-sm" onClick={()=>setStatus(u.id,"Active")}>Activate</button>}
+              <button className="iconbtn danger" title={`Permanently delete ${u.name}`} onClick={()=>hardDelete(u)}><Trash2 size={14}/></button>
+            </div>
+          </td>
         </tr>))}</tbody></table></div></div>
     {showAdd && <AddUserModal onClose={()=>setShowAdd(false)} onAdd={(u)=>{
       const newUser = {...u, id:"u"+Date.now()};
