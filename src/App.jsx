@@ -313,7 +313,7 @@ export default function App() {
     maxGroupMembers:8, groupCreationPolicy:"all",
   });
   const [providers, setProviders] = useState(["Fidelity","Vanguard","Robinhood","Coinbase","Schwab","E*TRADE"]);
-  const [priceRefresh, setPriceRefresh] = useState(null);
+  const [priceRefresh, setPriceRefresh] = useState({ busy:false, lastAt:null, errors:[] });
   const [pendingInvites, setPendingInvites] = useState([]);
 
   // Derived: confirmed contacts only (accepted connections, shaped for UI backward compat)
@@ -335,13 +335,17 @@ export default function App() {
   const unreadCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
 
   const refreshPrices = async () => {
-    if (!isFinnhubConfigured()) return;
-    setPriceRefresh("loading");
-    const syms = [...new Set(holdings.map(h=>h.sym))];
-    const prices = await fetchLivePrices(syms);
-    setHoldings(hs => hs.map(h => prices[h.sym] != null ? {...h, price:prices[h.sym]} : h));
-    setPriceRefresh("done");
-    setTimeout(()=>setPriceRefresh(null),3000);
+    if (!isFinnhubConfigured) return;                          // boolean, not a function
+    setPriceRefresh({ busy:true, lastAt:null, errors:[] });
+    try {
+      const { results, errors } = await fetchLivePrices(holdings); // takes full holdings array
+      setHoldings(hs => hs.map(h =>
+        results[h.sym]?.price != null ? {...h, price:results[h.sym].price} : h
+      ));
+      setPriceRefresh({ busy:false, lastAt:new Date(), errors });
+    } catch(e) {
+      setPriceRefresh({ busy:false, lastAt:null, errors:[e.message] });
+    }
   };
 
   // ── Load all shared data from Neon on login ─────────────────────────────────
