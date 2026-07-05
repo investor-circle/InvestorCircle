@@ -295,12 +295,15 @@ export async function createRecommendation(reco, senderId, recipients) {
   const rec = await sql`
     INSERT INTO ic_recommendations
       (recommender_id, asset_name, ticker, asset_class,
-       reco_price, current_price, target_price, horizon, target_date, thesis, is_public)
+       reco_price, current_price, target_price, horizon, target_date, thesis, is_public,
+       recommendation_type, stop_loss, conviction, sector)
     VALUES
       (${senderId}, ${reco.assetName}, ${reco.ticker}, ${reco.assetClass},
        ${reco.priceAt || null}, ${reco.price || null}, ${reco.targetPrice || null},
        ${reco.horizon || null}, ${reco.targetDate || null}, ${reco.thesis || null},
-       ${reco.isPublic !== false})
+       ${reco.isPublic !== false},
+       ${reco.recType || 'Buy'}, ${reco.stopLoss || null},
+       ${reco.conviction || null}, ${reco.sector || null})
     RETURNING *
   `;
   const recId = rec[0].id;
@@ -368,6 +371,7 @@ export async function getMyReceivedRecos(userId) {
       r.target_price, r.horizon, r.target_date, r.thesis,
       r.is_public,
       r.exit_signal, r.exit_date,
+      r.recommendation_type, r.stop_loss, r.conviction, r.sector, r.exit_price,
       r.created_at        AS reco_date,
       rec_up.full_name    AS from_name,
       rec_up.email        AS from_email,
@@ -479,7 +483,12 @@ export async function getMyMadeRecos(userId) {
     actedList:   actedByRec[r.id] || [],
     likes:       Number(r.like_count    || 0),
     dislikes:    Number(r.dislike_count || 0),
-    isPublic:    r.is_public !== false, // default true if column missing
+    isPublic:    r.is_public !== false,
+    recType:     r.recommendation_type || 'Buy',
+    stopLoss:    r.stop_loss     ? +r.stop_loss     : null,
+    conviction:  r.conviction    || null,
+    sector:      r.sector        || null,
+    exitPrice:   r.exit_price    ? +r.exit_price    : null,
     recipients:  [], // populated separately if needed
   }));
 }
@@ -704,19 +713,62 @@ export async function saveUsername(userId, username) {
  *
  * All stats filter to is_public = true only.
  */
+// ─────────────────────────────────────────────────────────────────────────────
+// ICI SCORE — computed in JS from summary data
+// ─────────────────────────────────────────────────────────────────────────────
+export function computeIci({ years_history, total, hit_rate_pct, median_return, risk_adjusted_return, deleted_count }) {
+  const yrs    = Math.max(Number(years_history)       || 0, 0);
+  const recs   = Math.max(Number(total)               || 0, 0);
+  const hr     = Math.max(Number(hit_rate_pct)        || 0, 0);
+  const med    = Math.max(Number(median_return)       || 0, 0);
+  const ra     = Math.max(Number(risk_adjusted_return)|| 0, 0);
+  const dels   = Math.max(Number(deleted_count)       || 0, 0);
+
+  const trackLen    = Math.min(yrs  / 3,  1) * 15;   // 3 yrs = full marks
+  const volume      = Math.min(recs / 20, 1) * 15;   // 20 recs = full marks
+  const hitRate     = (hr / 100)               * 20;
+  const medianRet   = Math.min(med / 15, 1)    * 15;  // 15% median = full
+  const riskAdj     = Math.min(ra  / 2,  1)    * 15;  // Sharpe 2 = full
+  const transparency = (1 - Math.min(dels / Math.max(recs, 1), 1)) * 10;
+  const profileVerif = 10; // upgraded later when identity verification is built
+
+  const score = Math.min(Math.round(trackLen + volume + hitRate + medianRet + riskAdj + transparency + profileVerif), 100);
+  const band  = score >= 75 ? 'Strong' : score >= 55 ? 'Good' : score >= 35 ? 'Building' : 'Early';
+
+  return {
+    score, band,
+    components: [
+      { label: 'Track record length',   score: Math.round(trackLen),    max: 15 },
+      { label: 'Recommendation volume', score: Math.round(volume),      max: 15 },
+      { label: 'Hit rate',              score: Math.round(hitRate),      max: 20 },
+      { label: 'Median return',         score: Math.round(medianRet),    max: 15 },
+      { label: 'Risk-adjusted return',  score: Math.round(riskAdj),     max: 15 },
+      { label: 'Transparency',          score: Math.round(transparency), max: 10 },
+      { label: 'Profile verification',  score: Math.round(profileVerif), max: 10 },
+    ],
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC PROFILE — full data for the public profile page
+// Status rules (per product spec):
+//   Active  = NOT exit_signal AND (target_date IS NULL OR target_date >= today)
+//   Closed  = exit_signal = true
+//   Expired = NOT exit_signal AND target_date IS NOT NULL AND target_date < today
+// ─────────────────────────────────────────────────────────────────────────────
 export async function getPublicProfile(username) {
   if (!sql || !username) return null;
 
-  // 1. User basics + connection/group counts
+  // ── 1. User basics ───────────────────────────────────────────────────────
   const users = await sql`
     SELECT
       up.id, up.full_name, up.first_name, up.last_name,
       up.username, up.created_at,
       (SELECT COUNT(*) FROM connections
        WHERE (requester_id = up.id OR addressee_id = up.id)
-         AND status = 'accepted')                                     AS connection_count,
+         AND status = 'accepted')                                AS connection_count,
       (SELECT COUNT(*) FROM group_members
-       WHERE user_id = up.id AND status = 'active')                  AS group_count
+       WHERE user_id = up.id AND status = 'active')             AS group_count
     FROM user_profiles up
     WHERE up.username = ${username}
     LIMIT 1
@@ -724,115 +776,221 @@ export async function getPublicProfile(username) {
   if (!users[0]) return null;
   const userId = users[0].id;
 
-  // 2. Recommendation stats (public only)
-  //    Returns separately for: all / active (not expired, no exit) / closed (exited or expired)
-  const stats = await sql`
+  // ── 2. Summary counts ────────────────────────────────────────────────────
+  const summary = await sql`
     SELECT
-      COUNT(*)                                                        AS total,
+      COUNT(*)                                                   AS total,
+      COUNT(CASE WHEN NOT exit_signal
+                      AND (target_date IS NULL OR target_date >= CURRENT_DATE)
+                 THEN 1 END)                                     AS active,
+      COUNT(CASE WHEN exit_signal THEN 1 END)                   AS closed,
+      COUNT(CASE WHEN NOT exit_signal
+                      AND target_date IS NOT NULL
+                      AND target_date < CURRENT_DATE
+                 THEN 1 END)                                     AS expired,
+      ROUND(
+        EXTRACT(EPOCH FROM (now() - MIN(created_at))) / 86400 / 365,
+        1
+      )                                                          AS years_history
+    FROM ic_recommendations
+    WHERE recommender_id = ${userId} AND is_public = true
+  `;
+  const sumRow = summary[0] || {};
 
-      -- In / out of money (using last known price)
-      COUNT(CASE WHEN COALESCE(r.current_price, r.reco_price) > COALESCE(r.reco_price, 0)
-                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS in_money,
-      COUNT(CASE WHEN COALESCE(r.current_price, r.reco_price) <= COALESCE(r.reco_price, 0)
-                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS out_money,
-
-      -- Active = not exited AND (no target date OR target date in future)
-      COUNT(CASE WHEN NOT r.exit_signal
-                      AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)
-                 THEN 1 END)                                         AS active_count,
-
-      -- Closed = exited OR target date passed
-      COUNT(CASE WHEN r.exit_signal
-                      OR (r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE)
-                 THEN 1 END)                                         AS closed_count,
-
-      -- Average return across ALL public recos
+  // ── 3. Live scorecard (active positions) ─────────────────────────────────
+  const live = await sql`
+    SELECT
+      COUNT(*)                                                   AS active_count,
+      COUNT(CASE WHEN
+        (recommendation_type = 'Buy'  AND COALESCE(current_price, reco_price) > COALESCE(reco_price, 0))
+        OR (recommendation_type = 'Sell' AND COALESCE(current_price, reco_price) < COALESCE(reco_price, 0))
+        THEN 1 END)                                             AS in_profit,
+      COUNT(CASE WHEN NOT (
+        (recommendation_type = 'Buy'  AND COALESCE(current_price, reco_price) > COALESCE(reco_price, 0))
+        OR (recommendation_type = 'Sell' AND COALESCE(current_price, reco_price) < COALESCE(reco_price, 0))
+        ) THEN 1 END)                                           AS in_loss,
       ROUND(AVG(
-        CASE WHEN COALESCE(r.reco_price, 0) > 0
-             THEN (COALESCE(r.current_price, r.reco_price) - r.reco_price)
-                  / r.reco_price * 100
+        CASE recommendation_type
+          WHEN 'Sell' THEN (COALESCE(reco_price,0) - COALESCE(current_price, reco_price, 0)) / NULLIF(reco_price,0) * 100
+          ELSE             (COALESCE(current_price, reco_price, 0) - COALESCE(reco_price,0)) / NULLIF(reco_price,0) * 100
         END
-      )::numeric, 2)                                                 AS avg_return_pct,
-
-      -- Average return for ACTIVE only
-      ROUND(AVG(
-        CASE WHEN COALESCE(r.reco_price, 0) > 0
-                  AND NOT r.exit_signal
-                  AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)
-             THEN (COALESCE(r.current_price, r.reco_price) - r.reco_price)
-                  / r.reco_price * 100
-        END
-      )::numeric, 2)                                                 AS active_return_pct,
-
-      -- Average return for CLOSED only
-      ROUND(AVG(
-        CASE WHEN COALESCE(r.reco_price, 0) > 0
-                  AND (r.exit_signal
-                       OR (r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE))
-             THEN (COALESCE(r.current_price, r.reco_price) - r.reco_price)
-                  / r.reco_price * 100
-        END
-      )::numeric, 2)                                                 AS closed_return_pct,
-
-      -- In money / out of money split for ACTIVE only
-      COUNT(CASE WHEN NOT r.exit_signal
-                      AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)
-                      AND COALESCE(r.current_price, r.reco_price) > COALESCE(r.reco_price, 0)
-                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS active_in_money,
-      COUNT(CASE WHEN NOT r.exit_signal
-                      AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)
-                      AND COALESCE(r.current_price, r.reco_price) <= COALESCE(r.reco_price, 0)
-                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS active_out_money,
-
-      -- In money / out of money split for CLOSED only
-      COUNT(CASE WHEN (r.exit_signal OR (r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE))
-                      AND COALESCE(r.current_price, r.reco_price) > COALESCE(r.reco_price, 0)
-                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS closed_in_money,
-      COUNT(CASE WHEN (r.exit_signal OR (r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE))
-                      AND COALESCE(r.current_price, r.reco_price) <= COALESCE(r.reco_price, 0)
-                      AND COALESCE(r.reco_price, 0) > 0 THEN 1 END) AS closed_out_money,
-
-      -- Social signals across public recos
-      COALESCE((SELECT SUM(cnt) FROM (
-        SELECT recommendation_id, COUNT(*) AS cnt
-        FROM recommendation_deliveries WHERE reaction = 'like'
-        GROUP BY recommendation_id
-      ) lk WHERE lk.recommendation_id IN (
-        SELECT id FROM ic_recommendations WHERE recommender_id = ${userId} AND is_public = true
-      )), 0)                                                         AS total_likes,
-
-      COALESCE((SELECT SUM(cnt) FROM (
-        SELECT recommendation_id, COUNT(*) AS cnt
-        FROM recommendation_deliveries WHERE reaction = 'dislike'
-        GROUP BY recommendation_id
-      ) dk WHERE dk.recommendation_id IN (
-        SELECT id FROM ic_recommendations WHERE recommender_id = ${userId} AND is_public = true
-      )), 0)                                                         AS total_dislikes
-
-    FROM ic_recommendations r
-    WHERE r.recommender_id = ${userId} AND r.is_public = true
+      )::numeric, 2)                                            AS avg_live_return,
+      ROUND(AVG(CURRENT_DATE - created_at::date)::numeric, 0)  AS avg_holding_days
+    FROM ic_recommendations
+    WHERE recommender_id = ${userId} AND is_public = true
+      AND NOT exit_signal
+      AND (target_date IS NULL OR target_date >= CURRENT_DATE)
   `;
 
-  // 3. List of public recommendations (most recent 50)
+  // Best / worst live
+  const bestLive = await sql`
+    SELECT ticker, asset_name,
+      CASE recommendation_type
+        WHEN 'Sell' THEN ROUND(((COALESCE(reco_price,0) - COALESCE(current_price, reco_price, 0)) / NULLIF(reco_price,0) * 100)::numeric, 2)
+        ELSE             ROUND(((COALESCE(current_price, reco_price, 0) - COALESCE(reco_price,0)) / NULLIF(reco_price,0) * 100)::numeric, 2)
+      END AS ret_pct
+    FROM ic_recommendations
+    WHERE recommender_id = ${userId} AND is_public = true
+      AND NOT exit_signal AND (target_date IS NULL OR target_date >= CURRENT_DATE)
+    ORDER BY ret_pct DESC LIMIT 1
+  `;
+  const worstLive = await sql`
+    SELECT ticker, asset_name,
+      CASE recommendation_type
+        WHEN 'Sell' THEN ROUND(((COALESCE(reco_price,0) - COALESCE(current_price, reco_price, 0)) / NULLIF(reco_price,0) * 100)::numeric, 2)
+        ELSE             ROUND(((COALESCE(current_price, reco_price, 0) - COALESCE(reco_price,0)) / NULLIF(reco_price,0) * 100)::numeric, 2)
+      END AS ret_pct
+    FROM ic_recommendations
+    WHERE recommender_id = ${userId} AND is_public = true
+      AND NOT exit_signal AND (target_date IS NULL OR target_date >= CURRENT_DATE)
+    ORDER BY ret_pct ASC LIMIT 1
+  `;
+
+  // ── 4. Realized scorecard (closed positions only) ────────────────────────
+  const realized = await sql`
+    WITH closed_rets AS (
+      SELECT
+        CASE recommendation_type
+          WHEN 'Sell' THEN (COALESCE(reco_price,0) - COALESCE(exit_price, current_price, reco_price, 0)) / NULLIF(reco_price,0) * 100
+          ELSE             (COALESCE(exit_price, current_price, reco_price, 0) - COALESCE(reco_price,0)) / NULLIF(reco_price,0) * 100
+        END                                                  AS ret_pct,
+        COALESCE(exit_date::date, CURRENT_DATE) - created_at::date AS hold_days,
+        ticker, asset_name
+      FROM ic_recommendations
+      WHERE recommender_id = ${userId} AND is_public = true AND exit_signal = true
+    )
+    SELECT
+      COUNT(*)                                               AS closed_count,
+      COUNT(CASE WHEN ret_pct > 0 THEN 1 END)              AS win_count,
+      COUNT(CASE WHEN ret_pct <= 0 THEN 1 END)             AS loss_count,
+      ROUND(COUNT(CASE WHEN ret_pct > 0 THEN 1 END)::numeric / NULLIF(COUNT(*),0) * 100, 1)   AS hit_rate_pct,
+      ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY ret_pct)::numeric, 2)                  AS median_return,
+      ROUND(AVG(ret_pct)::numeric, 2)                       AS avg_return,
+      ROUND((AVG(ret_pct) / NULLIF(STDDEV_POP(ret_pct), 0))::numeric, 2)                       AS risk_adjusted_return,
+      ROUND(AVG(hold_days)::numeric, 0)                     AS avg_holding_days
+    FROM closed_rets
+  `;
+  const bestClosed = await sql`
+    SELECT ticker, asset_name,
+      ROUND((CASE recommendation_type
+        WHEN 'Sell' THEN (COALESCE(reco_price,0) - COALESCE(exit_price, current_price, reco_price, 0)) / NULLIF(reco_price,0) * 100
+        ELSE             (COALESCE(exit_price, current_price, reco_price, 0) - COALESCE(reco_price,0)) / NULLIF(reco_price,0) * 100
+      END)::numeric, 2) AS ret_pct
+    FROM ic_recommendations
+    WHERE recommender_id = ${userId} AND is_public = true AND exit_signal = true
+    ORDER BY ret_pct DESC LIMIT 1
+  `;
+
+  // ── 5. Sector breakdown ──────────────────────────────────────────────────
+  const sectors = await sql`
+    SELECT
+      COALESCE(sector, 'Uncategorised')                      AS sector,
+      COUNT(*)                                               AS total_recs,
+      COUNT(CASE WHEN NOT exit_signal
+                      AND (target_date IS NULL OR target_date >= CURRENT_DATE) THEN 1 END) AS active_count,
+      COUNT(CASE WHEN NOT exit_signal
+                      AND (target_date IS NULL OR target_date >= CURRENT_DATE)
+                      AND (
+                        (recommendation_type = 'Buy'  AND COALESCE(current_price, reco_price) > COALESCE(reco_price,0))
+                        OR (recommendation_type = 'Sell' AND COALESCE(current_price, reco_price) < COALESCE(reco_price,0))
+                      ) THEN 1 END)                          AS active_in_profit,
+      COUNT(CASE WHEN exit_signal THEN 1 END)               AS closed_count,
+      COUNT(CASE WHEN exit_signal AND (
+        (recommendation_type = 'Buy'  AND COALESCE(exit_price, current_price, reco_price) > COALESCE(reco_price,0))
+        OR (recommendation_type = 'Sell' AND COALESCE(exit_price, current_price, reco_price) < COALESCE(reco_price,0))
+      ) THEN 1 END)                                          AS closed_wins,
+      ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY
+        CASE WHEN exit_signal THEN
+          CASE recommendation_type
+            WHEN 'Sell' THEN (COALESCE(reco_price,0) - COALESCE(exit_price, current_price, reco_price,0)) / NULLIF(reco_price,0) * 100
+            ELSE             (COALESCE(exit_price, current_price, reco_price,0) - COALESCE(reco_price,0)) / NULLIF(reco_price,0) * 100
+          END
+        END
+      )::numeric, 1)                                         AS median_closed_return
+    FROM ic_recommendations
+    WHERE recommender_id = ${userId} AND is_public = true
+    GROUP BY COALESCE(sector, 'Uncategorised')
+    ORDER BY total_recs DESC
+  `;
+
+  // ── 6. Recommendations list (all, sorted by date) ────────────────────────
   const recos = await sql`
     SELECT
-      r.id, r.asset_name, r.ticker, r.asset_class,
-      r.reco_price, r.current_price, r.target_price,
+      r.id, r.ticker, r.asset_name, r.asset_class,
+      r.recommendation_type, r.sector, r.conviction,
+      r.reco_price, r.current_price, r.exit_price,
+      r.target_price, r.stop_loss,
       r.horizon, r.target_date, r.thesis,
-      r.exit_signal, r.exit_date, r.created_at,
-      CASE WHEN COALESCE(r.reco_price, 0) > 0
-           THEN ROUND(((COALESCE(r.current_price, r.reco_price) - r.reco_price)
-                       / r.reco_price * 100)::numeric, 2)
-           ELSE 0 END                                               AS return_pct,
-      (SELECT COUNT(*) FROM recommendation_deliveries
-       WHERE recommendation_id = r.id AND reaction = 'like')        AS like_count,
-      (SELECT COUNT(*) FROM recommendation_deliveries
-       WHERE recommendation_id = r.id AND reaction = 'dislike')     AS dislike_count
+      r.exit_signal, r.exit_date, r.is_public, r.created_at,
+      CASE
+        WHEN r.exit_signal                                                        THEN 'Closed'
+        WHEN r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE           THEN 'Expired'
+        ELSE                                                                           'Active'
+      END AS status,
+      ROUND((CASE
+        WHEN r.exit_signal THEN
+          CASE r.recommendation_type
+            WHEN 'Sell' THEN (COALESCE(r.reco_price,0) - COALESCE(r.exit_price, r.current_price, r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+            ELSE             (COALESCE(r.exit_price, r.current_price, r.reco_price,0) - COALESCE(r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+          END
+        ELSE
+          CASE r.recommendation_type
+            WHEN 'Sell' THEN (COALESCE(r.reco_price,0) - COALESCE(r.current_price, r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+            ELSE             (COALESCE(r.current_price, r.reco_price,0) - COALESCE(r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+          END
+      END)::numeric, 2)                                        AS return_pct,
+      CASE
+        WHEN r.exit_signal THEN COALESCE(r.exit_date::date, CURRENT_DATE) - r.created_at::date
+        ELSE CURRENT_DATE - r.created_at::date
+      END                                                      AS holding_days
     FROM ic_recommendations r
     WHERE r.recommender_id = ${userId} AND r.is_public = true
     ORDER BY r.created_at DESC
-    LIMIT 50
+    LIMIT 100
   `;
 
-  return { profile: users[0], stats: stats[0], recos };
+  const realRow   = realized[0] || {};
+  const liveRow   = live[0]     || {};
+  const sumData   = sumRow;
+
+  return {
+    profile:  users[0],
+    summary: {
+      total:         Number(sumData.total         || 0),
+      active:        Number(sumData.active        || 0),
+      closed:        Number(sumData.closed        || 0),
+      expired:       Number(sumData.expired       || 0),
+      years_history: Number(sumData.years_history || 0),
+    },
+    live: {
+      count:          Number(liveRow.active_count  || 0),
+      in_profit:      Number(liveRow.in_profit     || 0),
+      in_loss:        Number(liveRow.in_loss       || 0),
+      avg_return:     Number(liveRow.avg_live_return || 0),
+      avg_holding_days: Number(liveRow.avg_holding_days || 0),
+      best:  bestLive[0]  || null,
+      worst: worstLive[0] || null,
+    },
+    realized: {
+      count:              Number(realRow.closed_count         || 0),
+      win_count:          Number(realRow.win_count            || 0),
+      loss_count:         Number(realRow.loss_count           || 0),
+      hit_rate_pct:       Number(realRow.hit_rate_pct         || 0),
+      median_return:      Number(realRow.median_return        || 0),
+      avg_return:         Number(realRow.avg_return           || 0),
+      risk_adjusted:      Number(realRow.risk_adjusted_return || 0),
+      avg_holding_days:   Number(realRow.avg_holding_days     || 0),
+      best: bestClosed[0] || null,
+    },
+    sectors: sectors.map(s => ({
+      sector:            s.sector,
+      total_recs:        Number(s.total_recs         || 0),
+      active_count:      Number(s.active_count       || 0),
+      active_in_profit:  Number(s.active_in_profit   || 0),
+      closed_count:      Number(s.closed_count       || 0),
+      closed_wins:       Number(s.closed_wins        || 0),
+      median_return:     Number(s.median_closed_return || 0),
+    })),
+    recos,
+  };
 }
