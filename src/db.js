@@ -793,6 +793,7 @@ export async function getPublicProfile(username) {
     SELECT
       up.id, up.full_name, up.first_name, up.last_name,
       up.username, up.created_at,
+      up.bio, up.twitter_url, up.linkedin_url, up.telegram_url, up.instagram_url,
       (SELECT COUNT(*) FROM connections
        WHERE (requester_id = up.id OR addressee_id = up.id)
          AND status = 'accepted')                                AS connection_count,
