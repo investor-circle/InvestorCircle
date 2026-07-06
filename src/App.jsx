@@ -636,6 +636,7 @@ export default function App() {
                     viewerConnections={connections}
                     mode="embedded"
                     isOwnProfile
+                    patchProfile={patchProfile}
                     onRequestConnect={()=>{}}
                     onBack={()=>setPage("home")}
                   />
@@ -2225,10 +2226,6 @@ function SharePreview({ id, name, cfg, holdings, onClose }) {
 
 /* =================================================================== PUBLIC PROFILE */
 
-const SECTORS_LIST = ["Banking & Finance","Technology","Pharmaceuticals","Energy","FMCG",
-  "Automobiles","Defence","Capital Goods","Real Estate","Chemicals","Telecom",
-  "Metals & Mining","PSU","Healthcare","Infrastructure","Media","Retail","Others"];
-
 const SECTOR_EMOJI = {
   "Banking & Finance":"🏦","Technology":"💻","Pharmaceuticals":"💊","Energy":"⚡",
   "FMCG":"🛒","Automobiles":"🚗","Defence":"🛡","Capital Goods":"⚙️",
@@ -2237,498 +2234,541 @@ const SECTOR_EMOJI = {
   "Others":"•••","Uncategorised":"•••",
 };
 
-// ─── small reusable helpers ───────────────────────────────────────────────────
+/* ─── SVG Social Icons ──────────────────────────────────────────────────────── */
+const SOCIAL_PATHS = {
+  twitter:   "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.742l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z",
+  linkedin:  "M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z",
+  telegram:  "M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z",
+  instagram: "M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12c0 3.259.014 3.668.072 4.948.058 1.278.262 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24c3.259 0 3.668-.014 4.948-.072 1.277-.058 2.148-.262 2.913-.558.788-.306 1.459-.717 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.635.558-2.913.06-1.28.072-1.689.072-4.948 0-3.259-.013-3.667-.072-4.947-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06zm0 3.678a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405a1.441 1.441 0 10-2.88 0 1.44 1.44 0 002.88 0z",
+};
 
+function SocialIconBtn({ platform, url }) {
+  const inner = (
+    <div style={{
+      width:34, height:34, borderRadius:9,
+      background: url ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.05)',
+      border: '1px solid rgba(255,255,255,.12)',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      cursor: url ? 'pointer' : 'default',
+      transition:'background .15s',
+    }}
+    onMouseEnter={e=>{ if(url) e.currentTarget.style.background='rgba(255,255,255,.24)'; }}
+    onMouseLeave={e=>{ e.currentTarget.style.background = url ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.05)'; }}>
+      <svg width={16} height={16} viewBox="0 0 24 24" fill={url ? 'rgba(255,255,255,.9)' : 'rgba(255,255,255,.25)'}>
+        <path d={SOCIAL_PATHS[platform]}/>
+      </svg>
+    </div>
+  );
+  if (!url) return inner;
+  return <a href={url.startsWith('http') ? url : `https://${url}`} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}>{inner}</a>;
+}
+
+/* ─── ICI Donut ─────────────────────────────────────────────────────────────── */
 function IciDonut({ score, band }) {
-  const r = 44, circ = 2 * Math.PI * r, filled = (score / 100) * circ;
-  const col = score >= 70 ? "#16a34a" : score >= 50 ? "#6d5df5" : score >= 30 ? "#f59e0b" : "#dc2626";
+  const r = 42, circ = 2 * Math.PI * r, filled = (score / 100) * circ;
+  const col = score >= 70 ? '#4ade80' : score >= 50 ? '#a99dff' : score >= 30 ? '#fbbf24' : '#f87171';
   return (
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-      <svg width={108} height={108} viewBox="0 0 108 108">
-        <circle cx={54} cy={54} r={r} fill="none" stroke="#e5e7eb" strokeWidth={10}/>
-        <circle cx={54} cy={54} r={r} fill="none" stroke={col} strokeWidth={10}
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+      <svg width={104} height={104} viewBox="0 0 104 104">
+        <circle cx={52} cy={52} r={r} fill="none" stroke="rgba(255,255,255,.12)" strokeWidth={9}/>
+        <circle cx={52} cy={52} r={r} fill="none" stroke={col} strokeWidth={9}
           strokeDasharray={`${filled} ${circ}`}
           strokeDashoffset={circ/4} strokeLinecap="round"/>
-        <text x={54} y={50} textAnchor="middle" fontSize={24} fontWeight={800} fill="#0f1117" fontFamily="'JetBrains Mono',monospace">{score}</text>
-        <text x={54} y={65} textAnchor="middle" fontSize={10} fill="#9ca3af">/100</text>
+        <text x={52} y={47} textAnchor="middle" fontSize={22} fontWeight={800} fill="#fff" fontFamily="'JetBrains Mono',monospace">{score}</text>
+        <text x={52} y={63} textAnchor="middle" fontSize={10} fill="rgba(255,255,255,.45)">/100</text>
       </svg>
-      <div style={{fontSize:12,fontWeight:700,color:col}}>{band}</div>
+      <div style={{fontSize:11,fontWeight:700,color:col,marginTop:-4}}>{band}</div>
+    </div>
+  );
+}
+
+/* ─── Small helpers ─────────────────────────────────────────────────────────── */
+function ScoreBox({ val, label, big, col }) {
+  return (
+    <div style={{textAlign:'center',padding:'11px 8px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10}}>
+      <div style={{fontSize:big?22:17,fontWeight:800,color:col||'var(--ink)',fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{val}</div>
+      <div style={{fontSize:10.5,color:'var(--muted)',marginTop:4,lineHeight:1.3}}>{label}</div>
     </div>
   );
 }
 
 function RetBadge({ pct, size=13 }) {
-  const n = Number(pct||0), pos = n >= 0;
-  return <span style={{fontWeight:700,fontSize:size,color:pos?"var(--gain)":"var(--loss)",fontFamily:"'JetBrains Mono',monospace"}}>{pos?"+":""}{n.toFixed(1)}%</span>;
-}
-
-function StripStat({ val, label, sub, col }) {
-  return (
-    <div style={{textAlign:"center",padding:"16px 8px"}}>
-      <div style={{fontSize:26,fontWeight:800,color:col||"var(--ink)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1}}>{val}</div>
-      <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",marginTop:4,textTransform:"uppercase",letterSpacing:.05}}>{label}</div>
-      {sub && <div style={{fontSize:10,color:"var(--muted)",opacity:.7,marginTop:2}}>{sub}</div>}
-    </div>
-  );
-}
-
-function ScoreBox({ val, label, big, col }) {
-  return (
-    <div style={{textAlign:"center",padding:"12px 8px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10}}>
-      <div style={{fontSize:big?22:18,fontWeight:800,color:col||"var(--ink)",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{val}</div>
-      <div style={{fontSize:10.5,color:"var(--muted)",marginTop:4,lineHeight:1.3}}>{label}</div>
-    </div>
-  );
+  const n=Number(pct||0), pos=n>=0;
+  return <span style={{fontWeight:700,fontSize:size,color:pos?'var(--gain)':'var(--loss)',fontFamily:"'JetBrains Mono',monospace"}}>{pos?'+':''}{n.toFixed(1)}%</span>;
 }
 
 function TypeBadge({ t }) {
-  return <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:5,background:t==="Sell"?"var(--loss-soft)":"var(--gain-soft)",color:t==="Sell"?"var(--loss)":"var(--gain)"}}>{t||"Buy"}</span>;
+  return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:5,background:t==='Sell'?'var(--loss-soft)':'var(--gain-soft)',color:t==='Sell'?'var(--loss)':'var(--gain)'}}>{t||'Buy'}</span>;
 }
 
 function ConvBadge({ level }) {
-  if (!level) return null;
-  const col = level==="High"?"var(--accent)":level==="Medium"?"var(--amber)":"var(--muted)";
-  return <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:5,border:`1px solid ${col}`,color:col}}>{level}</span>;
+  if(!level) return null;
+  const col=level==='High'?'var(--accent)':level==='Medium'?'var(--amber)':'var(--muted)';
+  return <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:5,border:`1px solid ${col}`,color:col}}>{level}</span>;
 }
 
 function StatusBadge2({ status }) {
-  const cfg = {
-    Active:  {bg:"#dbeafe",col:"#1d4ed8"},
-    Closed:  {bg:"var(--gain-soft)",col:"var(--gain)"},
-    Expired: {bg:"#f3f4f6",col:"var(--muted)"},
-  }[status] || {bg:"#f3f4f6",col:"var(--muted)"};
-  return <span style={{fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:5,background:cfg.bg,color:cfg.col}}>{status}</span>;
+  const cfg={Active:{bg:'#dbeafe',col:'#1d4ed8'},Closed:{bg:'var(--gain-soft)',col:'var(--gain)'},Expired:{bg:'#f3f4f6',col:'var(--muted)'}}[status]||{bg:'#f3f4f6',col:'var(--muted)'};
+  return <span style={{fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:5,background:cfg.bg,color:cfg.col}}>{status}</span>;
 }
 
-// ─── Share Popover (unchanged from previous) ──────────────────────────────────
+/* ─── SharePublicPopover (unchanged) ────────────────────────────────────────── */
 function SharePublicPopover({ reco, username, onClose }) {
-  const [copied, setCopied] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
-  const popStyle = {
-    position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:300,
-    background:"var(--surface)",border:"1px solid var(--line)",
-    borderRadius:14,boxShadow:"0 6px 24px rgba(0,0,0,.14)",padding:"14px 16px",minWidth:280,
-  };
-  if (!username) return (
+  const [copied,setCopied]=useState(false);
+  const ref=useRef(null);
+  useEffect(()=>{
+    const h=(e)=>{ if(ref.current&&!ref.current.contains(e.target)) onClose(); };
+    document.addEventListener('mousedown',h);
+    return ()=>document.removeEventListener('mousedown',h);
+  },[]);
+  const popStyle={position:'absolute',right:0,top:'calc(100% + 6px)',zIndex:300,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,boxShadow:'0 6px 24px rgba(0,0,0,.14)',padding:'14px 16px',minWidth:280};
+  if(!username) return(
     <div ref={ref} style={popStyle} onClick={e=>e.stopPropagation()}>
       <div className="note warn" style={{fontSize:12}}><AlertTriangle size={13}/><div>Set a username in your profile first.</div></div>
-      <button className="btn btn-ghost btn-sm" style={{marginTop:10,width:"100%"}} onClick={onClose}>Close</button>
+      <button className="btn btn-ghost btn-sm" style={{marginTop:10,width:'100%'}} onClick={onClose}>Close</button>
     </div>
   );
-  const url = `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${reco.id}`;
-  const waMsg = encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) by @${username} on InvestorCircle:\n${url}`);
-  const waUrl = `https://wa.me/?text=${waMsg}`;
-  const copyLink = () => { navigator.clipboard.writeText(url).then(()=>{ setCopied(true); setTimeout(()=>{ setCopied(false); onClose(); },1600); }); };
-  return (
+  const url=`${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${reco.id}`;
+  const waMsg=encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) by @${username} on InvestorCircle:\n${url}`);
+  const waUrl=`https://wa.me/?text=${waMsg}`;
+  const copyLink=()=>{ navigator.clipboard.writeText(url).then(()=>{ setCopied(true); setTimeout(()=>{ setCopied(false); onClose(); },1600); }); };
+  return(
     <div ref={ref} style={popStyle} onClick={e=>e.stopPropagation()}>
-      <div style={{fontWeight:700,fontSize:13,marginBottom:12,display:"flex",alignItems:"center",gap:6}}><Globe size={14} color="var(--accent)"/> Share publicly</div>
-      <div style={{background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:9,padding:"8px 10px",fontSize:11,color:"var(--muted)",marginBottom:12,wordBreak:"break-all",lineHeight:1.4}}>{url}</div>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        <button className="btn btn-pri btn-sm" style={{justifyContent:"center"}} onClick={copyLink}>{copied?<><Check size={14}/> Copied!</>:<><Copy size={14}/> Copy link</>}</button>
-        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{justifyContent:"center",textDecoration:"none"}} onClick={onClose}><span style={{fontSize:15,lineHeight:1}}>💬</span> Share on WhatsApp</a>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:12,display:'flex',alignItems:'center',gap:6}}><Globe size={14} color="var(--accent)"/> Share publicly</div>
+      <div style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:9,padding:'8px 10px',fontSize:11,color:'var(--muted)',marginBottom:12,wordBreak:'break-all',lineHeight:1.4}}>{url}</div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        <button className="btn btn-pri btn-sm" style={{justifyContent:'center'}} onClick={copyLink}>{copied?<><Check size={14}/> Copied!</>:<><Copy size={14}/> Copy link</>}</button>
+        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{justifyContent:'center',textDecoration:'none'}} onClick={onClose}><span style={{fontSize:15,lineHeight:1}}>💬</span> Share on WhatsApp</a>
       </div>
-      <div className="muted small" style={{marginTop:10,fontSize:11}}>Anyone with this link can view this — no login needed.</div>
+      <div className="muted small" style={{marginTop:10,fontSize:11}}>Anyone with this link can view — no login needed.</div>
     </div>
   );
 }
 
-// ─── Main public profile page ─────────────────────────────────────────────────
-function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, onBack, onRequestConnect }) {
-  const [data,       setData]       = useState(null);
-  const [loading,    setLoading]    = useState(true);
-  const [notFound,   setNotFound]   = useState(false);
-  const [recTab,     setRecTab]     = useState("All");
-  const [connecting, setConnecting] = useState(false);
-  const [connected,  setConnected]  = useState(false);
-  const [copied,     setCopied]     = useState(false);
-  const [expandedId, setExpandedId] = useState(recoId || null);
-  const expandedRef  = useRef(null);
+/* ─── Main PublicProfilePage ─────────────────────────────────────────────────── */
+function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
+  const [data,        setData]        = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [notFound,    setNotFound]    = useState(false);
+  const [recTab,      setRecTab]      = useState('All');
+  const [connecting,  setConnecting]  = useState(false);
+  const [connected,   setConnected]   = useState(false);
+  const [copied,      setCopied]      = useState(false);
+  const [expandedId,  setExpandedId]  = useState(recoId||null);
+  const expandedRef = useRef(null);
 
-  useEffect(() => {
+  // Bio + social editing state
+  const [editing,     setEditing]     = useState(false);
+  const [editBio,     setEditBio]     = useState('');
+  const [editSocials, setEditSocials] = useState({ twitter:'', linkedin:'', telegram:'', instagram:'' });
+  const [savingEdit,  setSavingEdit]  = useState(false);
+
+  useEffect(()=>{
     setLoading(true); setNotFound(false); setData(null);
-    dbGetPublicProfile(username).then(d => {
-      if (!d) setNotFound(true); else setData(d);
+    dbGetPublicProfile(username).then(d=>{
+      if(!d) setNotFound(true); else setData(d);
       setLoading(false);
-    }).catch(() => { setNotFound(true); setLoading(false); });
-  }, [username]);
+    }).catch(()=>{ setNotFound(true); setLoading(false); });
+  },[username]);
 
-  useEffect(() => {
-    if (recoId && data && expandedRef.current)
-      setTimeout(() => expandedRef.current?.scrollIntoView({ behavior:"smooth", block:"center" }), 200);
-  }, [recoId, data]);
+  useEffect(()=>{
+    if(recoId&&data&&expandedRef.current)
+      setTimeout(()=>expandedRef.current?.scrollIntoView({behavior:'smooth',block:'center'}),200);
+  },[recoId,data]);
 
-  const profileUserId = data?.profile?.id;
-  const connStatus = useMemo(() => {
-    if (!profileUserId || !viewerConnections?.length) return "none";
-    const c = viewerConnections.find(c => c.user_id === profileUserId);
-    return c?.status || "none";
-  }, [profileUserId, viewerConnections]);
-  useEffect(() => { if (connStatus==="accepted") setConnected(true); }, [connStatus]);
+  const profileUserId=data?.profile?.id;
+  const connStatus=useMemo(()=>{
+    if(!profileUserId||!viewerConnections?.length) return 'none';
+    const c=viewerConnections.find(c=>c.user_id===profileUserId);
+    return c?.status||'none';
+  },[profileUserId,viewerConnections]);
+  useEffect(()=>{ if(connStatus==='accepted') setConnected(true); },[connStatus]);
 
-  const handleConnect = async () => {
-    setConnecting(true);
-    await onRequestConnect(data.profile.id);
-    setConnected(true); setConnecting(false);
+  const handleConnect=async()=>{ setConnecting(true); await onRequestConnect(data.profile.id); setConnected(true); setConnecting(false); };
+
+  const profileUrl=`${window.location.origin}${window.location.pathname}#/investor/${username}`;
+  const copyLink=()=>{ navigator.clipboard.writeText(profileUrl).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); }); };
+
+  // Start editing bio + socials
+  const startEdit=()=>{
+    const p=data?.profile||{};
+    setEditBio(p.bio||'');
+    setEditSocials({ twitter:p.twitter_url||'', linkedin:p.linkedin_url||'', telegram:p.telegram_url||'', instagram:p.instagram_url||'' });
+    setEditing(true);
   };
 
-  const profileUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}`;
-  const copyLink = () => { navigator.clipboard.writeText(profileUrl).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false), 2000); }); };
+  // Save bio + socials to Neon
+  const saveEdit=async()=>{
+    if(!sql||!data?.profile?.id) return;
+    setSavingEdit(true);
+    try {
+      await sql`UPDATE user_profiles SET bio=${editBio||null}, twitter_url=${editSocials.twitter||null}, linkedin_url=${editSocials.linkedin||null}, telegram_url=${editSocials.telegram||null}, instagram_url=${editSocials.instagram||null} WHERE id=${data.profile.id}`;
+      setData(d=>({...d,profile:{...d.profile,bio:editBio,twitter_url:editSocials.twitter,linkedin_url:editSocials.linkedin,telegram_url:editSocials.telegram,instagram_url:editSocials.instagram}}));
+      if(patchProfile) patchProfile({bio:editBio,twitter_url:editSocials.twitter,linkedin_url:editSocials.linkedin,telegram_url:editSocials.telegram,instagram_url:editSocials.instagram});
+    } catch(e){ console.warn('Save failed:',e); }
+    setSavingEdit(false);
+    setEditing(false);
+  };
 
-  // ── Content ───────────────────────────────────────────────────────────────
-  const renderContent = () => {
-    if (loading) return <div style={{textAlign:"center",padding:"60px 0",color:"var(--muted)"}}><Loader size={28} className="spin" style={{marginBottom:14}}/><div>Loading public investment record…</div></div>;
-    if (notFound) return <div style={{textAlign:"center",padding:"60px 0"}}><Globe size={36} color="var(--muted)" style={{marginBottom:14}}/><div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Record not found</div><div className="muted small">@{username} hasn't set up a public profile yet.</div></div>;
+  // ── Content renderer ──────────────────────────────────────────────────────
+  const renderContent=()=>{
+    if(loading) return <div style={{textAlign:'center',padding:'60px 0',color:'var(--muted)'}}><Loader size={28} className="spin" style={{marginBottom:14}}/><div>Loading public investment record…</div></div>;
+    if(notFound) return <div style={{textAlign:'center',padding:'60px 0'}}><Globe size={36} color="var(--muted)" style={{marginBottom:14}}/><div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Record not found</div><div className="muted small">@{username} hasn't set up a public profile yet.</div></div>;
 
     const { profile, summary, live, realized, sectors, recos } = data;
-    const displayName = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.full_name || username;
-    const memberSince = profile.created_at ? new Date(profile.created_at).toLocaleDateString("en-IN",{month:"short",year:"numeric"}) : null;
+    const displayName=[profile.first_name,profile.last_name].filter(Boolean).join(' ')||profile.full_name||username;
+    const memberSince=profile.created_at?new Date(profile.created_at).toLocaleDateString('en-IN',{month:'short',year:'numeric'}):null;
 
-    const ici = computeIci({
-      years_history:        summary.years_history,
-      total:                summary.total,
-      hit_rate_pct:         realized.hit_rate_pct,
-      median_return:        realized.median_return,
-      risk_adjusted_return: realized.risk_adjusted,
+    const ici=computeIci({
+      years_history:summary.years_history,
+      total:summary.total,
+      hit_rate_pct:realized.hit_rate_pct,
+      median_return:realized.median_return,
+      risk_adjusted_return:realized.risk_adjusted,
     });
 
-    // Filtered recommendation list for tabs
-    const filteredRecos = recTab === "All" ? recos
-      : recos.filter(r => r.status === recTab);
-    const recoIdNotPublic = recoId && data && !recos.find(r => r.id === recoId);
+    const filteredRecos=recTab==='All'?recos:recos.filter(r=>r.status===recTab);
+    const recoIdNotPublic=recoId&&data&&!recos.find(r=>r.id===recoId);
 
-    // Connection button
-    const showAddBtn    = !isOwnProfile && viewerUser && !connected && connStatus !== "pending";
-    const showPending   = !isOwnProfile && viewerUser && connStatus === "pending";
-    const showConnected = !isOwnProfile && viewerUser && connected;
-    const showJoinBtn   = !isOwnProfile && !viewerUser;
+    const showAddBtn=!isOwnProfile&&viewerUser&&!connected&&connStatus!=='pending';
+    const showPending=!isOwnProfile&&viewerUser&&connStatus==='pending';
+    const showConnected=!isOwnProfile&&viewerUser&&connected;
+    const showJoinBtn=!isOwnProfile&&!viewerUser;
 
     return (
-      <div style={{maxWidth:980,margin:"0 auto"}}>
+      <>
+        {/* ── IDENTITY CARD ── */}
+        <div style={{background:'#0f1117',borderRadius:16,overflow:'hidden',marginBottom:16,border:'1px solid rgba(255,255,255,.06)'}}>
 
-        {/* ── Embedded mode banner ── */}
-        {mode==="embedded" && isOwnProfile && (
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,padding:"12px 16px",background:"var(--accent-soft)",border:"1px solid var(--line)",borderRadius:12}}>
-            <div style={{fontSize:13,fontWeight:600,color:"var(--accent-ink)"}}>This is your public investment record as others see it</div>
-            <div style={{display:"flex",gap:8}}>
-              <button className="btn btn-soft btn-sm" onClick={copyLink}>{copied?<><Check size={14}/> Copied!</>:<><Copy size={14}/> Copy link</>}</button>
-              <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm"><ExternalLink size={14}/> Open public URL</a>
+          {/* Header row: avatar + info + ICI */}
+          <div style={{padding:'24px 28px 20px',display:'flex',gap:20,alignItems:'flex-start',flexWrap:'wrap'}}>
+
+            {/* Avatar */}
+            <div style={{width:68,height:68,borderRadius:18,background:'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,fontWeight:800,color:'#fff',flexShrink:0}}>
+              {initialsOf(displayName)}
             </div>
-          </div>
-        )}
 
-        {/* ── SECTION 1: Identity header ── */}
-        <div className="card" style={{marginBottom:16,overflow:"hidden"}}>
-          <div style={{background:"#0f1117",padding:"24px 24px 20px"}}>
-            <div style={{display:"flex",gap:18,alignItems:"flex-start",flexWrap:"wrap"}}>
-              {/* Avatar */}
-              <div style={{width:72,height:72,borderRadius:18,background:"linear-gradient(135deg,#6d5df5,#cf52d8)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800,color:"#fff",flexShrink:0}}>
-                {initialsOf(displayName)}
+            {/* Name + badges + bio + socials */}
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:4}}>
+                <span style={{fontSize:20,fontWeight:800,color:'#fff',letterSpacing:'-.3px'}}>{displayName}</span>
+                <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:5,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.7)',border:'1px solid rgba(255,255,255,.15)',textTransform:'uppercase',letterSpacing:.05}}>Self-directed Investor</span>
+                <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:5,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.25)',textTransform:'uppercase',letterSpacing:.05}}>Not SEBI Registered</span>
               </div>
-              {/* Name + badges + bio */}
-              <div style={{flex:1}}>
-                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                  <span style={{fontSize:20,fontWeight:800,color:"#fff",letterSpacing:"-.3px"}}>{displayName}</span>
-                  <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:5,background:"rgba(255,255,255,.12)",color:"rgba(255,255,255,.7)",border:"1px solid rgba(255,255,255,.15)",textTransform:"uppercase",letterSpacing:.05}}>Self-directed Investor</span>
-                  <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:5,background:"rgba(244,63,94,.15)",color:"#fb7185",border:"1px solid rgba(244,63,94,.25)",textTransform:"uppercase",letterSpacing:.05}}>Not SEBI Registered</span>
+              <div style={{fontSize:13,color:'rgba(255,255,255,.5)',fontFamily:"'JetBrains Mono',monospace",marginBottom:8}}>@{username}{memberSince&&<span style={{marginLeft:10,fontFamily:'inherit'}}>· Since {memberSince}</span>}</div>
+
+              {/* Bio */}
+              {!editing && (
+                <div style={{marginBottom:10}}>
+                  {profile.bio
+                    ? <p style={{fontSize:13,color:'rgba(255,255,255,.7)',lineHeight:1.6,margin:0}}>{profile.bio}</p>
+                    : isOwnProfile && <p style={{fontSize:12,color:'rgba(255,255,255,.3)',fontStyle:'italic',margin:0}}>No bio yet — add one to tell visitors about your investment approach.</p>}
+                  {isOwnProfile && <button onClick={startEdit} style={{marginTop:6,fontSize:11,fontWeight:600,background:'none',border:'none',color:'rgba(255,255,255,.4)',cursor:'pointer',padding:0,display:'flex',alignItems:'center',gap:4}}><Pencil size={11}/> {profile.bio?'Edit bio & social links':'Add bio & social links'}</button>}
                 </div>
-                <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginTop:3,fontFamily:"'JetBrains Mono',monospace"}}>@{username}</div>
-                {memberSince && <div style={{fontSize:11.5,color:"rgba(255,255,255,.4)",marginTop:6}}>Public investment record since {memberSince}</div>}
-                {/* social stubs */}
-                <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
-                  {["Twitter","LinkedIn","Telegram"].map(s=>(
-                    <span key={s} style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:6,background:"rgba(255,255,255,.08)",color:"rgba(255,255,255,.5)",border:"1px solid rgba(255,255,255,.1)",cursor:"not-allowed"}}>{s}</span>
-                  ))}
-                </div>
-              </div>
-              {/* ICI widget */}
-              <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:"16px 20px",minWidth:300}}>
-                <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.07,marginBottom:12}}>Investor Circle Credibility Index</div>
-                <div style={{display:"flex",gap:16,alignItems:"center"}}>
-                  <IciDonut score={ici.score} band={ici.band}/>
-                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
-                    {ici.components.map(c=>(
-                      <div key={c.label} style={{display:"flex",alignItems:"center",gap:6}}>
-                        <Check size={11} color="rgba(255,255,255,.4)"/>
-                        <span style={{fontSize:10.5,color:"rgba(255,255,255,.6)",flex:1}}>{c.label}</span>
-                        <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.8)",fontFamily:"'JetBrains Mono',monospace"}}>{c.max}%</span>
-                        <span style={{fontSize:10.5,color:"rgba(255,255,255,.5)",fontFamily:"'JetBrains Mono',monospace"}}>{c.score}/{c.max}</span>
+              )}
+
+              {/* Inline edit form */}
+              {editing && (
+                <div style={{marginBottom:12,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:12,padding:'14px 16px'}}>
+                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Bio</div>
+                  <textarea value={editBio} onChange={e=>setEditBio(e.target.value)} rows={3} maxLength={300} placeholder="Describe your investment approach…"
+                    style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',borderRadius:8,padding:'8px 11px',fontSize:13,color:'#fff',fontFamily:'inherit',resize:'vertical',outline:'none',boxSizing:'border-box'}}/>
+                  <div style={{fontSize:10,color:'rgba(255,255,255,.3)',textAlign:'right',marginTop:2}}>{editBio.length}/300</div>
+
+                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginTop:12,marginBottom:8}}>Social profile links</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                    {[
+                      {key:'twitter',   label:'Twitter / X',   ph:'https://twitter.com/username'},
+                      {key:'linkedin',  label:'LinkedIn',       ph:'https://linkedin.com/in/username'},
+                      {key:'telegram',  label:'Telegram',       ph:'https://t.me/username'},
+                      {key:'instagram', label:'Instagram',      ph:'https://instagram.com/username'},
+                    ].map(s=>(
+                      <div key={s.key}>
+                        <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginBottom:4,display:'flex',alignItems:'center',gap:5}}>
+                          <svg width={12} height={12} viewBox="0 0 24 24" fill="rgba(255,255,255,.5)"><path d={SOCIAL_PATHS[s.key]}/></svg>
+                          {s.label}
+                        </div>
+                        <input value={editSocials[s.key]} onChange={e=>setEditSocials(prev=>({...prev,[s.key]:e.target.value}))} placeholder={s.ph}
+                          style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.12)',borderRadius:7,padding:'7px 10px',fontSize:12,color:'#fff',fontFamily:'inherit',outline:'none',boxSizing:'border-box'}}/>
                       </div>
                     ))}
                   </div>
+
+                  <div style={{display:'flex',gap:8,marginTop:14,justifyContent:'flex-end'}}>
+                    <button className="btn btn-ghost btn-sm" style={{color:'rgba(255,255,255,.6)',border:'1px solid rgba(255,255,255,.15)'}} onClick={()=>setEditing(false)}>Cancel</button>
+                    <button className="btn btn-pri btn-sm" disabled={savingEdit} onClick={saveEdit}>
+                      {savingEdit?<><Loader size={13} className="spin"/> Saving…</>:<><Check size={13}/> Save</>}
+                    </button>
+                  </div>
                 </div>
-                <div style={{marginTop:10,textAlign:"center"}}><a href="#methodology" style={{fontSize:11,color:"#a99dff",textDecoration:"none"}}>Learn more about ICI methodology →</a></div>
+              )}
+
+              {/* Social icons */}
+              {!editing && (
+                <div style={{display:'flex',gap:6}}>
+                  {['twitter','linkedin','telegram','instagram'].map(p=>(
+                    <SocialIconBtn key={p} platform={p} url={profile[`${p}_url`]}/>
+                  ))}
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
+                {showAddBtn && <button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect} style={{background:'rgba(109,93,245,.8)',border:'none'}}>{connecting?<><Loader size={13} className="spin"/> Sending…</>:<><UserPlus size={13}/> Add to network</>}</button>}
+                {showPending && <span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5}}><Check size={12}/> Request sent</span>}
+                {showConnected && <span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5}}><Check size={12}/> Connected</span>}
+                {showJoinBtn && <button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.8)',border:'none'}}><UserPlus size={13}/> Join to connect</button>}
               </div>
             </div>
 
-            {/* Action buttons */}
-            <div style={{display:"flex",gap:8,marginTop:16,justifyContent:"flex-end"}}>
-              {showAddBtn && <button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect}>{connecting?<><Loader size={13} className="spin"/> Sending…</>:<><UserPlus size={14}/> Add to network</>}</button>}
-              {showPending && <span style={{fontSize:13,color:"rgba(255,255,255,.6)",display:"flex",alignItems:"center",gap:6}}><Check size={13}/> Request sent</span>}
-              {showConnected && <span style={{fontSize:13,color:"rgba(255,255,255,.6)",display:"flex",alignItems:"center",gap:6}}><Check size={13}/> Connected</span>}
-              {showJoinBtn && <button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)}><UserPlus size={14}/> Join InvestorCircle to connect</button>}
+            {/* ICI Widget — fixed colors for dark background */}
+            <div style={{background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:14,padding:'16px 18px',minWidth:290,flexShrink:0}}>
+              <div style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.4)',textTransform:'uppercase',letterSpacing:.07,marginBottom:12}}>Investor Circle Credibility Index</div>
+              <div style={{display:'flex',gap:14,alignItems:'center'}}>
+                <IciDonut score={ici.score} band={ici.band}/>
+                <div style={{flex:1,display:'flex',flexDirection:'column',gap:5}}>
+                  {ici.components.map(c=>(
+                    <div key={c.label} style={{display:'flex',alignItems:'center',gap:5}}>
+                      <Check size={10} color="rgba(255,255,255,.35)"/>
+                      <span style={{fontSize:10.5,color:'rgba(255,255,255,.65)',flex:1,lineHeight:1.2}}>{c.label}</span>
+                      <span style={{fontSize:9.5,color:'rgba(255,255,255,.4)',fontFamily:"'JetBrains Mono',monospace",width:28,textAlign:'right'}}>{c.max}%</span>
+                      <span style={{fontSize:10.5,color:'rgba(255,255,255,.8)',fontFamily:"'JetBrains Mono',monospace",width:36,textAlign:'right'}}>{c.score}/{c.max}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{marginTop:10,textAlign:'center'}}><a href="#methodology" style={{fontSize:11,color:'#a99dff',textDecoration:'none'}}>Learn more about ICI methodology →</a></div>
             </div>
           </div>
 
           {/* ── Stat strip ── */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",background:"#161b27",borderTop:"1px solid rgba(255,255,255,.06)"}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',background:'rgba(0,0,0,.25)',borderTop:'1px solid rgba(255,255,255,.06)'}}>
             {[
-              {val:profile.connection_count||0, label:"Connections"},
-              {val:profile.group_count||0,      label:"Groups"},
-              {val:summary.total,               label:"Total Recommendations"},
-              {val:summary.closed,              label:"Closed"},
-              {val:summary.active,              label:"Active"},
-              {val:`${summary.years_history.toFixed(1)} yrs`, label:"Public History"},
+              {val:profile.connection_count||0, label:'Connections'},
+              {val:profile.group_count||0,      label:'Groups'},
+              {val:summary.total,               label:'Total Recommendations'},
+              {val:summary.closed,              label:'Closed'},
+              {val:summary.active,              label:'Active'},
+              {val:`${summary.years_history.toFixed(1)} yrs`, label:'Public History'},
             ].map((s,i,arr)=>(
-              <div key={s.label} style={{borderRight:i<arr.length-1?"1px solid rgba(255,255,255,.06)":"none"}}>
-                <StripStat val={s.val} label={s.label}/>
+              <div key={s.label} style={{borderRight:i<arr.length-1?'1px solid rgba(255,255,255,.06)':'none',padding:'14px 8px',textAlign:'center'}}>
+                <div style={{fontSize:24,fontWeight:800,color:'#fff',fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1}}>{s.val}</div>
+                <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,.45)',marginTop:4,textTransform:'uppercase',letterSpacing:.06,lineHeight:1.3}}>{s.label}</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── SECTION 2: Scorecards ── */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+        {/* ── SCORECARDS ── */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
 
-          {/* Live Scorecard */}
           <div className="card">
             <div className="card-head">
-              <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:"var(--gain)",display:"inline-block"}}/><span style={{fontSize:13,fontWeight:700}}>Live Scorecard</span><span className="muted small">Active Recommendations</span></span>
+              <span style={{display:'flex',alignItems:'center',gap:6}}><span style={{width:8,height:8,borderRadius:'50%',background:'var(--gain)',display:'inline-block'}}/><span style={{fontSize:13,fontWeight:700}}>Live Scorecard</span><span className="muted small">Active Recommendations</span></span>
             </div>
             <div className="card-body">
-              {live.count === 0 ? <div className="empty" style={{padding:"20px 0"}}>No active recommendations.</div> : (<>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
-                  <ScoreBox val={live.count} label="Active Recommendations" big/>
-                  <ScoreBox val={`${live.in_profit} (${live.count?Math.round(live.in_profit/live.count*100):0}%)`} label="Currently in Profit" col="var(--gain)" big/>
-                  <ScoreBox val={`${live.in_loss} (${live.count?Math.round(live.in_loss/live.count*100):0}%)`} label="Currently in Loss" col="var(--loss)" big/>
+              {live.count===0?<div className="empty" style={{padding:'20px 0'}}>No active recommendations.</div>:(<>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginBottom:10}}>
+                  <ScoreBox val={live.count} label="Active" big/>
+                  <ScoreBox val={`${live.in_profit} (${live.count?Math.round(live.in_profit/live.count*100):0}%)`} label="In Profit" col="var(--gain)" big/>
+                  <ScoreBox val={`${live.in_loss} (${live.count?Math.round(live.in_loss/live.count*100):0}%)`} label="In Loss" col="var(--loss)" big/>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginBottom:10}}>
                   <ScoreBox val={<RetBadge pct={live.avg_return}/>} label="Avg Live Return"/>
-                  <ScoreBox val={`${live.avg_holding_days || 0} days`} label="Avg Holding Period"/>
-                  <ScoreBox val="—" label="Alpha vs NIFTY 50"/>
+                  <ScoreBox val={`${live.avg_holding_days||0}d`} label="Avg Holding"/>
+                  <ScoreBox val="—" label="Alpha vs NIFTY"/>
                 </div>
-                {(live.best || live.worst) && (
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                    {live.best  && <ScoreBox val={<><span style={{fontWeight:700}}>{live.best.ticker}</span> <RetBadge pct={live.best.ret_pct}/></>} label="Best Performer"/>}
-                    {live.worst && <ScoreBox val={<><span style={{fontWeight:700}}>{live.worst.ticker}</span> <RetBadge pct={live.worst.ret_pct}/></>} label="Worst Performer"/>}
-                  </div>
-                )}
+                {(live.best||live.worst)&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:9}}>
+                  {live.best&&<ScoreBox val={<><b>{live.best.ticker}</b> <RetBadge pct={live.best.ret_pct}/></>} label="Best Performer"/>}
+                  {live.worst&&<ScoreBox val={<><b>{live.worst.ticker}</b> <RetBadge pct={live.worst.ret_pct}/></>} label="Worst Performer"/>}
+                </div>}
               </>)}
             </div>
           </div>
 
-          {/* Realized Scorecard */}
           <div className="card">
             <div className="card-head">
-              <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:"var(--accent)",display:"inline-block"}}/><span style={{fontSize:13,fontWeight:700}}>Realized Scorecard</span><span className="muted small">Closed Recommendations</span></span>
+              <span style={{display:'flex',alignItems:'center',gap:6}}><span style={{width:8,height:8,borderRadius:'50%',background:'var(--accent)',display:'inline-block'}}/><span style={{fontSize:13,fontWeight:700}}>Realized Scorecard</span><span className="muted small">Closed only</span></span>
             </div>
             <div className="card-body">
-              {realized.count === 0 ? <div className="empty" style={{padding:"20px 0"}}>No closed recommendations yet.</div> : (<>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
-                  <ScoreBox val={realized.count} label="Closed Recommendations" big/>
-                  <ScoreBox val={`${realized.hit_rate_pct.toFixed(1)}%`} label="Hit Rate" col={realized.hit_rate_pct>=50?"var(--gain)":"var(--loss)"} big/>
+              {realized.count===0?<div className="empty" style={{padding:'20px 0'}}>No closed recommendations yet.</div>:(<>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginBottom:10}}>
+                  <ScoreBox val={realized.count} label="Closed" big/>
+                  <ScoreBox val={`${realized.hit_rate_pct.toFixed(1)}%`} label="Hit Rate" col={realized.hit_rate_pct>=50?'var(--gain)':'var(--loss)'} big/>
                   <ScoreBox val={<RetBadge pct={realized.median_return}/>} label="Median Return" big/>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:9,marginBottom:10}}>
                   <ScoreBox val={<RetBadge pct={realized.avg_return}/>} label="Avg Return"/>
-                  <ScoreBox val={`${realized.avg_holding_days || 0} days`} label="Avg Holding Period"/>
-                  <ScoreBox val={`${realized.win_count} / ${realized.loss_count}`} label="Win / Loss"/>
-                  <ScoreBox val={isNaN(realized.risk_adjusted)?'—':Number(realized.risk_adjusted).toFixed(2)} label="Risk-Adjusted Return"/>
+                  <ScoreBox val={`${realized.avg_holding_days||0}d`} label="Avg Holding"/>
+                  <ScoreBox val={`${realized.win_count}/${realized.loss_count}`} label="Win/Loss"/>
+                  <ScoreBox val={isNaN(realized.risk_adjusted)?'—':Number(realized.risk_adjusted).toFixed(2)} label="Risk-Adj."/>
                 </div>
-                {realized.best && (
-                  <div style={{padding:"10px 12px",background:"var(--gain-soft)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontSize:12,fontWeight:600,color:"var(--gain)"}}>Best Closed Trade</span>
-                    <span><b style={{fontWeight:800}}>{realized.best.ticker}</b> <RetBadge pct={realized.best.ret_pct}/></span>
-                  </div>
-                )}
+                {realized.best&&<div style={{padding:'9px 12px',background:'var(--gain-soft)',borderRadius:9,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>Best Closed Trade</span>
+                  <span><b>{realized.best.ticker}</b> <RetBadge pct={realized.best.ret_pct}/></span>
+                </div>}
               </>)}
             </div>
           </div>
         </div>
 
-        {/* Scorecard disclaimer */}
-        <div style={{display:"flex",gap:8,alignItems:"center",padding:"9px 14px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10,marginBottom:16,fontSize:12,color:"var(--muted)"}}>
-          <AlertTriangle size={13} style={{flexShrink:0}}/>
-          <span>Hit rate and returns are calculated only on closed recommendations. Active recommendations are marked to market and may change daily.</span>
+        <div style={{display:'flex',gap:8,alignItems:'center',padding:'9px 14px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,marginBottom:14,fontSize:12,color:'var(--muted)'}}>
+          <AlertTriangle size={13} style={{flexShrink:0}}/><span>Returns on active positions use current price and may change daily. Only closed recommendations feed the realized scorecard.</span>
         </div>
 
-        {/* ── SECTION 3: Sector Performance ── */}
-        {sectors.length > 0 && (
-          <div className="card" style={{marginBottom:16}}>
+        {/* ── SECTOR PERFORMANCE ── */}
+        {sectors.length>0&&(
+          <div className="card" style={{marginBottom:14}}>
             <div className="card-head">
               <span style={{fontSize:13,fontWeight:700}}>Sector Performance</span>
-              <div style={{display:"flex",gap:14,fontSize:11,color:"var(--muted)"}}>
-                <span><span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:"var(--gain)",marginRight:4}}/> Active Success % (live)</span>
-                <span><span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:"var(--accent)",marginRight:4}}/> Closed Hit Rate %</span>
+              <div style={{display:'flex',gap:12,fontSize:11,color:'var(--muted)'}}>
+                <span><span style={{display:'inline-block',width:10,height:10,borderRadius:3,background:'var(--gain)',marginRight:4}}/> Active Success %</span>
+                <span><span style={{display:'inline-block',width:10,height:10,borderRadius:3,background:'var(--accent)',marginRight:4}}/> Closed Hit Rate %</span>
               </div>
             </div>
-            <div className="card-body" style={{padding:"16px 20px"}}>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:16}}>
-                {sectors.map(s => {
-                  const activePct  = s.active_count  ? Math.round(s.active_in_profit / s.active_count  * 100) : null;
-                  const closedPct  = s.closed_count  ? Math.round(s.closed_wins      / s.closed_count  * 100) : null;
-                  return (
-                    <div key={s.sector} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
-                      {/* Bars */}
-                      <div style={{display:"flex",gap:4,alignItems:"flex-end",height:60,width:"100%",justifyContent:"center"}}>
-                        {activePct != null && <div title={`Active success: ${activePct}%`} style={{width:24,height:`${Math.max(activePct,4)}%`,background:"var(--gain)",borderRadius:"4px 4px 0 0",transition:"height .3s"}}/>}
-                        {closedPct != null && <div title={`Closed hit rate: ${closedPct}%`} style={{width:24,height:`${Math.max(closedPct,4)}%`,background:"var(--accent)",borderRadius:"4px 4px 0 0",transition:"height .3s"}}/>}
+            <div style={{padding:'16px 20px 12px',overflowX:'auto'}}>
+              <div style={{display:'flex',gap:20,minWidth:'max-content'}}>
+                {sectors.map(s=>{
+                  const ap=s.active_count?Math.round(s.active_in_profit/s.active_count*100):null;
+                  const cp=s.closed_count?Math.round(s.closed_wins/s.closed_count*100):null;
+                  return(
+                    <div key={s.sector} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:90}}>
+                      <div style={{display:'flex',gap:4,alignItems:'flex-end',height:52}}>
+                        {ap!=null&&<div style={{width:20,height:`${Math.max(ap,4)}%`,background:'var(--gain)',borderRadius:'4px 4px 0 0'}} title={`Active: ${ap}%`}/>}
+                        {cp!=null&&<div style={{width:20,height:`${Math.max(cp,4)}%`,background:'var(--accent)',borderRadius:'4px 4px 0 0'}} title={`Closed: ${cp}%`}/>}
                       </div>
-                      {/* Labels */}
-                      <div style={{display:"flex",gap:6,fontSize:10.5,fontWeight:700,color:"var(--muted)"}}>
-                        {activePct != null && <span style={{color:"var(--gain)"}}>{activePct}%</span>}
-                        {closedPct != null && <span style={{color:"var(--accent)"}}>{closedPct}%</span>}
+                      <div style={{fontSize:10.5,fontWeight:700,display:'flex',gap:5}}>
+                        {ap!=null&&<span style={{color:'var(--gain)'}}>{ap}%</span>}
+                        {cp!=null&&<span style={{color:'var(--accent)'}}>{cp}%</span>}
                       </div>
-                      <div style={{fontSize:11,fontWeight:700,textAlign:"center",lineHeight:1.3}}>{SECTOR_EMOJI[s.sector]||"•"} {s.sector}</div>
-                      <div style={{fontSize:10,color:"var(--muted)"}}>{s.total_recs} rec{s.total_recs!==1?"s":""}</div>
+                      <div style={{fontSize:11,fontWeight:700,textAlign:'center',lineHeight:1.3}}>{SECTOR_EMOJI[s.sector]||'•'} {s.sector}</div>
+                      <div style={{fontSize:10,color:'var(--muted)'}}>{s.total_recs} rec{s.total_recs!==1?'s':''}</div>
                     </div>
                   );
                 })}
               </div>
-              <div style={{marginTop:12,fontSize:11,color:"var(--muted)",textAlign:"center"}}>Minimum 2 closed recommendations to calculate hit rate. Active positions use current price.</div>
             </div>
           </div>
         )}
 
-        {/* ── SECTION 4: Recommendation Timeline ── */}
-        <div className="card" style={{marginBottom:16}}>
+        {/* ── RECOMMENDATION TIMELINE ── */}
+        <div className="card" style={{marginBottom:14}}>
           <div className="card-head">
             <span style={{fontSize:13,fontWeight:700}}>Recommendation History</span>
             <span className="muted small">Public record · Permanent &amp; immutable</span>
           </div>
-
-          {/* Tabs */}
-          <div style={{display:"flex",gap:0,borderBottom:"1px solid var(--line)",padding:"0 16px"}}>
+          <div style={{display:'flex',gap:0,borderBottom:'1px solid var(--line)',padding:'0 16px'}}>
             {[
-              {key:"All",     count:recos.length},
-              {key:"Active",  count:recos.filter(r=>r.status==="Active").length},
-              {key:"Closed",  count:recos.filter(r=>r.status==="Closed").length},
-              {key:"Expired", count:recos.filter(r=>r.status==="Expired").length},
+              {key:'All',count:recos.length},
+              {key:'Active',count:recos.filter(r=>r.status==='Active').length},
+              {key:'Closed',count:recos.filter(r=>r.status==='Closed').length},
+              {key:'Expired',count:recos.filter(r=>r.status==='Expired').length},
             ].map(t=>(
-              <button key={t.key} onClick={()=>setRecTab(t.key)} style={{
-                background:"none",border:"none",cursor:"pointer",padding:"12px 14px",
-                fontWeight:700,fontSize:13,
-                color:recTab===t.key?"var(--accent)":"var(--muted)",
-                borderBottom:recTab===t.key?"2px solid var(--accent)":"2px solid transparent",
-                marginBottom:-1,
-              }}>
-                {t.key} {t.count > 0 && <span style={{fontSize:11,marginLeft:4,opacity:.7}}>({t.count})</span>}
+              <button key={t.key} onClick={()=>setRecTab(t.key)} style={{background:'none',border:'none',cursor:'pointer',padding:'11px 14px',fontWeight:700,fontSize:13,color:recTab===t.key?'var(--accent)':'var(--muted)',borderBottom:recTab===t.key?'2px solid var(--accent)':'2px solid transparent',marginBottom:-1,fontFamily:'inherit'}}>
+                {t.key}{t.count>0&&<span style={{fontSize:11,marginLeft:4,opacity:.7}}>({t.count})</span>}
               </button>
             ))}
           </div>
-
-          {/* Private reco banner */}
-          {recoIdNotPublic && (
-            <div style={{display:"flex",gap:10,alignItems:"flex-start",margin:"12px 16px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:12,padding:"12px 16px"}}>
+          {recoIdNotPublic&&(
+            <div style={{display:'flex',gap:10,alignItems:'flex-start',margin:'12px 16px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:12,padding:'12px 16px'}}>
               <Lock size={15} color="var(--muted)"/><div><div style={{fontWeight:700,fontSize:13,marginBottom:3}}>Recommendation not publicly visible</div><div className="muted small">This recommendation is only visible to the investor's network.</div></div>
             </div>
           )}
-
-          {/* Table */}
-          <div style={{overflowX:"auto"}}>
-            {filteredRecos.length === 0
-              ? <div className="empty" style={{padding:"32px 0"}}>No {recTab.toLowerCase()} recommendations.</div>
-              : <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                  <thead><tr style={{background:"#f9fafb",borderBottom:"2px solid var(--line)"}}>
-                    {["Date","Instrument","Type","Entry ₹","Current ₹","Target","Stop Loss","Return","Status","Conviction","Holding"].map(h=>(
-                      <th key={h} style={{padding:"10px 12px",textAlign:h==="Return"||h==="Entry ₹"||h==="Current ₹"||h==="Target"||h==="Stop Loss"?"right":"left",fontSize:10.5,fontWeight:700,letterSpacing:.06,textTransform:"uppercase",color:"var(--muted)",whiteSpace:"nowrap"}}>{h}</th>
-                    ))}
-                  </tr></thead>
-                  <tbody>{filteredRecos.map(r=>{
-                    const isLinked   = r.id === recoId;
-                    const isExpanded = r.id === expandedId;
-                    const retPct     = Number(r.return_pct || 0);
-                    return (<React.Fragment key={r.id}>
-                      <tr ref={isLinked?expandedRef:null}
-                          style={{cursor:"pointer",background:isLinked?"var(--accent-soft)":undefined,outline:isLinked?"2px solid var(--accent)":undefined,outlineOffset:-2}}
-                          className="hoverable"
-                          onClick={()=>setExpandedId(isExpanded?null:r.id)}>
-                        <td style={{padding:"11px 12px",whiteSpace:"nowrap",color:"var(--muted)",fontSize:12}}>{r.created_at?new Date(r.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"-"}</td>
-                        <td style={{padding:"11px 12px"}}><div style={{fontWeight:700,fontSize:13}}>{r.ticker}</div><div style={{fontSize:11,color:"var(--muted)",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.asset_name}</div></td>
-                        <td style={{padding:"11px 12px"}}><TypeBadge t={r.recommendation_type}/></td>
-                        <td style={{padding:"11px 12px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{r.reco_price?`₹${Number(r.reco_price).toLocaleString("en-IN")}`:"—"}</td>
-                        <td style={{padding:"11px 12px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{r.current_price?`₹${Number(r.current_price).toLocaleString("en-IN")}`:"—"}</td>
-                        <td style={{padding:"11px 12px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--muted)"}}>{r.target_price?`₹${Number(r.target_price).toLocaleString("en-IN")}`:"—"}</td>
-                        <td style={{padding:"11px 12px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--loss)"}}>{r.stop_loss?`₹${Number(r.stop_loss).toLocaleString("en-IN")}`:"—"}</td>
-                        <td style={{padding:"11px 12px",textAlign:"right"}}><RetBadge pct={retPct}/></td>
-                        <td style={{padding:"11px 12px"}}><StatusBadge2 status={r.status}/></td>
-                        <td style={{padding:"11px 12px"}}><ConvBadge level={r.conviction}/></td>
-                        <td style={{padding:"11px 12px",whiteSpace:"nowrap",color:"var(--muted)",fontSize:12}}>{r.holding_days?`${r.holding_days}d`:"—"} {isExpanded?"▲":"▼"}</td>
-                      </tr>
-                      {isExpanded && r.thesis && r.thesis !== "—" && (
-                        <tr><td colSpan={11} style={{padding:0,borderBottom:"1px solid var(--line)"}}>
-                          <div style={{background:isLinked?"var(--accent-soft)":"var(--surface-2)",padding:"12px 16px",display:"flex",gap:16,flexWrap:"wrap"}}>
-                            <div style={{flex:1}}>
-                              <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>Investment Thesis</div>
-                              <div style={{fontSize:13,lineHeight:1.6,color:"var(--ink-soft)"}}>{r.thesis}</div>
-                            </div>
-                            {r.sector && <div><div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>Sector</div><div style={{fontSize:13}}>{SECTOR_EMOJI[r.sector]} {r.sector}</div></div>}
-                          </div>
-                        </td></tr>
-                      )}
-                    </React.Fragment>);
-                  })}</tbody>
-                </table>}
+          <div style={{overflowX:'auto'}}>
+            {filteredRecos.length===0
+              ?<div className="empty" style={{padding:'32px 0'}}>No {recTab.toLowerCase()} recommendations.</div>
+              :<table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                <thead><tr style={{background:'#f9fafb',borderBottom:'2px solid var(--line)'}}>
+                  {['Date','Instrument','Type','Entry ₹','Current ₹','Target','Stop Loss','Return','Status','Conviction','Holding'].map(h=>(
+                    <th key={h} style={{padding:'9px 11px',textAlign:['Return','Entry ₹','Current ₹','Target','Stop Loss'].includes(h)?'right':'left',fontSize:10.5,fontWeight:700,letterSpacing:.06,textTransform:'uppercase',color:'var(--muted)',whiteSpace:'nowrap'}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>{filteredRecos.map(r=>{
+                  const isLinked=r.id===recoId, isExpanded=r.id===expandedId;
+                  const retPct=Number(r.return_pct||0);
+                  return(<React.Fragment key={r.id}>
+                    <tr ref={isLinked?expandedRef:null} className="hoverable"
+                        style={{cursor:'pointer',background:isLinked?'var(--accent-soft)':undefined,outline:isLinked?'2px solid var(--accent)':undefined,outlineOffset:-2}}
+                        onClick={()=>setExpandedId(isExpanded?null:r.id)}>
+                      <td style={{padding:'10px 11px',color:'var(--muted)',fontSize:12,whiteSpace:'nowrap'}}>{r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'}):'-'}</td>
+                      <td style={{padding:'10px 11px'}}><div style={{fontWeight:700}}>{r.ticker}</div><div style={{fontSize:11,color:'var(--muted)',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.asset_name}</div></td>
+                      <td style={{padding:'10px 11px'}}><TypeBadge t={r.recommendation_type}/></td>
+                      <td style={{padding:'10px 11px',textAlign:'right',fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'}</td>
+                      <td style={{padding:'10px 11px',textAlign:'right',fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{r.current_price?`₹${Number(r.current_price).toLocaleString('en-IN')}`:'—'}</td>
+                      <td style={{padding:'10px 11px',textAlign:'right',fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:'var(--muted)'}}>{r.target_price?`₹${Number(r.target_price).toLocaleString('en-IN')}`:'—'}</td>
+                      <td style={{padding:'10px 11px',textAlign:'right',fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:'var(--loss)'}}>{r.stop_loss?`₹${Number(r.stop_loss).toLocaleString('en-IN')}`:'—'}</td>
+                      <td style={{padding:'10px 11px',textAlign:'right'}}><RetBadge pct={retPct}/></td>
+                      <td style={{padding:'10px 11px'}}><StatusBadge2 status={r.status}/></td>
+                      <td style={{padding:'10px 11px'}}><ConvBadge level={r.conviction}/></td>
+                      <td style={{padding:'10px 11px',color:'var(--muted)',fontSize:12,whiteSpace:'nowrap'}}>{r.holding_days?`${r.holding_days}d`:'—'} {isExpanded?'▲':'▼'}</td>
+                    </tr>
+                    {isExpanded&&r.thesis&&r.thesis!=='—'&&(
+                      <tr><td colSpan={11} style={{padding:0}}>
+                        <div style={{background:isLinked?'var(--accent-soft)':'var(--surface-2)',padding:'11px 16px',display:'flex',gap:16,flexWrap:'wrap'}}>
+                          <div style={{flex:1}}><div style={{fontSize:10.5,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5,marginBottom:4}}>Thesis</div><div style={{fontSize:13,lineHeight:1.6,color:'var(--ink-soft)'}}>{r.thesis}</div></div>
+                          {r.sector&&<div><div style={{fontSize:10.5,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5,marginBottom:4}}>Sector</div><div style={{fontSize:13}}>{SECTOR_EMOJI[r.sector]} {r.sector}</div></div>}
+                        </div>
+                      </td></tr>
+                    )}
+                  </React.Fragment>);
+                })}</tbody>
+              </table>}
           </div>
-          <div style={{padding:"10px 16px",borderTop:"1px solid var(--line)",fontSize:12,color:"var(--muted)"}}>
-            Returns are calculated based on entry price and current/exit price. This is not investment advice.
-          </div>
+          <div style={{padding:'9px 16px',borderTop:'1px solid var(--line)',fontSize:11,color:'var(--muted)'}}>Returns calculated from entry price and current/exit price. Not investment advice.</div>
         </div>
-
         {/* ── Methodology ── */}
-        <div id="methodology" className="card" style={{marginBottom:16}}>
+        <div id="methodology" className="card" style={{marginBottom:14}}>
           <div className="card-head"><span style={{fontSize:13,fontWeight:700}}>⚙ How are these metrics calculated?</span><span className="muted small">Methodology v1.0</span></div>
-          <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div style={{padding:'14px 20px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {[
-              ["Hit Rate","Percentage of closed recommendations with a positive realized return. Active and expired positions are excluded."],
-              ["Median Return","Median realized return across all closed positions. More robust than average — resistant to outliers."],
-              ["Risk-Adjusted Return","Average return divided by standard deviation of returns (Sharpe-like, no risk-free rate). Rewards consistency."],
-              ["ICI Score","Weighted: track length (15%), volume (15%), hit rate (20%), median return (15%), risk-adjusted (15%), transparency (10%), profile (10%)."],
-              ["Active Position Returns","Use last known price. Indicative only — not included in realized scorecard."],
-              ["Sector Attribution","Based on sector tag set when recommendation was published. Auto-classification coming soon."],
-            ].map(([h,p])=>(
-              <div key={h}><div style={{fontSize:12,fontWeight:700,color:"var(--ink-soft)",marginBottom:4}}>{h}</div><div style={{fontSize:12,color:"var(--muted)",lineHeight:1.6}}>{p}</div></div>
-            ))}
+              ['Hit Rate','Percentage of closed recommendations with a positive realized return.'],
+              ['Median Return','Median realized return across closed positions. More robust than average.'],
+              ['Risk-Adjusted Return','Average return ÷ standard deviation of returns (Sharpe-like, no risk-free rate).'],
+              ['ICI Score','Track length (15%), volume (15%), hit rate (20%), median (15%), risk-adj (15%), transparency (10%), profile (10%).'],
+              ['Active Positions','Use last known price. Indicative only — excluded from realized scorecard.'],
+              ['Sector Attribution','Based on sector set at publication time.'],
+            ].map(([h,p])=>(<div key={h}><div style={{fontSize:12,fontWeight:700,color:'var(--ink-soft)',marginBottom:3}}>{h}</div><div style={{fontSize:12,color:'var(--muted)',lineHeight:1.6}}>{p}</div></div>))}
           </div>
         </div>
 
         {/* ── Disclaimer ── */}
-        <div style={{background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:14,padding:"16px 20px",fontSize:12,color:"var(--muted)",lineHeight:1.7}}>
-          <strong style={{color:"var(--ink-soft)"}}>Regulatory Disclaimer:</strong> Investor Circle records publicly shared investment opinions and computes historical statistics using a transparent methodology. <strong>Investor Circle does not endorse or recommend any individual or investment.</strong> The individual shown is a self-directed investor and is <strong>not registered as a SEBI Investment Adviser or Research Analyst.</strong> Nothing on this page constitutes investment advice. Past performance is not indicative of future results.
+        <div style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:14,padding:'14px 18px',fontSize:12,color:'var(--muted)',lineHeight:1.7}}>
+          <strong style={{color:'var(--ink-soft)'}}>Regulatory Disclaimer:</strong> Investor Circle records publicly shared investment opinions and computes historical statistics using a transparent methodology. <strong>Investor Circle does not endorse or recommend any individual or investment.</strong> The individual shown is a self-directed investor and is <strong>not SEBI registered.</strong> Nothing here constitutes investment advice. Past performance does not indicate future results.
         </div>
-      </div>
+      </>
     );
   };
 
-  // ── Wrapper based on mode ─────────────────────────────────────────────────
-  if (mode === "standalone") {
-    return (
-      <div style={{minHeight:"100vh",background:"var(--bg)",paddingBottom:48}}>
-        <div style={{background:"var(--surface)",borderBottom:"1px solid var(--line)",padding:"11px 24px",display:"flex",alignItems:"center",gap:14,position:"sticky",top:0,zIndex:100}}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <div style={{width:30,height:30,borderRadius:8,background:"linear-gradient(135deg,#6d5df5,#cf52d8)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13,color:"#fff"}}>ic</div>
-            <div><div style={{fontWeight:800,fontSize:13,lineHeight:1.1}}>InvestorCircle</div><div style={{fontSize:10,color:"var(--muted)"}}>Transparency Platform</div></div>
+  // ── Shell wrappers ──────────────────────────────────────────────────────────
+  if(mode==='standalone') {
+    return(
+      <div style={{minHeight:'100vh',background:'var(--bg)',paddingBottom:48}}>
+        <div style={{background:'var(--surface)',borderBottom:'1px solid var(--line)',padding:'11px 24px',display:'flex',alignItems:'center',gap:14,position:'sticky',top:0,zIndex:100}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{width:30,height:30,borderRadius:8,background:'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:13,color:'#fff'}}>ic</div>
+            <div><div style={{fontWeight:800,fontSize:13,lineHeight:1.1}}>InvestorCircle</div><div style={{fontSize:10,color:'var(--muted)'}}>Transparency Platform</div></div>
           </div>
           <div style={{flex:1}}/>
           {viewerUser
-            ? <button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
-            : <a href={window.location.pathname} style={{fontSize:13,fontWeight:600,color:"var(--accent)",textDecoration:"none"}}>Sign in →</a>}
+            ?<button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
+            :<a href={window.location.pathname} style={{fontSize:13,fontWeight:600,color:'var(--accent)',textDecoration:'none'}}>Sign in →</a>}
         </div>
-        <div style={{maxWidth:1020,margin:"0 auto",padding:"24px 16px 0"}}>{renderContent()}</div>
+        <div style={{padding:'20px 20px 0'}}>{renderContent()}</div>
       </div>
     );
   }
 
-  return (<>
-    <div className="page-head"><div>
-      <div className="eyebrow">Track Record</div>
-      <div className="page-title">Public Investment Record</div>
-      <div className="page-sub">Your permanent, publicly-verifiable investment history</div>
-    </div></div>
+  // Embedded (Track Record nav)
+  return(<>
+    <div className="page-head">
+      <div><div className="eyebrow">Track Record</div><div className="page-title">Public Investment Record</div></div>
+      <div style={{display:'flex',gap:8}}>
+        {data&&<>
+          <button className="btn btn-soft btn-sm" onClick={copyLink}>{copied?<><Check size={14}/> Copied!</>:<><Copy size={14}/> Copy link</>}</button>
+          <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm"><ExternalLink size={14}/> Open public URL</a>
+        </>}
+      </div>
+    </div>
     {renderContent()}
   </>);
 }
