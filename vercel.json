@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "buildCommand": null,
+  "outputDirectory": null,
+  "installCommand": null,
+  "functions": {
+    "api/*.js": { "maxDuration": 15 }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "s-maxage=300, stale-while-revalidate=600" }
+      ]
+    }
+  ]
+}
