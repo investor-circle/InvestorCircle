@@ -1,0 +1,4 @@
+# Prevent npm 7+ from auto-installing optional peer dependencies.
+# Without this, npm installs 'pg' (peer dep of @neondatabase/serverless)
+# which causes Vite to try to bundle a Node.js-only package into the browser bundle.
+legacy-peer-deps=true
