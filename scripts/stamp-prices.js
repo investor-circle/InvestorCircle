@@ -161,6 +161,34 @@ async function main() {
   try { bhavMap = await downloadNseBhavcopy(TODAY_ISO); }
   catch (e) { console.warn(`[NSE Bhavcopy] Failed: ${e.message}. Using Yahoo for all symbols.`); }
 
+  // Task 0: stamp reco_price for recommendations published without a price
+  console.log('\n[Task 0] Stamping reco_price for new recommendations missing entry price…');
+  const { rows: unpriced } = await db.query(`
+    SELECT id, ticker, exchange, created_at::date AS reco_date
+    FROM ic_recommendations
+    WHERE reco_price IS NULL OR reco_price = 0
+  `);
+  console.log(`  Found ${unpriced.length} recommendations without entry price`);
+  let rpStamped = 0;
+  for (const rec of unpriced) {
+    try {
+      const isoDate = rec.reco_date.toISOString().slice(0, 10);
+      // Use bhavcopy for today's recs, Yahoo for historical
+      const dateBhav = (isoDate === TODAY_ISO) ? bhavMap : null;
+      const result = await resolvePrice(rec.ticker, rec.exchange || 'NSE', isoDate, dateBhav);
+      if (!result) { console.warn(`  No price found for ${rec.ticker} on ${isoDate}`); continue; }
+      await db.query(
+        `UPDATE ic_recommendations
+         SET reco_price = $1, price_source = $2, price_stamped_at = now(), updated_at = now()
+         WHERE id = $3`,
+        [result.price, result.source, rec.id]
+      );
+      rpStamped++;
+      console.log(`  Stamped ${rec.ticker}: ₹${result.price} (${result.source})`);
+    } catch (e) { console.warn(`  Failed ${rec.ticker}: ${e.message}`); }
+  }
+  console.log(`  Done: ${rpStamped} entry prices stamped`);
+
   // Task 1: current_price for active recommendations
   console.log('\n[Task 1] Updating current_price for active recommendations…');
   const { rows: active } = await db.query(`
@@ -228,9 +256,10 @@ async function main() {
 
   await db.end();
   console.log(`\n=== Batch complete ===`);
-  console.log(`  Active updated : ${stamped}`);
-  console.log(`  Expiry stamped : ${expStamped}`);
-  console.log(`  Exit backfilled: ${exitStamped}`);
+  console.log(`  Entry prices stamped : ${rpStamped}`);
+  console.log(`  Active updated       : ${stamped}`);
+  console.log(`  Expiry stamped       : ${expStamped}`);
+  console.log(`  Exit backfilled      : ${exitStamped}`);
 }
 
 main().catch(e => { console.error('Batch failed:', e); process.exit(1); });
