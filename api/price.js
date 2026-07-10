@@ -119,11 +119,17 @@ async function fetchFromTwelveData(symbol, exchange, date, apiKey) {
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  // CORS — allow calls from your GitHub Pages domain
+  // CORS — allow calls from any origin (GitHub Pages, local dev, etc.)
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'GET')    return res.status(405).json({ error: 'Method not allowed' });
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+  res.setHeader('Access-Control-Max-Age', '86400');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const { symbol, exchange = 'NSE', date } = req.query;
   if (!symbol) return res.status(400).json({ error: 'symbol is required' });
