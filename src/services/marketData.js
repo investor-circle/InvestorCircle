@@ -12,9 +12,7 @@
 // ── Config ────────────────────────────────────────────────────────────────────
 // Set VITE_PRICE_API_URL in your .env.local and in GitHub Actions secrets.
 // Default points to the Vercel project you'll deploy api/price.js to.
-const PROXY_BASE =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PRICE_API_URL) ||
-  'https://investor-circle.vercel.app';
+const PROXY_BASE = 'https://investor-circle.vercel.app';
 
 const TIMEOUT_MS = 8_000;
 
