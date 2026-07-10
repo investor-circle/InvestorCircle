@@ -1,0 +1,31 @@
+name: Fetch NSE Sector Data
+
+on:
+  workflow_dispatch:   # Run manually from the Actions tab — no schedule needed
+
+jobs:
+  fetch-sectors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests pandas
+
+      - name: Fetch NSE sector data
+        run: python scripts/fetch_nse_sectors.py
+
+      - name: Upload CSV as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nse-sector-data
+          path: |
+            nse_sectors.csv
+            instruments_with_sectors.csv
+          if-no-files-found: warn
+          retention-days: 7
