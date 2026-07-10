@@ -2030,7 +2030,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
     onCreate({ id:"m"+Date.now(), ...recoData, date:TODAY, recipients:targets, actedList:[], likes:[], dislikes:[], exit:false, exitDate:null });
   };
 
-  const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && (priceData?.price > 0);
+  const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && (priceData?.price > 0 || !!priceError);
 
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> New recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
@@ -2128,8 +2128,8 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
           )}
           {priceError && (
             <div style={{padding:"11px 13px",border:"1px solid var(--amber)",borderRadius:11,background:"var(--amber-soft)",fontSize:12,color:"var(--amber)"}}>
-              <AlertTriangle size={13}/> {priceError}
-              <div style={{marginTop:3,opacity:.8}}>Price will not be stamped. This recommendation will be flagged.</div>
+              <AlertTriangle size={13}/> Price will be auto-stamped tonight by the nightly batch using today's closing price.
+              <div style={{marginTop:3,opacity:.8}}>Entry price is stamped using closing price of recommendation date. Manual entry not allowed to ensure fairness.</div>
             </div>
           )}
         </div>
