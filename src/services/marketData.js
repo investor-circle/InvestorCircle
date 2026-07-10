@@ -14,7 +14,7 @@
 // Default points to the Vercel project you'll deploy api/price.js to.
 const PROXY_BASE =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PRICE_API_URL) ||
-  'https://investorcircle-api.vercel.app';
+  'https://investor-circle.vercel.app';
 
 const TIMEOUT_MS = 8_000;
 
