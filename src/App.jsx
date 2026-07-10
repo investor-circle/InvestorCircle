@@ -1995,12 +1995,17 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
   const CURRENCY_SYMBOL = { INR:"₹", USD:"$", GBP:"£", EUR:"€" };
 
   const onInstrSelect = (inst) => {
-    if (!inst) return;
+    if (!inst) {
+      setSelectedInstr(null);
+      setSector("");
+      return;
+    }
     setSelectedInstr(inst);
     setTicker(inst.symbol);
     setAssetName(inst.name);
     setCls(inst.assetClass || assetClasses[0]);
     setCurrency(inst.currency || "INR");
+    setSector(inst.sector || "");   // auto-fill if available in master
   };
 
   const toggle  = (id) => setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
@@ -2084,12 +2089,25 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
           ? <div style={{display:"flex",gap:8}}><input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="New category name" onKeyDown={e=>e.key==="Enter"&&addCat()}/><button className="btn btn-pri btn-sm" onClick={addCat}>Add</button></div>
           : <select value={cls} onChange={e=>setCls(e.target.value)}>{assetClasses.map(c=><option key={c}>{c}</option>)}</select>}</div>
 
+      {/* Sector — locked from master, editable only when manual */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14}}>
-        <div className="field"><label>Sector <span className="muted small">(optional)</span></label>
-          <select value={sector} onChange={e=>setSector(e.target.value)}>
-            <option value="">— Select sector —</option>
-            {["Banking & Finance","Technology","Pharmaceuticals","Energy","FMCG","Automobiles","Defence","Capital Goods","Real Estate","Chemicals","Telecom","Metals & Mining","PSU","Healthcare","Infrastructure","Media","Retail","Others"].map(s=><option key={s}>{s}</option>)}
-          </select></div>
+        <div className="field">
+          <label style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>Sector</span>
+            {selectedInstr?.sector
+              ? <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"var(--gain-soft)",color:"var(--gain)"}}>From security master</span>
+              : <span className="muted small">{selectedInstr ? "Not in master — select below" : "Optional"}</span>}
+          </label>
+          {selectedInstr?.sector
+            ? <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,background:"var(--surface-2)",fontSize:14,color:"var(--ink-soft)",display:"flex",alignItems:"center",gap:8}}>
+                <Lock size={13} color="var(--muted)"/>
+                {selectedInstr.sector}
+              </div>
+            : <select value={sector} onChange={e=>setSector(e.target.value)}>
+                <option value="">— Select sector —</option>
+                {["Banking & Finance","Technology","Pharmaceuticals","Energy","FMCG","Automobiles","Defence","Capital Goods","Real Estate","Chemicals","Telecom","Metals & Mining","PSU","Healthcare","Infrastructure","Media","Retail","Others"].map(s=><option key={s}>{s}</option>)}
+              </select>}
+        </div>
         <div className="field"><label>Conviction <span className="muted small">(optional)</span></label>
           <select value={conviction} onChange={e=>setConviction(e.target.value)}>
             <option value="">— Not specified —</option>
@@ -2098,10 +2116,21 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",columnGap:14}}>
-        <div className="field"><label>Currency</label>
-          <select value={currency} onChange={e=>setCurrency(e.target.value)}>
-            {["INR","USD","GBP","EUR"].map(c=><option key={c}>{c}</option>)}
-          </select></div>
+        {/* Currency — locked from master, editable only when manual */}
+        <div className="field">
+          <label style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>Currency</span>
+            {selectedInstr && <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"var(--gain-soft)",color:"var(--gain)"}}>Master</span>}
+          </label>
+          {selectedInstr
+            ? <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,background:"var(--surface-2)",fontSize:14,color:"var(--ink-soft)",display:"flex",alignItems:"center",gap:8}}>
+                <Lock size={13} color="var(--muted)"/>
+                {CURRENCY_SYMBOL[currency]||currency} {currency}
+              </div>
+            : <select value={currency} onChange={e=>setCurrency(e.target.value)}>
+                {["INR","USD","GBP","EUR"].map(c=><option key={c}>{c}</option>)}
+              </select>}
+        </div>
         {/* Auto-stamped entry price — non-editable for platform integrity */}
         <div className="field" style={{gridColumn:"span 2"}}>
           <label style={{display:"flex",justifyContent:"space-between"}}>
@@ -2128,8 +2157,8 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
           )}
           {priceError && (
             <div style={{padding:"11px 13px",border:"1px solid var(--amber)",borderRadius:11,background:"var(--amber-soft)",fontSize:12,color:"var(--amber)"}}>
-              <AlertTriangle size={13}/> Price will be auto-stamped tonight by the nightly batch using today's closing price.
-              <div style={{marginTop:3,opacity:.8}}>Entry price is stamped using closing price of recommendation date. Manual entry not allowed to ensure fairness.</div>
+              <AlertTriangle size={13}/> Price will be auto-stamped tonight by the nightly batch using closing price.
+              <div style={{marginTop:3,opacity:.8}}>Entry price is stamped using closing price of recommendation date — not manual entry.</div>
             </div>
           )}
         </div>
@@ -3046,7 +3075,7 @@ async function loadInstruments() {
   if (_instrCache) return _instrCache;
   if (_instrLoadPromise) return _instrLoadPromise;
   if (!sql) return [];
-  _instrLoadPromise = sql`SELECT symbol, name, exchange, type, asset_class, currency FROM instruments WHERE is_active = true ORDER BY symbol`
+  _instrLoadPromise = sql`SELECT symbol, name, exchange, type, asset_class, currency, sector FROM instruments WHERE is_active = true ORDER BY symbol`
     .then(rows => { _instrCache = rows; return rows; })
     .catch(() => { _instrCache = []; return []; });
   return _instrLoadPromise;
@@ -3093,6 +3122,7 @@ function InstrumentSearch({ onSelect, placeholder, initialValue }) {
       exchange:   inst.exchange,
       assetClass: inst.asset_class,
       currency:   inst.currency,
+      sector:     inst.sector || null,   // ← pass sector from master
     });
   };
 
@@ -3261,9 +3291,9 @@ function InstrumentUploader() {
     const mapped = data.map(r=>{
       if (hasZerodha) {
         const type = (r['instrument_type']||r['Instrument_type']||'EQ').toString().toUpperCase();
-        return { symbol:(r['tradingsymbol']||'').toString().trim(), name:(r['name']||'').toString().trim(), exchange:(r['exchange']||'NSE').toString().trim(), type, assetClass:TYPE_TO_CLASS[type]||'Others', currency:(r['Currency']||r['currency']||'INR').toString().trim() };
+        return { symbol:(r['tradingsymbol']||'').toString().trim(), name:(r['name']||'').toString().trim(), exchange:(r['exchange']||'NSE').toString().trim(), type, assetClass:TYPE_TO_CLASS[type]||'Others', currency:(r['Currency']||r['currency']||'INR').toString().trim(), sector:(r['sector']||r['Sector']||'').toString().trim()||null };
       } else {
-        return { symbol:(r['symbol']||'').toString().trim(), name:(r['name']||'').toString().trim(), exchange:(r['exchange']||'NSE').toString().trim(), type:(r['type']||'EQ').toString().trim(), assetClass:(r['asset_class']||'Equity').toString().trim(), currency:(r['currency']||'INR').toString().trim() };
+        return { symbol:(r['symbol']||'').toString().trim(), name:(r['name']||'').toString().trim(), exchange:(r['exchange']||'NSE').toString().trim(), type:(r['type']||'EQ').toString().trim(), assetClass:(r['asset_class']||'Equity').toString().trim(), currency:(r['currency']||'INR').toString().trim(), sector:(r['sector']||r['Sector']||'').toString().trim()||null };
       }
     }).filter(r=>r.symbol && r.name);
     setPreview(mapped); setDone(false); setProgress(0);
@@ -3276,7 +3306,7 @@ function InstrumentUploader() {
     for (let i=0; i<preview.length; i++) {
       const r = preview[i];
       try {
-        await sql`INSERT INTO instruments (symbol,name,exchange,type,asset_class,currency) VALUES (${r.symbol},${r.name},${r.exchange},${r.type},${r.assetClass},${r.currency}) ON CONFLICT (symbol,exchange) DO UPDATE SET name=EXCLUDED.name, asset_class=EXCLUDED.asset_class`;
+        await sql`INSERT INTO instruments (symbol,name,exchange,type,asset_class,currency,sector) VALUES (${r.symbol},${r.name},${r.exchange},${r.type},${r.assetClass},${r.currency},${r.sector||null}) ON CONFLICT (symbol,exchange) DO UPDATE SET name=EXCLUDED.name, asset_class=EXCLUDED.asset_class, sector=COALESCE(EXCLUDED.sector, instruments.sector)`;
         inserted++;
       } catch(_) {}
       if (i%50===0) setProgress(Math.round((i/preview.length)*100));
@@ -3288,7 +3318,8 @@ function InstrumentUploader() {
 
   return (<div style={{maxWidth:680}}>
     <div className="note info" style={{marginBottom:16}}><Database size={16}/><div>
-      Accepts <b>Zerodha instruments CSV</b> (tradingsymbol, name, exchange, instrument_type, Currency) or a <b>custom Excel/CSV</b> (symbol, name, exchange, asset_class, currency).
+      Accepts <b>Zerodha instruments CSV</b> (tradingsymbol, name, exchange, instrument_type, Currency) or a <b>custom Excel/CSV</b> (symbol, name, exchange, asset_class, currency, sector).
+      A <b>sector</b> column is optional but recommended — enables auto-fill in the recommendation modal.
       Duplicate (symbol + exchange) pairs are updated in place.
     </div></div>
     <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{display:"none"}} onChange={onFile}/>
@@ -3296,8 +3327,8 @@ function InstrumentUploader() {
     {preview && !done && (<>
       <div className="muted small" style={{margin:"14px 0 10px"}}><b>{preview.length}</b> instruments ready to import. First 5 rows:</div>
       <div className="card" style={{marginBottom:14}}><div className="card-body" style={{padding:"8px 0"}}><table className="grid">
-        <thead><tr><th>Symbol</th><th>Name</th><th>Exchange</th><th>Asset Class</th><th>Currency</th></tr></thead>
-        <tbody>{preview.slice(0,5).map((r,i)=><tr key={i}><td className="sym">{r.symbol}</td><td>{r.name}</td><td>{r.exchange}</td><td>{r.assetClass}</td><td>{r.currency}</td></tr>)}</tbody>
+        <thead><tr><th>Symbol</th><th>Name</th><th>Exchange</th><th>Asset Class</th><th>Currency</th><th>Sector</th></tr></thead>
+        <tbody>{preview.slice(0,5).map((r,i)=><tr key={i}><td className="sym">{r.symbol}</td><td>{r.name}</td><td>{r.exchange}</td><td>{r.assetClass}</td><td>{r.currency}</td><td>{r.sector||<span className="muted">—</span>}</td></tr>)}</tbody>
       </table></div></div>
       {uploading ? (<>
         <div style={{background:"var(--surface-2)",borderRadius:999,height:8,overflow:"hidden",marginBottom:8}}>
@@ -3313,7 +3344,7 @@ function InstrumentUploader() {
 }
 
 function InstrumentAddForm({ onAdded }) {
-  const [f, setF] = useState({ symbol:"", name:"", exchange:"NSE", type:"EQ", assetClass:"Equity", currency:"INR" });
+  const [f, setF] = useState({ symbol:"", name:"", exchange:"NSE", type:"EQ", assetClass:"Equity", currency:"INR", sector:"" });
   const up = (k,v) => setF(s=>({...s,[k]:v}));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -3321,7 +3352,7 @@ function InstrumentAddForm({ onAdded }) {
   const save = async () => {
     setSaving(true); setErr("");
     try {
-      await sql`INSERT INTO instruments (symbol,name,exchange,type,asset_class,currency) VALUES (${f.symbol.trim().toUpperCase()},${f.name.trim()},${f.exchange},${f.type},${f.assetClass},${f.currency}) ON CONFLICT (symbol,exchange) DO UPDATE SET name=EXCLUDED.name, asset_class=EXCLUDED.asset_class`;
+      await sql`INSERT INTO instruments (symbol,name,exchange,type,asset_class,currency,sector) VALUES (${f.symbol.trim().toUpperCase()},${f.name.trim()},${f.exchange},${f.type},${f.assetClass},${f.currency},${f.sector||null}) ON CONFLICT (symbol,exchange) DO UPDATE SET name=EXCLUDED.name, asset_class=EXCLUDED.asset_class, sector=COALESCE(EXCLUDED.sector,instruments.sector)`;
       clearInstrCache();
       setSaving(false);
       onAdded();
@@ -3335,6 +3366,12 @@ function InstrumentAddForm({ onAdded }) {
       <div className="field"><label>Type</label><select value={f.type} onChange={e=>up("type",e.target.value)}><option>EQ</option><option>ETF</option><option>MF</option><option>Others</option></select></div>
       <div className="field"><label>Asset Class</label><select value={f.assetClass} onChange={e=>up("assetClass",e.target.value)}><option>Equity</option><option>ETF</option><option>Mutual Funds</option><option>Crypto</option><option>Bonds</option><option>Metals</option><option>Others</option></select></div>
       <div className="field"><label>Currency</label><select value={f.currency} onChange={e=>up("currency",e.target.value)}><option>INR</option><option>USD</option><option>GBP</option><option>EUR</option></select></div>
+      <div className="field" style={{gridColumn:"1 / span 2"}}><label>Sector <span className="muted small">(optional — enables auto-fill in recommendation modal)</span></label>
+        <select value={f.sector} onChange={e=>up("sector",e.target.value)}>
+          <option value="">— Not specified —</option>
+          {["Banking & Finance","Technology","Pharmaceuticals","Energy","FMCG","Automobiles","Defence","Capital Goods","Real Estate","Chemicals","Telecom","Metals & Mining","PSU","Healthcare","Infrastructure","Media","Retail","Others"].map(s=><option key={s}>{s}</option>)}
+        </select>
+      </div>
     </div>
     {err && <div className="note warn" style={{marginBottom:14}}><AlertTriangle size={15}/><div>{err}</div></div>}
     <button className="btn btn-pri" disabled={!valid||saving} onClick={save}>{saving?<><Loader size={14} className="spin"/> Saving…</>:<><Plus size={14}/> Add instrument</>}</button>
