@@ -686,8 +686,18 @@ export default function App() {
                     </div>
                   </div>
                 </button>
+
+                {/* Invisible backdrop — click outside to close */}
+                {profileOpen && createPortal(
+                  <div style={{position:"fixed",inset:0,zIndex:498}} onClick={()=>setProfileOpen(false)}/>,
+                  document.body
+                )}
+
+                {/* Profile dropdown — stopPropagation so clicks don't reach backdrop or avatar toggle */}
                 {profileOpen && (
-                  <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,width:260,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:16,boxShadow:"0 12px 40px rgba(0,0,0,.18)",zIndex:500,overflow:"hidden"}}>
+                  <div
+                    onClick={e=>e.stopPropagation()}
+                    style={{position:"absolute",top:"calc(100% + 8px)",right:0,width:260,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:16,boxShadow:"0 12px 40px rgba(0,0,0,.18)",zIndex:499,overflow:"hidden"}}>
                     {/* Profile header */}
                     <div style={{padding:"16px 16px 12px",borderBottom:"1px solid var(--line)"}}>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -733,12 +743,7 @@ export default function App() {
                     </div>
                   </div>
                 )}
-                {profileOpen && isInv && page!=="profile" && false && (
-                  <ProfileModal
-                    me={ME} profile={profile} updateProfile={updateProfile} patchProfile={patchProfile}
-                    onClose={()=>setProfileOpen(false)}
-                  />
-                )}
+              </div>
               </div>
             </div>
           </div>
