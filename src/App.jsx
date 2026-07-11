@@ -612,7 +612,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed setPage={setPage} recsReceived={recsReceived} configs={configs} holdings={holdings} contacts={contacts}/>}
+            {isInv && page==="home"      && <HomeFeed setPage={setPage} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME}/>}
             {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
             {isInv && page==="network"   && <Network
                 connections={connections} setConnections={setConnections}
@@ -1738,6 +1738,10 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                         {r.thesis || <span className="muted">No thesis shared.</span>}
                       </div>
                       <button className="btn btn-soft btn-sm" onClick={()=>setFwd(r)}><Forward size={13}/> Forward this idea</button>
+                      <div style={{marginTop:18,borderTop:'1px solid var(--line)',paddingTop:14}}>
+                        <div className="cap" style={{marginBottom:10}}>Comments</div>
+                        <RecoComments recoId={r.id} me={me}/>
+                      </div>
                     </div></td></tr>
                   )}
                 </React.Fragment>);
@@ -3324,101 +3328,364 @@ function ProfileModal({ me, profile, updateProfile, patchProfile, onClose }) {
 
 
 /* =================================================================== HOME */
-function HomeFeed({ setPage, recsReceived, configs, holdings, contacts }) {
-  const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
-  // Build feed from real received recommendations (most recent 5, not hidden)
-  const feedRecs = recsReceived.filter(r=>!r.hidden).slice(0,5);
+/* ─── Shared comments component ─────────────────────────────────────────────────── */
+function RecoComments({ recoId, me }) {
+  const [comments,  setComments]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [text,      setText]      = useState('');
+  const [submitting,setSubmitting]= useState(false);
 
-  const contactFor = (r) => {
-    const found = contacts.find(x=>x.id===r.from);
-    if (found) return found;
-    const name = r.byName || "Someone";
-    return { name, initials: initialsOf(name), color:"#8d90ad" };
+  useEffect(()=>{
+    if(!recoId||!sql){ setLoading(false); return; }
+    setLoading(true);
+    sql`SELECT id, user_id, user_name, comment, created_at FROM recommendation_comments WHERE reco_id=${recoId} ORDER BY created_at ASC`
+      .then(rows=>{ setComments(rows); setLoading(false); })
+      .catch(()=>setLoading(false));
+  },[recoId]);
+
+  const submit=async()=>{
+    if(!text.trim()||!me?.id||!sql) return;
+    setSubmitting(true);
+    const name=[me.firstName,me.lastName].filter(Boolean).join(' ')||me.name||'User';
+    try{
+      await sql`INSERT INTO recommendation_comments (reco_id,user_id,user_name,comment) VALUES (${recoId},${me.id},${name},${text.trim()})`;
+      setComments(prev=>[...prev,{id:Date.now(),user_id:me.id,user_name:name,comment:text.trim(),created_at:new Date().toISOString()}]);
+      setText('');
+    }catch(e){ console.warn('Comment failed:',e); }
+    setSubmitting(false);
   };
 
-  return (<div style={{ display:"grid", gridTemplateColumns:"1fr 300px", gap:22 }}>
+  return (
     <div>
-      <div className="page-head">
-        <div><div className="eyebrow">Welcome back</div><div className="page-title">Recent activity</div>
-          <div className="page-sub">{recsReceived.length} recommendations received · {contacts.length} connections</div></div>
-        <button className="btn btn-pri btn-sm" onClick={()=>setPage("recs")}><Lightbulb size={15}/> Recommend an idea</button>
-      </div>
-
-      {feedRecs.length===0
-        ? <div className="card"><div className="card-body" style={{padding:"48px 32px",textAlign:"center"}}>
-            <div style={{fontSize:36,marginBottom:12}}>👋</div>
-            <div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Your feed is empty</div>
-            <div className="muted small" style={{marginBottom:20,maxWidth:340,margin:"0 auto 20px"}}>
-              Add people to your network and start receiving investment recommendations — they'll show up here.
-            </div>
-            <div style={{display:"flex",gap:10,justifyContent:"center"}}>
-              <button className="btn btn-pri btn-sm" onClick={()=>setPage("network")}><Users size={15}/> Add connections</button>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setPage("recs")}><Plus size={15}/> Add a recommendation</button>
-            </div>
-          </div></div>
-        : feedRecs.map(r=>{
-            const cf = contactFor(r);
-            const itm = r.price > r.priceAt;
-            return (<div key={r.id} className="feed-card">
-              <div className="feed-head">
-                <Avatar f={cf} size={42}/>
+      {/* Input */}
+      {me?.id && (
+        <div style={{display:'flex',gap:9,marginBottom:14,alignItems:'flex-start'}}>
+          <div className="av" style={{width:30,height:30,background:'var(--grad)',fontSize:11,flexShrink:0}}>{initialsOf(me.name||'?')}</div>
+          <div style={{flex:1,display:'flex',gap:8}}>
+            <input value={text} onChange={e=>setText(e.target.value)} placeholder="Add a comment…"
+              onKeyDown={e=>e.key==='Enter'&&!submitting&&text.trim()&&submit()}
+              style={{flex:1,border:'1px solid var(--line-2)',borderRadius:10,padding:'8px 12px',fontSize:13,outline:'none',background:'var(--surface)',fontFamily:'var(--font)'}}/>
+            <button className="btn btn-pri btn-sm" disabled={!text.trim()||submitting} onClick={submit} style={{flexShrink:0}}>
+              {submitting?<Loader size={13} className="spin"/>:<Send size={13}/>}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* List */}
+      {loading
+        ? <div className="muted small" style={{paddingBottom:8}}><Loader size={13} className="spin" style={{marginRight:6}}/>Loading comments…</div>
+        : comments.length===0
+          ? <div className="muted small" style={{fontStyle:'italic'}}>No comments yet — be the first!</div>
+          : comments.map(c=>(
+              <div key={c.id} style={{display:'flex',gap:9,marginBottom:12}}>
+                <div className="av" style={{width:28,height:28,background:'var(--accent)',fontSize:10,flexShrink:0}}>{initialsOf(c.user_name||'?')}</div>
                 <div style={{flex:1}}>
-                  <div><b>{cf.name}</b> <span className="muted">recommended {r.ticker} — {r.assetName}</span></div>
-                  <div className="muted small">{fmtDate(r.date)}</div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:7,marginBottom:2}}>
+                    <span style={{fontSize:12,fontWeight:700}}>{c.user_name||'User'}</span>
+                    <span className="muted small" style={{fontSize:11}}>{new Date(c.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+                  </div>
+                  <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.6,background:'var(--surface-2)',borderRadius:10,padding:'7px 11px'}}>{c.comment}</div>
                 </div>
-                <span className={"pill "+(itm?"gain":"loss")}>{r.ticker} {fmtPct((r.price-r.priceAt)/r.priceAt)}</span>
               </div>
-              {r.thesis && <div style={{fontSize:14,color:"var(--ink-soft)",lineHeight:1.6,marginBottom:10}}>{r.thesis}</div>}
-              {r.horizon && <div style={{display:"flex",gap:8,marginBottom:10}}>
-                <span className="pill accent" style={{fontSize:11}}>Horizon: {r.horizon}</span>
-                {r.targetPrice && <span className="pill" style={{fontSize:11}}>Target: {fmt(r.targetPrice)}</span>}
-              </div>}
-              <div style={{display:"flex",gap:20,marginTop:4}}>
-                <span className="feed-act"><MessageSquare size={15}/> Comment</span>
-                <span className="feed-act"><Bookmark size={15}/> Save</span>
-                <span className="feed-act" style={{color:"var(--accent-ink)"}} onClick={()=>setPage("recs")}>Track this <ChevronRight size={14}/></span>
-              </div>
-            </div>);
-          })
+            ))
       }
     </div>
-
-    <div>
-      <div className="card" style={{marginBottom:16}}><div className="card-head">Your portfolio</div><div className="card-body">
-        {holdings.length===0
-          ? <div style={{textAlign:"center",padding:"20px 0"}}>
-              <div className="muted small" style={{marginBottom:12}}>No holdings yet</div>
-              <button className="btn btn-soft btn-sm" onClick={()=>setPage("portfolio")}><Plus size={14}/> Add holdings</button>
-            </div>
-          : <>
-              <div className="balance tnum" style={{fontSize:30}}>{fmt(total)}</div>
-              <div className={"delta "+(pnl>=0?"pos":"neg")} style={{marginTop:8,marginBottom:14}}>
-                {pnl>=0?<ArrowUpRight size={16}/>:<ArrowDownRight size={16}/>} {fmtSigned(pnl)} ({fmtPct(pnlPct)})</div>
-              <Sparkline data={SPARK} w={252} h={48}/>
-            </>}
-        <button className="btn btn-ghost btn-sm" style={{width:"100%",justifyContent:"center",marginTop:14}} onClick={()=>setPage("portfolio")}>Open portfolio</button>
-      </div></div>
-
-      <div className="card"><div className="card-head">New for you</div><div className="card-body" style={{fontSize:13.5}}>
-        {recsReceived.filter(r=>!r.invested&&!r.hidden).length===0
-          ? <div className="muted small" style={{padding:"8px 0"}}>No pending recommendations.</div>
-          : recsReceived.filter(r=>!r.invested&&!r.hidden).slice(0,3).map(r=>{
-              const cf = contactFor(r);
-              const perf = r.priceAt ? (r.price-r.priceAt)/r.priceAt : 0;
-              return <div key={r.id} style={{display:"flex",justifyContent:"space-between",padding:"9px 0",borderBottom:"1px solid var(--line)"}}>
-                <span><b>{r.ticker}</b> <span className="muted">from {cf.name.split(" ")[0]}</span></span>
-                <span className={"tnum "+(perf>=0?"pos":"neg")}>{fmtPct(perf)}</span>
-              </div>;
-            })
-        }
-        <button className="btn btn-soft btn-sm" style={{width:"100%",justifyContent:"center",marginTop:12}} onClick={()=>setPage("recs")}>
-          See all recommendations
-        </button>
-      </div></div>
-    </div>
-  </div>);
+  );
 }
 
+/* ─── FeedCard — single recommendation card for the homepage ────────────────────── */
+function FeedCard({ r, me, contacts, setRecsReceived, onReload }) {
+  const [expanded,  setExpanded]  = useState(false);
+  const [shareAnchor, setShareAnchor] = useState(null);
+  const [shareUsername, setShareUsername] = useState(null);
+  const [showShare, setShowShare] = useState(false);
+
+  const cf = useMemo(()=>{
+    const found = contacts.find(x=>x.id===r.from);
+    if(found) return found;
+    const name=r.byName||'Someone';
+    return { name, initials:initialsOf(name), color:'#8d90ad' };
+  },[r.from, contacts]);
+
+  const retPct = (r.priceAt&&r.priceAt!==0) ? (r.price-r.priceAt)/r.priceAt : 0;
+  const itm = retPct >= 0;
+  const interactionCount = (r.likes||0)+(r.dislikes||0)+(r.invested?1:0);
+
+  // Patch a received reco optimistically
+  const patch=(updates)=>{
+    setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,...updates}:x));
+    if(sql&&r.deliveryId) {
+      try{ updateDelivery(r.deliveryId,updates,me?.id); }catch(_){}
+    }
+  };
+
+  const react=(val)=>{
+    if(!me?.id) return;
+    const next=r.reaction===val?'none':val;
+    patch({reaction:next});
+  };
+
+  const handleShareClick=async(e)=>{
+    if(showShare){ setShowShare(false); setShareAnchor(null); return; }
+    setShareAnchor(e.currentTarget);
+    setShowShare(true);
+    if(r.from&&sql&&!shareUsername){
+      try{
+        const rows=await sql`SELECT username FROM user_profiles WHERE id=${r.from} AND username IS NOT NULL LIMIT 1`;
+        if(rows[0]?.username) setShareUsername(rows[0].username);
+      }catch(_){}
+    }
+  };
+
+  const isBuy = (r.recommendation_type||r.recType||'Buy')==='Buy';
+
+  return (
+    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,boxShadow:'var(--shadow)',marginBottom:12,overflow:'visible',transition:'box-shadow .15s'}}>
+      <div style={{padding:'16px 18px'}}>
+        {/* ── Header row ── */}
+        <div style={{display:'flex',alignItems:'flex-start',gap:12,marginBottom:11}}>
+          {/* Avatar */}
+          <div className="av" style={{width:42,height:42,background:cf.color||'var(--grad)',fontSize:15,flexShrink:0}}>
+            {cf.initials||initialsOf(cf.name)}
+          </div>
+          {/* Name + meta */}
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:14,lineHeight:1.35,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+              <b style={{color:'var(--ink)'}}>{cf.name}</b>
+              <span style={{color:'var(--muted)',fontWeight:400}}>recommended</span>
+              <b style={{color:'var(--ink)'}}>{r.assetName}</b>
+              <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:5,
+                background:isBuy?'var(--gain-soft)':'var(--loss-soft)',
+                color:isBuy?'var(--gain)':'var(--loss)'}}>
+                {isBuy?'Buy':'Sell'}
+              </span>
+            </div>
+            <div style={{fontSize:12,color:'var(--muted)',marginTop:3,display:'flex',alignItems:'center',gap:8}}>
+              <span>{fmtDate(r.date)}</span>
+              {r.assetClass&&<span style={{display:'flex',alignItems:'center',gap:4}}><span className="dot" style={{background:classColor(r.assetClass),width:7,height:7}}/>{r.assetClass}</span>}
+              {r.priceAt>0&&<span>Entry ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
+            </div>
+          </div>
+          {/* Return badge */}
+          <div style={{textAlign:'right',flexShrink:0}}>
+            <div style={{fontSize:16,fontWeight:800,letterSpacing:'-.3px',color:itm?'var(--gain)':'var(--loss)'}}>
+              {itm?'+':''}{(retPct*100).toFixed(1)}%
+            </div>
+            <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>
+              ₹{Number(r.price).toLocaleString('en-IN')} now
+            </div>
+          </div>
+        </div>
+
+        {/* ── Thesis ── */}
+        {r.thesis&&r.thesis!=='—'&&(
+          <div style={{fontSize:13.5,color:'var(--ink-soft)',lineHeight:1.65,marginBottom:10,
+            display:expanded?'block':'-webkit-box',
+            WebkitLineClamp:2,WebkitBoxOrient:'vertical',
+            overflow:expanded?'visible':'hidden',
+          }}>
+            {r.thesis}
+          </div>
+        )}
+
+        {/* ── Pills ── */}
+        {(r.horizon||r.targetPrice||r.sector||r.conviction||r.stopLoss)&&(
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:11}}>
+            {r.horizon&&<span className="pill accent" style={{fontSize:11}}>Horizon: {r.horizon}</span>}
+            {r.targetPrice&&<span className="pill" style={{fontSize:11}}>Target ₹{Number(r.targetPrice).toLocaleString('en-IN')}</span>}
+            {r.sector&&<span className="pill" style={{fontSize:11}}>{r.sector}</span>}
+            {r.conviction&&<ConvBadge level={r.conviction}/>}
+          </div>
+        )}
+
+        {/* ── Interaction bar ── */}
+        <div style={{display:'flex',alignItems:'center',gap:5,paddingTop:10,borderTop:'1px solid var(--line)'}}>
+          {/* Like */}
+          <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={()=>react('like')} style={{width:32,height:32}}>
+            <ThumbsUp size={14}/>
+          </button>
+          <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.likes||0}</span>
+
+          {/* Dislike */}
+          <button className={"iconbtn"+(r.reaction==='dislike'?' on-dislike':'')} title="Dislike" onClick={()=>react('dislike')} style={{width:32,height:32}}>
+            <ThumbsDown size={14}/>
+          </button>
+          <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.dislikes||0}</span>
+
+          {/* Comment */}
+          <button className="iconbtn" title="Comment" onClick={()=>setExpanded(v=>!v)} style={{width:32,height:32}}>
+            <MessageSquare size={14}/>
+          </button>
+
+          {/* Share */}
+          <div style={{position:'relative'}}>
+            <button className="iconbtn" title="Share" onClick={handleShareClick} style={{width:32,height:32}}>
+              <Share2 size={14}/>
+            </button>
+            {showShare&&<ReceivedSharePopover reco={r} fromUsername={shareUsername} anchorEl={shareAnchor}
+              onForward={()=>setShowShare(false)}
+              onClose={()=>{ setShowShare(false); setShareAnchor(null); }}/>}
+          </div>
+
+          {/* Interaction count badge */}
+          {interactionCount>0&&(
+            <span style={{fontSize:11,color:'var(--muted)',marginLeft:2}}>
+              ✦ {interactionCount} interaction{interactionCount!==1?'s':''}
+            </span>
+          )}
+
+          {/* Right: invested + expand */}
+          <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+            {r.invested
+              ? <span style={{fontSize:12,fontWeight:700,color:'var(--gain)',display:'flex',alignItems:'center',gap:4}}><Check size={13}/> Invested</span>
+              : <button className="btn btn-ghost btn-sm" style={{fontSize:12,padding:'5px 11px'}} onClick={()=>setExpanded(v=>!v)}>Track this</button>}
+            <button onClick={()=>setExpanded(v=>!v)}
+              style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:12,color:'var(--accent-ink)',fontWeight:700,fontFamily:'var(--font)',padding:'4px 8px',borderRadius:8,transition:'.12s'}}>
+              {expanded?'Less':'More'}<ChevronDown size={14} style={{transform:expanded?'rotate(180deg)':'none',transition:'.15s'}}/>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Expanded detail + comments ── */}
+      {expanded&&(
+        <div style={{borderTop:'1px solid var(--line)',padding:'16px 18px',background:'var(--surface-2)',borderRadius:'0 0 18px 18px'}}>
+          {/* Meta grid */}
+          <div style={{display:'flex',gap:22,flexWrap:'wrap',marginBottom:14}}>
+            <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
+            {r.assetClass&&<div><div className="cap">Class</div><ClassTag c={r.assetClass}/></div>}
+            {r.priceAt>0&&<div><div className="cap">Entry price</div><b className="tnum">₹{Number(r.priceAt).toLocaleString('en-IN')}</b></div>}
+            {r.targetPrice&&<div><div className="cap">Target</div><b className="tnum pos">₹{Number(r.targetPrice).toLocaleString('en-IN')}</b></div>}
+            {r.stopLoss&&<div><div className="cap">Stop loss</div><b className="tnum neg">₹{Number(r.stopLoss).toLocaleString('en-IN')}</b></div>}
+            <div><div className="cap">Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(retPct*100).toFixed(1)}%</b></div>
+            {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
+            {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
+          </div>
+          {/* Full thesis */}
+          {r.thesis&&r.thesis!=='—'&&(
+            <div style={{marginBottom:16}}>
+              <div className="cap" style={{marginBottom:5}}>Thesis</div>
+              <div style={{fontSize:13,lineHeight:1.7,color:'var(--ink-soft)'}}>{r.thesis}</div>
+            </div>
+          )}
+          {/* Comments */}
+          <div style={{borderTop:'1px solid var(--line)',paddingTop:14}}>
+            <div className="cap" style={{marginBottom:10}}>Comments</div>
+            <RecoComments recoId={r.id} me={me}/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
+function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, contacts, me }) {
+  const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
+  const feedRecs = recsReceived.filter(r=>!r.hidden).slice(0, 15);
+  const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
+
+  return (
+    <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
+
+      {/* ── Feed column ── */}
+      <div style={{flex:1,minWidth:0}}>
+
+        {/* Compact single-line header */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
+          <div>
+            <span style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>
+              Welcome back, {firstName}! 👋
+            </span>
+            <span className="muted small" style={{marginLeft:12,fontSize:13}}>
+              {recsReceived.filter(r=>!r.hidden).length} ideas in your feed · {contacts.length} connections
+            </span>
+          </div>
+          <button className="btn btn-pri btn-sm" onClick={()=>setPage('recs')}><Lightbulb size={14}/> Recommend an idea</button>
+        </div>
+
+        {feedRecs.length===0
+          ? <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,padding:'48px 32px',textAlign:'center',boxShadow:'var(--shadow)'}}>
+              <div style={{fontSize:40,marginBottom:14}}>🌱</div>
+              <div style={{fontWeight:700,fontSize:17,marginBottom:8}}>Your feed is empty</div>
+              <div className="muted small" style={{marginBottom:22,maxWidth:340,margin:'0 auto 22px',lineHeight:1.6}}>
+                Add people to your network — their investment recommendations will appear here.
+              </div>
+              <div style={{display:'flex',gap:10,justifyContent:'center'}}>
+                <button className="btn btn-pri btn-sm" onClick={()=>setPage('network')}><Users size={14}/> Add connections</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setPage('recs')}><Lightbulb size={14}/> Recommend an idea</button>
+              </div>
+            </div>
+          : (<>
+              {feedRecs.map(r=>(
+                <FeedCard key={r.id} r={r} me={me} contacts={contacts} setRecsReceived={setRecsReceived}/>
+              ))}
+              {recsReceived.filter(r=>!r.hidden).length>15&&(
+                <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center'}} onClick={()=>setPage('recs')}>
+                  See all {recsReceived.filter(r=>!r.hidden).length} recommendations →
+                </button>
+              )}
+            </>)}
+      </div>
+
+      {/* ── Right sidebar ── */}
+      <div style={{width:252,flexShrink:0}}>
+
+        {/* Portfolio widget */}
+        <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',marginBottom:14,overflow:'hidden'}}>
+          <div style={{background:'var(--grad)',padding:'14px 16px'}}>
+            <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.75)',textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>Your portfolio</div>
+            {holdings.length===0
+              ? <div style={{fontSize:14,color:'rgba(255,255,255,.7)',fontStyle:'italic'}}>No holdings yet</div>
+              : <>
+                  <div style={{fontSize:26,fontWeight:800,color:'#fff',letterSpacing:'-1px',fontFamily:"var(--serif)"}}>{fmt(total)}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:pnl>=0?'#a7f3d0':'#fca5a5',marginTop:4,display:'flex',alignItems:'center',gap:4}}>
+                    {pnl>=0?<ArrowUpRight size={14}/>:<ArrowDownRight size={14}/>}
+                    {fmtSigned(pnl)} ({fmtPct(pnlPct)})
+                  </div>
+                </>}
+          </div>
+          <div style={{padding:'10px 14px'}}>
+            <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center',fontSize:12}} onClick={()=>setPage('portfolio')}>
+              {holdings.length===0?<><Plus size={13}/> Add holdings</>:<>Open portfolio</>}
+            </button>
+          </div>
+        </div>
+
+        {/* Pending recos */}
+        <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden'}}>
+          <div style={{padding:'13px 15px',borderBottom:'1px solid var(--line)',fontWeight:700,fontSize:13}}>
+            Not yet tracked
+          </div>
+          <div style={{padding:'8px 14px'}}>
+            {recsReceived.filter(r=>!r.invested&&!r.hidden).length===0
+              ? <div className="muted small" style={{padding:'8px 0',fontStyle:'italic'}}>All caught up ✓</div>
+              : recsReceived.filter(r=>!r.invested&&!r.hidden).slice(0,5).map(r=>{
+                  const perf = r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
+                  const cf = contacts.find(x=>x.id===r.from)||{name:r.byName||'?'};
+                  return (
+                    <div key={r.id} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--line)',fontSize:13}}>
+                      <div>
+                        <div style={{fontWeight:600}}>{r.assetName}</div>
+                        <div className="muted small" style={{fontSize:11}}>{cf.name.split(' ')[0]}</div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div className={"tnum "+(perf>=0?"pos":"neg")} style={{fontWeight:700}}>{fmtPct(perf)}</div>
+                        {r.horizon&&<div className="muted small" style={{fontSize:10}}>{r.horizon}</div>}
+                      </div>
+                    </div>
+                  );
+                })
+            }
+            <button className="btn btn-soft btn-sm" style={{width:'100%',justifyContent:'center',marginTop:10,fontSize:12}} onClick={()=>setPage('recs')}>
+              See all →
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 /* =================================================================== INSTRUMENTS */
 // Module-level cache — loaded once per browser session from Neon
 let _instrCache = null;
