@@ -1651,9 +1651,9 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
             <SortTh label="Asset"        k="asset"   sort={sort} setSort={setSort}/>
             <th>Recommended by</th>
             <SortTh label="Tracked on"   k="tracked" sort={sort} setSort={setSort}/>
-            <SortTh label="Reco \u20b9"   k="reco"    sort={sort} setSort={setSort} align="right"/>
-            <SortTh label="Entry \u20b9"  k="entry"   sort={sort} setSort={setSort} align="right"/>
-            <SortTh label="Current \u20b9" k="cur"    sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="Reco ₹"   k="reco"    sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="Entry ₹"  k="entry"   sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="Current ₹" k="cur"    sort={sort} setSort={setSort} align="right"/>
             <SortTh label="Reco Return"  k="recret"  sort={sort} setSort={setSort} align="right"/>
             <SortTh label="My Return"    k="myret"   sort={sort} setSort={setSort} align="right"/>
             <th>Status</th>
@@ -1686,21 +1686,21 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
                 </td>
                 <td style={{fontSize:13}}>{rName}</td>
                 <td className="muted small nowrap">{new Date(r.tracked_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'})}</td>
-                <td style={{textAlign:'right'}} className="tnum">{r.reco_price?`\u20b9${Number(r.reco_price).toLocaleString('en-IN')}`:'\u2014'}</td>
+                <td style={{textAlign:'right'}} className="tnum">{r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'}</td>
                 <td style={{textAlign:'right'}} className="tnum">
                   {r.invested_price
-                    ? <span style={{fontWeight:600}}>\u20b9{Number(r.invested_price).toLocaleString('en-IN')}</span>
-                    : <span className="muted">\u2014</span>}
+                    ? <span style={{fontWeight:600}}>₹{Number(r.invested_price).toLocaleString('en-IN')}</span>
+                    : <span className="muted">—</span>}
                 </td>
-                <td style={{textAlign:'right'}} className="tnum">{r.current_price?`\u20b9${Number(r.current_price).toLocaleString('en-IN')}`:'\u2014'}</td>
-                <td style={{textAlign:'right',fontWeight:700}} className={"tnum "+(itm?"pos":"neg")}>{r.reco_price?`${itm?'+':''}${(recoRet*100).toFixed(1)}%`:'\u2014'}</td>
+                <td style={{textAlign:'right'}} className="tnum">{r.current_price?`₹${Number(r.current_price).toLocaleString('en-IN')}`:'—'}</td>
+                <td style={{textAlign:'right',fontWeight:700}} className={"tnum "+(itm?"pos":"neg")}>{r.reco_price?`${itm?'+':''}${(recoRet*100).toFixed(1)}%`:'—'}</td>
                 <td style={{textAlign:'right',fontWeight:700}}>
                   {myRet!==null
                     ? <span className={myRet>=0?"pos":"neg"}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</span>
                     : <span className="muted" style={{fontSize:11}}>No entry</span>}
                 </td>
                 <td><Money itm={itm}/></td>
-                <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">\u2014</span>}</td>
+                <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
                 <td>
                   <div className="actions" style={{gap:6,justifyContent:'flex-end'}}>
                     {/* Share */}
@@ -1738,15 +1738,15 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
                 <tr className="expand-row"><td colSpan={11}><div className="expand-inner">
                   <div style={{display:'flex',gap:24,flexWrap:'wrap',marginBottom:12}}>
                     <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
-                    {r.invested_price&&<div><div className="cap">My entry price</div><b className="tnum pos">\u20b9{Number(r.invested_price).toLocaleString('en-IN')}</b></div>}
-                    {r.target_price&&<div><div className="cap">Target</div><b className="tnum">\u20b9{Number(r.target_price).toLocaleString('en-IN')}</b></div>}
-                    {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">\u20b9{Number(r.stop_loss).toLocaleString('en-IN')}</b></div>}
+                    {r.invested_price&&<div><div className="cap">My entry price</div><b className="tnum pos">₹{Number(r.invested_price).toLocaleString('en-IN')}</b></div>}
+                    {r.target_price&&<div><div className="cap">Target</div><b className="tnum">₹{Number(r.target_price).toLocaleString('en-IN')}</b></div>}
+                    {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">₹{Number(r.stop_loss).toLocaleString('en-IN')}</b></div>}
                     {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
                     {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
                     <div><div className="cap">Reco Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
                     {myRet!==null&&<div><div className="cap">My Return</div><b className={"tnum "+(myRet>=0?"pos":"neg")}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</b></div>}
                   </div>
-                  {r.thesis&&r.thesis!=='\u2014'&&(
+                  {r.thesis&&r.thesis!=='—'&&(
                     <><div className="cap" style={{marginBottom:4}}>Thesis</div>
                     <div style={{fontSize:13,lineHeight:1.7,color:'var(--ink-soft)',marginBottom:14}}>{r.thesis}</div></>
                   )}
