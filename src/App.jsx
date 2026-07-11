@@ -3601,12 +3601,11 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
 
   return (
     <div
-      onClick={()=>setExpanded(v=>!v)}
       style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,boxShadow:'var(--shadow)',marginBottom:12,overflow:'visible',transition:'box-shadow .15s',cursor:'pointer'}}
       onMouseEnter={e=>e.currentTarget.style.boxShadow='0 4px 20px rgba(20,20,50,.1)'}
       onMouseLeave={e=>e.currentTarget.style.boxShadow='var(--shadow)'}
     >
-      <div style={{padding:'16px 18px'}} onClick={e=>e.stopPropagation()}>
+      <div style={{padding:'16px 18px'}} onClick={()=>setExpanded(v=>!v)}>
         {/* ── Header row ── */}
         <div style={{display:'flex',alignItems:'flex-start',gap:12,marginBottom:11}}>
           {/* Avatar */}
@@ -3711,7 +3710,18 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
           {/* Right: invested + expand */}
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
             {r.invested
-              ? <span style={{fontSize:12,fontWeight:700,color:'var(--gain)',display:'flex',alignItems:'center',gap:4}}><Check size={13}/> Invested</span>
+              ? <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:12,fontWeight:700,color:'var(--gain)',display:'flex',alignItems:'center',gap:4}}>
+                    <Check size={13}/> Invested
+                  </span>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{fontSize:11,padding:'3px 8px',color:'var(--muted)',borderColor:'var(--line)'}}
+                    onClick={e=>{e.stopPropagation();patch({isInvested:false,investedPrice:null,invested:false});}}
+                    title="Undo — mark as not invested">
+                    Undo
+                  </button>
+                </div>
               : <button className="btn btn-soft btn-sm" style={{fontSize:12,padding:'5px 11px'}} onClick={e=>{e.stopPropagation();patch({isInvested:true,investedPrice:r.price,invested:true});}}>
                   <Check size={12}/> Mark invested
                 </button>}
