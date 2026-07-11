@@ -2965,34 +2965,34 @@ function SocialIconBtn({ platform, url }) {
 
 /* ─── ICI Donut ─────────────────────────────────────────────────────────────── */
 function IciDonut({ score, band }) {
-  const r = 56, cx = 70, cy = 70, circ = 2 * Math.PI * r;
+  const r = 68, cx = 85, cy = 85, circ = 2 * Math.PI * r;
   const filled = (score / 100) * circ;
   const col   = score >= 70 ? '#4ade80' : score >= 50 ? '#a78bfa' : score >= 30 ? '#fbbf24' : '#f87171';
   const dark  = score >= 70 ? '#052e16' : score >= 50 ? '#2e1065' : score >= 30 ? '#451a03' : '#3b0a14';
   const glow  = score >= 70 ? 'rgba(74,222,128,.55)' : score >= 50 ? 'rgba(167,139,250,.55)' : score >= 30 ? 'rgba(251,191,36,.55)' : 'rgba(248,113,113,.55)';
   return (
     <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,flexShrink:0}}>
-      <div style={{position:'relative',width:140,height:140}}>
-        <svg width={140} height={140} viewBox="0 0 140 140">
+      <div style={{position:'relative',width:170,height:170}}>
+        <svg width={170} height={170} viewBox="0 0 170 170">
           {/* Outer subtle halo ring */}
-          <circle cx={cx} cy={cy} r={r+12} fill="none" stroke={col} strokeWidth={1} opacity={.15}/>
+          <circle cx={cx} cy={cy} r={r+14} fill="none" stroke={col} strokeWidth={1} opacity={.15}/>
           {/* Background fill of track area */}
           <circle cx={cx} cy={cy} r={r} fill={dark} opacity={.6}/>
           {/* Track (unfilled portion) */}
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth={13}/>
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth={15}/>
           {/* Score arc with glow */}
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke={col} strokeWidth={13}
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke={col} strokeWidth={15}
             strokeDasharray={`${filled} ${circ}`}
             strokeDashoffset={circ/4}
             strokeLinecap="round"
-            style={{filter:`drop-shadow(0 0 8px ${glow})`}}/>
+            style={{filter:`drop-shadow(0 0 9px ${glow})`}}/>
           {/* Center score */}
-          <text x={cx} y={cy-8} textAnchor="middle" dominantBaseline="middle"
-            fontSize={36} fontWeight={900} fill="#fff"
+          <text x={cx} y={cy-10} textAnchor="middle" dominantBaseline="middle"
+            fontSize={42} fontWeight={900} fill="#fff"
             fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
             letterSpacing="-2">{score}</text>
-          <text x={cx} y={cy+16} textAnchor="middle" dominantBaseline="middle"
-            fontSize={11} fill="rgba(255,255,255,.38)"
+          <text x={cx} y={cy+20} textAnchor="middle" dominantBaseline="middle"
+            fontSize={12} fill="rgba(255,255,255,.38)"
             fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">/100</text>
         </svg>
       </div>
@@ -3374,7 +3374,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
               border:'1px solid rgba(139,92,246,.6)',
               borderRadius:20,
               padding:'24px 26px',
-              minWidth:340,
+              minWidth:460,
               flexShrink:0,
               boxShadow:'0 0 0 1px rgba(139,92,246,.15), 0 4px 24px rgba(109,93,245,.5), 0 16px 48px rgba(109,93,245,.3), inset 0 1px 0 rgba(255,255,255,.08)',
             }}>
@@ -3385,20 +3385,21 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
               </div>
 
               {/* Donut + components side by side */}
-              <div style={{display:'flex',gap:24,alignItems:'center',marginBottom:20}}>
+              <div style={{display:'flex',gap:28,alignItems:'center',marginBottom:20}}>
                 <IciDonut score={ici.score} band={ici.band}/>
                 <div style={{flex:1}}>
                   {ici.components.map(c=>{
                     const pct = c.max > 0 ? (c.score/c.max)*100 : 0;
-                    const barCol = pct>=80?'#4ade80':pct>=50?'#a78bfa':'rgba(255,255,255,.2)';
+                    /* Fix: rgba(255,255,255,.2) was invisible on dark track — use amber for low non-zero progress */
+                    const barCol = pct>=80?'#4ade80':pct>=50?'#a78bfa':pct>0?'#fbbf24':'rgba(255,255,255,.06)';
                     return (
-                      <div key={c.label} style={{marginBottom:10}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
-                          <span style={{fontSize:11.5,color:'rgba(255,255,255,.85)',fontWeight:600}}>{c.label}</span>
-                          <span style={{fontSize:11,color:'rgba(255,255,255,.6)',fontWeight:700}}>{c.score}/{c.max}</span>
+                      <div key={c.label} style={{marginBottom:14}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:12,marginBottom:5}}>
+                          <span style={{fontSize:12,color:'rgba(255,255,255,.85)',fontWeight:600,flex:1,minWidth:0}}>{c.label}</span>
+                          <span style={{fontSize:12,color:'rgba(255,255,255,.65)',fontWeight:700,flexShrink:0,whiteSpace:'nowrap'}}>{c.score}/{c.max}</span>
                         </div>
                         <div style={{height:5,background:'rgba(255,255,255,.08)',borderRadius:3,overflow:'hidden'}}>
-                          <div style={{height:'100%',width:`${pct}%`,background:`linear-gradient(90deg,${barCol},${barCol}bb)`,borderRadius:3,transition:'width .5s ease',boxShadow:pct>0?`0 0 6px ${barCol}88`:''}}/>
+                          <div style={{height:'100%',width:`${pct}%`,background:`linear-gradient(90deg,${barCol},${barCol}bb)`,borderRadius:3,transition:'width .5s ease',boxShadow:pct>0?`0 0 6px ${barCol}88`:'none'}}/>
                         </div>
                       </div>
                     );
