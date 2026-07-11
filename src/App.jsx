@@ -4169,6 +4169,24 @@ function RecoCardModal({ r, me, contacts, groups, setRecsReceived, tracked, togg
   );
 }
 
+/* ─── Shared widget header style ─── */
+function WidgetHeader({ icon: Icon, emoji, label, action, onAction }) {
+  return (
+    <div style={{background:'var(--grad)',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <span style={{fontWeight:700,fontSize:11,color:'#fff',display:'flex',alignItems:'center',gap:5,textTransform:'uppercase',letterSpacing:'.5px'}}>
+        {Icon && <Icon size={12} color="rgba(255,255,255,.85)"/>}
+        {emoji && <span style={{fontSize:13}}>{emoji}</span>}
+        {label}
+      </span>
+      {action && (
+        <button onClick={onAction} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',cursor:'pointer',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:6,letterSpacing:'.3px'}}>
+          {action}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ─── Sidebar Widget: Fresh from Network (#7) ─── */
 function FreshWidget({ recsReceived, contacts, setPage }) {
   const fresh = [...recsReceived].filter(r=>!r.hidden)
@@ -4177,12 +4195,9 @@ function FreshWidget({ recsReceived, contacts, setPage }) {
   const cf = (r) => { const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName,color:'#8d90ad'}:{name:'?',color:'#8d90ad'}); };
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <div style={{padding:'12px 14px 8px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-        <span style={{fontWeight:700,fontSize:13,display:'flex',alignItems:'center',gap:6}}><Bell size={14} color="var(--accent)"/> Fresh from Network</span>
-        <button className="btn btn-ghost btn-sm" style={{fontSize:11,padding:'3px 9px'}} onClick={()=>setPage('recs')}>View all →</button>
-      </div>
+      <WidgetHeader icon={Bell} label="Fresh from Network" action="View all" onAction={()=>setPage('recs')}/>
       {fresh.length===0
-        ? <div className="muted small" style={{padding:'8px 14px 12px',fontStyle:'italic'}}>No new recommendations yet.</div>
+        ? <div className="muted small" style={{padding:'10px 14px 12px',fontStyle:'italic'}}>No new recommendations yet.</div>
         : fresh.map(r=>{
           const perf=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
           const c=cf(r);
@@ -4221,8 +4236,9 @@ function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoInit }) {
   const navTo=(filter)=>{ setRecoInit({tab:'tracked',moneyFilter:filter}); setPage('recs'); };
 
   return (
-    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',padding:'12px 14px',marginBottom:12}}>
-      <div style={{fontWeight:700,fontSize:13,marginBottom:10,display:'flex',alignItems:'center',gap:6}}><TrendingUp size={14} color="var(--accent)"/> My Tracked</div>
+    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
+      <WidgetHeader icon={TrendingUp} label="My Tracked"/>
+      <div style={{padding:'12px 14px'}}>
       <div style={{display:'flex',alignItems:'center',gap:14}}>
         <svg width={80} height={80} style={{flexShrink:0}}>
           {/* background */}
@@ -4253,6 +4269,7 @@ function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoInit }) {
           </div>
         </div>
       </div>
+      </div>
     </div>
   );
 }
@@ -4270,10 +4287,7 @@ function MissedOppsWidget({ recsReceived, tracked, contacts }) {
   const cf=(r)=>{ const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName}:{name:'?'}); };
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <div style={{padding:'12px 14px 8px',display:'flex',alignItems:'center',gap:6}}>
-        <span style={{fontSize:15}}>💸</span>
-        <span style={{fontWeight:700,fontSize:13}}>Missed Opportunities</span>
-      </div>
+      <WidgetHeader emoji="💸" label="Missed Opportunities"/>
       {missed.map(r=>(
         <div key={r.id} onClick={()=>setModal(r)} style={{padding:'9px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
           onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
@@ -4307,10 +4321,7 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
   const cf=(r)=>{ const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName,color:'#8d90ad'}:{name:'?',color:'#8d90ad'}); };
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <div style={{padding:'12px 14px 8px',display:'flex',alignItems:'center',gap:6}}>
-        <Flame size={14} color="var(--accent)"/>
-        <span style={{fontWeight:700,fontSize:13}}>Trending in Network</span>
-      </div>
+      <WidgetHeader icon={Flame} label="Trending in Network"/>
       {trending.map((r,i)=>{
         const perf=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
         const c=cf(r);
@@ -4339,32 +4350,54 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
 function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
-  const [showNewReco, setShowNewReco] = useState(false);
+  const [showNewReco,  setShowNewReco]  = useState(false);
+  const [feedSearch,   setFeedSearch]   = useState('');
+  const [loadedCount,  setLoadedCount]  = useState(20);
+  const sentinelRef = useRef(null);
 
-  // Build + rank the feed
+  // Build + rank the full scored feed (no slice — pagination handled in render)
   const feedRecs = useMemo(() => {
     const cfg = effectiveFeedConfig;
     const directIds = new Set(recsReceived.map(r=>r.id));
-
-    // 1. Start with direct/group received recos (not hidden)
     let items = recsReceived.filter(r=>!r.hidden).map(r=>({...r, feedSource: r.feedSource||'direct'}));
-
-    // 2. Extend with network-engagement recos
     if (cfg.src_network_engagement) {
       const extra = networkEngagementRecos.filter(r=>!directIds.has(r.id));
       items = [...items, ...extra];
     }
-
-    // 3. Filters
     if (cfg.filter_hide_invested) items = items.filter(r=>!r.invested);
-
-    // 4. Score + sort
-    items = items
+    return items
       .map(r=>({...r, _score: scoreFeedRec(r, tracked, cfg)}))
       .sort((a,b)=>b._score-a._score);
-
-    return items.slice(0, 20);
   }, [recsReceived, networkEngagementRecos, tracked, effectiveFeedConfig]);
+
+  // Search filter applied to all currently loaded items
+  const visibleFeed = useMemo(() => {
+    const q = feedSearch.trim().toLowerCase();
+    const base = feedRecs.slice(0, loadedCount);
+    if (!q) return base;
+    return base.filter(r =>
+      r.assetName?.toLowerCase().includes(q) ||
+      r.ticker?.toLowerCase().includes(q) ||
+      r.byName?.toLowerCase().includes(q) ||
+      contacts.find(c=>c.id===r.from)?.name?.toLowerCase().includes(q) ||
+      contacts.find(c=>c.id===r.from)?.username?.toLowerCase().includes(q)
+    );
+  }, [feedRecs, loadedCount, feedSearch, contacts]);
+
+  // Infinite scroll — Intersection Observer on sentinel div
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting && !feedSearch) setLoadedCount(n => n + 20); },
+      { rootMargin: '300px' }
+    );
+    obs.observe(sentinel);
+    return () => obs.disconnect();
+  }, [feedSearch]);
+
+  // Reset page when search changes
+  useEffect(() => { setLoadedCount(20); }, [feedSearch]);
 
   return (
     <>
@@ -4374,65 +4407,60 @@ function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs
       <div style={{flex:1,minWidth:0}}>
 
         {/* Compact single-line header */}
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
-          <div>
-            <span style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>
-              Welcome back, {firstName}! 👋
-            </span>
-            <span className="muted small" style={{marginLeft:12,fontSize:13}}>
-              {recsReceived.filter(r=>!r.hidden).length} ideas in your feed · {contacts.length} connections
-            </span>
-          </div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:10}}>
+          <span style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>Welcome back, {firstName}! 👋</span>
           <button className="btn btn-pri btn-sm" onClick={()=>setShowNewReco(true)}><Lightbulb size={14}/> Recommend an idea</button>
         </div>
 
-        {feedRecs.length===0
+        {/* Feed search bar */}
+        <div className="searchbox" style={{marginBottom:14}}>
+          <Search size={15} color="var(--muted)"/>
+          <input value={feedSearch} onChange={e=>setFeedSearch(e.target.value)}
+            placeholder="Search feed — asset, ticker, investor name…"/>
+          {feedSearch&&<button onClick={()=>setFeedSearch('')}
+            style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
+            <X size={14}/></button>}
+        </div>
+
+        {/* Feed cards */}
+        {visibleFeed.length===0
           ? <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,padding:'48px 32px',textAlign:'center',boxShadow:'var(--shadow)'}}>
-              <div style={{fontSize:40,marginBottom:14}}>🌱</div>
-              <div style={{fontWeight:700,fontSize:17,marginBottom:8}}>Your feed is empty</div>
+              <div style={{fontSize:40,marginBottom:14}}>{feedSearch?'🔍':'🌱'}</div>
+              <div style={{fontWeight:700,fontSize:17,marginBottom:8}}>
+                {feedSearch?`No results for "${feedSearch}"`:'Your feed is empty'}
+              </div>
               <div className="muted small" style={{marginBottom:22,maxWidth:340,margin:'0 auto 22px',lineHeight:1.6}}>
-                Add people to your network — their investment recommendations will appear here.
+                {feedSearch?'Try a different search term.':'Add people to your network — their investment recommendations will appear here.'}
               </div>
-              <div style={{display:'flex',gap:10,justifyContent:'center'}}>
+              {!feedSearch&&<div style={{display:'flex',gap:10,justifyContent:'center'}}>
                 <button className="btn btn-pri btn-sm" onClick={()=>setPage('network')}><Users size={14}/> Add connections</button>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setPage('recs')}><Lightbulb size={14}/> Recommend an idea</button>
-              </div>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setShowNewReco(true)}><Lightbulb size={14}/> Recommend an idea</button>
+              </div>}
             </div>
           : (<>
-              {feedRecs.map(r=>(
-                <FeedCard key={r.id} r={r} me={me} contacts={contacts} groups={groups} setRecsReceived={setRecsReceived} tracked={tracked} toggleTrack={toggleTrack}/>
+              {visibleFeed.map(r=>(
+                <FeedCard key={r.id} r={r} me={me} contacts={contacts} groups={groups}
+                  setRecsReceived={setRecsReceived} tracked={tracked} toggleTrack={toggleTrack}/>
               ))}
-              {recsReceived.filter(r=>!r.hidden).length>15&&(
-                <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center'}} onClick={()=>setPage('recs')}>
-                  See all {recsReceived.filter(r=>!r.hidden).length} recommendations →
-                </button>
+              {/* Infinite scroll sentinel + loading indicator */}
+              {!feedSearch && loadedCount < feedRecs.length && (
+                <div ref={sentinelRef} style={{height:8,textAlign:'center',padding:'12px 0',color:'var(--muted)',fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                  <Loader size={13} className="spin"/> Loading more…
+                </div>
+              )}
+              {/* End of feed message */}
+              {(feedSearch || loadedCount >= feedRecs.length) && feedRecs.length > 0 && (
+                <div style={{textAlign:'center',padding:'14px 0',color:'var(--muted)',fontSize:12}}>
+                  {feedSearch
+                    ? `${visibleFeed.length} result${visibleFeed.length!==1?'s':''} across ${Math.min(loadedCount,feedRecs.length)} loaded ideas`
+                    : `✓ All ${feedRecs.length} idea${feedRecs.length!==1?'s':''} loaded`}
+                </div>
               )}
             </>)}
       </div>
 
       {/* ── Right sidebar ── */}
       <div style={{width:252,flexShrink:0}}>
-
-        {/* Portfolio widget — compact */}
-        <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',marginBottom:12,overflow:'hidden'}}>
-          <div style={{background:'var(--grad)',padding:'12px 14px'}}>
-            <div style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.75)',textTransform:'uppercase',letterSpacing:.5,marginBottom:4}}>Your portfolio</div>
-            {holdings.length===0
-              ? <div style={{fontSize:13,color:'rgba(255,255,255,.7)',fontStyle:'italic'}}>No holdings yet</div>
-              : <>
-                  <div style={{fontSize:22,fontWeight:800,color:'#fff',letterSpacing:'-1px'}}>{fmt(total)}</div>
-                  <div style={{fontSize:12,fontWeight:700,color:pnl>=0?'#a7f3d0':'#fca5a5',display:'flex',alignItems:'center',gap:3}}>
-                    {pnl>=0?<ArrowUpRight size={13}/>:<ArrowDownRight size={13}/>}{fmtSigned(pnl)} ({fmtPct(pnlPct)})
-                  </div>
-                </>}
-          </div>
-          <div style={{padding:'8px 12px'}}>
-            <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center',fontSize:11}} onClick={()=>setPage('portfolio')}>
-              {holdings.length===0?<><Plus size={12}/> Add holdings</>:<>Open portfolio</>}
-            </button>
-          </div>
-        </div>
-
         {/* Widget #7 — Fresh from Network */}
         <FreshWidget recsReceived={recsReceived} contacts={contacts} setPage={setPage}/>
 
