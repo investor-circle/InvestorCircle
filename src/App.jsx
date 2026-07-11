@@ -311,6 +311,7 @@ export default function App() {
   const [recsMade,      setRecsMade]      = useState([]); // from ic_recommendations
   const [sharing,       setSharing]       = useState({});
   const [notifications, setNotifications] = useState([]);
+  const [tracked,       setTracked]       = useState(new Set()); // Set of reco IDs the user has tracked
   const [notifOpen,     setNotifOpen]     = useState(false);
   const [profileOpen,   setProfileOpen]   = useState(false);
   const [connectConfirm, setConnectConfirm] = useState(null); // { name, username } after auto-connect
@@ -373,6 +374,17 @@ export default function App() {
   );
   const unreadCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
 
+  // Toggle tracking (bookmark) for a recommendation
+  const toggleTrack = async (recoId) => {
+    if (tracked.has(recoId)) {
+      setTracked(s => { const n = new Set(s); n.delete(recoId); return n; });
+      if (sql && user?.uid) sql`DELETE FROM recommendation_tracking WHERE reco_id=${recoId} AND user_id=${user.uid}`.catch(console.warn);
+    } else {
+      setTracked(s => new Set([...s, recoId]));
+      if (sql && user?.uid) sql`INSERT INTO recommendation_tracking (reco_id, user_id) VALUES (${recoId}, ${user.uid}) ON CONFLICT DO NOTHING`.catch(console.warn);
+    }
+  };
+
   const refreshPrices = async () => {
     if (!isFinnhubConfigured) return;                          // boolean, not a function
     setPriceRefresh({ busy:true, lastAt:null, errors:[] });
@@ -406,6 +418,11 @@ export default function App() {
         setRecsMade(made);
         setNotifications(notifs);
         setSharing(shr);
+        // Load tracked recommendation IDs
+        try {
+          const tr = await sql`SELECT reco_id FROM recommendation_tracking WHERE user_id=${user.uid}`;
+          setTracked(new Set(tr.map(r=>r.reco_id)));
+        } catch(_) {}
       } catch(e) { console.warn("Data load failed:", e.message); }
       // Load registered users for admin panel
       try {
@@ -612,7 +629,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed setPage={setPage} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade}/>}
+            {isInv && page==="home"      && <HomeFeed setPage={setPage} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack}/>}
             {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
             {isInv && page==="network"   && <Network
                 connections={connections} setConnections={setConnections}
@@ -628,6 +645,7 @@ export default function App() {
                 contacts={contacts} groups={groups}
                 assetClasses={assetClasses} setAssetClasses={setAssetClasses}
                 initFilter={recoInit} holdings={holdings} me={ME}
+                tracked={tracked} toggleTrack={toggleTrack}
                 onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/>}
             {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id}/>}
             {isInv && page==="trackrecord" && (
@@ -1457,8 +1475,8 @@ const getTargetDate = (r) => r.targetDate || calcTargetDate(r.date, r.horizon) |
 const isExpired = (r) => { const td=getTargetDate(r); return td ? td < TODAY : false; };
 
 function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
-    contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload }) {
-  const [tab, setTab] = useState("received");
+    contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack }) {
+  const [tab, setTab] = useState("tracked");
   const myId = me?.id || "me";
   const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id===myId?"You":id);
   const groupName   = (id) => groups.find(g=>g.id===id)?.name || id;
@@ -1479,19 +1497,24 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
   };
   const receivedCount = recsReceived.filter(r=>!r.hidden).length;
   const madeCount = recsMade.length;
+  const trackedCount = tracked.size;
+
   return (<>
-    {/* ── Compact page header with tabs inline ── */}
+    {/* ── Header + tabs ── */}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:12}}>
-      <div className="eyebrow" style={{marginBottom:0}}>Recommendations</div>
-      <div style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px',marginTop:2}}>Ideas worth tracking</div>
-      {/* Big prominent tabs */}
+      <div>
+        <div className="eyebrow" style={{marginBottom:0}}>Recommendations</div>
+        <div style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px',marginTop:2}}>Ideas worth tracking</div>
+      </div>
+      {/* Tabs — Tracked first */}
       <div style={{display:"flex",gap:6,background:"var(--surface-2)",borderRadius:14,padding:4}}>
         {[
-          {id:"received", label:"Received", count:receivedCount, icon:Lightbulb},
-          {id:"made",     label:"Made by me", count:madeCount,    icon:Send},
+          {id:"tracked",  label:"My Tracked",  count:trackedCount,  icon:Bookmark},
+          {id:"received", label:"Received",     count:receivedCount, icon:Lightbulb},
+          {id:"made",     label:"Made by me",   count:madeCount,     icon:Send},
         ].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
-            display:"flex",alignItems:"center",gap:8,padding:"10px 20px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontWeight:700,fontSize:14,transition:".15s",
+            display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontWeight:700,fontSize:14,transition:".15s",
             background: tab===t.id ? "var(--surface)" : "transparent",
             color:      tab===t.id ? "var(--accent-ink)" : "var(--ink)",
             boxShadow:  tab===t.id ? "0 1px 6px rgba(20,20,50,.1)" : "none",
@@ -1508,19 +1531,147 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
       </div>
     </div>
 
-    {tab==="received"
-      ? <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} myId={myId}
-          contactName={contactName} groupName={groupName} assetClasses={assetClasses}
-          contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId}
-          onForward={forwardReco} onReload={onReload} me={me}/>
-      : <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName}
-          reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses}
-          setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload}/>}
+    {tab==="tracked"  && <TrackedSection tracked={tracked} toggleTrack={toggleTrack} me={me} contacts={contacts}/>}
+    {tab==="received" && <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} myId={myId}
+        contactName={contactName} groupName={groupName} assetClasses={assetClasses}
+        contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId}
+        onForward={forwardReco} onReload={onReload} me={me} tracked={tracked} toggleTrack={toggleTrack}/>}
+    {tab==="made"     && <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName}
+        reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses}
+        setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload}/>}
   </>);
 }
 
 
-function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload, me }) {
+/* ─── TrackedSection — My Tracked / Saved list ─────────────────────────────── */
+function TrackedSection({ tracked, toggleTrack, me, contacts }) {
+  const [recos,   setRecos]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [openRow, setOpenRow] = useState(null);
+  const [sort,    setSort]    = useState({key:"tracked",dir:"desc"});
+
+  useEffect(()=>{
+    if(!me?.id||!sql){ setLoading(false); return; }
+    setLoading(true);
+    sql`SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class, ir.recommendation_type,
+               ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
+               ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
+               ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
+               up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
+               rt.tracked_at
+        FROM recommendation_tracking rt
+        JOIN ic_recommendations ir ON rt.reco_id = ir.id
+        JOIN user_profiles up ON ir.recommender_id = up.id
+        WHERE rt.user_id = ${me.id}
+        ORDER BY rt.tracked_at DESC`
+      .then(rows=>{ setRecos(rows); setLoading(false); })
+      .catch(()=>setLoading(false));
+  },[me?.id, tracked.size]);
+
+  if(loading) return <div className="muted small" style={{padding:32,textAlign:'center'}}><Loader size={20} className="spin"/></div>;
+
+  if(recos.length===0) return (
+    <div className="card"><div className="card-body" style={{textAlign:'center',padding:'48px 32px'}}>
+      <Bookmark size={36} color="var(--muted)" style={{marginBottom:14}}/>
+      <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>Nothing tracked yet</div>
+      <div className="muted small">Click the bookmark icon on any recommendation to save it here for easy reference.</div>
+    </div></div>
+  );
+
+  return (
+    <div className="card">
+      <div className="card-body" style={{padding:"6px 0"}}>
+        <table className="grid" style={{width:"100%"}}>
+          <thead><tr>
+            <SortTh label="Asset" k="asset" sort={sort} setSort={setSort}/>
+            <th>Recommended by</th>
+            <SortTh label="Tracked on" k="tracked" sort={sort} setSort={setSort}/>
+            <SortTh label="Reco ₹" k="reco" sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="Current ₹" k="cur" sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
+            <th>Status</th>
+            <SortTh label="Horizon" k="horizon" sort={sort} setSort={setSort}/>
+            <th style={{textAlign:"right"}}>Actions</th>
+          </tr></thead>
+          <tbody>{[...recos].sort((a,b)=>{
+            const dir=sort.dir==="asc"?1:-1;
+            if(sort.key==="asset") return a.asset_name.localeCompare(b.asset_name)*dir;
+            if(sort.key==="tracked") return (a.tracked_at>b.tracked_at?1:-1)*dir;
+            if(sort.key==="reco") return ((a.reco_price||0)-(b.reco_price||0))*dir;
+            if(sort.key==="cur") return ((a.current_price||0)-(b.current_price||0))*dir;
+            if(sort.key==="ret"){
+              const ra=a.reco_price?(a.current_price-a.reco_price)/a.reco_price:0;
+              const rb=b.reco_price?(b.current_price-b.reco_price)/b.reco_price:0;
+              return (ra-rb)*dir;
+            }
+            if(sort.key==="horizon") return (HORIZONS.indexOf(a.horizon)-HORIZONS.indexOf(b.horizon))*dir;
+            return 0;
+          }).map(r=>{
+            const retPct=r.reco_price?(r.current_price-r.reco_price)/r.reco_price:0;
+            const itm=retPct>=0;
+            const open=openRow===r.id;
+            const rName=[r.first_name,r.last_name].filter(Boolean).join(' ')||r.recommender_name||'Unknown';
+            const isBuy=(r.recommendation_type||'Buy')==='Buy';
+            return (<React.Fragment key={r.id}>
+              <tr className="hoverable">
+                {/* Asset — expand on click */}
+                <td style={{cursor:'pointer',maxWidth:220}} onClick={()=>setOpenRow(open?null:r.id)}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <ChevronDown size={13} color="var(--muted)" style={{transform:open?'rotate(180deg)':'none',transition:'.15s',flexShrink:0}}/>
+                    <div>
+                      <div style={{display:'flex',alignItems:'center',gap:6}}>
+                        <span className="sym" style={{fontSize:13}}>{r.asset_name}</span>
+                        <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:4,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
+                      </div>
+                      <div style={{fontSize:11,color:'var(--muted)'}}>{r.ticker} · <ClassTag c={r.asset_class}/></div>
+                    </div>
+                  </div>
+                </td>
+                <td style={{fontSize:13}}>{rName}</td>
+                <td className="muted small nowrap">{new Date(r.tracked_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'})}</td>
+                <td style={{textAlign:'right'}} className="tnum">{r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'}</td>
+                <td style={{textAlign:'right'}} className="tnum">{r.current_price?`₹${Number(r.current_price).toLocaleString('en-IN')}`:'—'}</td>
+                <td style={{textAlign:'right',fontWeight:700}} className={"tnum "+(itm?"pos":"neg")}>{r.reco_price?`${itm?'+':''}${(retPct*100).toFixed(1)}%`:'—'}</td>
+                <td><Money itm={itm}/></td>
+                <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
+                <td>
+                  <div className="actions" style={{gap:4}}>
+                    <button className="iconbtn on-like" title="Tracked — click to untrack"
+                      onClick={()=>toggleTrack(r.id)} style={{color:'var(--accent-ink)',background:'var(--accent-soft)',borderColor:'var(--accent-line)'}}>
+                      <Bookmark size={13}/>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              {open && (
+                <tr className="expand-row"><td colSpan={9}><div className="expand-inner">
+                  <div style={{display:'flex',gap:24,flexWrap:'wrap',marginBottom:12}}>
+                    <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
+                    {r.target_price&&<div><div className="cap">Target</div><b className="tnum pos">₹{Number(r.target_price).toLocaleString('en-IN')}</b></div>}
+                    {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">₹{Number(r.stop_loss).toLocaleString('en-IN')}</b></div>}
+                    {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
+                    {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
+                    <div><div className="cap">Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(retPct*100).toFixed(1)}%</b></div>
+                  </div>
+                  {r.thesis&&r.thesis!=='—'&&(
+                    <><div className="cap" style={{marginBottom:4}}>Thesis</div>
+                    <div style={{fontSize:13,lineHeight:1.7,color:'var(--ink-soft)',marginBottom:14}}>{r.thesis}</div></>
+                  )}
+                  <div style={{borderTop:'1px solid var(--line)',paddingTop:12}}>
+                    <div className="cap" style={{marginBottom:10}}>Comments</div>
+                    <RecoComments recoId={r.id} me={me}/>
+                  </div>
+                </div></td></tr>
+              )}
+            </React.Fragment>);
+          })}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload, me, tracked, toggleTrack }) {
   const [q,setQ]=useState(""); const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
   const [fInv,setFInv]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
@@ -1714,6 +1865,14 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                             />
                           )}
                         </div>
+                        {/* Track / bookmark button */}
+                        <button
+                          className={"iconbtn"+(tracked?.has(r.id)?" on-like":"")}
+                          title={tracked?.has(r.id)?"Remove from tracked":"Track this recommendation"}
+                          onClick={()=>toggleTrack?.(r.id)}
+                          style={tracked?.has(r.id)?{background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{}}>
+                          <Bookmark size={13}/>
+                        </button>
                         <button className="iconbtn" title={r.hidden?"Unhide":"Hide"} onClick={()=>toggleHide(r)}>{r.hidden?<Eye size={13}/>:<EyeOff size={13}/>}</button>
                         <button className="iconbtn danger" title="Remove" onClick={()=>del(r)}><Trash2 size={13}/></button>
                       </div>
@@ -3394,7 +3553,7 @@ function RecoComments({ recoId, me }) {
 }
 
 /* ─── FeedCard — single recommendation card for the homepage ────────────────────── */
-function FeedCard({ r, me, contacts, setRecsReceived, onReload }) {
+function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleTrack }) {
   const [expanded,  setExpanded]  = useState(false);
   const [shareAnchor, setShareAnchor] = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
@@ -3409,7 +3568,8 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload }) {
 
   const retPct = (r.priceAt&&r.priceAt!==0) ? (r.price-r.priceAt)/r.priceAt : 0;
   const itm = retPct >= 0;
-  const interactionCount = (r.likes||0)+(r.dislikes||0)+(r.invested?1:0);
+  const isTracked = tracked?.has(r.id);
+  const interactionCount = (r.likes||0)+(r.dislikes||0)+(r.invested?1:0)+(isTracked?1:0);
 
   // Patch a received reco optimistically
   const patch=(updates)=>{
@@ -3527,6 +3687,15 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload }) {
               onClose={()=>{ setShowShare(false); setShareAnchor(null); }}/>}
           </div>
 
+          {/* Track / Bookmark */}
+          <button
+            className={"iconbtn"+(isTracked?' on-like':'')}
+            title={isTracked?'Remove from tracked':'Track this recommendation'}
+            onClick={()=>toggleTrack?.(r.id)}
+            style={isTracked?{width:32,height:32,background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{width:32,height:32}}>
+            <Bookmark size={14}/>
+          </button>
+
           {/* Interaction count badge */}
           {interactionCount>0&&(
             <span style={{fontSize:11,color:'var(--muted)',marginLeft:2}}>
@@ -3580,7 +3749,7 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload }) {
 }
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
-function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade }) {
+function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const feedRecs = recsReceived.filter(r=>!r.hidden).slice(0, 15);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
@@ -3620,7 +3789,7 @@ function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, c
             </div>
           : (<>
               {feedRecs.map(r=>(
-                <FeedCard key={r.id} r={r} me={me} contacts={contacts} setRecsReceived={setRecsReceived}/>
+                <FeedCard key={r.id} r={r} me={me} contacts={contacts} setRecsReceived={setRecsReceived} tracked={tracked} toggleTrack={toggleTrack}/>
               ))}
               {recsReceived.filter(r=>!r.hidden).length>15&&(
                 <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center'}} onClick={()=>setPage('recs')}>
