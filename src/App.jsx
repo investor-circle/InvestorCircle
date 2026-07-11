@@ -317,6 +317,8 @@ export default function App() {
   const [userFeedPrefs,           setUserFeedPrefs]           = useState({}); // {key: boolean} user overrides
   const [effectiveFeedConfig,     setEffectiveFeedConfig]     = useState({}); // merged effective config
   const [networkEngagementRecos,  setNetworkEngagementRecos]  = useState([]); // extended feed recos
+  // Global search — shared across all pages via top nav bar
+  const [globalSearch, setGlobalSearch] = useState('');
   const [notifOpen,     setNotifOpen]     = useState(false);
   const [profileOpen,   setProfileOpen]   = useState(false);
   const [connectConfirm, setConnectConfirm] = useState(null); // { name, username } after auto-connect
@@ -378,6 +380,9 @@ export default function App() {
     [connections]
   );
   const unreadCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
+
+  // Clear global search when navigating to a different page
+  useEffect(() => { setGlobalSearch(''); }, [investorPage, adminPage]);
 
   // Toggle tracking (bookmark) for a recommendation
   const toggleTrack = async (recoId) => {
@@ -609,7 +614,19 @@ export default function App() {
 
         <div className="main">
           <div className="topbar">
-            <div className="searchbox" style={{width:300,maxWidth:"40vw"}}><Search size={16} color="var(--muted)"/><input placeholder="Search investors, tickers…"/></div>
+            <div className="searchbox" style={{width:300,maxWidth:"40vw"}}>
+              <Search size={16} color="var(--muted)"/>
+              <input
+                value={globalSearch}
+                onChange={e=>setGlobalSearch(e.target.value)}
+                placeholder="Search investors, tickers…"
+              />
+              {globalSearch && (
+                <button onClick={()=>setGlobalSearch('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
+                  <X size={14}/>
+                </button>
+              )}
+            </div>
             <div className="tb-right">
               {/* Notification bell */}
               <div style={{position:"relative"}}>
@@ -693,7 +710,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs}/>}
+            {isInv && page==="home"      && <HomeFeed setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch}/>}
             {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
             {isInv && page==="network"   && <Network
                 connections={connections} setConnections={setConnections}
@@ -710,6 +727,7 @@ export default function App() {
                 assetClasses={assetClasses} setAssetClasses={setAssetClasses}
                 initFilter={recoInit} holdings={holdings} me={ME}
                 tracked={tracked} toggleTrack={toggleTrack}
+                globalSearch={globalSearch}
                 onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/>}
             {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/>}
             {isInv && page==="trackrecord" && (
@@ -1540,7 +1558,7 @@ const getTargetDate = (r) => r.targetDate || calcTargetDate(r.date, r.horizon) |
 const isExpired = (r) => { const td=getTargetDate(r); return td ? td < TODAY : false; };
 
 function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
-    contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack }) {
+    contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack, globalSearch }) {
   const [tab, setTab] = useState(initFilter?.tab || "tracked");
   const myId = me?.id || "me";
   const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id===myId?"You":id);
@@ -1596,20 +1614,20 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
       </div>
     </div>
 
-    {tab==="tracked"  && <TrackedSection tracked={tracked} toggleTrack={toggleTrack} me={me} contacts={contacts} initMoneyFilter={initFilter?.moneyFilter}/>}
+    {tab==="tracked"  && <TrackedSection tracked={tracked} toggleTrack={toggleTrack} me={me} contacts={contacts} initMoneyFilter={initFilter?.moneyFilter} globalSearch={globalSearch}/>}
     {tab==="received" && <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} myId={myId}
         contactName={contactName} groupName={groupName} assetClasses={assetClasses}
         contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId}
-        onForward={forwardReco} onReload={onReload} me={me} tracked={tracked} toggleTrack={toggleTrack}/>}
+        onForward={forwardReco} onReload={onReload} me={me} tracked={tracked} toggleTrack={toggleTrack} globalSearch={globalSearch}/>}
     {tab==="made"     && <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName}
         reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses}
-        setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload}/>}
+        setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload} globalSearch={globalSearch}/>}
   </>);
 }
 
 
 /* ─── TrackedSection — My Tracked / Saved list ─────────────────────────────── */
-function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter }) {
+function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, globalSearch }) {
   const [recos,         setRecos]         = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [openRow,       setOpenRow]       = useState(null);
@@ -1617,10 +1635,13 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter })
   const [sharePopId,    setSharePopId]    = useState(null);
   const [shareAnchor,   setShareAnchor]   = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
-  const [q,       setQ]       = useState("");
+  const [q,       setQ]       = useState(globalSearch||"");
   const [fHorizon,setFHorizon]= useState("all");
   const [fMoney,  setFMoney]  = useState(initMoneyFilter||"all");
   const [fInv,    setFInv]    = useState("all");
+
+  // Sync global search into local filter
+  useEffect(()=>{ setQ(globalSearch||""); },[globalSearch]);
 
   useEffect(()=>{
     if(!me?.id||!sql){ setLoading(false); return; }
@@ -1869,14 +1890,16 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter })
         </div>}
   </>);
 }
-function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload, me, tracked, toggleTrack }) {
-  const [q,setQ]=useState(""); const [sort,setSort]=useState({key:"date",dir:"desc"});
+function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload, me, tracked, toggleTrack, globalSearch }) {
+  const [q,setQ]=useState(globalSearch||""); const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
   const [fInv,setFInv]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
   const [showHidden,setShowHidden]=useState(false); const [showExpired,setShowExpired]=useState(false);
   const [openRow,setOpenRow]=useState(null); const [fwd,setFwd]=useState(null);
   const [sharePopId,setSharePopId]=useState(null);
   const [shareAnchor,setShareAnchor]=useState(null);
+  // Sync global search into local filter
+  useEffect(()=>{ setQ(globalSearch||""); },[globalSearch]);
   const [shareUsername,setShareUsername]=useState(null);
 
   const handleReceivedShare = async (e, r) => {
@@ -2238,8 +2261,9 @@ function PanPullModal({ onClose, onApply }) {
   </div></div>);
 }
 
-function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings, me, onReload }) {
+function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings, me, onReload, globalSearch }) {
   const [q,setQ]=useState(""); const [fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fHorizon,setFHorizon]=useState("all");
+  useEffect(()=>{ setQ(globalSearch||""); },[globalSearch]);
   const [showExpired,setShowExpired]=useState(false);
   const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [openRow,setOpenRow]=useState(null);
@@ -4347,11 +4371,10 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
 }
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
-function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs }) {
+function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,  setShowNewReco]  = useState(false);
-  const [feedSearch,   setFeedSearch]   = useState('');
   const [loadedCount,  setLoadedCount]  = useState(20);
   const sentinelRef = useRef(null);
 
@@ -4372,7 +4395,7 @@ function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs
 
   // Search filter applied to all currently loaded items
   const visibleFeed = useMemo(() => {
-    const q = feedSearch.trim().toLowerCase();
+    const q = (globalSearch||'').trim().toLowerCase();
     const base = feedRecs.slice(0, loadedCount);
     if (!q) return base;
     return base.filter(r =>
@@ -4382,57 +4405,50 @@ function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs
       contacts.find(c=>c.id===r.from)?.name?.toLowerCase().includes(q) ||
       contacts.find(c=>c.id===r.from)?.username?.toLowerCase().includes(q)
     );
-  }, [feedRecs, loadedCount, feedSearch, contacts]);
+  }, [feedRecs, loadedCount, globalSearch, contacts]);
 
   // Infinite scroll — Intersection Observer on sentinel div
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
     const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting && !feedSearch) setLoadedCount(n => n + 20); },
+      ([entry]) => { if (entry.isIntersecting && !globalSearch) setLoadedCount(n => n + 20); },
       { rootMargin: '300px' }
     );
     obs.observe(sentinel);
     return () => obs.disconnect();
-  }, [feedSearch]);
+  }, [globalSearch]);
 
   // Reset page when search changes
-  useEffect(() => { setLoadedCount(20); }, [feedSearch]);
+  useEffect(() => { setLoadedCount(20); }, [globalSearch]);
 
   return (
     <>
+    {/* ── Full-width header above both columns ── */}
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
+      <span style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>Welcome back, {firstName}! 👋</span>
+      <button className="btn btn-pri btn-sm" onClick={()=>setShowNewReco(true)} style={{marginLeft:'auto'}}>
+        <Lightbulb size={14}/> Recommend an idea
+      </button>
+    </div>
+
+    {/* ── Two-column layout — both start at same height ── */}
     <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
 
       {/* ── Feed column ── */}
       <div style={{flex:1,minWidth:0}}>
 
-        {/* Compact single-line header */}
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:10}}>
-          <span style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>Welcome back, {firstName}! 👋</span>
-          <button className="btn btn-pri btn-sm" onClick={()=>setShowNewReco(true)}><Lightbulb size={14}/> Recommend an idea</button>
-        </div>
-
-        {/* Feed search bar */}
-        <div className="searchbox" style={{marginBottom:14}}>
-          <Search size={15} color="var(--muted)"/>
-          <input value={feedSearch} onChange={e=>setFeedSearch(e.target.value)}
-            placeholder="Search feed — asset, ticker, investor name…"/>
-          {feedSearch&&<button onClick={()=>setFeedSearch('')}
-            style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
-            <X size={14}/></button>}
-        </div>
-
-        {/* Feed cards */}
+        {/* Feed cards — searched via top nav bar */}
         {visibleFeed.length===0
           ? <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,padding:'48px 32px',textAlign:'center',boxShadow:'var(--shadow)'}}>
-              <div style={{fontSize:40,marginBottom:14}}>{feedSearch?'🔍':'🌱'}</div>
+              <div style={{fontSize:40,marginBottom:14}}>{globalSearch?'🔍':'🌱'}</div>
               <div style={{fontWeight:700,fontSize:17,marginBottom:8}}>
-                {feedSearch?`No results for "${feedSearch}"`:'Your feed is empty'}
+                {globalSearch?`No results for "${globalSearch}"`:'Your feed is empty'}
               </div>
               <div className="muted small" style={{marginBottom:22,maxWidth:340,margin:'0 auto 22px',lineHeight:1.6}}>
-                {feedSearch?'Try a different search term.':'Add people to your network — their investment recommendations will appear here.'}
+                {globalSearch?'Try a different search term.':'Add people to your network — their recommendations will appear here.'}
               </div>
-              {!feedSearch&&<div style={{display:'flex',gap:10,justifyContent:'center'}}>
+              {!globalSearch&&<div style={{display:'flex',gap:10,justifyContent:'center'}}>
                 <button className="btn btn-pri btn-sm" onClick={()=>setPage('network')}><Users size={14}/> Add connections</button>
                 <button className="btn btn-ghost btn-sm" onClick={()=>setShowNewReco(true)}><Lightbulb size={14}/> Recommend an idea</button>
               </div>}
@@ -4442,17 +4458,15 @@ function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs
                 <FeedCard key={r.id} r={r} me={me} contacts={contacts} groups={groups}
                   setRecsReceived={setRecsReceived} tracked={tracked} toggleTrack={toggleTrack}/>
               ))}
-              {/* Infinite scroll sentinel + loading indicator */}
-              {!feedSearch && loadedCount < feedRecs.length && (
+              {!globalSearch && loadedCount < feedRecs.length && (
                 <div ref={sentinelRef} style={{height:8,textAlign:'center',padding:'12px 0',color:'var(--muted)',fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
                   <Loader size={13} className="spin"/> Loading more…
                 </div>
               )}
-              {/* End of feed message */}
-              {(feedSearch || loadedCount >= feedRecs.length) && feedRecs.length > 0 && (
+              {(globalSearch || loadedCount >= feedRecs.length) && feedRecs.length > 0 && (
                 <div style={{textAlign:'center',padding:'14px 0',color:'var(--muted)',fontSize:12}}>
-                  {feedSearch
-                    ? `${visibleFeed.length} result${visibleFeed.length!==1?'s':''} across ${Math.min(loadedCount,feedRecs.length)} loaded ideas`
+                  {globalSearch
+                    ? `${visibleFeed.length} result${visibleFeed.length!==1?'s':''} in feed`
                     : `✓ All ${feedRecs.length} idea${feedRecs.length!==1?'s':''} loaded`}
                 </div>
               )}
