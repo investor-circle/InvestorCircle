@@ -1556,21 +1556,36 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
   useEffect(()=>{
     if(!me?.id||!sql){ setLoading(false); return; }
     setLoading(true);
+
+    // Try with is_invested columns (requires migration_v9 ALTER TABLE)
     sql`SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class, ir.recommendation_type,
                ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
                ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
                ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
                up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
-               rt.tracked_at,
-               rd.invested_price, rd.is_invested
+               rt.tracked_at, rt.is_invested, rt.invested_price
         FROM recommendation_tracking rt
         JOIN ic_recommendations ir ON rt.reco_id = ir.id
         JOIN user_profiles up ON ir.recommender_id = up.id
-        LEFT JOIN recommendation_deliveries rd ON rd.recommendation_id = ir.id AND rd.recipient_id = ${me.id}
         WHERE rt.user_id = ${me.id}
         ORDER BY rt.tracked_at DESC`
       .then(rows=>{ setRecos(rows); setLoading(false); })
-      .catch(()=>setLoading(false));
+      .catch(()=>{
+        // Fallback: without is_invested (pre-migration or column missing)
+        sql`SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class, ir.recommendation_type,
+                   ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
+                   ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
+                   ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
+                   up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
+                   rt.tracked_at
+            FROM recommendation_tracking rt
+            JOIN ic_recommendations ir ON rt.reco_id = ir.id
+            JOIN user_profiles up ON ir.recommender_id = up.id
+            WHERE rt.user_id = ${me.id}
+            ORDER BY rt.tracked_at DESC`
+          .then(rows=>{ setRecos(rows.map(r=>({...r, is_invested:false, invested_price:null}))); setLoading(false); })
+          .catch(e=>{ console.error('TrackedSection load failed:', e); setLoading(false); });
+      });
   },[me?.id, tracked.size]);
 
   // Patch invested status locally + persist to recommendation_tracking
