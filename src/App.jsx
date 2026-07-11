@@ -486,6 +486,7 @@ export default function App() {
     { id:"users",       label:"Users",             icon:UserCog },
     { id:"groups",      label:"Groups",            icon:Layers },
     { id:"instruments", label:"Instruments",        icon:Database },
+    { id:"sebi",        label:"SEBI Approvals",    icon:Shield },
     { id:"configs",     label:"App Configuration", icon:Settings },
   ];
 
@@ -661,6 +662,7 @@ export default function App() {
             {!isInv && page==="users"       && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={()=>{}}/>}
             {!isInv && page==="groups"      && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
             {!isInv && page==="instruments" && <AdminInstruments/>}
+            {!isInv && page==="sebi"        && <AdminSebi/>}
             {!isInv && page==="configs"     && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
           </div>
         </div>
@@ -2386,11 +2388,20 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
   const [expandedId,  setExpandedId]  = useState(recoId||null);
   const expandedRef = useRef(null);
 
-  // Bio + social editing state
-  const [editing,     setEditing]     = useState(false);
-  const [editBio,     setEditBio]     = useState('');
-  const [editSocials, setEditSocials] = useState({ twitter:'', linkedin:'', telegram:'', instagram:'' });
-  const [savingEdit,  setSavingEdit]  = useState(false);
+  // Profile editing state — covers all editable fields
+  const [editing,          setEditing]          = useState(false);
+  const [editFirstName,    setEditFirstName]    = useState('');
+  const [editLastName,     setEditLastName]     = useState('');
+  const [editAvatarColor,  setEditAvatarColor]  = useState('');
+  const [editBio,          setEditBio]          = useState('');
+  const [editSocials,      setEditSocials]      = useState({ twitter:'', linkedin:'', telegram:'', instagram:'' });
+  const [editRegStatus,    setEditRegStatus]    = useState('self_directed');
+  const [editSebiNum,      setEditSebiNum]      = useState('');
+  const [editSebiTill,     setEditSebiTill]     = useState('');
+  const [editSebiFirm,     setEditSebiFirm]     = useState('');
+  const [savingEdit,       setSavingEdit]       = useState(false);
+  const [regOptions,       setRegOptions]       = useState([]);
+  const [sebiVerifyMsg,    setSebiVerifyMsg]    = useState('');
 
   useEffect(()=>{
     setLoading(true); setNotFound(false); setData(null);
@@ -2418,22 +2429,67 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
   const profileUrl=`${window.location.origin}${window.location.pathname}#/investor/${username}`;
   const copyLink=()=>{ navigator.clipboard.writeText(profileUrl).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); }); };
 
-  // Start editing bio + socials
-  const startEdit=()=>{
+  // Load registration options + verification message when edit opens
+  const startEdit=async()=>{
     const p=data?.profile||{};
+    setEditFirstName(p.first_name||'');
+    setEditLastName(p.last_name||'');
+    setEditAvatarColor(p.avatar_color||'');
     setEditBio(p.bio||'');
     setEditSocials({ twitter:p.twitter_url||'', linkedin:p.linkedin_url||'', telegram:p.telegram_url||'', instagram:p.instagram_url||'' });
+    setEditRegStatus(p.registration_status||'self_directed');
+    setEditSebiNum(p.sebi_reg_number||'');
+    setEditSebiTill(p.sebi_reg_valid_till||'');
+    setEditSebiFirm(p.sebi_firm_name||'');
+    if(sql && !regOptions.length) {
+      try {
+        const opts = await sql`SELECT * FROM registration_status_options WHERE is_active=true ORDER BY sort_order`;
+        setRegOptions(opts);
+        const msg = await sql`SELECT value FROM app_settings WHERE key='sebi_verification_message' LIMIT 1`;
+        if(msg[0]) setSebiVerifyMsg(msg[0].value);
+      } catch(_) {}
+    }
     setEditing(true);
   };
 
-  // Save bio + socials to Neon
+  // Save all profile fields
   const saveEdit=async()=>{
     if(!sql||!data?.profile?.id) return;
     setSavingEdit(true);
+    const isSebi = ['sebi_ra','sebi_ria'].includes(editRegStatus);
+    const sebiChanged = editRegStatus !== (data.profile.registration_status||'self_directed');
+    const newApprovalStatus = isSebi
+      ? (sebiChanged ? 'pending' : (data.profile.sebi_approval_status||'not_applied'))
+      : 'not_applied';
     try {
-      await sql`UPDATE user_profiles SET bio=${editBio||null}, twitter_url=${editSocials.twitter||null}, linkedin_url=${editSocials.linkedin||null}, telegram_url=${editSocials.telegram||null}, instagram_url=${editSocials.instagram||null} WHERE id=${data.profile.id}`;
-      setData(d=>({...d,profile:{...d.profile,bio:editBio,twitter_url:editSocials.twitter,linkedin_url:editSocials.linkedin,telegram_url:editSocials.telegram,instagram_url:editSocials.instagram}}));
-      if(patchProfile) patchProfile({bio:editBio,twitter_url:editSocials.twitter,linkedin_url:editSocials.linkedin,telegram_url:editSocials.telegram,instagram_url:editSocials.instagram});
+      const fn = editFirstName.trim(); const ln = editLastName.trim();
+      await sql`UPDATE user_profiles SET
+        first_name=${fn||null}, last_name=${ln||null},
+        full_name=${[fn,ln].filter(Boolean).join(' ')||null},
+        avatar_color=${editAvatarColor||null},
+        bio=${editBio||null},
+        twitter_url=${editSocials.twitter||null}, linkedin_url=${editSocials.linkedin||null},
+        telegram_url=${editSocials.telegram||null}, instagram_url=${editSocials.instagram||null},
+        registration_status=${editRegStatus},
+        sebi_reg_number=${isSebi?(editSebiNum||null):null},
+        sebi_reg_valid_till=${isSebi?(editSebiTill||null):null},
+        sebi_firm_name=${isSebi?(editSebiFirm||null):null},
+        sebi_approval_status=${newApprovalStatus},
+        sebi_submitted_at=${isSebi&&sebiChanged?new Date().toISOString():data.profile.sebi_submitted_at||null}
+      WHERE id=${data.profile.id}`;
+      const updates = {
+        first_name:fn, last_name:ln, full_name:[fn,ln].filter(Boolean).join(' '),
+        avatar_color:editAvatarColor, bio:editBio,
+        twitter_url:editSocials.twitter, linkedin_url:editSocials.linkedin,
+        telegram_url:editSocials.telegram, instagram_url:editSocials.instagram,
+        registration_status:editRegStatus,
+        sebi_reg_number:isSebi?editSebiNum:null,
+        sebi_reg_valid_till:isSebi?editSebiTill:null,
+        sebi_firm_name:isSebi?editSebiFirm:null,
+        sebi_approval_status:newApprovalStatus,
+      };
+      setData(d=>({...d,profile:{...d.profile,...updates}}));
+      if(patchProfile) patchProfile(updates);
     } catch(e){ console.warn('Save failed:',e); }
     setSavingEdit(false);
     setEditing(false);
@@ -2481,8 +2537,28 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
             <div style={{flex:1,minWidth:0}}>
               <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:4}}>
                 <span style={{fontSize:20,fontWeight:800,color:'#fff',letterSpacing:'-.3px'}}>{displayName}</span>
-                <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:5,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.7)',border:'1px solid rgba(255,255,255,.15)',textTransform:'uppercase',letterSpacing:.05}}>Self-directed Investor</span>
-                <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:5,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.25)',textTransform:'uppercase',letterSpacing:.05}}>Not SEBI Registered</span>
+                {/* Registration status badge — dynamic */}
+                {(()=>{
+                  const status = profile.registration_status||'self_directed';
+                  const approved = profile.sebi_approval_status==='approved';
+                  const isSebi = ['sebi_ra','sebi_ria'].includes(status);
+                  const statusLabel = isSebi&&approved
+                    ? (status==='sebi_ra'?'SEBI Registered RA':'SEBI Registered RIA')
+                    : (status==='enthusiast'?'Market Enthusiast':'Self-directed Investor');
+                  return <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:5,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.7)',border:'1px solid rgba(255,255,255,.15)',textTransform:'uppercase',letterSpacing:.05}}>{statusLabel}</span>;
+                })()}
+                {/* SEBI badge — always defaults to Not SEBI Registered unless explicitly approved */}
+                {(()=>{
+                  const status = profile.registration_status||'self_directed';
+                  const approved = profile.sebi_approval_status==='approved';
+                  const isSebi = ['sebi_ra','sebi_ria'].includes(status);
+                  if(isSebi && approved) return (
+                    <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:5,background:'rgba(21,146,78,.2)',color:'#4ade80',border:'1px solid rgba(21,146,78,.4)',textTransform:'uppercase',letterSpacing:.05}}>
+                      ✓ SEBI Registered{profile.sebi_reg_number?` · ${profile.sebi_reg_number}`:''}
+                    </span>
+                  );
+                  return <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:5,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.25)',textTransform:'uppercase',letterSpacing:.05}}>Not SEBI Registered</span>;
+                })()}
               </div>
               <div style={{fontSize:13,color:'rgba(255,255,255,.5)',fontFamily:"'JetBrains Mono',monospace",marginBottom:8}}>@{username}{memberSince&&<span style={{marginLeft:10,fontFamily:'inherit'}}>· Since {memberSince}</span>}</div>
 
@@ -2492,39 +2568,114 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
                   {profile.bio
                     ? <p style={{fontSize:13,color:'rgba(255,255,255,.7)',lineHeight:1.6,margin:0}}>{profile.bio}</p>
                     : isOwnProfile && <p style={{fontSize:12,color:'rgba(255,255,255,.3)',fontStyle:'italic',margin:0}}>No bio yet — add one to tell visitors about your investment approach.</p>}
-                  {isOwnProfile && <button onClick={startEdit} style={{marginTop:6,fontSize:11,fontWeight:600,background:'none',border:'none',color:'rgba(255,255,255,.4)',cursor:'pointer',padding:0,display:'flex',alignItems:'center',gap:4}}><Pencil size={11}/> {profile.bio?'Edit bio & social links':'Add bio & social links'}</button>}
+                  {isOwnProfile && <button onClick={startEdit} style={{marginTop:6,fontSize:11,fontWeight:600,background:'none',border:'none',color:'rgba(255,255,255,.4)',cursor:'pointer',padding:0,display:'flex',alignItems:'center',gap:4}}><Pencil size={11}/> Edit profile</button>}
                 </div>
               )}
 
-              {/* Inline edit form */}
+              {/* ── Expanded inline edit form ── */}
               {editing && (
-                <div style={{marginBottom:12,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:12,padding:'14px 16px'}}>
+                <div style={{marginBottom:12,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:12,padding:'16px 18px'}}>
+
+                  {/* Avatar color */}
+                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Avatar colour</div>
+                  <div style={{display:'flex',gap:8,marginBottom:16}}>
+                    {['#6d5df5','#cf52d8','#15924e','#0ea5b7','#d97706','#e11d48','#2563eb','#64748b'].map(c=>(
+                      <div key={c} onClick={()=>setEditAvatarColor(c)} style={{width:28,height:28,borderRadius:8,background:c,cursor:'pointer',border:editAvatarColor===c?'2px solid #fff':'2px solid transparent',boxSizing:'border-box',transition:'.1s'}}/>
+                    ))}
+                    <div onClick={()=>setEditAvatarColor('')} style={{width:28,height:28,borderRadius:8,background:'linear-gradient(135deg,#6d5df5,#cf52d8)',cursor:'pointer',border:!editAvatarColor?'2px solid #fff':'2px solid transparent',boxSizing:'border-box',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#fff',fontWeight:700}}>AUTO</div>
+                  </div>
+
+                  {/* Name */}
+                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Name</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
+                    {[{val:editFirstName,set:setEditFirstName,ph:'First name'},{val:editLastName,set:setEditLastName,ph:'Last name'}].map((f,i)=>(
+                      <input key={i} value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.ph}
+                        style={{background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.12)',borderRadius:7,padding:'8px 11px',fontSize:13,color:'#fff',fontFamily:'inherit',outline:'none',boxSizing:'border-box',width:'100%'}}/>
+                    ))}
+                  </div>
+
+                  {/* Read-only username + email */}
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
+                    {[{label:'Username',val:`@${username}`},{label:'Email',val:profile.email||''}].map((f,i)=>(
+                      <div key={i}>
+                        <div style={{fontSize:10,color:'rgba(255,255,255,.35)',marginBottom:4,display:'flex',alignItems:'center',gap:4}}><Lock size={10}/>{f.label} (cannot be changed)</div>
+                        <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',borderRadius:7,padding:'8px 11px',fontSize:12,color:'rgba(255,255,255,.35)',fontFamily:'monospace'}}>{f.val}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Bio */}
                   <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Bio</div>
                   <textarea value={editBio} onChange={e=>setEditBio(e.target.value)} rows={3} maxLength={300} placeholder="Describe your investment approach…"
                     style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',borderRadius:8,padding:'8px 11px',fontSize:13,color:'#fff',fontFamily:'inherit',resize:'vertical',outline:'none',boxSizing:'border-box'}}/>
-                  <div style={{fontSize:10,color:'rgba(255,255,255,.3)',textAlign:'right',marginTop:2}}>{editBio.length}/300</div>
+                  <div style={{fontSize:10,color:'rgba(255,255,255,.3)',textAlign:'right',marginTop:2,marginBottom:16}}>{editBio.length}/300</div>
 
-                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginTop:12,marginBottom:8}}>Social profile links</div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                  {/* Social links */}
+                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Social profile links</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
                     {[
-                      {key:'twitter',   label:'Twitter / X',   ph:'https://twitter.com/username'},
-                      {key:'linkedin',  label:'LinkedIn',       ph:'https://linkedin.com/in/username'},
-                      {key:'telegram',  label:'Telegram',       ph:'https://t.me/username'},
-                      {key:'instagram', label:'Instagram',      ph:'https://instagram.com/username'},
+                      {key:'twitter',label:'Twitter / X',ph:'https://twitter.com/username'},
+                      {key:'linkedin',label:'LinkedIn',ph:'https://linkedin.com/in/username'},
+                      {key:'telegram',label:'Telegram',ph:'https://t.me/username'},
+                      {key:'instagram',label:'Instagram',ph:'https://instagram.com/username'},
                     ].map(s=>(
                       <div key={s.key}>
-                        <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginBottom:4,display:'flex',alignItems:'center',gap:5}}>
-                          <svg width={12} height={12} viewBox="0 0 24 24" fill="rgba(255,255,255,.5)"><path d={SOCIAL_PATHS[s.key]}/></svg>
-                          {s.label}
+                        <div style={{fontSize:10,color:'rgba(255,255,255,.4)',marginBottom:4,display:'flex',alignItems:'center',gap:5}}>
+                          <svg width={10} height={10} viewBox="0 0 24 24" fill="rgba(255,255,255,.5)"><path d={SOCIAL_PATHS[s.key]}/></svg>{s.label}
                         </div>
-                        <input value={editSocials[s.key]} onChange={e=>setEditSocials(prev=>({...prev,[s.key]:e.target.value}))} placeholder={s.ph}
+                        <input value={editSocials[s.key]} onChange={e=>setEditSocials(p=>({...p,[s.key]:e.target.value}))} placeholder={s.ph}
                           style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.12)',borderRadius:7,padding:'7px 10px',fontSize:12,color:'#fff',fontFamily:'inherit',outline:'none',boxSizing:'border-box'}}/>
                       </div>
                     ))}
                   </div>
 
-                  <div style={{display:'flex',gap:8,marginTop:14,justifyContent:'flex-end'}}>
-                    <button className="btn btn-ghost btn-sm" style={{color:'rgba(255,255,255,.6)',border:'1px solid rgba(255,255,255,.15)'}} onClick={()=>setEditing(false)}>Cancel</button>
+                  {/* Registration status */}
+                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Investor type</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:16}}>
+                    {(regOptions.length ? regOptions : [
+                      {code:'self_directed',label:'Self-directed Investor',description:'Invests own money independently. No SEBI registration held.',requires_sebi_fields:false},
+                      {code:'enthusiast',label:'Market Enthusiast',description:'Passionate about markets, shares ideas informally. No professional accountability.',requires_sebi_fields:false},
+                      {code:'sebi_ra',label:'SEBI Registered Research Analyst',description:'SEBI registration under Research Analysts Regulations, 2014. Format: INH000XXXXXX.',requires_sebi_fields:true},
+                      {code:'sebi_ria',label:'SEBI Registered Investment Adviser',description:'SEBI registration under Investment Advisers Regulations, 2013. Format: INA000XXXXXX.',requires_sebi_fields:true},
+                    ]).map(opt=>(
+                      <label key={opt.code} title={opt.description} style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer',padding:'10px 12px',borderRadius:9,background:editRegStatus===opt.code?'rgba(109,93,245,.25)':'rgba(255,255,255,.04)',border:`1px solid ${editRegStatus===opt.code?'rgba(109,93,245,.6)':'rgba(255,255,255,.08)'}`,transition:'.15s'}}>
+                        <input type="radio" name="regStatus" value={opt.code} checked={editRegStatus===opt.code} onChange={()=>setEditRegStatus(opt.code)}
+                          style={{accentColor:'#6d5df5',marginTop:2,flexShrink:0}}/>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{opt.label}</div>
+                          <div style={{fontSize:11,color:'rgba(255,255,255,.45)',marginTop:2,lineHeight:1.4}}>{opt.description}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* SEBI fields — shown only for RA/RIA */}
+                  {['sebi_ra','sebi_ria'].includes(editRegStatus) && (<>
+                    <div style={{background:'rgba(251,191,36,.08)',border:'1px solid rgba(251,191,36,.25)',borderRadius:10,padding:'12px 14px',marginBottom:14}}>
+                      <div style={{fontSize:12,color:'#fbbf24',lineHeight:1.6}}>
+                        {sebiVerifyMsg || 'Your SEBI registration details will be reviewed by our team. Until verified, your profile will show "Not SEBI Registered". Approved profiles receive a green verified badge within 2–3 business days.'}
+                      </div>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
+                      {[
+                        {label:'SEBI Registration Number',ph:editRegStatus==='sebi_ra'?'INH000XXXXXX':'INA000XXXXXX',val:editSebiNum,set:setEditSebiNum},
+                        {label:'Registration Valid Till',ph:'',val:editSebiTill,set:setEditSebiTill,type:'date'},
+                        {label:'Firm / Employer Name (optional)',ph:'e.g. XYZ Securities',val:editSebiFirm,set:setEditSebiFirm},
+                      ].map((f,i)=>(
+                        <div key={i} style={i===2?{gridColumn:'1/span 2'}:{}}>
+                          <div style={{fontSize:10,color:'rgba(255,255,255,.4)',marginBottom:4}}>{f.label}</div>
+                          <input type={f.type||'text'} value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.ph}
+                            style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.12)',borderRadius:7,padding:'8px 11px',fontSize:12,color:'#fff',fontFamily:'inherit',outline:'none',boxSizing:'border-box',colorScheme:'dark'}}/>
+                        </div>
+                      ))}
+                    </div>
+                  </>)}
+
+                  <div style={{display:'flex',gap:8,marginTop:4,justifyContent:'flex-end'}}>
+                    <button onClick={()=>setEditing(false)}
+                      style={{padding:'8px 16px',borderRadius:10,fontWeight:700,fontSize:13,cursor:'pointer',background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.2)',color:'#fff',fontFamily:'inherit'}}>
+                      Cancel
+                    </button>
                     <button className="btn btn-pri btn-sm" disabled={savingEdit} onClick={saveEdit}>
                       {savingEdit?<><Loader size={13} className="spin"/> Saving…</>:<><Check size={13}/> Save</>}
                     </button>
@@ -3378,7 +3529,178 @@ function InstrumentAddForm({ onAdded }) {
   </div>);
 }
 
-/* =================================================================== ADMIN */
+/* =================================================================== ADMIN SEBI */
+function AdminSebi() {
+  const [pending,   setPending]   = useState([]);
+  const [approved,  setApproved]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [busy,      setBusy]      = useState({});
+  const [verifyMsg, setVerifyMsg] = useState('');
+  const [editMsg,   setEditMsg]   = useState(false);
+  const [msgDraft,  setMsgDraft]  = useState('');
+  const [regOpts,   setRegOpts]   = useState([]);
+  const [editOpts,  setEditOpts]  = useState(false);
+  const [optDraft,  setOptDraft]  = useState([]);
+
+  const load = async () => {
+    if(!sql) return;
+    setLoading(true);
+    try {
+      const [pend, appr, msg, opts] = await Promise.all([
+        sql`SELECT id,full_name,first_name,last_name,email,registration_status,sebi_reg_number,sebi_reg_valid_till,sebi_firm_name,sebi_submitted_at FROM user_profiles WHERE sebi_approval_status='pending' ORDER BY sebi_submitted_at`,
+        sql`SELECT id,full_name,first_name,last_name,email,registration_status,sebi_reg_number,sebi_reg_valid_till,sebi_firm_name,sebi_approved_at FROM user_profiles WHERE sebi_approval_status='approved' ORDER BY sebi_approved_at DESC`,
+        sql`SELECT value FROM app_settings WHERE key='sebi_verification_message' LIMIT 1`,
+        sql`SELECT * FROM registration_status_options ORDER BY sort_order`,
+      ]);
+      setPending(pend); setApproved(appr);
+      if(msg[0]) setVerifyMsg(msg[0].value);
+      setRegOpts(opts); setOptDraft(opts.map(o=>({...o})));
+    } catch(e) { console.warn(e); }
+    setLoading(false);
+  };
+
+  useEffect(()=>{ load(); },[]);
+
+  const nameOf = u => [u.first_name,u.last_name].filter(Boolean).join(' ')||u.full_name||u.email;
+  const regLabel = code => regOpts.find(o=>o.code===code)?.label||code;
+
+  const doApprove = async (u) => {
+    if(!confirm(`Approve SEBI registration for ${nameOf(u)}?`)) return;
+    setBusy(b=>({...b,[u.id]:'approving'}));
+    await sql`UPDATE user_profiles SET sebi_approval_status='approved', sebi_approved_at=now() WHERE id=${u.id}`;
+    await load();
+    setBusy(b=>({...b,[u.id]:null}));
+  };
+  const doReject = async (u) => {
+    if(!confirm(`Reject / revoke SEBI status for ${nameOf(u)}? Their profile will revert to "Not SEBI Registered".`)) return;
+    setBusy(b=>({...b,[u.id]:'rejecting'}));
+    await sql`UPDATE user_profiles SET sebi_approval_status='rejected', sebi_approved_at=null WHERE id=${u.id}`;
+    await load();
+    setBusy(b=>({...b,[u.id]:null}));
+  };
+
+  const saveMsg = async () => {
+    await sql`INSERT INTO app_settings(key,value) VALUES('sebi_verification_message',${msgDraft}) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`;
+    setVerifyMsg(msgDraft); setEditMsg(false);
+  };
+
+  const saveOpts = async () => {
+    for(const o of optDraft) {
+      await sql`UPDATE registration_status_options SET label=${o.label}, description=${o.description}, is_active=${o.is_active}, sort_order=${o.sort_order} WHERE id=${o.id}`;
+    }
+    await load(); setEditOpts(false);
+  };
+
+  const SebiRow = ({u, canReject, canApprove}) => (
+    <tr className="hoverable">
+      <td><div style={{fontWeight:600}}>{nameOf(u)}</div><div className="muted small">{u.email}</div></td>
+      <td><span className="pill accent" style={{fontSize:11}}>{regLabel(u.registration_status)}</span></td>
+      <td className="tnum" style={{fontSize:12}}>{u.sebi_reg_number||'—'}</td>
+      <td className="muted small">{u.sebi_reg_valid_till?new Date(u.sebi_reg_valid_till).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}):'—'}</td>
+      <td className="muted small">{u.sebi_firm_name||'—'}</td>
+      <td className="muted small">{(u.sebi_submitted_at||u.sebi_approved_at)?new Date(u.sebi_submitted_at||u.sebi_approved_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}):'—'}</td>
+      <td><div className="actions">
+        {canApprove && <button className="btn btn-pri btn-sm" disabled={!!busy[u.id]} onClick={()=>doApprove(u)}>{busy[u.id]==='approving'?<><Loader size={13} className="spin"/> …</>:<><Check size={13}/> Approve</>}</button>}
+        {canReject  && <button className="btn btn-ghost btn-sm" style={{color:'var(--loss)',borderColor:'var(--loss)'}} disabled={!!busy[u.id]} onClick={()=>doReject(u)}>{busy[u.id]==='rejecting'?<><Loader size={13} className="spin"/> …</>:<><X size={13}/> {canApprove?'Reject':'Revoke'}</>}</button>}
+      </div></td>
+    </tr>
+  );
+
+  return (<>
+    <div className="page-head">
+      <div><div className="eyebrow">Admin</div><div className="page-title">SEBI Approvals</div>
+        <div className="page-sub">Review and approve user SEBI registration claims</div></div>
+    </div>
+
+    {loading && <div className="muted small" style={{padding:20,textAlign:'center'}}><Loader size={18} className="spin"/></div>}
+
+    {/* ── Pending ── */}
+    {!loading && (<>
+      <div className="card" style={{marginBottom:18,border: pending.length?'2px solid var(--accent)':'1px solid var(--line)'}}>
+        <div className="card-head" style={{color:pending.length?'var(--accent)':undefined}}>
+          <span><Shield size={15} style={{verticalAlign:-2,marginRight:6}}/> Pending verification ({pending.length})</span>
+        </div>
+        {pending.length===0
+          ? <div className="empty">No pending SEBI verification requests.</div>
+          : <div className="tscroll"><table className="grid">
+              <thead><tr><th>User</th><th>Registration type</th><th>Reg. number</th><th>Valid till</th><th>Firm</th><th>Submitted</th><th>Actions</th></tr></thead>
+              <tbody>{pending.map(u=><SebiRow key={u.id} u={u} canApprove canReject/>)}</tbody>
+            </table></div>}
+      </div>
+
+      {/* ── Approved ── */}
+      <div className="card" style={{marginBottom:18}}>
+        <div className="card-head"><span style={{color:'var(--gain)'}}><Check size={15} style={{verticalAlign:-2,marginRight:6}}/> Approved ({approved.length})</span></div>
+        {approved.length===0
+          ? <div className="empty">No approved SEBI registrations yet.</div>
+          : <div className="tscroll"><table className="grid">
+              <thead><tr><th>User</th><th>Registration type</th><th>Reg. number</th><th>Valid till</th><th>Firm</th><th>Approved on</th><th>Actions</th></tr></thead>
+              <tbody>{approved.map(u=><SebiRow key={u.id} u={u} canReject/>)}</tbody>
+            </table></div>}
+      </div>
+
+      {/* ── Verification message editor ── */}
+      <div className="card" style={{marginBottom:18}}>
+        <div className="card-head"><span>Verification notice shown to users</span>
+          {!editMsg && <button className="btn btn-soft btn-sm" onClick={()=>{ setMsgDraft(verifyMsg); setEditMsg(true); }}><Pencil size={13}/> Edit</button>}
+        </div>
+        <div className="card-body">
+          {editMsg
+            ? <><textarea rows={4} value={msgDraft} onChange={e=>setMsgDraft(e.target.value)} style={{width:'100%',border:'1px solid var(--line-2)',borderRadius:10,padding:'10px 12px',fontSize:13,fontFamily:'inherit',outline:'none',resize:'vertical'}}/>
+                <div style={{display:'flex',gap:8,marginTop:10,justifyContent:'flex-end'}}>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setEditMsg(false)}>Cancel</button>
+                  <button className="btn btn-pri btn-sm" onClick={saveMsg}><Check size={13}/> Save</button>
+                </div></>
+            : <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.6,padding:'4px 0'}}>{verifyMsg||'No message set.'}</div>}
+        </div>
+      </div>
+
+      {/* ── Registration options editor ── */}
+      <div className="card">
+        <div className="card-head"><span>Registration status options</span>
+          {!editOpts && <button className="btn btn-soft btn-sm" onClick={()=>setEditOpts(true)}><Pencil size={13}/> Edit options</button>}
+        </div>
+        <div className="card-body">
+          {editOpts
+            ? <><div style={{display:'flex',flexDirection:'column',gap:12}}>
+                {optDraft.map((o,i)=>(
+                  <div key={o.id} style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:12,padding:'12px 14px'}}>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 80px',gap:10,marginBottom:8}}>
+                      <div className="field" style={{margin:0}}><label style={{fontSize:11}}>Label</label>
+                        <input value={o.label} onChange={e=>setOptDraft(d=>d.map((x,j)=>j===i?{...x,label:e.target.value}:x))} style={{width:'100%',border:'1px solid var(--line-2)',borderRadius:8,padding:'7px 10px',fontSize:13,outline:'none'}}/></div>
+                      <div style={{display:'flex',alignItems:'center',gap:8,paddingTop:20}}>
+                        <label style={{display:'flex',alignItems:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                          <input type="checkbox" checked={o.is_active} onChange={e=>setOptDraft(d=>d.map((x,j)=>j===i?{...x,is_active:e.target.checked}:x))} style={{accentColor:'var(--accent)'}}/>Active
+                        </label>
+                      </div>
+                    </div>
+                    <div className="field" style={{margin:0}}><label style={{fontSize:11}}>Tooltip / Description</label>
+                      <textarea rows={2} value={o.description||''} onChange={e=>setOptDraft(d=>d.map((x,j)=>j===i?{...x,description:e.target.value}:x))}
+                        style={{width:'100%',border:'1px solid var(--line-2)',borderRadius:8,padding:'7px 10px',fontSize:12,fontFamily:'inherit',outline:'none',resize:'vertical'}}/></div>
+                  </div>
+                ))}
+              </div>
+              <div style={{display:'flex',gap:8,marginTop:14,justifyContent:'flex-end'}}>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setEditOpts(false)}>Cancel</button>
+                <button className="btn btn-pri btn-sm" onClick={saveOpts}><Check size={13}/> Save options</button>
+              </div></>
+            : <table className="grid">
+                <thead><tr><th>Code</th><th>Label</th><th>Description</th><th>Requires SEBI fields</th><th>Active</th></tr></thead>
+                <tbody>{regOpts.map(o=><tr key={o.id} className="hoverable">
+                  <td className="muted small" style={{fontFamily:'monospace'}}>{o.code}</td>
+                  <td style={{fontWeight:600}}>{o.label}</td>
+                  <td className="muted small" style={{maxWidth:320}}>{o.description}</td>
+                  <td>{o.requires_sebi_fields?<span className="pill accent">Yes</span>:<span className="pill">No</span>}</td>
+                  <td>{o.is_active?<span className="pill gain">Active</span>:<span className="pill">Inactive</span>}</td>
+                </tr>)}</tbody>
+              </table>}
+        </div>
+      </div>
+    </>)}
+  </>);
+}
+
+/* =================================================================== ADMIN USERS */
 function AdminUsers({ users, setUsers, contacts, setContacts }) {
   const [q, setQ] = useState(""); const [showAdd, setShowAdd] = useState(false);
   const filtered = users.filter(u=>(u.name+u.email).toLowerCase().includes(q.toLowerCase()));
