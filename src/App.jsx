@@ -312,6 +312,11 @@ export default function App() {
   const [sharing,       setSharing]       = useState({});
   const [notifications, setNotifications] = useState([]);
   const [tracked,       setTracked]       = useState(new Set()); // Set of reco IDs the user has tracked
+  // Feed configuration
+  const [feedConfigOptions,       setFeedConfigOptions]       = useState([]); // admin-defined options
+  const [userFeedPrefs,           setUserFeedPrefs]           = useState({}); // {key: boolean} user overrides
+  const [effectiveFeedConfig,     setEffectiveFeedConfig]     = useState({}); // merged effective config
+  const [networkEngagementRecos,  setNetworkEngagementRecos]  = useState([]); // extended feed recos
   const [notifOpen,     setNotifOpen]     = useState(false);
   const [profileOpen,   setProfileOpen]   = useState(false);
   const [connectConfirm, setConnectConfirm] = useState(null); // { name, username } after auto-connect
@@ -423,6 +428,64 @@ export default function App() {
           const tr = await sql`SELECT reco_id FROM recommendation_tracking WHERE user_id=${user.uid}`;
           setTracked(new Set(tr.map(r=>r.reco_id)));
         } catch(_) {}
+
+        // Load feed config options + user prefs, compute effective config
+        let effective = {};
+        try {
+          const [opts, prefs] = await Promise.all([
+            sql`SELECT * FROM feed_config_options ORDER BY sort_order`,
+            sql`SELECT config_key, enabled FROM user_feed_preferences WHERE user_id=${user.uid}`,
+          ]);
+          setFeedConfigOptions(opts);
+          const userPrefsMap = Object.fromEntries(prefs.map(p=>[p.config_key, p.enabled]));
+          setUserFeedPrefs(userPrefsMap);
+          opts.forEach(o => {
+            if (!o.admin_enabled)  { effective[o.key] = false; return; }
+            if (o.always_on)       { effective[o.key] = true;  return; }
+            effective[o.key] = (o.config_key in userPrefsMap) ? userPrefsMap[o.config_key]
+                             : (o.key in userPrefsMap)         ? userPrefsMap[o.key]
+                             : o.default_on;
+          });
+          setEffectiveFeedConfig(effective);
+        } catch(_) {
+          // table may not exist pre-migration — use safe defaults
+          effective = { src_direct:true, src_group:true, src_network_engagement:true,
+                        rank_engagement:true, rank_price_movement:true, rank_untracked_first:true };
+          setEffectiveFeedConfig(effective);
+        }
+
+        // Load network-engaged recos (recos liked/commented by connections not in my direct feed)
+        if (effective.src_network_engagement) {
+          try {
+            const activeConns = conns.filter(c=>c.status==='active').map(c=>c.id);
+            if (activeConns.length > 0) {
+              const engRecos = await sql`
+                SELECT DISTINCT ir.id, ir.asset_name, ir.ticker, ir.asset_class,
+                       ir.recommendation_type, ir.reco_price, ir.current_price,
+                       ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
+                       ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
+                       up.full_name as by_name, up.id as from_id,
+                       0 as likes, 0 as dislikes
+                FROM recommendation_deliveries rd
+                JOIN ic_recommendations ir ON ir.id = rd.recommendation_id
+                JOIN user_profiles up ON up.id = ir.recommender_id
+                WHERE rd.recipient_id = ANY(${activeConns})
+                  AND (rd.reaction IN ('like','dislike')
+                    OR EXISTS (SELECT 1 FROM recommendation_comments rc
+                               WHERE rc.reco_id=ir.id AND rc.user_id=ANY(${activeConns})))
+                  AND ir.id NOT IN (
+                    SELECT recommendation_id FROM recommendation_deliveries WHERE recipient_id=${user.uid}
+                  )
+                ORDER BY ir.created_at DESC
+                LIMIT 50`;
+              setNetworkEngagementRecos(engRecos.map(r=>({
+                ...r, assetName:r.asset_name, priceAt:r.reco_price, price:r.current_price,
+                byName:r.by_name, from:r.from_id, feedSource:'network_engagement',
+                reaction:'none', hidden:false, invested:false, deliveryId:null,
+              })));
+            }
+          } catch(_) {}
+        }
       } catch(e) { console.warn("Data load failed:", e.message); }
       // Load registered users for admin panel
       try {
@@ -505,6 +568,7 @@ export default function App() {
     { id:"groups",      label:"Groups",            icon:Layers },
     { id:"instruments", label:"Instruments",        icon:Database },
     { id:"sebi",        label:"SEBI Approvals",    icon:Shield },
+    { id:"feed",        label:"Feed Settings",     icon:Flame },
     { id:"configs",     label:"App Configuration", icon:Settings },
   ];
 
@@ -629,7 +693,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack}/>}
+            {isInv && page==="home"      && <HomeFeed setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs}/>}
             {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
             {isInv && page==="network"   && <Network
                 connections={connections} setConnections={setConnections}
@@ -647,7 +711,7 @@ export default function App() {
                 initFilter={recoInit} holdings={holdings} me={ME}
                 tracked={tracked} toggleTrack={toggleTrack}
                 onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/>}
-            {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id}/>}
+            {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/>}
             {isInv && page==="trackrecord" && (
               ME.username
                 ? <PublicProfilePage
@@ -682,6 +746,7 @@ export default function App() {
             {!isInv && page==="groups"      && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
             {!isInv && page==="instruments" && <AdminInstruments/>}
             {!isInv && page==="sebi"        && <AdminSebi/>}
+            {!isInv && page==="feed"        && <AdminFeedConfig feedConfigOptions={feedConfigOptions} setFeedConfigOptions={setFeedConfigOptions} setEffectiveFeedConfig={setEffectiveFeedConfig} userFeedPrefs={userFeedPrefs}/>}
             {!isInv && page==="configs"     && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
           </div>
         </div>
@@ -2648,7 +2713,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
 }
 
 /* =================================================================== SHARING */
-function Sharing({ sharing, setSharing, configs, holdings, contacts, groups }) {
+function Sharing({ sharing, setSharing, configs, holdings, contacts, groups, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, effectiveFeedConfig, setEffectiveFeedConfig, myId }) {
   const [previewId, setPreviewId] = useState(null); const [pickFor, setPickFor] = useState(null);
   const nameOfLive = (id) => contacts.find(c=>c.id===id)?.name ?? groups.find(g=>g.id===id)?.name ?? id;
   const set=(id,patch)=>setSharing(s=>({...s,[id]:{...s[id],...patch}}));
@@ -2680,6 +2745,69 @@ function Sharing({ sharing, setSharing, configs, holdings, contacts, groups }) {
         <tbody>{groups.filter(g=>g.members.includes("me")).map(g=><Row key={g.id} id={g.id} name={g.name} sub={`${g.members.length} members`} color={g.color} isGroup/>)}</tbody></table></div></div>
     {pickFor && <HoldingsPicker entityName={nameOfLive(pickFor)} holdings={holdings} selected={sharing[pickFor].selected} onClose={()=>setPickFor(null)} onSave={(sel)=>{ set(pickFor,{selected:sel}); setPickFor(null); }}/>}
     {previewId && <SharePreview id={previewId} name={nameOfLive(previewId)} cfg={sharing[previewId]} holdings={holdings} onClose={()=>setPreviewId(null)}/>}
+
+    {/* ── Feed Settings ── */}
+    {feedConfigOptions.filter(o=>o.admin_enabled).length > 0 && (
+      <div className="card" style={{marginTop:18}}>
+        <div className="card-head"><span style={{display:'flex',gap:8,alignItems:'center'}}><Flame size={16}/> Feed Settings</span></div>
+        <div className="card-body">
+          <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16,lineHeight:1.6}}>
+            Personalise what appears in your recommendation feed. Options marked 🔒 are required by the platform and cannot be turned off.
+          </p>
+          {['sources','ranking','filters'].map(cat=>{
+            const opts = feedConfigOptions.filter(o=>o.admin_enabled && o.category===cat);
+            if(!opts.length) return null;
+            const catLabel={sources:'Feed Sources',ranking:'Ranking',filters:'Filters'};
+            return (
+              <div key={cat} style={{marginBottom:18}}>
+                <div className="cap" style={{marginBottom:10}}>{catLabel[cat]}</div>
+                {opts.map(o=>{
+                  const isLocked = o.always_on;
+                  const currentVal = isLocked ? true
+                    : (o.key in userFeedPrefs ? userFeedPrefs[o.key] : o.default_on);
+                  const togglePref = async () => {
+                    if(isLocked) return;
+                    const next = !currentVal;
+                    const newPrefs = {...userFeedPrefs,[o.key]:next};
+                    setUserFeedPrefs(newPrefs);
+                    // Recompute effective
+                    const eff = {};
+                    feedConfigOptions.forEach(x=>{
+                      if(!x.admin_enabled){eff[x.key]=false;return;}
+                      if(x.always_on){eff[x.key]=true;return;}
+                      eff[x.key]=(x.key in newPrefs)?newPrefs[x.key]:x.default_on;
+                    });
+                    setEffectiveFeedConfig(eff);
+                    if(sql&&myId){
+                      sql`INSERT INTO user_feed_preferences (user_id, config_key, enabled)
+                          VALUES (${myId}, ${o.key}, ${next})
+                          ON CONFLICT (user_id, config_key) DO UPDATE SET enabled=${next}, updated_at=now()`
+                        .catch(console.warn);
+                    }
+                  };
+                  return (
+                    <div key={o.key} style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:14,padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:600,fontSize:13,display:'flex',alignItems:'center',gap:6}}>
+                          {o.label}
+                          {isLocked && <span title="Required by platform" style={{fontSize:10,padding:'1px 6px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)'}}>🔒 Required</span>}
+                        </div>
+                        <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{o.description}</div>
+                      </div>
+                      <div className={"sw"+(currentVal?" on":"")}
+                        style={{width:36,height:20,flexShrink:0,marginTop:2,opacity:isLocked?.5:1,cursor:isLocked?'not-allowed':'pointer'}}
+                        onClick={togglePref}>
+                        <div className="knob" style={{width:14,height:14,top:3}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    )}
   </>);
 }
 function HoldingsPicker({ entityName, holdings, selected, onClose, onSave }) {
@@ -3995,6 +4123,37 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
   );
 }
 
+/* ─── Feed Scoring ────────────────────────────────────────────────────────────── */
+function scoreFeedRec(r, tracked, cfg) {
+  let score = 0;
+  // Source base score
+  const src = r.feedSource;
+  if (!src || src === 'direct') score += 100;
+  else if (src === 'group')     score += 80;
+  else if (src === 'network_engagement') score += 40;
+  else score += 20; // public
+
+  // Recency (0–50 pts, decays over 30 days)
+  const daysSince = (Date.now() - new Date(r.date)) / 86400000;
+  score += Math.max(0, 50 - daysSince * 1.8);
+
+  // Engagement boost
+  if (cfg.rank_engagement) {
+    score += (r.likes || 0) * 6 + (r.dislikes || 0) * 2;
+  }
+
+  // Price movement boost (|return| > 5% adds up to 40 pts)
+  if (cfg.rank_price_movement && r.priceAt > 0) {
+    const absRet = Math.abs((r.price - r.priceAt) / r.priceAt);
+    if (absRet > 0.05) score += Math.min(40, absRet * 200);
+  }
+
+  // Already tracked/invested → push down (untracked first)
+  if (cfg.rank_untracked_first && (tracked.has(r.id) || r.invested)) score -= 35;
+
+  return score;
+}
+
 /* ─── Reco Card Modal ─── */
 function RecoCardModal({ r, me, contacts, groups, setRecsReceived, tracked, toggleTrack, onClose }) {
   return createPortal(
@@ -4177,11 +4336,35 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
 }
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
-function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack }) {
+function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
-  const feedRecs = recsReceived.filter(r=>!r.hidden).slice(0, 15);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco, setShowNewReco] = useState(false);
+
+  // Build + rank the feed
+  const feedRecs = useMemo(() => {
+    const cfg = effectiveFeedConfig;
+    const directIds = new Set(recsReceived.map(r=>r.id));
+
+    // 1. Start with direct/group received recos (not hidden)
+    let items = recsReceived.filter(r=>!r.hidden).map(r=>({...r, feedSource: r.feedSource||'direct'}));
+
+    // 2. Extend with network-engagement recos
+    if (cfg.src_network_engagement) {
+      const extra = networkEngagementRecos.filter(r=>!directIds.has(r.id));
+      items = [...items, ...extra];
+    }
+
+    // 3. Filters
+    if (cfg.filter_hide_invested) items = items.filter(r=>!r.invested);
+
+    // 4. Score + sort
+    items = items
+      .map(r=>({...r, _score: scoreFeedRec(r, tracked, cfg)}))
+      .sort((a,b)=>b._score-a._score);
+
+    return items.slice(0, 20);
+  }, [recsReceived, networkEngagementRecos, tracked, effectiveFeedConfig]);
 
   return (
     <>
@@ -4374,6 +4557,95 @@ function InstrumentSearch({ onSelect, placeholder, initialValue }) {
       )}
     </div>
   );
+}
+
+/* ── Admin: Feed Config ──────────────────────────────────────────────────────── */
+function AdminFeedConfig({ feedConfigOptions, setFeedConfigOptions, setEffectiveFeedConfig, userFeedPrefs }) {
+  const [saving, setSaving] = useState(null);
+  const categories = ['sources','ranking','filters'];
+  const catLabel = {sources:'Feed Sources',ranking:'Ranking & Boosting',filters:'Filters'};
+
+  const toggle = async (opt, field, value) => {
+    if (field==='admin_enabled' && opt.always_on && !value) {
+      alert('Uncheck "Always On" first before disabling this option.');
+      return;
+    }
+    setSaving(opt.key+'.'+field);
+    const updated = {...opt,[field]:value};
+    const newOpts = feedConfigOptions.map(o=>o.key===opt.key?updated:o);
+    setFeedConfigOptions(newOpts);
+    const effective = {};
+    newOpts.forEach(o=>{
+      if(!o.admin_enabled){effective[o.key]=false;return;}
+      if(o.always_on){effective[o.key]=true;return;}
+      effective[o.key]=(o.key in userFeedPrefs)?userFeedPrefs[o.key]:o.default_on;
+    });
+    setEffectiveFeedConfig(effective);
+    if(sql){
+      try{
+        if(field==='admin_enabled') await sql`UPDATE feed_config_options SET admin_enabled=${value} WHERE key=${opt.key}`;
+        if(field==='always_on')     await sql`UPDATE feed_config_options SET always_on=${value} WHERE key=${opt.key}`;
+        if(field==='default_on')    await sql`UPDATE feed_config_options SET default_on=${value} WHERE key=${opt.key}`;
+      }catch(e){console.warn('Feed config update:',e);}
+    }
+    setSaving(null);
+  };
+
+  return (<div>
+    <div className="page-head"><div>
+      <div className="eyebrow">Admin</div>
+      <div className="page-title">Feed Settings</div>
+      <div className="page-sub">Control what appears in all users' recommendation feeds — changes take effect immediately</div>
+    </div></div>
+    <div className="note info" style={{marginBottom:20}}>
+      <Flame size={15}/>
+      <div><b>Two-level config:</b> Admin controls which options exist and their defaults. Users can personalise non-locked options in Sharing &amp; Privacy. <b>Always On 🔒</b> options cannot be changed by users.</div>
+    </div>
+    {categories.map(cat=>(
+      <div key={cat} className="card" style={{marginBottom:16}}>
+        <div className="card-head">{catLabel[cat]}</div>
+        <div className="card-body" style={{padding:0}}>
+          <table className="grid" style={{width:'100%'}}>
+            <thead><tr>
+              <th style={{width:'30%'}}>Option</th>
+              <th>Description</th>
+              <th style={{width:120,textAlign:'center'}}>Admin Enabled</th>
+              <th style={{width:120,textAlign:'center'}} title="Users cannot override — always active">Always On 🔒</th>
+              <th style={{width:120,textAlign:'center'}} title="Default state for users who haven't customised">Default On</th>
+            </tr></thead>
+            <tbody>{feedConfigOptions.filter(o=>o.category===cat).map(o=>(
+              <tr key={o.key} className={!o.admin_enabled?'dimmed':''}>
+                <td><b style={{fontSize:13}}>{o.label}</b></td>
+                <td style={{fontSize:12,color:'var(--ink-soft)'}}>{o.description}</td>
+                <td style={{textAlign:'center'}}>
+                  <div className={"sw"+(o.admin_enabled?" on":"")} style={{margin:'0 auto',width:36,height:20}}
+                    onClick={()=>toggle(o,'admin_enabled',!o.admin_enabled)}>
+                    <div className="knob" style={{width:14,height:14,top:3}}/>
+                  </div>
+                </td>
+                <td style={{textAlign:'center'}}>
+                  {o.admin_enabled
+                    ? <div className={"sw"+(o.always_on?" on":"")} style={{margin:'0 auto',width:36,height:20,background:o.always_on?'#7c3aed':undefined}}
+                        onClick={()=>toggle(o,'always_on',!o.always_on)}>
+                        <div className="knob" style={{width:14,height:14,top:3}}/>
+                      </div>
+                    : <span className="muted small">—</span>}
+                </td>
+                <td style={{textAlign:'center'}}>
+                  {o.admin_enabled&&!o.always_on
+                    ? <div className={"sw"+(o.default_on?" on":"")} style={{margin:'0 auto',width:36,height:20}}
+                        onClick={()=>toggle(o,'default_on',!o.default_on)}>
+                        <div className="knob" style={{width:14,height:14,top:3}}/>
+                      </div>
+                    : <span className="muted small">—</span>}
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+    ))}
+  </div>);
 }
 
 /* ── Admin: Instruments ──────────────────────────────────────────────────── */
