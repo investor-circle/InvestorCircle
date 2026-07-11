@@ -1847,7 +1847,16 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
     if(sql&&myId) sql`UPDATE recommendation_tracking SET is_invested=false, invested_price=null, invested_at=null WHERE reco_id=${r.id} AND user_id=${myId}`.catch(console.warn);
   };
   const onInvestClick=(r)=>{ if(r.invested) unInvest(r); else setInvesting(r); };
-  const react=(r,val)=>{ const next=r.reaction===val?"none":val; patch(r,{reaction:next}); };
+  const react=(r,val)=>{
+    const next=r.reaction===val?'none':val;
+    // Optimistically adjust aggregate counts
+    let likes=(r.likes||0), dislikes=(r.dislikes||0);
+    if(r.reaction==='like')    likes    = Math.max(0, likes-1);
+    if(r.reaction==='dislike') dislikes = Math.max(0, dislikes-1);
+    if(next==='like')    likes++;
+    if(next==='dislike') dislikes++;
+    patch(r,{reaction:next, likes, dislikes});
+  };
   const toggleHide=(r)=>patch(r,{isHidden:!r.hidden,hidden:!r.hidden});
   const del=async(r)=>{
     if(!confirm("Remove this recommendation from your received list?")) return;
@@ -3774,7 +3783,13 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
   const react=(val)=>{
     if(!me?.id) return;
     const next=r.reaction===val?'none':val;
-    patch({reaction:next});
+    // Optimistically adjust aggregate counts
+    let likes=(r.likes||0), dislikes=(r.dislikes||0);
+    if(r.reaction==='like')    likes    = Math.max(0, likes-1);
+    if(r.reaction==='dislike') dislikes = Math.max(0, dislikes-1);
+    if(next==='like')    likes++;
+    if(next==='dislike') dislikes++;
+    patch({reaction:next, likes, dislikes});
   };
 
   const handleShareClick=async(e)=>{
