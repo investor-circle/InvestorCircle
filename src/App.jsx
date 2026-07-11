@@ -8,7 +8,7 @@ import {
   List, Table as TableIcon, Mail, UserPlus, Calendar, Crown,
   ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
   Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil, Database,
-  Globe, Trophy, Copy, ExternalLink, ArrowLeft, Link
+  Globe, Trophy, Copy, ExternalLink, ArrowLeft, Link, Flame
 } from "lucide-react";
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
@@ -629,7 +629,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed setPage={setPage} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack}/>}
+            {isInv && page==="home"      && <HomeFeed setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack}/>}
             {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
             {isInv && page==="network"   && <Network
                 connections={connections} setConnections={setConnections}
@@ -1476,7 +1476,7 @@ const isExpired = (r) => { const td=getTargetDate(r); return td ? td < TODAY : f
 
 function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
     contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack }) {
-  const [tab, setTab] = useState("tracked");
+  const [tab, setTab] = useState(initFilter?.tab || "tracked");
   const myId = me?.id || "me";
   const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id===myId?"You":id);
   const groupName   = (id) => groups.find(g=>g.id===id)?.name || id;
@@ -1531,7 +1531,7 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
       </div>
     </div>
 
-    {tab==="tracked"  && <TrackedSection tracked={tracked} toggleTrack={toggleTrack} me={me} contacts={contacts}/>}
+    {tab==="tracked"  && <TrackedSection tracked={tracked} toggleTrack={toggleTrack} me={me} contacts={contacts} initMoneyFilter={initFilter?.moneyFilter}/>}
     {tab==="received" && <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} myId={myId}
         contactName={contactName} groupName={groupName} assetClasses={assetClasses}
         contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId}
@@ -1544,7 +1544,7 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
 
 
 /* ─── TrackedSection — My Tracked / Saved list ─────────────────────────────── */
-function TrackedSection({ tracked, toggleTrack, me, contacts }) {
+function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter }) {
   const [recos,         setRecos]         = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [openRow,       setOpenRow]       = useState(null);
@@ -1552,10 +1552,9 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
   const [sharePopId,    setSharePopId]    = useState(null);
   const [shareAnchor,   setShareAnchor]   = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
-  // Filters
   const [q,       setQ]       = useState("");
   const [fHorizon,setFHorizon]= useState("all");
-  const [fMoney,  setFMoney]  = useState("all");
+  const [fMoney,  setFMoney]  = useState(initMoneyFilter||"all");
   const [fInv,    setFInv]    = useState("all");
 
   useEffect(()=>{
@@ -1849,13 +1848,15 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
   const onInvestClick=(r)=>{ if(r.invested) unInvest(r); else setInvesting(r); };
   const react=(r,val)=>{
     const next=r.reaction===val?'none':val;
-    // Optimistically adjust aggregate counts
+    // Optimistically update local state (counts + reaction) without touching DB aggregates
     let likes=(r.likes||0), dislikes=(r.dislikes||0);
     if(r.reaction==='like')    likes    = Math.max(0, likes-1);
     if(r.reaction==='dislike') dislikes = Math.max(0, dislikes-1);
     if(next==='like')    likes++;
     if(next==='dislike') dislikes++;
-    patch(r,{reaction:next, likes, dislikes});
+    setRecs(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes,dislikes}:x));
+    // Persist reaction to DB — use null (not 'none') to avoid constraint violations
+    if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},myId).catch(console.warn);
   };
   const toggleHide=(r)=>patch(r,{isHidden:!r.hidden,hidden:!r.hidden});
   const del=async(r)=>{
@@ -2267,11 +2268,11 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
                 <SortTh label="Asset" k="assetName" sort={sort} setSort={setSort}/>
                 <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
                 <SortTh label="Reco ₹" k="reco" sort={sort} setSort={setSort} align="right"/>
-                <SortTh label="Target ₹" k="target" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current ₹" k="cur" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
                 <th>Status</th>
                 <SortTh label="Horizon" k="horizon" sort={sort} setSort={setSort}/>
+                <th title="Likes · Dislikes from recipients">React</th>
                 <th style={{textAlign:"right"}}>Actions</th>
               </tr></thead>
               <tbody>{rows.map(r=>{
@@ -2295,11 +2296,19 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
                     </td>
                     <td className="muted small nowrap">{fmtDate(r.date)}</td>
                     <td style={{textAlign:"right"}} className="tnum">{r.priceAt?fmt(r.priceAt):<span className="muted">—</span>}</td>
-                    <td style={{textAlign:"right"}} className="tnum">{r.targetPrice?fmt(r.targetPrice):<span className="muted">—</span>}</td>
                     <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
                     <td style={{textAlign:"right",fontWeight:700}} className={"tnum nowrap "+(itm?"pos":"neg")}>{fmtPct(ret(r))}</td>
                     <td><Money itm={itm}/></td>
                     <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
+                    {/* Reactions — likes.length / dislikes.length are arrays from getMyMadeRecos */}
+                    <td>
+                      <div style={{display:"flex",alignItems:"center",gap:5}}>
+                        <ThumbsUp size={13} color="var(--gain)"/>
+                        <span style={{fontSize:12,fontWeight:700,color:"var(--gain)",minWidth:14}}>{r.likes?.length||0}</span>
+                        <ThumbsDown size={13} color="var(--loss)" style={{marginLeft:2}}/>
+                        <span style={{fontSize:12,fontWeight:700,color:"var(--loss)",minWidth:14}}>{r.dislikes?.length||0}</span>
+                      </div>
+                    </td>
                     <td>
                       <div className="actions" style={{gap:4}}>
                         {r.isPublic && (
@@ -3754,8 +3763,8 @@ function RecoComments({ recoId, me }) {
 }
 
 /* ─── FeedCard — single recommendation card for the homepage ────────────────────── */
-function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked, toggleTrack }) {
-  const [expanded,  setExpanded]  = useState(false);
+function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked, toggleTrack, initExpanded=false }) {
+  const [expanded,  setExpanded]  = useState(initExpanded);
   const [shareAnchor, setShareAnchor] = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
   const [showShare, setShowShare] = useState(false);
@@ -3783,13 +3792,14 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
   const react=(val)=>{
     if(!me?.id) return;
     const next=r.reaction===val?'none':val;
-    // Optimistically adjust aggregate counts
     let likes=(r.likes||0), dislikes=(r.dislikes||0);
     if(r.reaction==='like')    likes    = Math.max(0, likes-1);
     if(r.reaction==='dislike') dislikes = Math.max(0, dislikes-1);
     if(next==='like')    likes++;
     if(next==='dislike') dislikes++;
-    patch({reaction:next, likes, dislikes});
+    // Update local state directly — null for 'none' avoids DB constraint violations
+    setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes,dislikes}:x));
+    if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
   };
 
   const handleShareClick=async(e)=>{
@@ -3985,8 +3995,189 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
   );
 }
 
+/* ─── Reco Card Modal ─── */
+function RecoCardModal({ r, me, contacts, groups, setRecsReceived, tracked, toggleTrack, onClose }) {
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose} style={{zIndex:9999}}>
+      <div style={{maxWidth:640,width:'92vw',margin:'60px auto',position:'relative'}} onClick={e=>e.stopPropagation()}>
+        <button onClick={onClose} style={{position:'absolute',top:-36,right:0,background:'rgba(255,255,255,.15)',border:'none',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:700,padding:'4px 12px',borderRadius:8}}>✕ Close</button>
+        <FeedCard r={r} me={me} contacts={contacts} groups={groups}
+          setRecsReceived={setRecsReceived} tracked={tracked} toggleTrack={toggleTrack}
+          initExpanded={true}/>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/* ─── Sidebar Widget: Fresh from Network (#7) ─── */
+function FreshWidget({ recsReceived, contacts, setPage }) {
+  const fresh = [...recsReceived].filter(r=>!r.hidden)
+    .sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,4);
+  const [modal, setModal] = useState(null);
+  const cf = (r) => { const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName,color:'#8d90ad'}:{name:'?',color:'#8d90ad'}); };
+  return (
+    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
+      <div style={{padding:'12px 14px 8px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <span style={{fontWeight:700,fontSize:13,display:'flex',alignItems:'center',gap:6}}><Bell size={14} color="var(--accent)"/> Fresh from Network</span>
+        <button className="btn btn-ghost btn-sm" style={{fontSize:11,padding:'3px 9px'}} onClick={()=>setPage('recs')}>View all →</button>
+      </div>
+      {fresh.length===0
+        ? <div className="muted small" style={{padding:'8px 14px 12px',fontStyle:'italic'}}>No new recommendations yet.</div>
+        : fresh.map(r=>{
+          const perf=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
+          const c=cf(r);
+          return (
+            <div key={r.id} onClick={()=>setModal(r)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
+              onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
+              onMouseLeave={e=>e.currentTarget.style.background=''}>
+              <div className="av" style={{width:30,height:30,background:c.color||'var(--grad)',fontSize:10,flexShrink:0}}>{initialsOf(c.name)}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.assetName}</div>
+                <div style={{fontSize:10,color:'var(--muted)'}}>{c.name.split(' ')[0]} · {fmtDate(r.date)}</div>
+              </div>
+              <div style={{textAlign:'right',flexShrink:0}}>
+                <div style={{fontSize:12,fontWeight:700,color:perf>=0?'var(--gain)':'var(--loss)'}}>{perf>=0?'+':''}{(perf*100).toFixed(1)}%</div>
+                <div style={{fontSize:10,color:'var(--muted)'}}>{r.horizon||''}</div>
+              </div>
+            </div>
+          );
+        })}
+      {modal && <RecoCardModal r={modal} me={null} contacts={contacts} groups={[]} setRecsReceived={()=>{}} tracked={new Set()} toggleTrack={()=>{}} onClose={()=>setModal(null)}/>}
+    </div>
+  );
+}
+
+/* ─── Sidebar Widget: Tracked Summary Donut (#6) ─── */
+function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoInit }) {
+  const trackedList = recsReceived.filter(r=>tracked.has(r.id));
+  const total = trackedList.length;
+  const inM = trackedList.filter(r=>r.priceAt&&r.price>r.priceAt).length;
+  const outM = total - inM;
+  if(total===0) return null;
+
+  // SVG donut
+  const R=32, cx=40, cy=40, stroke=9, circum=2*Math.PI*R;
+  const inDash=circum*(inM/total), outDash=circum*(outM/total);
+  const navTo=(filter)=>{ setRecoInit({tab:'tracked',moneyFilter:filter}); setPage('recs'); };
+
+  return (
+    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',padding:'12px 14px',marginBottom:12}}>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:10,display:'flex',alignItems:'center',gap:6}}><TrendingUp size={14} color="var(--accent)"/> My Tracked</div>
+      <div style={{display:'flex',alignItems:'center',gap:14}}>
+        <svg width={80} height={80} style={{flexShrink:0}}>
+          {/* background */}
+          <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--line-2)" strokeWidth={stroke}/>
+          {/* out of money — red */}
+          {outM>0&&<circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--loss)" strokeWidth={stroke}
+            strokeDasharray={`${outDash} ${circum-outDash}`}
+            strokeDashoffset={-(circum*(inM/total))}
+            strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`}/>}
+          {/* in the money — green */}
+          {inM>0&&<circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--gain)" strokeWidth={stroke}
+            strokeDasharray={`${inDash} ${circum-inDash}`}
+            strokeDashoffset={0}
+            strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`}/>}
+          <text x={cx} y={cy+1} textAnchor="middle" dominantBaseline="middle" style={{fontSize:16,fontWeight:800,fill:'var(--ink)'}}>{total}</text>
+          <text x={cx} y={cy+14} textAnchor="middle" dominantBaseline="middle" style={{fontSize:8,fill:'var(--muted)'}}>tracked</text>
+        </svg>
+        <div style={{flex:1}}>
+          <div onClick={()=>navTo('in')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,marginBottom:5,background:'var(--gain-soft)',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+            <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>In the money</span>
+            <span style={{fontSize:15,fontWeight:800,color:'var(--gain)'}}>{inM}</span>
+          </div>
+          <div onClick={()=>navTo('out')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,background:'var(--loss-soft)',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+            <span style={{fontSize:12,fontWeight:600,color:'var(--loss)'}}>Out of money</span>
+            <span style={{fontSize:15,fontWeight:800,color:'var(--loss)'}}>{outM}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Sidebar Widget: Missed Opportunities (#5) ─── */
+function MissedOppsWidget({ recsReceived, tracked, contacts }) {
+  const [modal, setModal] = useState(null);
+  const missed = recsReceived
+    .filter(r=>!tracked.has(r.id)&&!r.hidden&&r.priceAt>0)
+    .map(r=>({...r, ret:(r.price-r.priceAt)/r.priceAt}))
+    .filter(r=>r.ret>0.03)
+    .sort((a,b)=>b.ret-a.ret)
+    .slice(0,3);
+  if(!missed.length) return null;
+  const cf=(r)=>{ const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName}:{name:'?'}); };
+  return (
+    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
+      <div style={{padding:'12px 14px 8px',display:'flex',alignItems:'center',gap:6}}>
+        <span style={{fontSize:15}}>💸</span>
+        <span style={{fontWeight:700,fontSize:13}}>Missed Opportunities</span>
+      </div>
+      {missed.map(r=>(
+        <div key={r.id} onClick={()=>setModal(r)} style={{padding:'9px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
+          onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
+          onMouseLeave={e=>e.currentTarget.style.background=''}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:12}}>{r.assetName}</div>
+              <div style={{fontSize:10,color:'var(--muted)',marginTop:1}}>from {cf(r).name.split(' ')[0]} · Reco ₹{Number(r.priceAt).toLocaleString('en-IN')}</div>
+            </div>
+            <div style={{textAlign:'right',flexShrink:0}}>
+              <div style={{fontSize:13,fontWeight:800,color:'var(--gain)'}}>+{(r.ret*100).toFixed(1)}%</div>
+              <div style={{fontSize:10,color:'var(--muted)'}}>₹{Number(r.price).toLocaleString('en-IN')} now</div>
+            </div>
+          </div>
+        </div>
+      ))}
+      {modal && <RecoCardModal r={modal} me={null} contacts={contacts} groups={[]} setRecsReceived={()=>{}} tracked={new Set()} toggleTrack={()=>{}} onClose={()=>setModal(null)}/>}
+    </div>
+  );
+}
+
+/* ─── Sidebar Widget: Trending in Network (#4) ─── */
+function TrendingWidget({ recsReceived, tracked, contacts }) {
+  const [modal, setModal] = useState(null);
+  const trending = [...recsReceived].filter(r=>!r.hidden)
+    .map(r=>({...r, score:(r.likes||0)+(r.dislikes||0)+(tracked.has(r.id)?2:0)}))
+    .filter(r=>r.score>0)
+    .sort((a,b)=>b.score-a.score)
+    .slice(0,3);
+  if(!trending.length) return null;
+  const cf=(r)=>{ const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName,color:'#8d90ad'}:{name:'?',color:'#8d90ad'}); };
+  return (
+    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
+      <div style={{padding:'12px 14px 8px',display:'flex',alignItems:'center',gap:6}}>
+        <Flame size={14} color="var(--accent)"/>
+        <span style={{fontWeight:700,fontSize:13}}>Trending in Network</span>
+      </div>
+      {trending.map((r,i)=>{
+        const perf=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
+        const c=cf(r);
+        return (
+          <div key={r.id} onClick={()=>setModal(r)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
+            onMouseLeave={e=>e.currentTarget.style.background=''}>
+            <div style={{width:22,height:22,borderRadius:'50%',background:i===0?'var(--grad)':i===1?'var(--accent-soft)':'var(--surface-2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:i===0?'#fff':'var(--accent-ink)',flexShrink:0}}>{i+1}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:600,fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.assetName}</div>
+              <div style={{fontSize:10,color:'var(--muted)',display:'flex',gap:8}}>
+                <span><ThumbsUp size={10}/> {r.likes||0}</span>
+                <span><Bookmark size={10}/> {tracked.has(r.id)?'tracked':''}</span>
+              </div>
+            </div>
+            <div style={{fontSize:12,fontWeight:700,color:perf>=0?'var(--gain)':'var(--loss)',flexShrink:0}}>{perf>=0?'+':''}{(perf*100).toFixed(1)}%</div>
+          </div>
+        );
+      })}
+      {modal && <RecoCardModal r={modal} me={null} contacts={contacts} groups={[]} setRecsReceived={()=>{}} tracked={new Set()} toggleTrack={()=>{}} onClose={()=>setModal(null)}/>}
+    </div>
+  );
+}
+
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
-function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack }) {
+function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const feedRecs = recsReceived.filter(r=>!r.hidden).slice(0, 15);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
@@ -4039,57 +4230,37 @@ function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, c
       {/* ── Right sidebar ── */}
       <div style={{width:252,flexShrink:0}}>
 
-        {/* Portfolio widget */}
-        <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',marginBottom:14,overflow:'hidden'}}>
-          <div style={{background:'var(--grad)',padding:'14px 16px'}}>
-            <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.75)',textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>Your portfolio</div>
+        {/* Portfolio widget — compact */}
+        <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',marginBottom:12,overflow:'hidden'}}>
+          <div style={{background:'var(--grad)',padding:'12px 14px'}}>
+            <div style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.75)',textTransform:'uppercase',letterSpacing:.5,marginBottom:4}}>Your portfolio</div>
             {holdings.length===0
-              ? <div style={{fontSize:14,color:'rgba(255,255,255,.7)',fontStyle:'italic'}}>No holdings yet</div>
+              ? <div style={{fontSize:13,color:'rgba(255,255,255,.7)',fontStyle:'italic'}}>No holdings yet</div>
               : <>
-                  <div style={{fontSize:26,fontWeight:800,color:'#fff',letterSpacing:'-1px',fontFamily:"var(--serif)"}}>{fmt(total)}</div>
-                  <div style={{fontSize:13,fontWeight:700,color:pnl>=0?'#a7f3d0':'#fca5a5',marginTop:4,display:'flex',alignItems:'center',gap:4}}>
-                    {pnl>=0?<ArrowUpRight size={14}/>:<ArrowDownRight size={14}/>}
-                    {fmtSigned(pnl)} ({fmtPct(pnlPct)})
+                  <div style={{fontSize:22,fontWeight:800,color:'#fff',letterSpacing:'-1px'}}>{fmt(total)}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:pnl>=0?'#a7f3d0':'#fca5a5',display:'flex',alignItems:'center',gap:3}}>
+                    {pnl>=0?<ArrowUpRight size={13}/>:<ArrowDownRight size={13}/>}{fmtSigned(pnl)} ({fmtPct(pnlPct)})
                   </div>
                 </>}
           </div>
-          <div style={{padding:'10px 14px'}}>
-            <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center',fontSize:12}} onClick={()=>setPage('portfolio')}>
-              {holdings.length===0?<><Plus size={13}/> Add holdings</>:<>Open portfolio</>}
+          <div style={{padding:'8px 12px'}}>
+            <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center',fontSize:11}} onClick={()=>setPage('portfolio')}>
+              {holdings.length===0?<><Plus size={12}/> Add holdings</>:<>Open portfolio</>}
             </button>
           </div>
         </div>
 
-        {/* Pending recos */}
-        <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden'}}>
-          <div style={{padding:'13px 15px',borderBottom:'1px solid var(--line)',fontWeight:700,fontSize:13}}>
-            Not yet tracked
-          </div>
-          <div style={{padding:'8px 14px'}}>
-            {recsReceived.filter(r=>!r.invested&&!r.hidden).length===0
-              ? <div className="muted small" style={{padding:'8px 0',fontStyle:'italic'}}>All caught up ✓</div>
-              : recsReceived.filter(r=>!r.invested&&!r.hidden).slice(0,5).map(r=>{
-                  const perf = r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
-                  const cf = contacts.find(x=>x.id===r.from)||{name:r.byName||'?'};
-                  return (
-                    <div key={r.id} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--line)',fontSize:13}}>
-                      <div>
-                        <div style={{fontWeight:600}}>{r.assetName}</div>
-                        <div className="muted small" style={{fontSize:11}}>{cf.name.split(' ')[0]}</div>
-                      </div>
-                      <div style={{textAlign:'right'}}>
-                        <div className={"tnum "+(perf>=0?"pos":"neg")} style={{fontWeight:700}}>{fmtPct(perf)}</div>
-                        {r.horizon&&<div className="muted small" style={{fontSize:10}}>{r.horizon}</div>}
-                      </div>
-                    </div>
-                  );
-                })
-            }
-            <button className="btn btn-soft btn-sm" style={{width:'100%',justifyContent:'center',marginTop:10,fontSize:12}} onClick={()=>setPage('recs')}>
-              See all →
-            </button>
-          </div>
-        </div>
+        {/* Widget #7 — Fresh from Network */}
+        <FreshWidget recsReceived={recsReceived} contacts={contacts} setPage={setPage}/>
+
+        {/* Widget #6 — Tracked Summary Donut */}
+        <TrackedSummaryWidget recsReceived={recsReceived} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit}/>
+
+        {/* Widget #5 — Missed Opportunities */}
+        <MissedOppsWidget recsReceived={recsReceived} tracked={tracked} contacts={contacts}/>
+
+        {/* Widget #4 — Trending in Network */}
+        <TrendingWidget recsReceived={recsReceived} tracked={tracked} contacts={contacts}/>
       </div>
     </div>
 
