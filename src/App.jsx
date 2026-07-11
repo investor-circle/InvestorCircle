@@ -1476,19 +1476,41 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
     await onReload();
     setTab("made");
   };
+  const receivedCount = recsReceived.filter(r=>!r.hidden).length;
+  const madeCount = recsMade.length;
   return (<>
-    <div className="page-head"><div><div className="eyebrow">Recommendations</div>
-      <div className="page-title">Ideas worth tracking</div>
-      <div className="page-sub">From your network, and the ones you share</div></div></div>
-    <div className="seg" style={{marginBottom:20}}>
-      <button className={tab==="received"?"active":""} onClick={()=>setTab("received")}>Received · {recsReceived.filter(r=>!r.hidden).length}</button>
-      <button className={tab==="made"?"active":""} onClick={()=>setTab("made")}>Made by me · {recsMade.length}</button>
+    {/* ── Compact page header with tabs inline ── */}
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:12}}>
+      <div className="eyebrow" style={{marginBottom:0}}>Recommendations</div>
+      {/* Big prominent tabs */}
+      <div style={{display:"flex",gap:6,background:"var(--surface-2)",borderRadius:14,padding:4}}>
+        {[
+          {id:"received", label:"Received", count:receivedCount, icon:Lightbulb},
+          {id:"made",     label:"Made by me", count:madeCount,    icon:Send},
+        ].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            display:"flex",alignItems:"center",gap:8,padding:"10px 20px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontWeight:700,fontSize:14,transition:".15s",
+            background: tab===t.id ? "var(--surface)" : "transparent",
+            color:      tab===t.id ? "var(--accent-ink)" : "var(--muted)",
+            boxShadow:  tab===t.id ? "0 1px 6px rgba(20,20,50,.1)" : "none",
+          }}>
+            <t.icon size={15}/>
+            {t.label}
+            <span style={{
+              fontSize:12, fontWeight:800, padding:"2px 9px", borderRadius:999,
+              background: tab===t.id ? "var(--grad)" : "var(--surface-2)",
+              color:      tab===t.id ? "#fff" : "var(--muted)",
+            }}>{t.count}</span>
+          </button>
+        ))}
+      </div>
     </div>
+
     {tab==="received"
       ? <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} myId={myId}
           contactName={contactName} groupName={groupName} assetClasses={assetClasses}
           contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId}
-          onForward={forwardReco} onReload={onReload}/>
+          onForward={forwardReco} onReload={onReload} me={me}/>
       : <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName}
           reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses}
           setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload}/>}
@@ -1496,13 +1518,14 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
 }
 
 
-function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload }) {
+function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload, me }) {
   const [q,setQ]=useState(""); const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
-  const [fInv,setFInv]=useState("all"),[fShare,setFShare]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
+  const [fInv,setFInv]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
   const [showHidden,setShowHidden]=useState(false); const [showExpired,setShowExpired]=useState(false);
-  const [showAdd,setShowAdd]=useState(false); const [investing,setInvesting]=useState(null);
+  const [investing,setInvesting]=useState(null);
   const [openRow,setOpenRow]=useState(null); const [fwd,setFwd]=useState(null);
+  const [sharePopId,setSharePopId]=useState(null);
 
   const recName = (r) => r.byName || contactName(r.from);
   const isForwarded = (r) => r.sharedBy && r.sharedBy!==r.from;
@@ -1510,23 +1533,21 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
   const byOptions = [...new Set(recs.map(recName))];
   const groupOptions = [...new Set(recs.filter(r=>r.shareType==="group").map(r=>r.groupId).filter(Boolean))];
 
-  // All mutations go through updateDelivery → update local state optimistically
   const patch = async (r, updates) => {
     setRecs(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,...updates}:x));
     if (sql && r.deliveryId) {
       try { await updateDelivery(r.deliveryId, updates, myId); } catch(e) { await onReload(); }
     }
   };
-  const doInvest=(r,price)=>patch(r,{isInvested:true,investedPrice:price,invested:true,investedPrice:price});
+  const doInvest=(r,price)=>patch(r,{isInvested:true,investedPrice:price,invested:true});
   const unInvest=(r)=>patch(r,{isInvested:false,investedPrice:null,invested:false});
   const onInvestClick=(r)=>{ if(r.invested) unInvest(r); else setInvesting(r); };
   const react=(r,val)=>{ const next=r.reaction===val?"none":val; patch(r,{reaction:next}); };
   const toggleHide=(r)=>patch(r,{isHidden:!r.hidden,hidden:!r.hidden});
-  const toggleExit=(r)=>{ /* Exit signal lives on the recommendation row, only recommender can toggle */ };
   const del=async(r)=>{
-    if(!confirm("Remove this recommendation from your received list? This only removes it for you.")) return;
-    setRecs(rs=>rs.filter(x=>x.deliveryId!==r.deliveryId));   // optimistic UI
-    await dbDeleteDelivery(r.deliveryId, myId);                // persist to Neon
+    if(!confirm("Remove this recommendation from your received list?")) return;
+    setRecs(rs=>rs.filter(x=>x.deliveryId!==r.deliveryId));
+    await dbDeleteDelivery(r.deliveryId, myId);
   };
 
   const rows = useMemo(()=>{
@@ -1539,128 +1560,176 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
     if(fHorizon!=="all") r=r.filter(x=>x.horizon===fHorizon);
     if(fMoney!=="all") r=r.filter(x=>fMoney==="in"?ret(x)>=0:ret(x)<0);
     if(fInv!=="all") r=r.filter(x=>fInv==="yes"?x.invested:!x.invested);
-    if(fShare!=="all") r=r.filter(x=>x.shareType===fShare);
     const dir=sort.dir==="asc"?1:-1; const k=sort.key;
     r=[...r].sort((a,b)=>{let av,bv;
       if(k==="assetName"){av=a.assetName.toLowerCase();bv=b.assetName.toLowerCase();}
-      else if(k==="ticker"){av=a.ticker.toLowerCase();bv=b.ticker.toLowerCase();}
       else if(k==="by"){av=recName(a).toLowerCase();bv=recName(b).toLowerCase();}
       else if(k==="date"){av=a.date||"";bv=b.date||"";}
       else if(k==="reco"){av=a.priceAt;bv=b.priceAt;}
       else if(k==="cur"){av=a.price;bv=b.price;}
       else if(k==="ret"){av=ret(a);bv=ret(b);}
-      else if(k==="target"){av=a.targetPrice||0;bv=b.targetPrice||0;}
       else if(k==="horizon"){av=HORIZONS.indexOf(a.horizon);bv=HORIZONS.indexOf(b.horizon);}
-      else if(k==="tdate"){av=getTargetDate(a)||"";bv=getTargetDate(b)||"";}
       return av<bv?-dir:av>bv?dir:0;});
     return r;
-  },[recs,q,fBy,fGroup,fCls,fHorizon,fMoney,fInv,fShare,showHidden,showExpired,sort]);
+  },[recs,q,fBy,fGroup,fCls,fHorizon,fMoney,fInv,showHidden,showExpired,sort]);
 
   const expiredCount = recs.filter(x=>!x.hidden&&isExpired(x)).length;
-  const activeFilterNote = fBy!=="all"?`Showing recommendations from ${fBy}.`:fGroup!=="all"?`Showing recommendations shared via ${groupName(fGroup)}.`:null;
+  const activeFilterNote = fBy!=="all"?`From ${fBy}`:fGroup!=="all"?`Via ${groupName(fGroup)}`:null;
+
   return (<>
-    {activeFilterNote && <div className="note info" style={{marginBottom:14}}><Filter size={16}/><div>{activeFilterNote} <span className="clickable" onClick={()=>{setFBy("all");setFGroup("all");}}>Clear filter</span></div></div>}
-    {recs.some(r=>r.exitSignal && (showHidden||!r.hidden)) &&
-      <div className="note warn" style={{marginBottom:14}}><AlertTriangle size={16}/><div>A recommender has issued an <b>exit signal</b> — affected rows are highlighted below.</div></div>}
-    {/* ── Expired toggle banner ── */}
-    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:12,padding:"10px 14px"}}>
-      <div className={"sw"+(showExpired?" on":"")} onClick={()=>setShowExpired(v=>!v)}><div className="knob"/></div>
-      <span style={{fontSize:13,fontWeight:600,color:"var(--ink-soft)"}}>Show expired recommendations</span>
-      {expiredCount>0 && <span className="pill loss" style={{fontSize:12}}>{expiredCount} expired</span>}
-      {expiredCount===0 && <span className="muted small">No expired recommendations</span>}
-      <span className="muted small" style={{marginLeft:"auto"}}>A recommendation is expired when its target date has passed</span>
+    {/* ── Compact top bar: search + filters + expired toggle all in one row ── */}
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+      <div className="searchbox" style={{flex:"1 1 200px",minWidth:160}}>
+        <Search size={15} color="var(--muted)"/>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search asset or contact…"/>
+      </div>
+      <select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)} title="Filter by recommender">
+        <option value="all">All people</option>{byOptions.map(b=><option key={b}>{b}</option>)}
+      </select>
+      <select className="inline-select sm" value={fCls} onChange={e=>setFCls(e.target.value)} title="Filter by class">
+        <option value="all">All classes</option>{assetClasses.map(c=><option key={c}>{c}</option>)}
+      </select>
+      <select className="inline-select sm" value={fHorizon} onChange={e=>setFHorizon(e.target.value)} title="Filter by horizon">
+        <option value="all">All horizons</option>{HORIZONS.map(h=><option key={h}>{h}</option>)}
+      </select>
+      <select className="inline-select sm" value={fMoney} onChange={e=>setFMoney(e.target.value)}>
+        <option value="all">All returns</option><option value="in">In the money</option><option value="out">Out of money</option>
+      </select>
+      <select className="inline-select sm" value={fInv} onChange={e=>setFInv(e.target.value)}>
+        <option value="all">All</option><option value="yes">Invested</option><option value="no">Not invested</option>
+      </select>
+      {/* Expired toggle — inline, compact */}
+      <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:9,cursor:"pointer",flexShrink:0,userSelect:"none"}} onClick={()=>setShowExpired(v=>!v)}>
+        <div className={"sw"+(showExpired?" on":"")} style={{width:32,height:18}} onClick={e=>{e.stopPropagation();setShowExpired(v=>!v)}}><div className="knob" style={{width:14,height:14,top:2}}/></div>
+        <span style={{fontSize:12,fontWeight:600,color:"var(--ink-soft)",whiteSpace:"nowrap"}}>Expired</span>
+        {expiredCount>0 && <span className="pill loss" style={{fontSize:11,padding:"1px 6px"}}>{expiredCount}</span>}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:9,cursor:"pointer",flexShrink:0}} onClick={()=>setShowHidden(v=>!v)}>
+        <div className={"sw"+(showHidden?" on":"")} style={{width:32,height:18}}><div className="knob" style={{width:14,height:14,top:2}}/></div>
+        <span style={{fontSize:12,fontWeight:600,color:"var(--ink-soft)",whiteSpace:"nowrap"}}>Hidden</span>
+      </div>
     </div>
-    <div className="toolbar">
-      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by asset or contact…"/></div>
-      <div className="fl"><span className="lab">By</span><select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)}><option value="all">All</option>{byOptions.map(b=><option key={b}>{b}</option>)}</select></div>
-      <div className="fl"><span className="lab">Group</span><select className="inline-select sm" value={fGroup} onChange={e=>setFGroup(e.target.value)}><option value="all">All</option>{groupOptions.map(g=><option key={g} value={g}>{groupName(g)}</option>)}</select></div>
-      <div className="fl"><span className="lab">Class</span><select className="inline-select sm" value={fCls} onChange={e=>setFCls(e.target.value)}><option value="all">All</option>{assetClasses.map(c=><option key={c}>{c}</option>)}</select></div>
-      <div className="fl"><span className="lab">Horizon</span><select className="inline-select sm" value={fHorizon} onChange={e=>setFHorizon(e.target.value)}><option value="all">All</option>{HORIZONS.map(h=><option key={h}>{h}</option>)}</select></div>
-      <div className="fl"><span className="lab">Money</span><select className="inline-select sm" value={fMoney} onChange={e=>setFMoney(e.target.value)}><option value="all">All</option><option value="in">In the money</option><option value="out">Out of money</option></select></div>
-      <div className="fl"><span className="lab">Invested</span><select className="inline-select sm" value={fInv} onChange={e=>setFInv(e.target.value)}><option value="all">All</option><option value="yes">Yes</option><option value="no">No</option></select></div>
-      <div className="fl"><span className="lab">Shared</span><select className="inline-select sm" value={fShare} onChange={e=>setFShare(e.target.value)}><option value="all">All</option><option value="one">One-to-one</option><option value="group">Group</option></select></div>
-      <div className="fl"><span className="lab">Show hidden</span><div className={"sw"+(showHidden?" on":"")} onClick={()=>setShowHidden(v=>!v)}><div className="knob"/></div></div>
-      <button className="btn btn-pri btn-sm" onClick={()=>setShowAdd(true)}><Plus size={15}/> Add manually</button>
-    </div>
-    {rows.length===0 ? <div className="card"><div className="empty">No recommendations match your filters.</div></div> :
-    <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:1400}}>
-      <thead><tr>
-        <SortTh label="Asset name" k="assetName" sort={sort} setSort={setSort}/>
-        <SortTh label="Ticker" k="ticker" sort={sort} setSort={setSort}/>
-        <SortTh label="Recommended by" k="by" sort={sort} setSort={setSort}/>
-        <SortTh label="Shared by" k="sharedby" sort={sort} setSort={setSort}/>
-        <SortTh label="Class" k="cls" sort={sort} setSort={setSort}/>
-        <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
-        <SortTh label="Reco $" k="reco" sort={sort} setSort={setSort} align="right"/>
-        <SortTh label="Target $" k="target" sort={sort} setSort={setSort} align="right"/>
-        <SortTh label="Current $" k="cur" sort={sort} setSort={setSort} align="right"/>
-        <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
-        <SortTh label="Horizon" k="horizon" sort={sort} setSort={setSort}/>
-        <SortTh label="Target date" k="tdate" sort={sort} setSort={setSort}/>
-        <th>Status</th>
-        <SortTh label="Shared" k="shared" sort={sort} setSort={setSort}/>
-        <SortTh label="Invested" k="inv" sort={sort} setSort={setSort}/>
-        <th title="Totals the recommender sees">Reactions</th>
-        <th style={{textAlign:"right"}}>Actions</th>
-      </tr></thead>
-      <tbody>{rows.map(r=>{ const itm=ret(r)>=0; const open=openRow===r.id; const exp=isExpired(r); const td=getTargetDate(r);
-        return (<React.Fragment key={r.id}>
-        <tr className={"hoverable"+(r.exitSignal?" exit":"")+(r.hidden?" hiddenrow":"")+(exp?" expired":"")}>
-          <td className="sym nowrap" style={{cursor:"pointer"}} onClick={()=>setOpenRow(open?null:r.id)}>
-            <ChevronDown size={14} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s",verticalAlign:-2,marginRight:6}}/>
-            {r.assetName}{r.hidden && <span className="pill" style={{marginLeft:8}}>Hidden</span>}{exp && <span className="pill loss" style={{marginLeft:8,fontSize:11}}>Expired</span>}</td>
-          <td className="sym">{r.ticker}</td>
-          <td className="nowrap">{recName(r)}</td>
-          <td className="nowrap">{isForwarded(r)
-            ? <span className="pill accent" title={"Forwarded to you by "+sharedByName(r)}><Forward size={11}/> {sharedByName(r)}</span>
-            : <span className="muted small">— direct</span>}</td>
-          <td><ClassTag c={r.assetClass}/></td>
-          <td className="muted small nowrap">{fmtDate(r.date)}</td>
-          <td style={{textAlign:"right"}} className="tnum">{r.priceAt ? fmt(r.priceAt) : <span className="muted">—</span>}</td>
-          <td style={{textAlign:"right"}} className="tnum">{r.targetPrice ? fmt(r.targetPrice) : <span className="muted">—</span>}</td>
-          <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
-          <td style={{textAlign:"right"}} className={"tnum nowrap "+(itm?"pos":"neg")}>{fmtPct(ret(r))}</td>
-          <td className="nowrap">{r.horizon ? <span className="pill accent" style={{fontSize:11}}>{r.horizon}</span> : <span className="muted">—</span>}</td>
-          <td className={"muted small nowrap"+(exp?" neg":"")}>{td ? fmtDate(td) : <span className="muted">—</span>}</td>
-          <td className="nowrap"><Money itm={itm}/>{r.exitSignal && <div style={{marginTop:5}}><span className="pill loss"><AlertTriangle size={11}/> EXIT · {fmtDate(r.exitDate)}</span></div>}</td>
-          <td>{r.shareType==="group" ? <span className="pill accent nowrap"><Layers size={11}/> {groupName(r.groupId)}</span> : <span className="pill">One-to-one</span>}</td>
-          <td className="nowrap">{r.invested
-            ? <><button className="btn btn-sm btn-soft" onClick={()=>onInvestClick(r)}><Check size={13}/> Invested</button><div className="muted small" style={{marginTop:4}}>{r.recoActed} acted</div></>
-            : <button className="btn btn-sm btn-ghost" onClick={()=>onInvestClick(r)}>Mark invested</button>}</td>
-          <td><div className="actions" style={{justifyContent:"flex-start"}} title="Totals the recommender sees">
-            <button className={"iconbtn"+(r.reaction==="like"?" on-like":"")} title="Like" onClick={()=>react(r,"like")}><ThumbsUp size={14}/></button>
-            <span className="muted small tnum">{r.likes}</span>
-            <button className={"iconbtn"+(r.reaction==="dislike"?" on-dislike":"")} title="Dislike" onClick={()=>react(r,"dislike")}><ThumbsDown size={14}/></button>
-            <span className="muted small tnum">{r.dislikes}</span></div></td>
-          <td><div className="actions">
-            <button className="iconbtn" title="Forward to contacts or groups" onClick={()=>setFwd(r)}><Share2 size={14}/></button>
-            <button className={"iconbtn"+(r.exitSignal?" on-exit":"")} title="Toggle exit signal" onClick={()=>toggleExit(r)}><LogOut size={14}/></button>
-            <button className="iconbtn" title={r.hidden?"Unhide":"Hide"} onClick={()=>toggleHide(r)}>{r.hidden?<Eye size={14}/>:<EyeOff size={14}/>}</button>
-            <button className="iconbtn danger" title="Delete permanently" onClick={()=>del(r)}><Trash2 size={14}/></button></div></td>
-        </tr>
-        {open && <tr className="expand-row"><td colSpan={17}><div className="expand-inner">
-          <div style={{maxWidth:820,display:"flex",flexDirection:"column",gap:13}}>
-            <div><div className="cap">Thesis from {recName(r)}{isForwarded(r) && <> · forwarded by {sharedByName(r)}</>}</div>
-              <div style={{fontSize:14,lineHeight:1.6,color:"var(--ink-soft)"}}>{r.thesis || "No thesis was shared with this recommendation."}</div></div>
-            <div style={{display:"flex",gap:28,flexWrap:"wrap"}}>
-              <div><div className="cap">Recommended by</div><b>{recName(r)}</b></div>
-              {isForwarded(r) && <div><div className="cap">Shared with you by</div><b>{sharedByName(r)}</b></div>}
-              <div><div className="cap">Reco → Current</div><b className="tnum">{r.priceAt?fmt(r.priceAt):"—"} → {fmt(r.price)}</b></div>
-              {r.targetPrice && <div><div className="cap">Target price</div><b className="tnum">{fmt(r.targetPrice)}</b></div>}
-              {r.horizon && <div><div className="cap">Horizon</div><b>{r.horizon}</b></div>}
-              {td && <div><div className="cap">Target date</div><b className={exp?"neg":""}>{fmtDate(td)}{exp?" (expired)":""}</b></div>}
-              <div><div className="cap">Return</div><b className={"tnum "+(itm?"pos":"neg")}>{fmtPct(ret(r))}</b></div></div>
-            <div><button className="btn btn-soft btn-sm" onClick={()=>setFwd(r)}><Share2 size={14}/> Forward this idea</button></div>
-          </div></div></td></tr>}
-        </React.Fragment>);
-      })}</tbody>
-    </table></div></div></div>}
-    {showAdd && <AddReceivedModal assetClasses={assetClasses} contacts={contacts} groups={groups} onClose={()=>setShowAdd(false)} onAdd={(rec)=>{ setRecs(rs=>[rec,...rs]); setShowAdd(false); }}/>}
+
+    {/* Active filter badge */}
+    {activeFilterNote && (
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:12}}>
+        <span className="pill accent">{activeFilterNote}</span>
+        <button onClick={()=>{setFBy("all");setFGroup("all");}} style={{fontSize:11,color:"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0}}>✕ Clear</button>
+      </div>
+    )}
+    {recs.some(r=>r.exitSignal&&(showHidden||!r.hidden)) && (
+      <div className="note warn" style={{marginBottom:10,padding:"8px 12px",fontSize:12}}><AlertTriangle size={14}/><div>A recommender has issued an <b>exit signal</b> on a recommendation below.</div></div>
+    )}
+
+    {rows.length===0
+      ? <div className="card"><div className="empty">No recommendations match your filters.</div></div>
+      : <div className="card">
+          <div className="card-body" style={{padding:"6px 0"}}>
+            <table className="grid" style={{width:"100%"}}>
+              <thead><tr>
+                <SortTh label="Asset" k="assetName" sort={sort} setSort={setSort}/>
+                <SortTh label="By" k="by" sort={sort} setSort={setSort}/>
+                <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
+                <SortTh label="Reco ₹" k="reco" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Current ₹" k="cur" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
+                <th>Status</th>
+                <SortTh label="Horizon" k="horizon" sort={sort} setSort={setSort}/>
+                <th title="Your reaction">React</th>
+                <th style={{textAlign:"right"}}>Actions</th>
+              </tr></thead>
+              <tbody>{rows.map(r=>{
+                const itm=ret(r)>=0; const open=openRow===r.id; const exp=isExpired(r); const td=getTargetDate(r);
+                return (<React.Fragment key={r.id}>
+                  <tr className={"hoverable"+(r.exitSignal?" exit":"")+(r.hidden?" hiddenrow":"")+(exp?" expired":"")}>
+                    {/* Asset — expand on click */}
+                    <td style={{cursor:"pointer",maxWidth:200}} onClick={()=>setOpenRow(open?null:r.id)}>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <ChevronDown size={13} color="var(--muted)" style={{transform:open?"rotate(180deg)":"none",transition:".15s",flexShrink:0}}/>
+                        <div>
+                          <div className="sym" style={{fontSize:13}}>{r.assetName}</div>
+                          <div style={{fontSize:11,color:"var(--muted)"}}>{r.ticker}{r.assetClass&&<span style={{marginLeft:5}}><ClassTag c={r.assetClass}/></span>}</div>
+                        </div>
+                      </div>
+                      {r.hidden && <span className="pill" style={{marginLeft:8,fontSize:10}}>Hidden</span>}
+                      {exp && <span className="pill loss" style={{marginLeft:8,fontSize:10}}>Expired</span>}
+                    </td>
+                    {/* Recommended by */}
+                    <td style={{maxWidth:130}}>
+                      <div style={{fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{recName(r)}</div>
+                      {isForwarded(r) && <div style={{fontSize:11,color:"var(--muted)",display:"flex",alignItems:"center",gap:3}}><Forward size={10}/> via {sharedByName(r)}</div>}
+                    </td>
+                    <td className="muted small nowrap">{fmtDate(r.date)}</td>
+                    <td style={{textAlign:"right"}} className="tnum">{r.priceAt?fmt(r.priceAt):<span className="muted">—</span>}</td>
+                    <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
+                    <td style={{textAlign:"right"}} className={"tnum nowrap "+(itm?"pos":"neg")} style={{fontWeight:700,textAlign:"right"}}>{fmtPct(ret(r))}</td>
+                    <td>
+                      <Money itm={itm}/>
+                      {r.exitSignal && <div style={{marginTop:3}}><span className="pill loss" style={{fontSize:10}}><AlertTriangle size={10}/> EXIT</span></div>}
+                    </td>
+                    <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
+                    {/* Reactions */}
+                    <td>
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <button className={"iconbtn"+(r.reaction==="like"?" on-like":"")} title="Like" onClick={()=>react(r,"like")}><ThumbsUp size={13}/></button>
+                        <span className="muted small tnum" style={{fontSize:11}}>{r.likes}</span>
+                        <button className={"iconbtn"+(r.reaction==="dislike"?" on-dislike":"")} title="Dislike" onClick={()=>react(r,"dislike")}><ThumbsDown size={13}/></button>
+                        <span className="muted small tnum" style={{fontSize:11}}>{r.dislikes}</span>
+                      </div>
+                    </td>
+                    {/* Actions */}
+                    <td>
+                      <div className="actions" style={{gap:4}}>
+                        {r.invested
+                          ? <button className="btn btn-sm btn-soft" style={{fontSize:11,padding:"4px 8px"}} onClick={()=>onInvestClick(r)}><Check size={12}/> Invested</button>
+                          : <button className="btn btn-sm btn-ghost" style={{fontSize:11,padding:"4px 8px"}} onClick={()=>onInvestClick(r)}>Invest</button>}
+                        {/* Share link — same as Made by me */}
+                        <div style={{position:"relative"}}>
+                          <button className="iconbtn" title="Forward / share" onClick={()=>setSharePopId(sharePopId===r.id?null:r.id)}><Share2 size={13}/></button>
+                          {sharePopId===r.id && <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",zIndex:200,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:12,boxShadow:"0 8px 28px rgba(0,0,0,.13)",padding:"10px 12px",minWidth:160}}>
+                            <button className="btn btn-ghost btn-sm" style={{width:"100%",justifyContent:"flex-start",marginBottom:6}} onClick={()=>{setFwd(r);setSharePopId(null);}}><Forward size={13}/> Forward to contacts</button>
+                            <button className="btn btn-ghost btn-sm" style={{width:"100%",justifyContent:"flex-start"}} onClick={()=>setSharePopId(null)}><X size={13}/> Close</button>
+                          </div>}
+                        </div>
+                        <button className="iconbtn" title={r.hidden?"Unhide":"Hide"} onClick={()=>toggleHide(r)}>{r.hidden?<Eye size={13}/>:<EyeOff size={13}/>}</button>
+                        <button className="iconbtn danger" title="Remove" onClick={()=>del(r)}><Trash2 size={13}/></button>
+                      </div>
+                    </td>
+                  </tr>
+                  {/* ── Expanded detail row ── */}
+                  {open && (
+                    <tr className="expand-row"><td colSpan={10}><div className="expand-inner">
+                      <div style={{display:"flex",gap:32,flexWrap:"wrap",marginBottom:12}}>
+                        <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
+                        <div><div className="cap">Asset class</div><ClassTag c={r.assetClass}/></div>
+                        <div><div className="cap">Shared as</div><b>{r.shareType==="group"?`Group · ${groupName(r.groupId)}`:"Direct"}</b></div>
+                        {isForwarded(r)&&<div><div className="cap">Forwarded by</div><b>{sharedByName(r)}</b></div>}
+                        {r.targetPrice&&<div><div className="cap">Target price</div><b className="tnum">{fmt(r.targetPrice)}</b></div>}
+                        {r.stopLoss&&<div><div className="cap">Stop loss</div><b className="tnum neg">{fmt(r.stopLoss)}</b></div>}
+                        {td&&<div><div className="cap">Target date</div><b className={exp?"neg":""}>{fmtDate(td)}{exp?" · Expired":""}</b></div>}
+                        {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
+                        {r.invested&&<div><div className="cap">My entry</div><b className="tnum pos">{r.investedPrice?fmt(r.investedPrice):"—"}</b></div>}
+                      </div>
+                      <div className="cap">Thesis from {recName(r)}{isForwarded(r)?` · forwarded by ${sharedByName(r)}`:""}</div>
+                      <div style={{fontSize:13,lineHeight:1.7,color:"var(--ink-soft)",marginTop:4,marginBottom:12,maxWidth:720}}>
+                        {r.thesis || <span className="muted">No thesis shared.</span>}
+                      </div>
+                      <button className="btn btn-soft btn-sm" onClick={()=>setFwd(r)}><Forward size={13}/> Forward this idea</button>
+                    </div></td></tr>
+                  )}
+                </React.Fragment>);
+              })}</tbody>
+            </table>
+          </div>
+        </div>}
+
     {investing && <InvestPriceModal reco={investing} onClose={()=>setInvesting(null)} onConfirm={(price)=>{ doInvest(investing,price); setInvesting(null); }}/>}
     {fwd && <ShareRecoModal reco={fwd} mode="forward" originName={recName(fwd)} contacts={contacts} groups={groups} onClose={()=>setFwd(null)}
         onShare={(targets,note)=>{ onForward(fwd,targets,note); setFwd(null); }}/>}
   </>);
 }
+
+
 function InvestPriceModal({ reco, onClose, onConfirm }) {
   const [price,setPrice]=useState(String(reco.price));
   const valid = price!=="" && !isNaN(+price) && +price>0;
@@ -1759,53 +1828,42 @@ function PanPullModal({ onClose, onApply }) {
 function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings, me, onReload }) {
   const [q,setQ]=useState(""); const [fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fHorizon,setFHorizon]=useState("all");
   const [showExpired,setShowExpired]=useState(false);
-  const [sort,setSort]=useState({key:"date",dir:"desc"}); const [expanded,setExpanded]=useState(null); const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
+  const [sort,setSort]=useState({key:"date",dir:"desc"});
+  const [openRow,setOpenRow]=useState(null);
+  const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
   const [sharePopId, setSharePopId] = useState(null);
-  const [exitingId,  setExitingId]  = useState(null); // shows loading on that row during price fetch
+  const [exitingId,  setExitingId]  = useState(null);
 
   const del=async(r)=>{
-    if(!confirm("Delete this recommendation? This will remove it from all recipients' lists too.")) return;
+    if(!confirm("Delete this recommendation? This will remove it from all recipients\' lists too.")) return;
     setRecs(rs=>rs.filter(x=>x.id!==r.id));
     await dbDeleteReco(r.id, me?.id);
   };
 
   const toggleExit=async(r)=>{
     if (r.exit) {
-      // ── Cancel exit ─────────────────────────────────────────────────────
       if(!confirm("Cancel the exit signal for this recommendation?")) return;
       setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:false,exitDate:null,exitPrice:null}:x));
       if(sql && me?.id) { try { await dbCancelExit(r.id,me.id); await onReload(); } catch(_){} }
     } else {
-      // ── Set exit — auto-fetch closing price first ───────────────────────
       setExitingId(r.id);
       let exitPriceData = null;
-      try {
-        exitPriceData = await getTodayClose(r.ticker, r.exchange || "NSE");
-      } catch(e) {
-        console.warn("Exit price fetch failed:", e.message);
-      }
-
+      try { exitPriceData = await getTodayClose(r.ticker, r.exchange || "NSE"); }
+      catch(e) { console.warn("Exit price fetch failed:", e.message); }
       const priceLabel = exitPriceData
         ? `₹${Number(exitPriceData.price).toLocaleString("en-IN")} (${sourceName(exitPriceData.source)} · ${exitPriceData.date})`
         : "Price unavailable — will not be stamped (flagged on profile)";
-
-      const confirmed = confirm(
-        `Exit "${r.ticker}"?\n\nExit price: ${priceLabel}\n\nThis records your exit and closes the recommendation.`
-      );
+      const confirmed = confirm(`Exit "${r.ticker}"?\n\nExit price: ${priceLabel}\n\nThis records your exit and closes the recommendation.`);
       setExitingId(null);
       if (!confirmed) return;
-
       setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:true,exitDate:TODAY,exitPrice:exitPriceData?.price||null}:x));
       if(sql && me?.id) {
-        try {
-          await dbSetExit(r.id, me.id, exitPriceData?.price||null, exitPriceData?.source||"unavailable");
-          await onReload();
-        } catch(_){}
+        try { await dbSetExit(r.id, me.id, exitPriceData?.price||null, exitPriceData?.source||"unavailable"); await onReload(); } catch(_){}
       }
     }
   };
   const reShare=(r,targets)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,recipients:[...new Set([...x.recipients,...targets])]}:x));
-  const exp=(id,which)=>setExpanded(e=> e&&e.id===id&&e.which===which?null:{id,which});
+
   const rows = useMemo(()=>{
     let r=[...recs];
     if(!showExpired) r=r.filter(x=>!isExpired(x));
@@ -1816,112 +1874,147 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
     const dir=sort.dir==="asc"?1:-1; const k=sort.key;
     r.sort((a,b)=>{ let av,bv;
       if(k==="assetName"){av=a.assetName.toLowerCase();bv=b.assetName.toLowerCase();}
-      else if(k==="ticker"){av=a.ticker.toLowerCase();bv=b.ticker.toLowerCase();}
-      else if(k==="cls"){av=a.assetClass.toLowerCase();bv=b.assetClass.toLowerCase();}
       else if(k==="date"){av=a.date;bv=b.date;}
       else if(k==="reco"){av=a.priceAt;bv=b.priceAt;}
       else if(k==="cur"){av=a.price;bv=b.price;}
       else if(k==="ret"){av=ret(a);bv=ret(b);}
       else if(k==="target"){av=a.targetPrice||0;bv=b.targetPrice||0;}
       else if(k==="horizon"){av=HORIZONS.indexOf(a.horizon);bv=HORIZONS.indexOf(b.horizon);}
-      else if(k==="tdate"){av=getTargetDate(a)||"";bv=getTargetDate(b)||"";}
-      else if(k==="acted"){av=a.actedList.length;bv=b.actedList.length;}
-      else if(k==="likes"){av=a.likes.length;bv=b.likes.length;}
-      else if(k==="dislikes"){av=a.dislikes.length;bv=b.dislikes.length;}
       return av<bv?-dir:av>bv?dir:0; });
     return r;
   },[recs,q,fCls,fHorizon,fMoney,showExpired,sort]);
+
   const expiredCount = recs.filter(x=>isExpired(x)).length;
-  const COLS=16;
+
   return (<>
-    {/* ── Expired toggle banner ── */}
-    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:12,padding:"10px 14px"}}>
-      <div className={"sw"+(showExpired?" on":"")} onClick={()=>setShowExpired(v=>!v)}><div className="knob"/></div>
-      <span style={{fontSize:13,fontWeight:600,color:"var(--ink-soft)"}}>Show expired recommendations</span>
-      {expiredCount>0 && <span className="pill loss" style={{fontSize:12}}>{expiredCount} expired</span>}
-      {expiredCount===0 && <span className="muted small">No expired recommendations</span>}
-      <span className="muted small" style={{marginLeft:"auto"}}>A recommendation is expired when its target date has passed</span>
-    </div>
-    <div className="toolbar">
-      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by asset…"/></div>
-      <div className="fl"><span className="lab">Class</span><select className="inline-select sm" value={fCls} onChange={e=>setFCls(e.target.value)}><option value="all">All</option>{assetClasses.map(c=><option key={c}>{c}</option>)}</select></div>
-      <div className="fl"><span className="lab">Horizon</span><select className="inline-select sm" value={fHorizon} onChange={e=>setFHorizon(e.target.value)}><option value="all">All</option>{HORIZONS.map(h=><option key={h}>{h}</option>)}</select></div>
-      <div className="fl"><span className="lab">Money</span><select className="inline-select sm" value={fMoney} onChange={e=>setFMoney(e.target.value)}><option value="all">All</option><option value="in">In the money</option><option value="out">Out of money</option></select></div>
+    {/* ── Compact toolbar ── */}
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+      <div className="searchbox" style={{flex:"1 1 200px",minWidth:160}}>
+        <Search size={15} color="var(--muted)"/>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by asset or ticker…"/>
+      </div>
+      <select className="inline-select sm" value={fCls} onChange={e=>setFCls(e.target.value)}>
+        <option value="all">All classes</option>{assetClasses.map(c=><option key={c}>{c}</option>)}
+      </select>
+      <select className="inline-select sm" value={fHorizon} onChange={e=>setFHorizon(e.target.value)}>
+        <option value="all">All horizons</option>{HORIZONS.map(h=><option key={h}>{h}</option>)}
+      </select>
+      <select className="inline-select sm" value={fMoney} onChange={e=>setFMoney(e.target.value)}>
+        <option value="all">All returns</option><option value="in">In the money</option><option value="out">Out of money</option>
+      </select>
+      <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:9,cursor:"pointer",flexShrink:0}} onClick={()=>setShowExpired(v=>!v)}>
+        <div className={"sw"+(showExpired?" on":"")} style={{width:32,height:18}}><div className="knob" style={{width:14,height:14,top:2}}/></div>
+        <span style={{fontSize:12,fontWeight:600,color:"var(--ink-soft)",whiteSpace:"nowrap"}}>Expired</span>
+        {expiredCount>0 && <span className="pill loss" style={{fontSize:11,padding:"1px 6px"}}>{expiredCount}</span>}
+      </div>
       <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)}><Plus size={15}/> New recommendation</button>
     </div>
-    {rows.length===0 ? <div className="card"><div className="empty">No recommendations match your filters.</div></div> :
-    <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:1400}}>
-      <thead><tr>
-        <SortTh label="Asset name" k="assetName" sort={sort} setSort={setSort}/>
-        <SortTh label="Ticker" k="ticker" sort={sort} setSort={setSort}/>
-        <SortTh label="Class" k="cls" sort={sort} setSort={setSort}/>
-        <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
-        <th>Shared with</th>
-        <SortTh label="Reco $" k="reco" sort={sort} setSort={setSort} align="right"/>
-        <SortTh label="Target $" k="target" sort={sort} setSort={setSort} align="right"/>
-        <SortTh label="Current $" k="cur" sort={sort} setSort={setSort} align="right"/>
-        <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
-        <SortTh label="Horizon" k="horizon" sort={sort} setSort={setSort}/>
-        <SortTh label="Target date" k="tdate" sort={sort} setSort={setSort}/>
-        <th>Status</th>
-        <SortTh label="Acted on it" k="acted" sort={sort} setSort={setSort}/>
-        <SortTh label="Likes" k="likes" sort={sort} setSort={setSort}/>
-        <SortTh label="Dislikes" k="dislikes" sort={sort} setSort={setSort}/>
-        <th style={{textAlign:"right"}}>Actions</th>
-      </tr></thead>
-      <tbody>{rows.map(r=>{ const itm=ret(r)>=0; const isExp=expanded&&expanded.id===r.id; const expired=isExpired(r); const td=getTargetDate(r);
-        return (<React.Fragment key={r.id}>
-          <tr className={"hoverable"+(r.exit?" exit":"")+(expired?" expired":"")}>
-            <td className="sym nowrap">{r.assetName}{r.forwardedFrom && <span className="pill accent" style={{marginLeft:8}} title={"Forwarded from "+r.forwardedFrom}><Forward size={11}/> via {r.forwardedFrom}</span>}{expired && <span className="pill loss" style={{marginLeft:8,fontSize:11}}>Expired</span>}
-              <span className={r.isPublic?"pill gain":"pill"} style={{marginLeft:8,fontSize:11}}>{r.isPublic?"Public":"Private"}</span></td>
-            <td className="sym">{r.ticker}</td>
-            <td><ClassTag c={r.assetClass}/></td>
-            <td className="muted small nowrap">{fmtDate(r.date)}</td>
-            <td><div style={{display:"flex",flexWrap:"wrap",gap:5,maxWidth:210}}>{r.recipients.map(id=><span key={id} className="chip mini">{recipientName(id)}</span>)}</div></td>
-            <td style={{textAlign:"right"}} className="tnum">{r.priceAt?fmt(r.priceAt):<span className="muted">—</span>}</td>
-            <td style={{textAlign:"right"}} className="tnum">{r.targetPrice?fmt(r.targetPrice):<span className="muted">—</span>}</td>
-            <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
-            <td style={{textAlign:"right"}} className={"tnum nowrap "+(itm?"pos":"neg")}>{fmtPct(ret(r))}</td>
-            <td className="nowrap">{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
-            <td className={"muted small nowrap"+(expired?" neg":"")}>{td?fmtDate(td):<span className="muted">—</span>}</td>
-            <td className="nowrap"><Money itm={itm}/>{r.exit && <div style={{marginTop:5}}><span className="pill loss"><LogOut size={11}/> Exit · {fmtDate(r.exitDate)}</span></div>}</td>
-            <td><span className="clickable nowrap" onClick={()=>exp(r.id,"acted")}>{r.actedList.length} of {reach(r.recipients)} <ChevronDown size={13} style={{transform:isExp&&expanded.which==="acted"?"rotate(180deg)":"none"}}/></span></td>
-            <td><span className="clickable" onClick={()=>exp(r.id,"likes")}><ThumbsUp size={13}/> {r.likes.length}</span></td>
-            <td><span className="clickable" onClick={()=>exp(r.id,"dislikes")}><ThumbsDown size={13}/> {r.dislikes.length}</span></td>
-            <td><div className="actions">
-              {/* Share publicly (copy link / WhatsApp) — only for public recommendations */}
-              {r.isPublic && (
-                <div style={{position:"relative"}}>
-                  <button className="iconbtn" title="Copy public link / share" onClick={()=>setSharePopId(sharePopId===r.id?null:r.id)}><Link size={14}/></button>
-                  {sharePopId===r.id && <SharePublicPopover reco={r} username={me.username} onClose={()=>setSharePopId(null)}/>}
-                </div>
-              )}
-              <button className="iconbtn" title="Share with more contacts or groups" onClick={()=>setShare(r)}><Share2 size={14}/></button>
-              <button className={"btn btn-sm "+(r.exit?"btn-ghost":"btn-soft")} disabled={exitingId===r.id} onClick={()=>toggleExit(r)}>
-                {exitingId===r.id ? <><Loader size={13} className="spin"/> Fetching price…</> : <><LogOut size={13}/> {r.exit?"Cancel exit":"Send exit"}</>}
-              </button>
-              <button className="iconbtn danger" title="Delete" onClick={()=>del(r)}><Trash2 size={14}/></button></div></td>
-          </tr>
-          {isExp && <tr className="expand-row"><td colSpan={COLS}><div className="expand-sub">
-            {expanded.which==="acted" && <><b style={{fontSize:13}}>Acted on it ({r.actedList.length})</b>
-              {r.actedList.length===0?<div className="muted small" style={{marginTop:8}}>No one yet.</div>:
-              <div className="namelist" style={{marginTop:10}}>{r.actedList.map((a,i)=><span key={i} className="nl-item"><span className="av" style={{width:26,height:26,background:CONTACT_COLORS[i%CONTACT_COLORS.length],fontSize:10}}>{initialsOf(a.name)}</span>{a.name} <span className="muted small">· {fmtDate(a.date)}</span></span>)}</div>}</>}
-            {expanded.which==="likes" && <><b style={{fontSize:13}}>Liked by ({r.likes.length})</b>
-              {r.likes.length===0?<div className="muted small" style={{marginTop:8}}>No likes yet.</div>:
-              <div className="namelist" style={{marginTop:10}}>{r.likes.map((n,i)=><span key={i} className="nl-item"><span className="av" style={{width:26,height:26,background:CONTACT_COLORS[i%CONTACT_COLORS.length],fontSize:10}}>{initialsOf(n)}</span>{n}</span>)}</div>}</>}
-            {expanded.which==="dislikes" && <><b style={{fontSize:13}}>Disliked by ({r.dislikes.length})</b>
-              {r.dislikes.length===0?<div className="muted small" style={{marginTop:8}}>No dislikes.</div>:
-              <div className="namelist" style={{marginTop:10}}>{r.dislikes.map((n,i)=><span key={i} className="nl-item"><span className="av" style={{width:26,height:26,background:"#8d90ad",fontSize:10}}>{initialsOf(n)}</span>{n}</span>)}</div>}</>}
-          </div></td></tr>}
-        </React.Fragment>);
-      })}</tbody>
-    </table></div></div></div>}
+
+    {rows.length===0
+      ? <div className="card"><div className="empty">No recommendations match your filters.</div></div>
+      : <div className="card">
+          <div className="card-body" style={{padding:"6px 0"}}>
+            <table className="grid" style={{width:"100%"}}>
+              <thead><tr>
+                <SortTh label="Asset" k="assetName" sort={sort} setSort={setSort}/>
+                <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
+                <SortTh label="Reco ₹" k="reco" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Target ₹" k="target" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Current ₹" k="cur" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
+                <th>Status</th>
+                <SortTh label="Horizon" k="horizon" sort={sort} setSort={setSort}/>
+                <th style={{textAlign:"right"}}>Actions</th>
+              </tr></thead>
+              <tbody>{rows.map(r=>{
+                const itm=ret(r)>=0; const open=openRow===r.id; const expired=isExpired(r); const td=getTargetDate(r);
+                return (<React.Fragment key={r.id}>
+                  <tr className={"hoverable"+(r.exit?" exit":"")+(expired?" expired":"")}>
+                    {/* Asset — click to expand */}
+                    <td style={{cursor:"pointer",maxWidth:220}} onClick={()=>setOpenRow(open?null:r.id)}>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <ChevronDown size={13} color="var(--muted)" style={{transform:open?"rotate(180deg)":"none",transition:".15s",flexShrink:0}}/>
+                        <div>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <span className="sym" style={{fontSize:13}}>{r.assetName}</span>
+                            <span className={r.isPublic?"pill gain":"pill"} style={{fontSize:10,padding:"1px 6px"}}>{r.isPublic?"Public":"Private"}</span>
+                          </div>
+                          <div style={{fontSize:11,color:"var(--muted)"}}>{r.ticker} · <ClassTag c={r.assetClass}/></div>
+                        </div>
+                      </div>
+                      {expired && <span className="pill loss" style={{fontSize:10,marginLeft:4}}>Expired</span>}
+                      {r.exit && <div style={{marginTop:2}}><span className="pill loss" style={{fontSize:10}}><LogOut size={10}/> Exited {r.exitDate?fmtDate(r.exitDate):""}</span></div>}
+                    </td>
+                    <td className="muted small nowrap">{fmtDate(r.date)}</td>
+                    <td style={{textAlign:"right"}} className="tnum">{r.priceAt?fmt(r.priceAt):<span className="muted">—</span>}</td>
+                    <td style={{textAlign:"right"}} className="tnum">{r.targetPrice?fmt(r.targetPrice):<span className="muted">—</span>}</td>
+                    <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
+                    <td style={{textAlign:"right",fontWeight:700}} className={"tnum nowrap "+(itm?"pos":"neg")}>{fmtPct(ret(r))}</td>
+                    <td><Money itm={itm}/></td>
+                    <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
+                    <td>
+                      <div className="actions" style={{gap:4}}>
+                        {r.isPublic && (
+                          <div style={{position:"relative"}}>
+                            <button className="iconbtn" title="Copy public link" onClick={()=>setSharePopId(sharePopId===r.id?null:r.id)}><Link size={13}/></button>
+                            {sharePopId===r.id && <SharePublicPopover reco={r} username={me.username} onClose={()=>setSharePopId(null)}/>}
+                          </div>
+                        )}
+                        <button className="iconbtn" title="Share with contacts / groups" onClick={()=>setShare(r)}><Share2 size={13}/></button>
+                        <button className={"btn btn-sm "+(r.exit?"btn-ghost":"btn-soft")} style={{fontSize:11,padding:"4px 8px"}} disabled={exitingId===r.id} onClick={()=>toggleExit(r)}>
+                          {exitingId===r.id?<><Loader size={12} className="spin"/> …</>:<><LogOut size={12}/> {r.exit?"Cancel exit":"Send exit"}</>}
+                        </button>
+                        <button className="iconbtn danger" title="Delete" onClick={()=>del(r)}><Trash2 size={13}/></button>
+                      </div>
+                    </td>
+                  </tr>
+                  {/* ── Expanded detail row ── */}
+                  {open && (
+                    <tr className="expand-row"><td colSpan={9}><div className="expand-inner">
+                      {/* Meta info strip */}
+                      <div style={{display:"flex",gap:28,flexWrap:"wrap",marginBottom:12}}>
+                        <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
+                        <div><div className="cap">Class</div><ClassTag c={r.assetClass}/></div>
+                        <div><div className="cap">Shared with</div>
+                          <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:2}}>{r.recipients.map(id=><span key={id} className="chip mini">{recipientName(id)}</span>)}</div>
+                        </div>
+                        {r.stopLoss&&<div><div className="cap">Stop loss</div><b className="tnum neg">{fmt(r.stopLoss)}</b></div>}
+                        {td&&<div><div className="cap">Target date</div><b className={expired?"neg":""}>{fmtDate(td)}{expired?" · Expired":""}</b></div>}
+                        {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
+                        {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
+                        <div><div className="cap">Acted on it</div><b>{r.actedList.length} of {reach(r.recipients)}</b></div>
+                        <div><div className="cap">Reactions</div>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <ThumbsUp size={13} color="var(--gain)"/><b>{r.likes.length}</b>
+                            <ThumbsDown size={13} color="var(--loss)" style={{marginLeft:6}}/><b>{r.dislikes.length}</b>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Thesis */}
+                      <div className="cap">Your thesis</div>
+                      <div style={{fontSize:13,lineHeight:1.7,color:"var(--ink-soft)",marginTop:4,marginBottom:12,maxWidth:720}}>
+                        {r.thesis && r.thesis!=="—"?r.thesis:<span className="muted">No thesis recorded.</span>}
+                      </div>
+                      {/* Acted on list */}
+                      {r.actedList.length>0&&(
+                        <><div className="cap" style={{marginBottom:6}}>Who acted on it</div>
+                        <div className="namelist" style={{marginBottom:12}}>{r.actedList.map((a,i)=>(
+                          <span key={i} className="nl-item"><span className="av" style={{width:24,height:24,background:CONTACT_COLORS[i%CONTACT_COLORS.length],fontSize:9}}>{initialsOf(a.name)}</span>{a.name}<span className="muted small"> · {fmtDate(a.date)}</span></span>
+                        ))}</div></>
+                      )}
+                    </div></td></tr>
+                  )}
+                </React.Fragment>);
+              })}</tbody>
+            </table>
+          </div>
+        </div>}
+
     {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} me={me} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecs(rs=>[rec,...rs]); setShowNew(false); }}/>}
     {share && <ShareRecoModal reco={share} mode="share" contacts={contacts} groups={groups} onClose={()=>setShare(null)}
         onShare={(targets)=>{ reShare(share,targets); setShare(null); }}/>}
   </>);
 }
-
 function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAdd }) {
   const [f,setF]=useState({ assetName:"", ticker:"", by:"", assetClass:assetClasses[0], date:TODAY, recoPrice:"", curPrice:"", targetPrice:"", horizon:"12m", shareType:"one", groupId:groups[0]?.id||"", invested:false, investedPrice:"", thesis:"" });
   const up=(k,v)=>setF(s=>({...s,[k]:v}));
