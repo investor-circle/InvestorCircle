@@ -1573,11 +1573,15 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
       .catch(()=>setLoading(false));
   },[me?.id, tracked.size]);
 
-  // Patch invested status locally + persist
+  // Patch invested status locally + persist to recommendation_tracking
   const patchInvested=(r, updates)=>{
     setRecos(rs=>rs.map(x=>x.id===r.id?{...x,...updates}:x));
-    if(sql&&me?.id&&r.delivery_id) {
-      try{ updateDelivery(r.delivery_id, updates, me.id); }catch(_){}
+    if(sql&&me?.id) {
+      if(updates.is_invested) {
+        sql`UPDATE recommendation_tracking SET is_invested=true, invested_price=${updates.invested_price||null}, invested_at=now() WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(console.warn);
+      } else {
+        sql`UPDATE recommendation_tracking SET is_invested=false, invested_price=null, invested_at=null WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(console.warn);
+      }
     }
   };
 
@@ -1928,7 +1932,15 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                           reco={r}
                           onMark={(price)=>{
                             doInvest(r, price);
-                            if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id);
+                            // Upsert into tracking with invested data (auto-tracks + marks invested)
+                            if(sql && myId) {
+                              sql`INSERT INTO recommendation_tracking (reco_id, user_id, is_invested, invested_price, invested_at)
+                                  VALUES (${r.id}, ${myId}, true, ${price}, now())
+                                  ON CONFLICT (reco_id, user_id) DO UPDATE SET
+                                    is_invested=true, invested_price=${price}, invested_at=now()`
+                                .then(()=>{ if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id); })
+                                .catch(()=>{ if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id); });
+                            } else if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id);
                           }}
                           onUnmark={()=>unInvest(r)}
                           stopProp={false}
@@ -3831,7 +3843,15 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
               reco={{...r, price: r.price, ticker: r.ticker, assetName: r.assetName, priceAt: r.priceAt}}
               onMark={(price)=>{
                 patch({isInvested:true,investedPrice:price,invested:true});
-                if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id);
+                // Upsert into tracking with invested data (auto-tracks + marks invested)
+                if(sql && me?.id) {
+                  sql`INSERT INTO recommendation_tracking (reco_id, user_id, is_invested, invested_price, invested_at)
+                      VALUES (${r.id}, ${me.id}, true, ${price}, now())
+                      ON CONFLICT (reco_id, user_id) DO UPDATE SET
+                        is_invested=true, invested_price=${price}, invested_at=now()`
+                    .then(()=>{ if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id); })
+                    .catch(()=>{ if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id); });
+                } else if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id);
               }}
               onUnmark={()=>patch({isInvested:false,investedPrice:null,invested:false})}
               stopProp={true}
