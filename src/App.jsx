@@ -612,7 +612,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed setPage={setPage} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME}/>}
+            {isInv && page==="home"      && <HomeFeed setPage={setPage} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade}/>}
             {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
             {isInv && page==="network"   && <Network
                 connections={connections} setConnections={setConnections}
@@ -3580,10 +3580,11 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload }) {
 }
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
-function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, contacts, me }) {
+function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const feedRecs = recsReceived.filter(r=>!r.hidden).slice(0, 15);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
+  const [showNewReco, setShowNewReco] = useState(false);
 
   return (
     <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
@@ -3601,7 +3602,7 @@ function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, c
               {recsReceived.filter(r=>!r.hidden).length} ideas in your feed · {contacts.length} connections
             </span>
           </div>
-          <button className="btn btn-pri btn-sm" onClick={()=>setPage('recs')}><Lightbulb size={14}/> Recommend an idea</button>
+          <button className="btn btn-pri btn-sm" onClick={()=>setShowNewReco(true)}><Lightbulb size={14}/> Recommend an idea</button>
         </div>
 
         {feedRecs.length===0
@@ -3684,6 +3685,16 @@ function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, c
         </div>
       </div>
     </div>
+
+    {showNewReco && (
+      <MakeRecoModal
+        assetClasses={assetClasses} setAssetClasses={setAssetClasses}
+        contacts={contacts} groups={groups} holdings={holdings} me={me}
+        onClose={()=>setShowNewReco(false)}
+        onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); setShowNewReco(false); }}
+      />
+    )}
+  </div>
   );
 }
 /* =================================================================== INSTRUMENTS */
