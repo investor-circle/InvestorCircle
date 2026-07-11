@@ -3587,6 +3587,7 @@ function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, c
   const [showNewReco, setShowNewReco] = useState(false);
 
   return (
+    <>
     <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
 
       {/* ── Feed column ── */}
@@ -3694,7 +3695,7 @@ function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, c
         onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); setShowNewReco(false); }}
       />
     )}
-  </div>
+  </>
   );
 }
 /* =================================================================== INSTRUMENTS */
