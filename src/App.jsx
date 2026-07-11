@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Home, PieChart, Users, Lightbulb, Shield, Search, Bell, Settings,
   Lock, Eye, EyeOff, TrendingUp, TrendingDown, Plus, X, Check, Send,
@@ -1482,6 +1483,7 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
     {/* ── Compact page header with tabs inline ── */}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:12}}>
       <div className="eyebrow" style={{marginBottom:0}}>Recommendations</div>
+      <div style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px',marginTop:2}}>Ideas worth tracking</div>
       {/* Big prominent tabs */}
       <div style={{display:"flex",gap:6,background:"var(--surface-2)",borderRadius:14,padding:4}}>
         {[
@@ -1491,7 +1493,7 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
             display:"flex",alignItems:"center",gap:8,padding:"10px 20px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontWeight:700,fontSize:14,transition:".15s",
             background: tab===t.id ? "var(--surface)" : "transparent",
-            color:      tab===t.id ? "var(--accent-ink)" : "var(--muted)",
+            color:      tab===t.id ? "var(--accent-ink)" : "var(--ink)",
             boxShadow:  tab===t.id ? "0 1px 6px rgba(20,20,50,.1)" : "none",
           }}>
             <t.icon size={15}/>
@@ -1499,7 +1501,7 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
             <span style={{
               fontSize:12, fontWeight:800, padding:"2px 9px", borderRadius:999,
               background: tab===t.id ? "var(--grad)" : "var(--surface-2)",
-              color:      tab===t.id ? "#fff" : "var(--muted)",
+              color:      tab===t.id ? "#fff" : "var(--ink-soft)",
             }}>{t.count}</span>
           </button>
         ))}
@@ -1526,6 +1528,22 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
   const [investing,setInvesting]=useState(null);
   const [openRow,setOpenRow]=useState(null); const [fwd,setFwd]=useState(null);
   const [sharePopId,setSharePopId]=useState(null);
+  const [shareAnchor,setShareAnchor]=useState(null);
+  const [shareUsername,setShareUsername]=useState(null);
+
+  const handleReceivedShare = async (e, r) => {
+    if (sharePopId===r.id) { setSharePopId(null); setShareAnchor(null); return; }
+    setShareAnchor(e.currentTarget);
+    setSharePopId(r.id);
+    setShareUsername(null);
+    // Async fetch recommender username for public link
+    if (r.from && sql) {
+      try {
+        const rows = await sql`SELECT username FROM user_profiles WHERE id=${r.from} AND username IS NOT NULL LIMIT 1`;
+        if (rows[0]?.username) setShareUsername(rows[0].username);
+      } catch(_) {}
+    }
+  };
 
   const recName = (r) => r.byName || contactName(r.from);
   const isForwarded = (r) => r.sharedBy && r.sharedBy!==r.from;
@@ -1648,7 +1666,7 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                         <ChevronDown size={13} color="var(--muted)" style={{transform:open?"rotate(180deg)":"none",transition:".15s",flexShrink:0}}/>
                         <div>
                           <div className="sym" style={{fontSize:13}}>{r.assetName}</div>
-                          <div style={{fontSize:11,color:"var(--muted)"}}>{r.ticker}{r.assetClass&&<span style={{marginLeft:5}}><ClassTag c={r.assetClass}/></span>}</div>
+                          <div style={{fontSize:11,color:"var(--muted)"}}>{r.assetClass&&<ClassTag c={r.assetClass}/>}</div>
                         </div>
                       </div>
                       {r.hidden && <span className="pill" style={{marginLeft:8,fontSize:10}}>Hidden</span>}
@@ -1683,13 +1701,18 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                         {r.invested
                           ? <button className="btn btn-sm btn-soft" style={{fontSize:11,padding:"4px 8px"}} onClick={()=>onInvestClick(r)}><Check size={12}/> Invested</button>
                           : <button className="btn btn-sm btn-ghost" style={{fontSize:11,padding:"4px 8px"}} onClick={()=>onInvestClick(r)}>Invest</button>}
-                        {/* Share link — same as Made by me */}
+                        {/* Share — external public link + forward within platform */}
                         <div style={{position:"relative"}}>
-                          <button className="iconbtn" title="Forward / share" onClick={()=>setSharePopId(sharePopId===r.id?null:r.id)}><Share2 size={13}/></button>
-                          {sharePopId===r.id && <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",zIndex:200,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:12,boxShadow:"0 8px 28px rgba(0,0,0,.13)",padding:"10px 12px",minWidth:160}}>
-                            <button className="btn btn-ghost btn-sm" style={{width:"100%",justifyContent:"flex-start",marginBottom:6}} onClick={()=>{setFwd(r);setSharePopId(null);}}><Forward size={13}/> Forward to contacts</button>
-                            <button className="btn btn-ghost btn-sm" style={{width:"100%",justifyContent:"flex-start"}} onClick={()=>setSharePopId(null)}><X size={13}/> Close</button>
-                          </div>}
+                          <button className="iconbtn" title="Share / forward" onClick={(e)=>handleReceivedShare(e,r)}><Share2 size={13}/></button>
+                          {sharePopId===r.id && (
+                            <ReceivedSharePopover
+                              reco={r}
+                              fromUsername={shareUsername}
+                              anchorEl={shareAnchor}
+                              onForward={()=>{ setFwd(r); setSharePopId(null); }}
+                              onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
+                            />
+                          )}
                         </div>
                         <button className="iconbtn" title={r.hidden?"Unhide":"Hide"} onClick={()=>toggleHide(r)}>{r.hidden?<Eye size={13}/>:<EyeOff size={13}/>}</button>
                         <button className="iconbtn danger" title="Remove" onClick={()=>del(r)}><Trash2 size={13}/></button>
@@ -1832,6 +1855,7 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
   const [openRow,setOpenRow]=useState(null);
   const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
   const [sharePopId, setSharePopId] = useState(null);
+  const [shareAnchor, setShareAnchor] = useState(null);
   const [exitingId,  setExitingId]  = useState(null);
 
   const del=async(r)=>{
@@ -1939,7 +1963,7 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
                             <span className="sym" style={{fontSize:13}}>{r.assetName}</span>
                             <span className={r.isPublic?"pill gain":"pill"} style={{fontSize:10,padding:"1px 6px"}}>{r.isPublic?"Public":"Private"}</span>
                           </div>
-                          <div style={{fontSize:11,color:"var(--muted)"}}>{r.ticker} · <ClassTag c={r.assetClass}/></div>
+                          <div style={{fontSize:11,color:"var(--muted)"}}><ClassTag c={r.assetClass}/></div>
                         </div>
                       </div>
                       {expired && <span className="pill loss" style={{fontSize:10,marginLeft:4}}>Expired</span>}
@@ -1956,8 +1980,8 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
                       <div className="actions" style={{gap:4}}>
                         {r.isPublic && (
                           <div style={{position:"relative"}}>
-                            <button className="iconbtn" title="Copy public link" onClick={()=>setSharePopId(sharePopId===r.id?null:r.id)}><Link size={13}/></button>
-                            {sharePopId===r.id && <SharePublicPopover reco={r} username={me.username} onClose={()=>setSharePopId(null)}/>}
+                            <button className="iconbtn" title="Copy public link" onClick={(e)=>setSharePopId(sharePopId===r.id?(setShareAnchor(null),null):(setShareAnchor(e.currentTarget),r.id))}><Link size={13}/></button>
+                            {sharePopId===r.id && <SharePublicPopover reco={r} username={me.username} anchorEl={shareAnchor} onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}/>}
                           </div>
                         )}
                         <button className="iconbtn" title="Share with contacts / groups" onClick={()=>setShare(r)}><Share2 size={13}/></button>
@@ -2437,35 +2461,119 @@ function StatusBadge2({ status }) {
 }
 
 /* ─── SharePublicPopover (unchanged) ────────────────────────────────────────── */
-function SharePublicPopover({ reco, username, onClose }) {
+/* ─── ReceivedSharePopover — for received recommendations ─────────────────────── */
+function ReceivedSharePopover({ reco, fromUsername, anchorEl, onForward, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const popRef = useRef(null);
+  const [pos, setPos] = useState(null);
+
+  useEffect(() => {
+    if (anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    }
+    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
+    setTimeout(() => document.addEventListener('mousedown', h), 0);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  if (!pos) return null;
+
+  const popStyle = {
+    position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999,
+    background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14,
+    boxShadow: '0 8px 32px rgba(0,0,0,.18)', padding: '16px 18px', minWidth: 290,
+    fontFamily: 'var(--font)',
+  };
+
+  const url = fromUsername
+    ? `${window.location.origin}${window.location.pathname}#/investor/${fromUsername}/reco/${reco.id}`
+    : null;
+  const waMsg = url ? encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) on InvestorCircle:\n${url}`) : null;
+  const copyLink = () => {
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => { setCopied(false); onClose(); }, 1600); });
+  };
+
+  return createPortal(
+    <div ref={popRef} style={popStyle} onClick={e => e.stopPropagation()}>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Share2 size={14} color="var(--accent)" /> Share this idea
+      </div>
+      {/* Forward within platform */}
+      <button className="btn btn-ghost btn-sm" style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 8 }}
+        onClick={() => { onForward(); onClose(); }}>
+        <Forward size={14} /> Forward to your contacts
+      </button>
+      {/* External share — only if recommender has public profile */}
+      {url ? (<>
+        <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 8 }}>Share publicly</div>
+          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 9, padding: '7px 9px', fontSize: 11, color: 'var(--muted)', marginBottom: 8, wordBreak: 'break-all', lineHeight: 1.4 }}>{url}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button className="btn btn-pri btn-sm" style={{ justifyContent: 'center' }} onClick={copyLink}>{copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}</button>
+            <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ justifyContent: 'center', textDecoration: 'none' }} onClick={onClose}><span style={{ fontSize: 14 }}>💬</span> Share on WhatsApp</a>
+          </div>
+        </div>
+        <div className="muted small" style={{ fontSize: 11 }}>Links to the recommender's public profile.</div>
+      </>) : (
+        <div className="muted small" style={{ fontSize: 11, paddingTop: 4 }}>Public link unavailable — recommender hasn't set a username yet.</div>
+      )}
+    </div>,
+    document.body
+  );
+}
+
+function SharePublicPopover({ reco, username, onClose, anchorEl }) {
   const [copied,setCopied]=useState(false);
-  const ref=useRef(null);
+  const [pos,setPos]=useState(null);
+  const popRef=useRef(null);
+
   useEffect(()=>{
-    const h=(e)=>{ if(ref.current&&!ref.current.contains(e.target)) onClose(); };
-    document.addEventListener('mousedown',h);
+    // Calculate fixed position from the anchor button
+    if(anchorEl){
+      const rect=anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom+8, right: window.innerWidth-rect.right });
+    }
+    // Close on outside click
+    const h=(e)=>{ if(popRef.current&&!popRef.current.contains(e.target)&&e.target!==anchorEl) onClose(); };
+    setTimeout(()=>document.addEventListener('mousedown',h),0);
     return ()=>document.removeEventListener('mousedown',h);
   },[]);
-  const popStyle={position:'absolute',right:0,top:'calc(100% + 6px)',zIndex:300,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,boxShadow:'0 6px 24px rgba(0,0,0,.14)',padding:'14px 16px',minWidth:280};
-  if(!username) return(
-    <div ref={ref} style={popStyle} onClick={e=>e.stopPropagation()}>
+
+  if(!pos) return null;
+
+  const popStyle={
+    position:'fixed', top:pos.top, right:pos.right, zIndex:9999,
+    background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,
+    boxShadow:'0 8px 32px rgba(0,0,0,.18)',padding:'16px 18px',minWidth:290,
+    fontFamily:'var(--font)',
+  };
+
+  const noUser = (
+    <div ref={popRef} style={popStyle} onClick={e=>e.stopPropagation()}>
       <div className="note warn" style={{fontSize:12}}><AlertTriangle size={13}/><div>Set a username in your profile first.</div></div>
       <button className="btn btn-ghost btn-sm" style={{marginTop:10,width:'100%'}} onClick={onClose}>Close</button>
     </div>
   );
+  if(!username) return createPortal(noUser, document.body);
+
   const url=`${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${reco.id}`;
   const waMsg=encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) by @${username} on InvestorCircle:\n${url}`);
   const waUrl=`https://wa.me/?text=${waMsg}`;
   const copyLink=()=>{ navigator.clipboard.writeText(url).then(()=>{ setCopied(true); setTimeout(()=>{ setCopied(false); onClose(); },1600); }); };
-  return(
-    <div ref={ref} style={popStyle} onClick={e=>e.stopPropagation()}>
+
+  return createPortal(
+    <div ref={popRef} style={popStyle} onClick={e=>e.stopPropagation()}>
       <div style={{fontWeight:700,fontSize:13,marginBottom:12,display:'flex',alignItems:'center',gap:6}}><Globe size={14} color="var(--accent)"/> Share publicly</div>
-      <div style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:9,padding:'8px 10px',fontSize:11,color:'var(--muted)',marginBottom:12,wordBreak:'break-all',lineHeight:1.4}}>{url}</div>
+      <div style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:9,padding:'8px 10px',fontSize:11,color:'var(--muted)',marginBottom:12,wordBreak:'break-all',lineHeight:1.5}}>{url}</div>
       <div style={{display:'flex',flexDirection:'column',gap:8}}>
         <button className="btn btn-pri btn-sm" style={{justifyContent:'center'}} onClick={copyLink}>{copied?<><Check size={14}/> Copied!</>:<><Copy size={14}/> Copy link</>}</button>
         <a href={waUrl} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{justifyContent:'center',textDecoration:'none'}} onClick={onClose}><span style={{fontSize:15,lineHeight:1}}>💬</span> Share on WhatsApp</a>
       </div>
       <div className="muted small" style={{marginTop:10,fontSize:11}}>Anyone with this link can view — no login needed.</div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
