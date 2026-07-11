@@ -2965,20 +2965,38 @@ function SocialIconBtn({ platform, url }) {
 
 /* ─── ICI Donut ─────────────────────────────────────────────────────────────── */
 function IciDonut({ score, band }) {
-  const r = 48, circ = 2 * Math.PI * r, filled = (score / 100) * circ;
-  const col = score >= 70 ? '#4ade80' : score >= 50 ? '#a99dff' : score >= 30 ? '#fbbf24' : '#f87171';
-  const glowCol = col.replace('#','');
+  const r = 56, cx = 70, cy = 70, circ = 2 * Math.PI * r;
+  const filled = (score / 100) * circ;
+  const col   = score >= 70 ? '#4ade80' : score >= 50 ? '#a78bfa' : score >= 30 ? '#fbbf24' : '#f87171';
+  const dark  = score >= 70 ? '#052e16' : score >= 50 ? '#2e1065' : score >= 30 ? '#451a03' : '#3b0a14';
+  const glow  = score >= 70 ? 'rgba(74,222,128,.55)' : score >= 50 ? 'rgba(167,139,250,.55)' : score >= 30 ? 'rgba(251,191,36,.55)' : 'rgba(248,113,113,.55)';
   return (
-    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,position:'relative'}}>
-      <svg width={120} height={120} viewBox="0 0 120 120" style={{filter:`drop-shadow(0 0 12px ${col}55)`}}>
-        <circle cx={60} cy={60} r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={10}/>
-        <circle cx={60} cy={60} r={r} fill="none" stroke={col} strokeWidth={10}
-          strokeDasharray={`${filled} ${circ}`}
-          strokeDashoffset={circ/4} strokeLinecap="round"/>
-        <text x={60} y={52} textAnchor="middle" fontSize={28} fontWeight={900} fill="#fff" fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" letterSpacing="-1">{score}</text>
-        <text x={60} y={68} textAnchor="middle" fontSize={11} fill="rgba(255,255,255,.4)" fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">/100</text>
-      </svg>
-      <div style={{fontSize:12,fontWeight:800,color:col,letterSpacing:'.05em',textTransform:'uppercase',marginTop:-4}}>{band}</div>
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,flexShrink:0}}>
+      <div style={{position:'relative',width:140,height:140}}>
+        <svg width={140} height={140} viewBox="0 0 140 140">
+          {/* Outer subtle halo ring */}
+          <circle cx={cx} cy={cy} r={r+12} fill="none" stroke={col} strokeWidth={1} opacity={.15}/>
+          {/* Background fill of track area */}
+          <circle cx={cx} cy={cy} r={r} fill={dark} opacity={.6}/>
+          {/* Track (unfilled portion) */}
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth={13}/>
+          {/* Score arc with glow */}
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke={col} strokeWidth={13}
+            strokeDasharray={`${filled} ${circ}`}
+            strokeDashoffset={circ/4}
+            strokeLinecap="round"
+            style={{filter:`drop-shadow(0 0 8px ${glow})`}}/>
+          {/* Center score */}
+          <text x={cx} y={cy-8} textAnchor="middle" dominantBaseline="middle"
+            fontSize={36} fontWeight={900} fill="#fff"
+            fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
+            letterSpacing="-2">{score}</text>
+          <text x={cx} y={cy+16} textAnchor="middle" dominantBaseline="middle"
+            fontSize={11} fill="rgba(255,255,255,.38)"
+            fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">/100</text>
+        </svg>
+      </div>
+      <div style={{fontSize:13,fontWeight:800,color:col,letterSpacing:'.1em',textTransform:'uppercase',textShadow:`0 0 16px ${glow}`}}>{band}</div>
     </div>
   );
 }
@@ -3280,7 +3298,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
         <div style={{background:'#0f1117',borderRadius:18,overflow:'hidden',marginBottom:16,border:'1px solid rgba(255,255,255,.07)',boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
 
           {/* Header row: avatar + info + ICI */}
-          <div style={{padding:'28px 32px 24px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
+          <div style={{padding:'20px 28px 16px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
 
             {/* Avatar */}
             <div style={{width:76,height:76,borderRadius:20,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
@@ -3351,30 +3369,45 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
             </div>
 
             {/* ICI Widget — redesigned */}
-            <div style={{background:'linear-gradient(135deg,rgba(109,93,245,.18),rgba(207,82,216,.12))',border:'1px solid rgba(109,93,245,.35)',borderRadius:16,padding:'20px 22px',minWidth:280,flexShrink:0,backdropFilter:'blur(8px)'}}>
-              <div style={{fontSize:10,fontWeight:800,color:'rgba(255,255,255,.45)',textTransform:'uppercase',letterSpacing:'1px',marginBottom:16}}>Investor Circle Credibility Index</div>
-              <div style={{display:'flex',gap:20,alignItems:'center',marginBottom:18}}>
+            <div style={{
+              background:'linear-gradient(145deg,#1c0d4a 0%,#160b3d 50%,#0f1130 100%)',
+              border:'1px solid rgba(139,92,246,.6)',
+              borderRadius:20,
+              padding:'24px 26px',
+              minWidth:340,
+              flexShrink:0,
+              boxShadow:'0 0 0 1px rgba(139,92,246,.15), 0 4px 24px rgba(109,93,245,.5), 0 16px 48px rgba(109,93,245,.3), inset 0 1px 0 rgba(255,255,255,.08)',
+            }}>
+              {/* Header */}
+              <div style={{fontSize:15,fontWeight:800,color:'#fff',letterSpacing:'-.2px',marginBottom:20,display:'flex',alignItems:'center',gap:8}}>
+                <span style={{display:'inline-flex',width:6,height:6,borderRadius:'50%',background:'#a78bfa',boxShadow:'0 0 8px #a78bfa'}}/>
+                Investor Circle Credibility Index
+              </div>
+
+              {/* Donut + components side by side */}
+              <div style={{display:'flex',gap:24,alignItems:'center',marginBottom:20}}>
                 <IciDonut score={ici.score} band={ici.band}/>
                 <div style={{flex:1}}>
                   {ici.components.map(c=>{
                     const pct = c.max > 0 ? (c.score/c.max)*100 : 0;
-                    const barCol = pct>=80?'#4ade80':pct>=50?'#a99dff':'rgba(255,255,255,.25)';
+                    const barCol = pct>=80?'#4ade80':pct>=50?'#a78bfa':'rgba(255,255,255,.2)';
                     return (
-                      <div key={c.label} style={{marginBottom:8}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:3}}>
-                          <span style={{fontSize:10.5,color:'rgba(255,255,255,.65)',fontWeight:500}}>{c.label}</span>
-                          <span style={{fontSize:10,color:'rgba(255,255,255,.5)',fontWeight:700,fontFamily:'inherit'}}>{c.score}/{c.max}</span>
+                      <div key={c.label} style={{marginBottom:10}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
+                          <span style={{fontSize:11.5,color:'rgba(255,255,255,.85)',fontWeight:600}}>{c.label}</span>
+                          <span style={{fontSize:11,color:'rgba(255,255,255,.6)',fontWeight:700}}>{c.score}/{c.max}</span>
                         </div>
-                        <div style={{height:4,background:'rgba(255,255,255,.1)',borderRadius:2,overflow:'hidden'}}>
-                          <div style={{height:'100%',width:`${pct}%`,background:`linear-gradient(90deg,${barCol},${barCol}cc)`,borderRadius:2,transition:'width .4s ease'}}/>
+                        <div style={{height:5,background:'rgba(255,255,255,.08)',borderRadius:3,overflow:'hidden'}}>
+                          <div style={{height:'100%',width:`${pct}%`,background:`linear-gradient(90deg,${barCol},${barCol}bb)`,borderRadius:3,transition:'width .5s ease',boxShadow:pct>0?`0 0 6px ${barCol}88`:''}}/>
                         </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-              <div style={{borderTop:'1px solid rgba(255,255,255,.08)',paddingTop:10,textAlign:'center'}}>
-                <a href="#methodology" style={{fontSize:11,color:'#a99dff',textDecoration:'none',fontWeight:600}}>Learn more about ICI methodology →</a>
+
+              <div style={{borderTop:'1px solid rgba(255,255,255,.08)',paddingTop:12,textAlign:'center'}}>
+                <a href="#methodology" style={{fontSize:11.5,color:'#c4b5fd',textDecoration:'none',fontWeight:600,letterSpacing:'.01em'}}>Learn more about ICI methodology →</a>
               </div>
             </div>
           </div>
@@ -3389,7 +3422,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
               {val:summary.active,              label:'Active'},
               {val:`${summary.years_history.toFixed(1)} yrs`, label:'Public History'},
             ].map((s,i,arr)=>(
-              <div key={s.label} style={{borderRight:i<arr.length-1?'1px solid rgba(255,255,255,.07)':'none',padding:'16px 8px',textAlign:'center'}}>
+              <div key={s.label} style={{borderRight:i<arr.length-1?'1px solid rgba(255,255,255,.07)':'none',padding:'12px 8px',textAlign:'center'}}>
                 <div style={{fontSize:26,fontWeight:900,color:'#fff',letterSpacing:'-1px',lineHeight:1,fontFamily:'var(--font)'}}>{s.val}</div>
                 <div style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.4)',marginTop:5,textTransform:'uppercase',letterSpacing:'.08em',lineHeight:1.3}}>{s.label}</div>
               </div>
