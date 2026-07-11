@@ -3707,24 +3707,35 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
             </span>
           )}
 
-          {/* Right: invested + expand */}
+          {/* Right: invested toggle + expand */}
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
-            {r.invested
-              ? <div style={{display:'flex',alignItems:'center',gap:6}}>
-                  <span style={{fontSize:12,fontWeight:700,color:'var(--gain)',display:'flex',alignItems:'center',gap:4}}>
-                    <Check size={13}/> Invested
-                  </span>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{fontSize:11,padding:'3px 8px',color:'var(--muted)',borderColor:'var(--line)'}}
-                    onClick={e=>{e.stopPropagation();patch({isInvested:false,investedPrice:null,invested:false});}}
-                    title="Undo — mark as not invested">
-                    Undo
-                  </button>
-                </div>
-              : <button className="btn btn-soft btn-sm" style={{fontSize:12,padding:'5px 11px'}} onClick={e=>{e.stopPropagation();patch({isInvested:true,investedPrice:r.price,invested:true});}}>
-                  <Check size={12}/> Mark invested
-                </button>}
+            {/* Invested toggle */}
+            <div
+              style={{display:'flex',alignItems:'center',gap:7,cursor:'pointer',userSelect:'none'}}
+              onClick={e=>{
+                e.stopPropagation();
+                patch(r.invested
+                  ? {isInvested:false,investedPrice:null,invested:false}
+                  : {isInvested:true,investedPrice:r.price,invested:true}
+                );
+              }}
+              title={r.invested?'Click to unmark invested':'Click to mark as invested'}
+            >
+              <div
+                className={"sw"+(r.invested?" on":"")}
+                style={{width:34,height:19,background:r.invested?'var(--gain)':undefined}}
+              >
+                <div className="knob" style={{width:13,height:13,top:3,left:r.invested?18:3}}/>
+              </div>
+              <span style={{
+                fontSize:12,fontWeight:700,
+                color:r.invested?'var(--gain)':'var(--muted)',
+                transition:'color .15s',
+              }}>
+                {r.invested?'Invested':'Mark Invested'}
+              </span>
+            </div>
+
             <button onClick={e=>{e.stopPropagation();setExpanded(v=>!v);}}
               style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:12,color:'var(--accent-ink)',fontWeight:700,fontFamily:'var(--font)',padding:'4px 8px',borderRadius:8,transition:'.12s'}}>
               {expanded?'Less':'More'}<ChevronDown size={14} style={{transform:expanded?'rotate(180deg)':'none',transition:'.15s'}}/>
