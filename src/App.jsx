@@ -1545,10 +1545,13 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
 
 /* ─── TrackedSection — My Tracked / Saved list ─────────────────────────────── */
 function TrackedSection({ tracked, toggleTrack, me, contacts }) {
-  const [recos,   setRecos]   = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [openRow, setOpenRow] = useState(null);
-  const [sort,    setSort]    = useState({key:"tracked",dir:"desc"});
+  const [recos,         setRecos]         = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [openRow,       setOpenRow]       = useState(null);
+  const [sort,          setSort]          = useState({key:"tracked",dir:"desc"});
+  const [sharePopId,    setSharePopId]    = useState(null);
+  const [shareAnchor,   setShareAnchor]   = useState(null);
+  const [shareUsername, setShareUsername] = useState(null);
 
   useEffect(()=>{
     if(!me?.id||!sql){ setLoading(false); return; }
@@ -1558,15 +1561,37 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
                ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
                ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
                up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
-               rt.tracked_at
+               rt.tracked_at,
+               rd.invested_price, rd.is_invested
         FROM recommendation_tracking rt
         JOIN ic_recommendations ir ON rt.reco_id = ir.id
         JOIN user_profiles up ON ir.recommender_id = up.id
+        LEFT JOIN recommendation_deliveries rd ON rd.recommendation_id = ir.id AND rd.recipient_id = ${me.id}
         WHERE rt.user_id = ${me.id}
         ORDER BY rt.tracked_at DESC`
       .then(rows=>{ setRecos(rows); setLoading(false); })
       .catch(()=>setLoading(false));
   },[me?.id, tracked.size]);
+
+  // Patch invested status locally + persist
+  const patchInvested=(r, updates)=>{
+    setRecos(rs=>rs.map(x=>x.id===r.id?{...x,...updates}:x));
+    if(sql&&me?.id&&r.delivery_id) {
+      try{ updateDelivery(r.delivery_id, updates, me.id); }catch(_){}
+    }
+  };
+
+  const handleShare = async (e, r) => {
+    if(sharePopId===r.id){ setSharePopId(null); setShareAnchor(null); return; }
+    setShareAnchor(e.currentTarget); setSharePopId(r.id); setShareUsername(null);
+    if(r.recommender_username){ setShareUsername(r.recommender_username); return; }
+    if(sql) {
+      try {
+        const rows = await sql`SELECT username FROM user_profiles WHERE id = (SELECT recommender_id FROM ic_recommendations WHERE id = ${r.id}) LIMIT 1`;
+        if(rows[0]?.username) setShareUsername(rows[0].username);
+      }catch(_){}
+    }
+  };
 
   if(loading) return <div className="muted small" style={{padding:32,textAlign:'center'}}><Loader size={20} className="spin"/></div>;
 
@@ -1578,44 +1603,57 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
     </div></div>
   );
 
+  const sorted = [...recos].sort((a,b)=>{
+    const dir=sort.dir==="asc"?1:-1;
+    if(sort.key==="asset")   return a.asset_name.localeCompare(b.asset_name)*dir;
+    if(sort.key==="tracked") return (a.tracked_at>b.tracked_at?1:-1)*dir;
+    if(sort.key==="reco")    return ((a.reco_price||0)-(b.reco_price||0))*dir;
+    if(sort.key==="cur")     return ((a.current_price||0)-(b.current_price||0))*dir;
+    if(sort.key==="entry")   return ((a.invested_price||0)-(b.invested_price||0))*dir;
+    if(sort.key==="recret"){
+      const ra=a.reco_price?(a.current_price-a.reco_price)/a.reco_price:0;
+      const rb=b.reco_price?(b.current_price-b.reco_price)/b.reco_price:0;
+      return (ra-rb)*dir;
+    }
+    if(sort.key==="myret"){
+      const ra=a.invested_price?(a.current_price-a.invested_price)/a.invested_price:0;
+      const rb=b.invested_price?(b.current_price-b.invested_price)/b.invested_price:0;
+      return (ra-rb)*dir;
+    }
+    if(sort.key==="horizon") return (HORIZONS.indexOf(a.horizon)-HORIZONS.indexOf(b.horizon))*dir;
+    return 0;
+  });
+
   return (
     <div className="card">
       <div className="card-body" style={{padding:"6px 0"}}>
         <table className="grid" style={{width:"100%"}}>
           <thead><tr>
-            <SortTh label="Asset" k="asset" sort={sort} setSort={setSort}/>
+            <SortTh label="Asset"        k="asset"   sort={sort} setSort={setSort}/>
             <th>Recommended by</th>
-            <SortTh label="Tracked on" k="tracked" sort={sort} setSort={setSort}/>
-            <SortTh label="Reco ₹" k="reco" sort={sort} setSort={setSort} align="right"/>
-            <SortTh label="Current ₹" k="cur" sort={sort} setSort={setSort} align="right"/>
-            <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="Tracked on"   k="tracked" sort={sort} setSort={setSort}/>
+            <SortTh label="Reco \u20b9"   k="reco"    sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="Entry \u20b9"  k="entry"   sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="Current \u20b9" k="cur"    sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="Reco Return"  k="recret"  sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="My Return"    k="myret"   sort={sort} setSort={setSort} align="right"/>
             <th>Status</th>
-            <SortTh label="Horizon" k="horizon" sort={sort} setSort={setSort}/>
+            <SortTh label="Horizon"      k="horizon" sort={sort} setSort={setSort}/>
             <th style={{textAlign:"right"}}>Actions</th>
           </tr></thead>
-          <tbody>{[...recos].sort((a,b)=>{
-            const dir=sort.dir==="asc"?1:-1;
-            if(sort.key==="asset") return a.asset_name.localeCompare(b.asset_name)*dir;
-            if(sort.key==="tracked") return (a.tracked_at>b.tracked_at?1:-1)*dir;
-            if(sort.key==="reco") return ((a.reco_price||0)-(b.reco_price||0))*dir;
-            if(sort.key==="cur") return ((a.current_price||0)-(b.current_price||0))*dir;
-            if(sort.key==="ret"){
-              const ra=a.reco_price?(a.current_price-a.reco_price)/a.reco_price:0;
-              const rb=b.reco_price?(b.current_price-b.reco_price)/b.reco_price:0;
-              return (ra-rb)*dir;
-            }
-            if(sort.key==="horizon") return (HORIZONS.indexOf(a.horizon)-HORIZONS.indexOf(b.horizon))*dir;
-            return 0;
-          }).map(r=>{
-            const retPct=r.reco_price?(r.current_price-r.reco_price)/r.reco_price:0;
-            const itm=retPct>=0;
-            const open=openRow===r.id;
-            const rName=[r.first_name,r.last_name].filter(Boolean).join(' ')||r.recommender_name||'Unknown';
-            const isBuy=(r.recommendation_type||'Buy')==='Buy';
+          <tbody>{sorted.map(r=>{
+            const recoRet = r.reco_price ? (r.current_price-r.reco_price)/r.reco_price : 0;
+            const myRet   = r.invested_price ? (r.current_price-r.invested_price)/r.invested_price : null;
+            const itm = recoRet >= 0;
+            const open = openRow===r.id;
+            const rName = [r.first_name,r.last_name].filter(Boolean).join(' ')||r.recommender_name||'Unknown';
+            const isBuy = (r.recommendation_type||'Buy')==='Buy';
+            const isInv = r.is_invested || false;
+
             return (<React.Fragment key={r.id}>
               <tr className="hoverable">
-                {/* Asset — expand on click */}
-                <td style={{cursor:'pointer',maxWidth:220}} onClick={()=>setOpenRow(open?null:r.id)}>
+                {/* Asset — no ticker in collapsed, expand on click */}
+                <td style={{cursor:'pointer',maxWidth:200}} onClick={()=>setOpenRow(open?null:r.id)}>
                   <div style={{display:'flex',alignItems:'center',gap:6}}>
                     <ChevronDown size={13} color="var(--muted)" style={{transform:open?'rotate(180deg)':'none',transition:'.15s',flexShrink:0}}/>
                     <div>
@@ -1623,37 +1661,73 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
                         <span className="sym" style={{fontSize:13}}>{r.asset_name}</span>
                         <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:4,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
                       </div>
-                      <div style={{fontSize:11,color:'var(--muted)'}}>{r.ticker} · <ClassTag c={r.asset_class}/></div>
+                      <div style={{fontSize:11,color:'var(--muted)'}}><ClassTag c={r.asset_class}/></div>
                     </div>
                   </div>
                 </td>
                 <td style={{fontSize:13}}>{rName}</td>
                 <td className="muted small nowrap">{new Date(r.tracked_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'})}</td>
-                <td style={{textAlign:'right'}} className="tnum">{r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'}</td>
-                <td style={{textAlign:'right'}} className="tnum">{r.current_price?`₹${Number(r.current_price).toLocaleString('en-IN')}`:'—'}</td>
-                <td style={{textAlign:'right',fontWeight:700}} className={"tnum "+(itm?"pos":"neg")}>{r.reco_price?`${itm?'+':''}${(retPct*100).toFixed(1)}%`:'—'}</td>
+                <td style={{textAlign:'right'}} className="tnum">{r.reco_price?`\u20b9${Number(r.reco_price).toLocaleString('en-IN')}`:'\u2014'}</td>
+                <td style={{textAlign:'right'}} className="tnum">
+                  {r.invested_price
+                    ? <span style={{fontWeight:600}}>\u20b9{Number(r.invested_price).toLocaleString('en-IN')}</span>
+                    : <span className="muted">\u2014</span>}
+                </td>
+                <td style={{textAlign:'right'}} className="tnum">{r.current_price?`\u20b9${Number(r.current_price).toLocaleString('en-IN')}`:'\u2014'}</td>
+                <td style={{textAlign:'right',fontWeight:700}} className={"tnum "+(itm?"pos":"neg")}>{r.reco_price?`${itm?'+':''}${(recoRet*100).toFixed(1)}%`:'\u2014'}</td>
+                <td style={{textAlign:'right',fontWeight:700}}>
+                  {myRet!==null
+                    ? <span className={myRet>=0?"pos":"neg"}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</span>
+                    : <span className="muted" style={{fontSize:11}}>No entry</span>}
+                </td>
                 <td><Money itm={itm}/></td>
-                <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
+                <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">\u2014</span>}</td>
                 <td>
-                  <div className="actions" style={{gap:4}}>
-                    <button className="iconbtn on-like" title="Tracked — click to untrack"
-                      onClick={()=>toggleTrack(r.id)} style={{color:'var(--accent-ink)',background:'var(--accent-soft)',borderColor:'var(--accent-line)'}}>
+                  <div className="actions" style={{gap:6,justifyContent:'flex-end'}}>
+                    {/* Share */}
+                    <div style={{position:"relative"}}>
+                      <button className="iconbtn" title="Share" onClick={e=>handleShare(e,r)}><Share2 size={13}/></button>
+                      {sharePopId===r.id && (
+                        <ReceivedSharePopover
+                          reco={{id:r.id,ticker:r.ticker,assetName:r.asset_name}}
+                          fromUsername={shareUsername}
+                          anchorEl={shareAnchor}
+                          onForward={()=>setSharePopId(null)}
+                          onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
+                        />
+                      )}
+                    </div>
+                    {/* Mark Invested toggle */}
+                    <InvestedToggle
+                      invested={isInv}
+                      reco={{id:r.id, price:r.current_price, ticker:r.ticker, assetName:r.asset_name, priceAt:r.reco_price}}
+                      onMark={(price)=>{
+                        patchInvested(r,{is_invested:true,invested_price:price});
+                        if(!tracked?.has(r.id)) toggleTrack?.(r.id);
+                      }}
+                      onUnmark={()=>patchInvested(r,{is_invested:false,invested_price:null})}
+                    />
+                    {/* Untrack */}
+                    <button className="iconbtn" title="Remove from tracked" onClick={()=>toggleTrack(r.id)}
+                      style={{background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}}>
                       <Bookmark size={13}/>
                     </button>
                   </div>
                 </td>
               </tr>
               {open && (
-                <tr className="expand-row"><td colSpan={9}><div className="expand-inner">
+                <tr className="expand-row"><td colSpan={11}><div className="expand-inner">
                   <div style={{display:'flex',gap:24,flexWrap:'wrap',marginBottom:12}}>
                     <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
-                    {r.target_price&&<div><div className="cap">Target</div><b className="tnum pos">₹{Number(r.target_price).toLocaleString('en-IN')}</b></div>}
-                    {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">₹{Number(r.stop_loss).toLocaleString('en-IN')}</b></div>}
+                    {r.invested_price&&<div><div className="cap">My entry price</div><b className="tnum pos">\u20b9{Number(r.invested_price).toLocaleString('en-IN')}</b></div>}
+                    {r.target_price&&<div><div className="cap">Target</div><b className="tnum">\u20b9{Number(r.target_price).toLocaleString('en-IN')}</b></div>}
+                    {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">\u20b9{Number(r.stop_loss).toLocaleString('en-IN')}</b></div>}
                     {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
                     {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
-                    <div><div className="cap">Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(retPct*100).toFixed(1)}%</b></div>
+                    <div><div className="cap">Reco Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
+                    {myRet!==null&&<div><div className="cap">My Return</div><b className={"tnum "+(myRet>=0?"pos":"neg")}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</b></div>}
                   </div>
-                  {r.thesis&&r.thesis!=='—'&&(
+                  {r.thesis&&r.thesis!=='\u2014'&&(
                     <><div className="cap" style={{marginBottom:4}}>Thesis</div>
                     <div style={{fontSize:13,lineHeight:1.7,color:'var(--ink-soft)',marginBottom:14}}>{r.thesis}</div></>
                   )}
@@ -1676,7 +1750,6 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
   const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
   const [fInv,setFInv]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
   const [showHidden,setShowHidden]=useState(false); const [showExpired,setShowExpired]=useState(false);
-  const [investing,setInvesting]=useState(null);
   const [openRow,setOpenRow]=useState(null); const [fwd,setFwd]=useState(null);
   const [sharePopId,setSharePopId]=useState(null);
   const [shareAnchor,setShareAnchor]=useState(null);
@@ -1849,9 +1922,17 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                     {/* Actions */}
                     <td>
                       <div className="actions" style={{gap:4}}>
-                        {r.invested
-                          ? <button className="btn btn-sm btn-soft" style={{fontSize:11,padding:"4px 8px"}} onClick={()=>onInvestClick(r)}><Check size={12}/> Invested</button>
-                          : <button className="btn btn-sm btn-ghost" style={{fontSize:11,padding:"4px 8px"}} onClick={()=>onInvestClick(r)}>Invest</button>}
+                        {/* Mark Invested toggle */}
+                        <InvestedToggle
+                          invested={r.invested}
+                          reco={r}
+                          onMark={(price)=>{
+                            doInvest(r, price);
+                            if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id);
+                          }}
+                          onUnmark={()=>unInvest(r)}
+                          stopProp={false}
+                        />
                         {/* Share — external public link + forward within platform */}
                         <div style={{position:"relative"}}>
                           <button className="iconbtn" title="Share / forward" onClick={(e)=>handleReceivedShare(e,r)}><Share2 size={13}/></button>
@@ -1909,7 +1990,6 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
           </div>
         </div>}
 
-    {investing && <InvestPriceModal reco={investing} onClose={()=>setInvesting(null)} onConfirm={(price)=>{ doInvest(investing,price); setInvesting(null); }}/>}
     {fwd && <ShareRecoModal reco={fwd} mode="forward" originName={recName(fwd)} contacts={contacts} groups={groups} onClose={()=>setFwd(null)}
         onShare={(targets,note)=>{ onForward(fwd,targets,note); setFwd(null); }}/>}
   </>);
@@ -3487,6 +3567,42 @@ function ProfileModal({ me, profile, updateProfile, patchProfile, onClose }) {
 
 
 /* =================================================================== HOME */
+/* ─── InvestedToggle — shared across FeedCard, ReceivedSection, TrackedSection ──── */
+function InvestedToggle({ invested, reco, onMark, onUnmark, stopProp=false }) {
+  const [showModal, setShowModal] = useState(false);
+
+  const handleClick = (e) => {
+    if (stopProp) e.stopPropagation();
+    if (invested) onUnmark();
+    else setShowModal(true);
+  };
+
+  return (
+    <>
+      <div
+        style={{display:'flex',alignItems:'center',gap:7,cursor:'pointer',userSelect:'none'}}
+        onClick={handleClick}
+        title={invested?'Click to unmark invested':'Click to mark as invested'}
+      >
+        <div className={"sw"+(invested?" on":"")}
+          style={{width:34,height:19,background:invested?'var(--gain)':undefined}}>
+          <div className="knob" style={{width:13,height:13,top:3,left:invested?18:3}}/>
+        </div>
+        <span style={{fontSize:12,fontWeight:700,color:invested?'var(--gain)':'var(--muted)',transition:'color .15s'}}>
+          {invested?'Invested':'Mark Invested'}
+        </span>
+      </div>
+      {showModal && (
+        <InvestPriceModal
+          reco={{...reco, price: reco.current_price||reco.price}}
+          onClose={()=>setShowModal(false)}
+          onConfirm={(price)=>{ onMark(price); setShowModal(false); }}
+        />
+      )}
+    </>
+  );
+}
+
 /* ─── Shared comments component ─────────────────────────────────────────────────── */
 function RecoComments({ recoId, me }) {
   const [comments,  setComments]  = useState([]);
@@ -3709,32 +3825,17 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
 
           {/* Right: invested toggle + expand */}
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
-            {/* Invested toggle */}
-            <div
-              style={{display:'flex',alignItems:'center',gap:7,cursor:'pointer',userSelect:'none'}}
-              onClick={e=>{
-                e.stopPropagation();
-                patch(r.invested
-                  ? {isInvested:false,investedPrice:null,invested:false}
-                  : {isInvested:true,investedPrice:r.price,invested:true}
-                );
+            {/* Mark Invested toggle — auto-tracks on invest */}
+            <InvestedToggle
+              invested={r.invested}
+              reco={{...r, price: r.price, ticker: r.ticker, assetName: r.assetName, priceAt: r.priceAt}}
+              onMark={(price)=>{
+                patch({isInvested:true,investedPrice:price,invested:true});
+                if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id);
               }}
-              title={r.invested?'Click to unmark invested':'Click to mark as invested'}
-            >
-              <div
-                className={"sw"+(r.invested?" on":"")}
-                style={{width:34,height:19,background:r.invested?'var(--gain)':undefined}}
-              >
-                <div className="knob" style={{width:13,height:13,top:3,left:r.invested?18:3}}/>
-              </div>
-              <span style={{
-                fontSize:12,fontWeight:700,
-                color:r.invested?'var(--gain)':'var(--muted)',
-                transition:'color .15s',
-              }}>
-                {r.invested?'Invested':'Mark Invested'}
-              </span>
-            </div>
+              onUnmark={()=>patch({isInvested:false,investedPrice:null,invested:false})}
+              stopProp={true}
+            />
 
             <button onClick={e=>{e.stopPropagation();setExpanded(v=>!v);}}
               style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:12,color:'var(--accent-ink)',fontWeight:700,fontFamily:'var(--font)',padding:'4px 8px',borderRadius:8,transition:'.12s'}}>
