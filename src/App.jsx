@@ -1552,6 +1552,11 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
   const [sharePopId,    setSharePopId]    = useState(null);
   const [shareAnchor,   setShareAnchor]   = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
+  // Filters
+  const [q,       setQ]       = useState("");
+  const [fHorizon,setFHorizon]= useState("all");
+  const [fMoney,  setFMoney]  = useState("all");
+  const [fInv,    setFInv]    = useState("all");
 
   useEffect(()=>{
     if(!me?.id||!sql){ setLoading(false); return; }
@@ -1622,7 +1627,19 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
     </div></div>
   );
 
-  const sorted = [...recos].sort((a,b)=>{
+  // Filter + sort
+  const filtered = recos.filter(r=>{
+    if(q.trim()){ const s=q.toLowerCase(); if(!(r.asset_name+r.ticker).toLowerCase().includes(s)) return false; }
+    if(fHorizon!=="all" && r.horizon!==fHorizon) return false;
+    const recoRet=r.reco_price?(r.current_price-r.reco_price)/r.reco_price:0;
+    if(fMoney==="in"  && recoRet<0)  return false;
+    if(fMoney==="out" && recoRet>=0) return false;
+    if(fInv==="yes" && !r.is_invested) return false;
+    if(fInv==="no"  &&  r.is_invested) return false;
+    return true;
+  });
+
+  const sorted = [...filtered].sort((a,b)=>{
     const dir=sort.dir==="asc"?1:-1;
     if(sort.key==="asset")   return a.asset_name.localeCompare(b.asset_name)*dir;
     if(sort.key==="tracked") return (a.tracked_at>b.tracked_at?1:-1)*dir;
@@ -1643,126 +1660,183 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
     return 0;
   });
 
-  return (
-    <div className="card">
-      <div className="card-body" style={{padding:"6px 0"}}>
-        <table className="grid" style={{width:"100%"}}>
-          <thead><tr>
-            <SortTh label="Asset"        k="asset"   sort={sort} setSort={setSort}/>
-            <th>Recommended by</th>
-            <SortTh label="Tracked on"   k="tracked" sort={sort} setSort={setSort}/>
-            <SortTh label="Reco ₹"   k="reco"    sort={sort} setSort={setSort} align="right"/>
-            <SortTh label="Entry ₹"  k="entry"   sort={sort} setSort={setSort} align="right"/>
-            <SortTh label="Current ₹" k="cur"    sort={sort} setSort={setSort} align="right"/>
-            <SortTh label="Reco Return"  k="recret"  sort={sort} setSort={setSort} align="right"/>
-            <SortTh label="My Return"    k="myret"   sort={sort} setSort={setSort} align="right"/>
-            <th>Status</th>
-            <SortTh label="Horizon"      k="horizon" sort={sort} setSort={setSort}/>
-            <th style={{textAlign:"right"}}>Actions</th>
-          </tr></thead>
-          <tbody>{sorted.map(r=>{
-            const recoRet = r.reco_price ? (r.current_price-r.reco_price)/r.reco_price : 0;
-            const myRet   = r.invested_price ? (r.current_price-r.invested_price)/r.invested_price : null;
-            const itm = recoRet >= 0;
-            const open = openRow===r.id;
-            const rName = [r.first_name,r.last_name].filter(Boolean).join(' ')||r.recommender_name||'Unknown';
-            const isBuy = (r.recommendation_type||'Buy')==='Buy';
-            const isInv = r.is_invested || false;
-
-            return (<React.Fragment key={r.id}>
-              <tr className="hoverable">
-                {/* Asset — no ticker in collapsed, expand on click */}
-                <td style={{cursor:'pointer',maxWidth:200}} onClick={()=>setOpenRow(open?null:r.id)}>
-                  <div style={{display:'flex',alignItems:'center',gap:6}}>
-                    <ChevronDown size={13} color="var(--muted)" style={{transform:open?'rotate(180deg)':'none',transition:'.15s',flexShrink:0}}/>
-                    <div>
-                      <div style={{display:'flex',alignItems:'center',gap:6}}>
-                        <span className="sym" style={{fontSize:13}}>{r.asset_name}</span>
-                        <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:4,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
-                      </div>
-                      <div style={{fontSize:11,color:'var(--muted)'}}><ClassTag c={r.asset_class}/></div>
-                    </div>
-                  </div>
-                </td>
-                <td style={{fontSize:13}}>{rName}</td>
-                <td className="muted small nowrap">{new Date(r.tracked_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'})}</td>
-                <td style={{textAlign:'right'}} className="tnum">{r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'}</td>
-                <td style={{textAlign:'right'}} className="tnum">
-                  {r.invested_price
-                    ? <span style={{fontWeight:600}}>₹{Number(r.invested_price).toLocaleString('en-IN')}</span>
-                    : <span className="muted">—</span>}
-                </td>
-                <td style={{textAlign:'right'}} className="tnum">{r.current_price?`₹${Number(r.current_price).toLocaleString('en-IN')}`:'—'}</td>
-                <td style={{textAlign:'right',fontWeight:700}} className={"tnum "+(itm?"pos":"neg")}>{r.reco_price?`${itm?'+':''}${(recoRet*100).toFixed(1)}%`:'—'}</td>
-                <td style={{textAlign:'right',fontWeight:700}}>
-                  {myRet!==null
-                    ? <span className={myRet>=0?"pos":"neg"}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</span>
-                    : <span className="muted" style={{fontSize:11}}>No entry</span>}
-                </td>
-                <td><Money itm={itm}/></td>
-                <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
-                <td>
-                  <div className="actions" style={{gap:6,justifyContent:'flex-end'}}>
-                    {/* Share */}
-                    <div style={{position:"relative"}}>
-                      <button className="iconbtn" title="Share" onClick={e=>handleShare(e,r)}><Share2 size={13}/></button>
-                      {sharePopId===r.id && (
-                        <ReceivedSharePopover
-                          reco={{id:r.id,ticker:r.ticker,assetName:r.asset_name}}
-                          fromUsername={shareUsername}
-                          anchorEl={shareAnchor}
-                          onForward={()=>setSharePopId(null)}
-                          onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
-                        />
-                      )}
-                    </div>
-                    {/* Mark Invested toggle */}
-                    <InvestedToggle
-                      invested={isInv}
-                      reco={{id:r.id, price:r.current_price, ticker:r.ticker, assetName:r.asset_name, priceAt:r.reco_price}}
-                      onMark={(price)=>{
-                        patchInvested(r,{is_invested:true,invested_price:price});
-                        if(!tracked?.has(r.id)) toggleTrack?.(r.id);
-                      }}
-                      onUnmark={()=>patchInvested(r,{is_invested:false,invested_price:null})}
-                    />
-                    {/* Untrack */}
-                    <button className="iconbtn" title="Remove from tracked" onClick={()=>toggleTrack(r.id)}
-                      style={{background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}}>
-                      <Bookmark size={13}/>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              {open && (
-                <tr className="expand-row"><td colSpan={11}><div className="expand-inner">
-                  <div style={{display:'flex',gap:24,flexWrap:'wrap',marginBottom:12}}>
-                    <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
-                    {r.invested_price&&<div><div className="cap">My entry price</div><b className="tnum pos">₹{Number(r.invested_price).toLocaleString('en-IN')}</b></div>}
-                    {r.target_price&&<div><div className="cap">Target</div><b className="tnum">₹{Number(r.target_price).toLocaleString('en-IN')}</b></div>}
-                    {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">₹{Number(r.stop_loss).toLocaleString('en-IN')}</b></div>}
-                    {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
-                    {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
-                    <div><div className="cap">Reco Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
-                    {myRet!==null&&<div><div className="cap">My Return</div><b className={"tnum "+(myRet>=0?"pos":"neg")}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</b></div>}
-                  </div>
-                  {r.thesis&&r.thesis!=='—'&&(
-                    <><div className="cap" style={{marginBottom:4}}>Thesis</div>
-                    <div style={{fontSize:13,lineHeight:1.7,color:'var(--ink-soft)',marginBottom:14}}>{r.thesis}</div></>
-                  )}
-                  <div style={{borderTop:'1px solid var(--line)',paddingTop:12}}>
-                    <div className="cap" style={{marginBottom:10}}>Comments</div>
-                    <RecoComments recoId={r.id} me={me}/>
-                  </div>
-                </div></td></tr>
-              )}
-            </React.Fragment>);
-          })}</tbody>
-        </table>
+  return (<>
+    {/* ── Filters ── */}
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+      <div className="searchbox" style={{flex:"1 1 200px",minWidth:160}}>
+        <Search size={15} color="var(--muted)"/>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search asset or ticker…"/>
       </div>
+      <select className="inline-select sm" value={fHorizon} onChange={e=>setFHorizon(e.target.value)} title="Filter by horizon">
+        <option value="all">All horizons</option>{HORIZONS.map(h=><option key={h}>{h}</option>)}
+      </select>
+      <select className="inline-select sm" value={fMoney} onChange={e=>setFMoney(e.target.value)}>
+        <option value="all">All returns</option><option value="in">In the money</option><option value="out">Out of money</option>
+      </select>
+      <select className="inline-select sm" value={fInv} onChange={e=>setFInv(e.target.value)}>
+        <option value="all">All</option><option value="yes">Invested</option><option value="no">Not invested</option>
+      </select>
     </div>
-  );
+
+    {sorted.length===0
+      ? <div className="card"><div className="empty">No tracked recommendations match your filters.</div></div>
+      : <div className="card">
+          <div className="card-body" style={{padding:"6px 0"}}>
+            <div className="tscroll">
+            <table className="grid" style={{width:"100%",minWidth:1100}}>
+              <thead><tr>
+                <SortTh label="Asset"        k="asset"   sort={sort} setSort={setSort}/>
+                <th>Recommended by</th>
+                <SortTh label="Tracked on"   k="tracked" sort={sort} setSort={setSort}/>
+                <SortTh label="Reco ₹"       k="reco"    sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Entry ₹"      k="entry"   sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Current ₹"    k="cur"     sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Reco Return"  k="recret"  sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="My Return"    k="myret"   sort={sort} setSort={setSort} align="right"/>
+                <th>Status</th>
+                <SortTh label="Horizon"      k="horizon" sort={sort} setSort={setSort}/>
+                <th style={{textAlign:"right"}}>Actions</th>
+              </tr></thead>
+              <tbody>{sorted.map(r=>{
+                const recoRet = r.reco_price ? (r.current_price-r.reco_price)/r.reco_price : 0;
+                const myRet   = r.is_invested && r.invested_price ? (r.current_price-r.invested_price)/r.invested_price : null;
+                const itm = recoRet >= 0;
+                const open = openRow===r.id;
+                // Fix duplicate name: if first_name and last_name are identical, show only one
+                const fn = r.first_name||''; const ln = r.last_name||'';
+                const rName = fn && ln && fn!==ln ? `${fn} ${ln}` : (fn || r.recommender_name || 'Unknown');
+                const isBuy = (r.recommendation_type||'Buy')==='Buy';
+                const isInv = r.is_invested || false;
+
+                return (<React.Fragment key={r.id}>
+                  <tr className="hoverable">
+                    {/* Asset — no ticker in collapsed */}
+                    <td style={{cursor:'pointer',maxWidth:200}} onClick={()=>setOpenRow(open?null:r.id)}>
+                      <div style={{display:'flex',alignItems:'center',gap:6}}>
+                        <ChevronDown size={13} color="var(--muted)" style={{transform:open?'rotate(180deg)':'none',transition:'.15s',flexShrink:0}}/>
+                        <div>
+                          <div style={{display:'flex',alignItems:'center',gap:6}}>
+                            <span className="sym" style={{fontSize:13}}>{r.asset_name}</span>
+                            <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:4,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
+                          </div>
+                          <div style={{fontSize:11,color:'var(--muted)'}}><ClassTag c={r.asset_class}/></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{fontSize:13}}>{rName}</td>
+                    <td className="muted small nowrap">{new Date(r.tracked_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'})}</td>
+                    <td style={{textAlign:'right'}} className="tnum">{r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:' —'}</td>
+                    <td style={{textAlign:'right'}} className="tnum">
+                      {isInv && r.invested_price
+                        ? <span style={{fontWeight:600,color:'var(--accent-ink)'}}>₹{Number(r.invested_price).toLocaleString('en-IN')}</span>
+                        : <span className="muted">—</span>}
+                    </td>
+                    <td style={{textAlign:'right'}} className="tnum">{r.current_price?`₹${Number(r.current_price).toLocaleString('en-IN')}`:' —'}</td>
+                    <td style={{textAlign:'right',fontWeight:700}} className={"tnum "+(itm?"pos":"neg")}>{r.reco_price?`${itm?'+':''}${(recoRet*100).toFixed(1)}%`:'—'}</td>
+                    <td style={{textAlign:'right',fontWeight:700}}>
+                      {myRet!==null
+                        ? <span className={myRet>=0?"pos":"neg"}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</span>
+                        : <span className="muted" style={{fontSize:11}}>—</span>}
+                    </td>
+                    <td><Money itm={itm}/></td>
+                    <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
+                    <td>
+                      <div className="actions" style={{gap:6,justifyContent:'flex-end',flexWrap:'nowrap'}}>
+                        {/* Share */}
+                        <div style={{position:"relative"}}>
+                          <button className="iconbtn" title="Share" onClick={e=>handleShare(e,r)}><Share2 size={13}/></button>
+                          {sharePopId===r.id && (
+                            <ReceivedSharePopover
+                              reco={{id:r.id,ticker:r.ticker,assetName:r.asset_name}}
+                              fromUsername={shareUsername}
+                              anchorEl={shareAnchor}
+                              onForward={()=>setSharePopId(null)}
+                              onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
+                            />
+                          )}
+                        </div>
+                        {/* Mark Invested toggle */}
+                        <InvestedToggle
+                          invested={isInv}
+                          investedPrice={r.invested_price}
+                          reco={{id:r.id, price:r.current_price, ticker:r.ticker, assetName:r.asset_name, priceAt:r.reco_price}}
+                          onMark={(price)=>{
+                            patchInvested(r,{is_invested:true,invested_price:price});
+                            if(!tracked?.has(r.id)) toggleTrack?.(r.id);
+                          }}
+                          onUnmark={()=>patchInvested(r,{is_invested:false,invested_price:null})}
+                        />
+                        {/* Untrack */}
+                        <button className="iconbtn" title="Remove from tracked"
+                          onClick={()=>toggleTrack(r.id)}
+                          style={{background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}}>
+                          <Bookmark size={13}/>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {open && (
+                    <tr className="expand-row"><td colSpan={11}><div className="expand-inner">
+                      <div style={{display:'flex',gap:24,flexWrap:'wrap',marginBottom:12}}>
+                        <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
+                        {isInv && r.invested_price&&<div><div className="cap">My entry price</div><b className="tnum" style={{color:'var(--accent-ink)'}}>₹{Number(r.invested_price).toLocaleString('en-IN')}</b></div>}
+                        {r.target_price&&<div><div className="cap">Target</div><b className="tnum">₹{Number(r.target_price).toLocaleString('en-IN')}</b></div>}
+                        {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">₹{Number(r.stop_loss).toLocaleString('en-IN')}</b></div>}
+                        {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
+                        {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
+                        <div><div className="cap">Reco Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
+                        {myRet!==null&&<div><div className="cap">My Return</div><b className={"tnum "+(myRet>=0?"pos":"neg")}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</b></div>}
+                      </div>
+                      {r.thesis&&r.thesis!=='—'&&(
+                        <><div className="cap" style={{marginBottom:4}}>Thesis</div>
+                        <div style={{fontSize:13,lineHeight:1.7,color:'var(--ink-soft)',marginBottom:14}}>{r.thesis}</div></>
+                      )}
+                      <div style={{borderTop:'1px solid var(--line)',paddingTop:12}}>
+                        <div className="cap" style={{marginBottom:10}}>Comments</div>
+                        <RecoComments recoId={r.id} me={me}/>
+                      </div>
+                    </div></td></tr>
+                  )}
+                </React.Fragment>);
+              })}</tbody>
+            </table>
+            </div>
+          </div>
+        </div>}
+  </>);
 }
+    if(!me?.id||!sql){ setLoading(false); return; }
+    setLoading(true);
+
+    // Try with is_invested columns (requires migration_v9 ALTER TABLE)
+    sql`SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class, ir.recommendation_type,
+               ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
+               ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
+               ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
+               up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
+               rt.tracked_at, rt.is_invested, rt.invested_price
+        FROM recommendation_tracking rt
+        JOIN ic_recommendations ir ON rt.reco_id = ir.id
+        JOIN user_profiles up ON ir.recommender_id = up.id
+        WHERE rt.user_id = ${me.id}
+        ORDER BY rt.tracked_at DESC`
+      .then(rows=>{ setRecos(rows); setLoading(false); })
+      .catch(()=>{
+        // Fallback: without is_invested (pre-migration or column missing)
+        sql`SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class, ir.recommendation_type,
+                   ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
+                   ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
+                   ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
+                   up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
+                   rt.tracked_at
+            FROM recommendation_tracking rt
+            JOIN ic_recommendations ir ON rt.reco_id = ir.id
+            JOIN user_profiles up ON ir.recommender_id = up.id
+            WHERE rt.user_id = ${me.id}
+            ORDER BY rt.tracked_at DESC`
+          .then(rows=>{ setRecos(rows.map(r=>({...r, is_invested:false, invested_price:null}))); setLoading(false); })
+          .catch(e=>{ console.error('TrackedSection load failed:', e); setLoading(false); });
+      });
 
 function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload, me, tracked, toggleTrack }) {
   const [q,setQ]=useState(""); const [sort,setSort]=useState({key:"date",dir:"desc"});
@@ -1801,7 +1875,10 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
     }
   };
   const doInvest=(r,price)=>patch(r,{isInvested:true,investedPrice:price,invested:true});
-  const unInvest=(r)=>patch(r,{isInvested:false,investedPrice:null,invested:false});
+  const unInvest=(r)=>{
+    patch(r,{isInvested:false,investedPrice:null,invested:false});
+    if(sql&&myId) sql`UPDATE recommendation_tracking SET is_invested=false, invested_price=null, invested_at=null WHERE reco_id=${r.id} AND user_id=${myId}`.catch(console.warn);
+  };
   const onInvestClick=(r)=>{ if(r.invested) unInvest(r); else setInvesting(r); };
   const react=(r,val)=>{ const next=r.reaction===val?"none":val; patch(r,{reaction:next}); };
   const toggleHide=(r)=>patch(r,{isHidden:!r.hidden,hidden:!r.hidden});
@@ -1944,6 +2021,7 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                         {/* Mark Invested toggle */}
                         <InvestedToggle
                           invested={r.invested}
+                          investedPrice={r.investedPrice||r.invested_price}
                           reco={r}
                           onMark={(price)=>{
                             doInvest(r, price);
@@ -3595,7 +3673,7 @@ function ProfileModal({ me, profile, updateProfile, patchProfile, onClose }) {
 
 /* =================================================================== HOME */
 /* ─── InvestedToggle — shared across FeedCard, ReceivedSection, TrackedSection ──── */
-function InvestedToggle({ invested, reco, onMark, onUnmark, stopProp=false }) {
+function InvestedToggle({ invested, investedPrice, reco, onMark, onUnmark, stopProp=false }) {
   const [showModal, setShowModal] = useState(false);
 
   const handleClick = (e) => {
@@ -3604,12 +3682,16 @@ function InvestedToggle({ invested, reco, onMark, onUnmark, stopProp=false }) {
     else setShowModal(true);
   };
 
+  const tooltip = invested
+    ? (investedPrice ? `Entry: ₹${Number(investedPrice).toLocaleString('en-IN')} · Click to unmark` : 'Invested · Click to unmark')
+    : 'Click to mark as invested';
+
   return (
     <>
       <div
         style={{display:'flex',alignItems:'center',gap:7,cursor:'pointer',userSelect:'none'}}
         onClick={handleClick}
-        title={invested?'Click to unmark invested':'Click to mark as invested'}
+        title={tooltip}
       >
         <div className={"sw"+(invested?" on":"")}
           style={{width:34,height:19,background:invested?'var(--gain)':undefined}}>
@@ -3855,10 +3937,10 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
             {/* Mark Invested toggle — auto-tracks on invest */}
             <InvestedToggle
               invested={r.invested}
+              investedPrice={r.investedPrice||r.invested_price}
               reco={{...r, price: r.price, ticker: r.ticker, assetName: r.assetName, priceAt: r.priceAt}}
               onMark={(price)=>{
                 patch({isInvested:true,investedPrice:price,invested:true});
-                // Upsert into tracking with invested data (auto-tracks + marks invested)
                 if(sql && me?.id) {
                   sql`INSERT INTO recommendation_tracking (reco_id, user_id, is_invested, invested_price, invested_at)
                       VALUES (${r.id}, ${me.id}, true, ${price}, now())
@@ -3868,7 +3950,10 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
                     .catch(()=>{ if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id); });
                 } else if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id);
               }}
-              onUnmark={()=>patch({isInvested:false,investedPrice:null,invested:false})}
+              onUnmark={()=>{
+                patch({isInvested:false,investedPrice:null,invested:false});
+                if(sql && me?.id) sql`UPDATE recommendation_tracking SET is_invested=false, invested_price=null, invested_at=null WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(console.warn);
+              }}
               stopProp={true}
             />
 
