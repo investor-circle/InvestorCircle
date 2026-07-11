@@ -88,8 +88,8 @@ const STYLES = `
 .side-stat{display:flex;justify-content:space-between;padding:7px 12px;font-size:13px;color:var(--side-dim);}
 .side-stat b{color:#fff;font-weight:700;}
 
-.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh;overflow:hidden;}
-.topbar{height:64px;background:rgba(245,245,251,.8);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 26px;position:sticky;top:0;z-index:30;}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh;overflow:visible;}
+.topbar{height:64px;background:rgba(245,245,251,.8);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 26px;position:sticky;top:0;z-index:200;}
 .searchbox{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 14px;}
 .searchbox input{border:none;outline:none;background:transparent;font-size:13.5px;width:100%;}
 .tb-right{margin-left:auto;display:flex;align-items:center;gap:8px;}
@@ -98,7 +98,7 @@ const STYLES = `
 .avatar-pill{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 8px 5px 6px;}
 .avatar-pill .gava{width:30px;height:30px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px;}
 
-.content{padding:28px 30px;max-width:1280px;overflow-y:auto;flex:1;min-height:0;}
+.content{padding:28px 30px;overflow-y:auto;flex:1;min-height:0;}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap;}
 .eyebrow{font-size:12px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
 .page-title{font-size:26px;font-weight:800;letter-spacing:-.6px;}
@@ -602,13 +602,6 @@ export default function App() {
           {/* Brand */}
           <div className="brand"><div className="mark" style={{fontSize:14,letterSpacing:'-.5px'}}>mic</div>
             <div><div className="nm">myInvestorCircle</div><div className="tag">Social Investing</div></div></div>
-
-          {/* Role switcher — admins/moderators only, not shown to plain investors */}
-          {userIsAdmin && <div className="viewing" onClick={()=>setRole(isInv?"admin":"investor")} title="Switch view">
-            <div className="ava">{isInv ? ME.initials : "AD"}</div>
-            <div style={{flex:1}}><div className="vs">Viewing as</div><div className="role">{isInv?"Investor":"Admin"}</div></div>
-            <ChevronsUpDown size={17} color="rgba(255,255,255,.85)"/>
-          </div>}
 
           <div className="side-label">{isInv?"Menu":"Admin"}</div>
 
