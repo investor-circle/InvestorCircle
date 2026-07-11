@@ -1686,8 +1686,8 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
             <table className="grid" style={{width:"100%"}}>
               <thead><tr>
                 <SortTh label="Asset"        k="asset"   sort={sort} setSort={setSort}/>
-                <th>Recommended by</th>
-                <SortTh label="Tracked on"   k="tracked" sort={sort} setSort={setSort}/>
+                <th style={{whiteSpace:"normal",lineHeight:1.3,minWidth:60}}>Reco By</th>
+                <th style={{textAlign:"left",whiteSpace:"normal",lineHeight:1.3,minWidth:60,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"tracked",dir:s.key==="tracked"&&s.dir==="asc"?"desc":"asc"}))}>Tracked<br/>On<span className="si">{sort.key==="tracked"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <SortTh label="Reco ₹"       k="reco"    sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Entry ₹"      k="entry"   sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current ₹"    k="cur"     sort={sort} setSort={setSort} align="right"/>
