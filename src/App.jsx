@@ -65,8 +65,8 @@ const STYLES = `
 .pos{color:var(--gain);} .neg{color:var(--loss);}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
 
-.shell{display:flex;min-height:100vh;}
-.sidebar{width:256px;flex-shrink:0;background:var(--side);color:#fff;display:flex;flex-direction:column;padding:18px 14px;}
+.shell{display:flex;height:100vh;overflow:hidden;}
+.sidebar{width:256px;flex-shrink:0;background:var(--side);color:#fff;display:flex;flex-direction:column;padding:18px 14px;height:100vh;overflow:hidden;}
 .brand{display:flex;align-items:center;gap:12px;padding:6px 8px 16px;}
 .brand .mark{width:42px;height:42px;border-radius:13px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;letter-spacing:-1px;box-shadow:0 6px 18px rgba(124,92,252,.45);}
 .brand .nm{font-weight:800;font-size:18px;letter-spacing:-.4px;line-height:1.1;}
@@ -88,7 +88,7 @@ const STYLES = `
 .side-stat{display:flex;justify-content:space-between;padding:7px 12px;font-size:13px;color:var(--side-dim);}
 .side-stat b{color:#fff;font-weight:700;}
 
-.main{flex:1;display:flex;flex-direction:column;min-width:0;}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh;overflow:hidden;}
 .topbar{height:64px;background:rgba(245,245,251,.8);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 26px;position:sticky;top:0;z-index:30;}
 .searchbox{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 14px;}
 .searchbox input{border:none;outline:none;background:transparent;font-size:13.5px;width:100%;}
@@ -98,7 +98,7 @@ const STYLES = `
 .avatar-pill{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 8px 5px 6px;}
 .avatar-pill .gava{width:30px;height:30px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px;}
 
-.content{padding:28px 30px;max-width:1280px;}
+.content{padding:28px 30px;max-width:1280px;overflow-y:auto;flex:1;}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap;}
 .eyebrow{font-size:12px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
 .page-title{font-size:26px;font-weight:800;letter-spacing:-.6px;}
@@ -384,6 +384,18 @@ export default function App() {
   // Clear global search when navigating to a different page
   useEffect(() => { setGlobalSearch(''); }, [investorPage, adminPage]);
 
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    if (!profileOpen) return;
+    const close = (e) => {
+      if (!e.target.closest('.avatar-pill') && !e.target.closest('[data-profile-dropdown]')) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [profileOpen]);
+
   // Toggle tracking (bookmark) for a recommendation
   const toggleTrack = async (recoId) => {
     if (tracked.has(recoId)) {
@@ -563,11 +575,11 @@ export default function App() {
 
   const nav = isInv ? [
     { id:"home",        label:"Home",             icon:Home },
+    ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", icon:Lightbulb, badge:newRecs }] : []),
     { id:"portfolio",   label:"My Portfolio",      icon:PieChart },
     { id:"network",     label:"Network",           icon:Users },
-    ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", icon:Lightbulb, badge:newRecs }] : []),
-    { id:"sharing",     label:"Sharing & Privacy", icon:Shield },
     { id:"trackrecord", label:"Track Record",       icon:Globe },
+    { id:"sharing",     label:"Sharing & Privacy", icon:Shield },
   ] : [
     { id:"users",       label:"Users",             icon:UserCog },
     { id:"groups",      label:"Groups",            icon:Layers },
@@ -578,7 +590,7 @@ export default function App() {
   ];
 
   const stats = isInv
-    ? [["Connections", contacts.length], ["Groups", groups.length], ["Accounts", ACCOUNTS.length]]
+    ? [["Connections", contacts.length], ["Groups", groups.length]]
     : [["Users", users.length], ["Active", users.filter(u=>u.status==="Active").length], ["Groups", groups.length]];
 
   return (
@@ -593,10 +605,6 @@ export default function App() {
             <div style={{flex:1}}><div className="vs">Viewing as</div><div className="role">{isInv?"Investor":"Admin"}</div></div>
             <ChevronsUpDown size={17} color="rgba(255,255,255,.85)"/>
           </div>}
-          {!userIsAdmin && <div className="viewing" style={{cursor:"default"}}>
-            <div className="ava">{ME.initials}</div>
-            <div style={{flex:1}}><div className="vs">Signed in as</div><div className="role">{ME.name}</div></div>
-          </div>}
           <div className="side-label">{isInv?"Menu":"Admin"}</div>
           {nav.map(n=>(
             <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>setPage(n.id)}>
@@ -605,10 +613,6 @@ export default function App() {
           ))}
           <div className="side-foot">
             {stats.map(([l,v])=><div key={l} className="side-stat"><span>{l}</span><b>{v}</b></div>)}
-            <div className="side-stat" style={{marginTop:8,borderTop:"1px solid rgba(255,255,255,.08)",paddingTop:8}}>
-              <span style={{fontSize:11,color:"rgba(255,255,255,.4)"}}>{ME.email}</span></div>
-            <button onClick={logout} style={{marginTop:10,width:"100%",background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,padding:"7px 10px",color:"rgba(255,255,255,.65)",fontSize:12.5,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
-              <LogOut size={14}/> Sign out</button>
           </div>
         </div>
 
@@ -664,7 +668,7 @@ export default function App() {
                 <button
                   onClick={()=>{ setProfileOpen(v=>!v); setNotifOpen(false); }}
                   style={{background:"none",border:"none",padding:0,cursor:"pointer"}}
-                  title="View / edit profile"
+                  title="Profile & settings"
                 >
                   <div className="avatar-pill">
                     <div className="gava">{isInv ? ME.initials : "AD"}</div>
@@ -678,7 +682,54 @@ export default function App() {
                     </div>
                   </div>
                 </button>
-                {profileOpen && isInv && (
+                {profileOpen && (
+                  <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,width:260,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:16,boxShadow:"0 12px 40px rgba(0,0,0,.18)",zIndex:500,overflow:"hidden"}}>
+                    {/* Profile header */}
+                    <div style={{padding:"16px 16px 12px",borderBottom:"1px solid var(--line)"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div className="av" style={{width:40,height:40,background:"var(--grad)",fontSize:15,flexShrink:0}}>{ME.initials}</div>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ME.name}</div>
+                          <div style={{fontSize:11,color:"var(--muted)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ME.email}</div>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Role switch — only for admin users */}
+                    {userIsAdmin && (
+                      <div style={{padding:"10px 14px",borderBottom:"1px solid var(--line)"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>Switch role</div>
+                        {["investor","admin"].map(r=>(
+                          <button key={r} onClick={()=>{ setRole(r); setProfileOpen(false); }}
+                            style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:10,border:"none",cursor:"pointer",marginBottom:4,fontFamily:"var(--font)",fontSize:13,fontWeight:600,textAlign:"left",
+                              background: (r==="investor"&&isInv)||(r==="admin"&&!isInv) ? "var(--accent-soft)" : "transparent",
+                              color:      (r==="investor"&&isInv)||(r==="admin"&&!isInv) ? "var(--accent-ink)" : "var(--ink)",
+                            }}>
+                            {r==="investor" ? <Users size={15}/> : <Settings size={15}/>}
+                            {r==="investor" ? "Investor view" : "Admin view"}
+                            {((r==="investor"&&isInv)||(r==="admin"&&!isInv)) && <Check size={13} style={{marginLeft:"auto"}}/>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {/* Edit profile — investors only */}
+                    {isInv && (
+                      <div style={{padding:"8px 14px",borderBottom:"1px solid var(--line)"}}>
+                        <button onClick={()=>{ setProfileOpen(false); setPage("profile"); }}
+                          style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontSize:13,fontWeight:600,background:"transparent",color:"var(--ink)",textAlign:"left"}}>
+                          <UserCog size={15}/> Edit profile
+                        </button>
+                      </div>
+                    )}
+                    {/* Sign out */}
+                    <div style={{padding:"8px 14px"}}>
+                      <button onClick={()=>{ setProfileOpen(false); logout(); }}
+                        style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontSize:13,fontWeight:600,background:"transparent",color:"var(--loss)",textAlign:"left"}}>
+                        <LogOut size={15}/> Sign out
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {profileOpen && isInv && page!=="profile" && false && (
                   <ProfileModal
                     me={ME} profile={profile} updateProfile={updateProfile} patchProfile={patchProfile}
                     onClose={()=>setProfileOpen(false)}
