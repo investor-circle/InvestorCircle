@@ -1683,7 +1683,7 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
       : <div className="card">
           <div className="card-body" style={{padding:"6px 0"}}>
             <div className="tscroll">
-            <table className="grid" style={{width:"100%",minWidth:1100}}>
+            <table className="grid" style={{width:"100%"}}>
               <thead><tr>
                 <SortTh label="Asset"        k="asset"   sort={sort} setSort={setSort}/>
                 <th>Recommended by</th>
@@ -1691,8 +1691,8 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
                 <SortTh label="Reco ₹"       k="reco"    sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Entry ₹"      k="entry"   sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current ₹"    k="cur"     sort={sort} setSort={setSort} align="right"/>
-                <SortTh label="Reco Return"  k="recret"  sort={sort} setSort={setSort} align="right"/>
-                <SortTh label="My Return"    k="myret"   sort={sort} setSort={setSort} align="right"/>
+                <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:72,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"recret",dir:s.key==="recret"&&s.dir==="asc"?"desc":"asc"}))}>Reco<br/>Return<span className="si">{sort.key==="recret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
+                <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:64,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"myret",dir:s.key==="myret"&&s.dir==="asc"?"desc":"asc"}))}>My<br/>Return<span className="si">{sort.key==="myret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th>Status</th>
                 <SortTh label="Horizon"      k="horizon" sort={sort} setSort={setSort}/>
                 <th style={{textAlign:"right"}}>Actions</th>
