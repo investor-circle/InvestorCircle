@@ -2965,19 +2965,20 @@ function SocialIconBtn({ platform, url }) {
 
 /* ─── ICI Donut ─────────────────────────────────────────────────────────────── */
 function IciDonut({ score, band }) {
-  const r = 42, circ = 2 * Math.PI * r, filled = (score / 100) * circ;
+  const r = 48, circ = 2 * Math.PI * r, filled = (score / 100) * circ;
   const col = score >= 70 ? '#4ade80' : score >= 50 ? '#a99dff' : score >= 30 ? '#fbbf24' : '#f87171';
+  const glowCol = col.replace('#','');
   return (
-    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-      <svg width={104} height={104} viewBox="0 0 104 104">
-        <circle cx={52} cy={52} r={r} fill="none" stroke="rgba(255,255,255,.12)" strokeWidth={9}/>
-        <circle cx={52} cy={52} r={r} fill="none" stroke={col} strokeWidth={9}
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,position:'relative'}}>
+      <svg width={120} height={120} viewBox="0 0 120 120" style={{filter:`drop-shadow(0 0 12px ${col}55)`}}>
+        <circle cx={60} cy={60} r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={10}/>
+        <circle cx={60} cy={60} r={r} fill="none" stroke={col} strokeWidth={10}
           strokeDasharray={`${filled} ${circ}`}
           strokeDashoffset={circ/4} strokeLinecap="round"/>
-        <text x={52} y={47} textAnchor="middle" fontSize={22} fontWeight={800} fill="#fff" fontFamily="'JetBrains Mono',monospace">{score}</text>
-        <text x={52} y={63} textAnchor="middle" fontSize={10} fill="rgba(255,255,255,.45)">/100</text>
+        <text x={60} y={52} textAnchor="middle" fontSize={28} fontWeight={900} fill="#fff" fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" letterSpacing="-1">{score}</text>
+        <text x={60} y={68} textAnchor="middle" fontSize={11} fill="rgba(255,255,255,.4)" fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">/100</text>
       </svg>
-      <div style={{fontSize:11,fontWeight:700,color:col,marginTop:-4}}>{band}</div>
+      <div style={{fontSize:12,fontWeight:800,color:col,letterSpacing:'.05em',textTransform:'uppercase',marginTop:-4}}>{band}</div>
     </div>
   );
 }
@@ -2985,16 +2986,16 @@ function IciDonut({ score, band }) {
 /* ─── Small helpers ─────────────────────────────────────────────────────────── */
 function ScoreBox({ val, label, big, col }) {
   return (
-    <div style={{textAlign:'center',padding:'11px 8px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10}}>
-      <div style={{fontSize:big?22:17,fontWeight:800,color:col||'var(--ink)',fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{val}</div>
-      <div style={{fontSize:10.5,color:'var(--muted)',marginTop:4,lineHeight:1.3}}>{label}</div>
+    <div style={{textAlign:'center',padding:'13px 10px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:12,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+      <div style={{fontSize:big?24:18,fontWeight:800,color:col||'var(--ink)',fontFamily:'var(--font)',letterSpacing:big?'-.5px':'-.2px',lineHeight:1}}>{val}</div>
+      <div style={{fontSize:11,color:'var(--muted)',marginTop:5,fontWeight:600,textTransform:'uppercase',letterSpacing:'.04em',lineHeight:1.2}}>{label}</div>
     </div>
   );
 }
 
 function RetBadge({ pct, size=13 }) {
   const n=Number(pct||0), pos=n>=0;
-  return <span style={{fontWeight:700,fontSize:size,color:pos?'var(--gain)':'var(--loss)',fontFamily:"'JetBrains Mono',monospace"}}>{pos?'+':''}{n.toFixed(1)}%</span>;
+  return <span style={{fontWeight:800,fontSize:size,color:pos?'var(--gain)':'var(--loss)',letterSpacing:'-.2px'}}>{pos?'+':''}{n.toFixed(1)}%</span>;
 }
 
 function TypeBadge({ t }) {
@@ -3276,21 +3277,22 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     return (
       <>
         {/* ── IDENTITY CARD ── */}
-        <div style={{background:'#0f1117',borderRadius:16,overflow:'hidden',marginBottom:16,border:'1px solid rgba(255,255,255,.06)'}}>
+        <div style={{background:'#0f1117',borderRadius:18,overflow:'hidden',marginBottom:16,border:'1px solid rgba(255,255,255,.07)',boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
 
           {/* Header row: avatar + info + ICI */}
-          <div style={{padding:'24px 28px 20px',display:'flex',gap:20,alignItems:'flex-start',flexWrap:'wrap'}}>
+          <div style={{padding:'28px 32px 24px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
 
             {/* Avatar */}
-            <div style={{width:68,height:68,borderRadius:18,background:'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,fontWeight:800,color:'#fff',flexShrink:0}}>
+            <div style={{width:76,height:76,borderRadius:20,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
               {initialsOf(displayName)}
             </div>
 
             {/* Name + badges + bio + socials */}
             <div style={{flex:1,minWidth:0}}>
-              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:4}}>
-                <span style={{fontSize:20,fontWeight:800,color:'#fff',letterSpacing:'-.3px'}}>{displayName}</span>
-                {/* Registration status badge — dynamic */}
+              {/* Name row */}
+              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:6}}>
+                <span style={{fontSize:24,fontWeight:900,color:'#fff',letterSpacing:'-.6px',lineHeight:1.1}}>{displayName}</span>
+                {/* Registration status badge */}
                 {(()=>{
                   const status = profile.registration_status||'self_directed';
                   const approved = profile.sebi_approval_status==='approved';
@@ -3298,184 +3300,87 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
                   const statusLabel = isSebi&&approved
                     ? (status==='sebi_ra'?'SEBI Registered RA':'SEBI Registered RIA')
                     : (status==='enthusiast'?'Market Enthusiast':'Self-directed Investor');
-                  return <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:5,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.7)',border:'1px solid rgba(255,255,255,.15)',textTransform:'uppercase',letterSpacing:.05}}>{statusLabel}</span>;
+                  return <span style={{fontSize:10,fontWeight:800,padding:'4px 10px',borderRadius:6,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.8)',border:'1px solid rgba(255,255,255,.15)',textTransform:'uppercase',letterSpacing:'.06em'}}>{statusLabel}</span>;
                 })()}
-                {/* SEBI badge — always defaults to Not SEBI Registered unless explicitly approved */}
+                {/* SEBI badge */}
                 {(()=>{
                   const status = profile.registration_status||'self_directed';
                   const approved = profile.sebi_approval_status==='approved';
                   const isSebi = ['sebi_ra','sebi_ria'].includes(status);
                   if(isSebi && approved) return (
-                    <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:5,background:'rgba(21,146,78,.2)',color:'#4ade80',border:'1px solid rgba(21,146,78,.4)',textTransform:'uppercase',letterSpacing:.05}}>
+                    <span style={{fontSize:10,fontWeight:800,padding:'4px 10px',borderRadius:6,background:'rgba(21,146,78,.2)',color:'#4ade80',border:'1px solid rgba(21,146,78,.35)',textTransform:'uppercase',letterSpacing:'.06em'}}>
                       ✓ SEBI Registered{profile.sebi_reg_number?` · ${profile.sebi_reg_number}`:''}
                     </span>
                   );
-                  return <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:5,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.25)',textTransform:'uppercase',letterSpacing:.05}}>Not SEBI Registered</span>;
+                  return <span style={{fontSize:10,fontWeight:800,padding:'4px 10px',borderRadius:6,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.3)',textTransform:'uppercase',letterSpacing:'.06em'}}>Not SEBI Registered</span>;
                 })()}
               </div>
-              <div style={{fontSize:13,color:'rgba(255,255,255,.5)',fontFamily:"'JetBrains Mono',monospace",marginBottom:8}}>@{username}{memberSince&&<span style={{marginLeft:10,fontFamily:'inherit'}}>· Since {memberSince}</span>}</div>
+
+              {/* Username + since */}
+              <div style={{fontSize:13,color:'rgba(255,255,255,.45)',marginBottom:12,display:'flex',alignItems:'center',gap:8}}>
+                <span style={{fontWeight:600}}>@{username}</span>
+                {memberSince&&<><span style={{opacity:.4}}>·</span><span>Member since {memberSince}</span></>}
+              </div>
 
               {/* Bio */}
-              {!editing && (
-                <div style={{marginBottom:10}}>
-                  {profile.bio
-                    ? <p style={{fontSize:13,color:'rgba(255,255,255,.7)',lineHeight:1.6,margin:0}}>{profile.bio}</p>
-                    : isOwnProfile && <p style={{fontSize:12,color:'rgba(255,255,255,.3)',fontStyle:'italic',margin:0}}>No bio yet — add one to tell visitors about your investment approach.</p>}
-                  {isOwnProfile && <button onClick={startEdit} style={{marginTop:6,fontSize:11,fontWeight:600,background:'none',border:'none',color:'rgba(255,255,255,.4)',cursor:'pointer',padding:0,display:'flex',alignItems:'center',gap:4}}><Pencil size={11}/> Edit profile</button>}
-                </div>
-              )}
-
-              {/* ── Expanded inline edit form ── */}
-              {editing && (
-                <div style={{marginBottom:12,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:12,padding:'16px 18px'}}>
-
-                  {/* Avatar color */}
-                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Avatar colour</div>
-                  <div style={{display:'flex',gap:8,marginBottom:16}}>
-                    {['#6d5df5','#cf52d8','#15924e','#0ea5b7','#d97706','#e11d48','#2563eb','#64748b'].map(c=>(
-                      <div key={c} onClick={()=>setEditAvatarColor(c)} style={{width:28,height:28,borderRadius:8,background:c,cursor:'pointer',border:editAvatarColor===c?'2px solid #fff':'2px solid transparent',boxSizing:'border-box',transition:'.1s'}}/>
-                    ))}
-                    <div onClick={()=>setEditAvatarColor('')} style={{width:28,height:28,borderRadius:8,background:'linear-gradient(135deg,#6d5df5,#cf52d8)',cursor:'pointer',border:!editAvatarColor?'2px solid #fff':'2px solid transparent',boxSizing:'border-box',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#fff',fontWeight:700}}>AUTO</div>
-                  </div>
-
-                  {/* Name */}
-                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Name</div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
-                    {[{val:editFirstName,set:setEditFirstName,ph:'First name'},{val:editLastName,set:setEditLastName,ph:'Last name'}].map((f,i)=>(
-                      <input key={i} value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.ph}
-                        style={{background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.12)',borderRadius:7,padding:'8px 11px',fontSize:13,color:'#fff',fontFamily:'inherit',outline:'none',boxSizing:'border-box',width:'100%'}}/>
-                    ))}
-                  </div>
-
-                  {/* Read-only username + email */}
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
-                    {[{label:'Username',val:`@${username}`},{label:'Email',val:profile.email||''}].map((f,i)=>(
-                      <div key={i}>
-                        <div style={{fontSize:10,color:'rgba(255,255,255,.35)',marginBottom:4,display:'flex',alignItems:'center',gap:4}}><Lock size={10}/>{f.label} (cannot be changed)</div>
-                        <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',borderRadius:7,padding:'8px 11px',fontSize:12,color:'rgba(255,255,255,.35)',fontFamily:'monospace'}}>{f.val}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Bio */}
-                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Bio</div>
-                  <textarea value={editBio} onChange={e=>setEditBio(e.target.value)} rows={3} maxLength={300} placeholder="Describe your investment approach…"
-                    style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',borderRadius:8,padding:'8px 11px',fontSize:13,color:'#fff',fontFamily:'inherit',resize:'vertical',outline:'none',boxSizing:'border-box'}}/>
-                  <div style={{fontSize:10,color:'rgba(255,255,255,.3)',textAlign:'right',marginTop:2,marginBottom:16}}>{editBio.length}/300</div>
-
-                  {/* Social links */}
-                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Social profile links</div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
-                    {[
-                      {key:'twitter',label:'Twitter / X',ph:'https://twitter.com/username'},
-                      {key:'linkedin',label:'LinkedIn',ph:'https://linkedin.com/in/username'},
-                      {key:'telegram',label:'Telegram',ph:'https://t.me/username'},
-                      {key:'instagram',label:'Instagram',ph:'https://instagram.com/username'},
-                    ].map(s=>(
-                      <div key={s.key}>
-                        <div style={{fontSize:10,color:'rgba(255,255,255,.4)',marginBottom:4,display:'flex',alignItems:'center',gap:5}}>
-                          <svg width={10} height={10} viewBox="0 0 24 24" fill="rgba(255,255,255,.5)"><path d={SOCIAL_PATHS[s.key]}/></svg>{s.label}
-                        </div>
-                        <input value={editSocials[s.key]} onChange={e=>setEditSocials(p=>({...p,[s.key]:e.target.value}))} placeholder={s.ph}
-                          style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.12)',borderRadius:7,padding:'7px 10px',fontSize:12,color:'#fff',fontFamily:'inherit',outline:'none',boxSizing:'border-box'}}/>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Registration status */}
-                  <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>Investor type</div>
-                  <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:16}}>
-                    {(regOptions.length ? regOptions : [
-                      {code:'self_directed',label:'Self-directed Investor',description:'Invests own money independently. No SEBI registration held.',requires_sebi_fields:false},
-                      {code:'enthusiast',label:'Market Enthusiast',description:'Passionate about markets, shares ideas informally. No professional accountability.',requires_sebi_fields:false},
-                      {code:'sebi_ra',label:'SEBI Registered Research Analyst',description:'SEBI registration under Research Analysts Regulations, 2014. Format: INH000XXXXXX.',requires_sebi_fields:true},
-                      {code:'sebi_ria',label:'SEBI Registered Investment Adviser',description:'SEBI registration under Investment Advisers Regulations, 2013. Format: INA000XXXXXX.',requires_sebi_fields:true},
-                    ]).map(opt=>(
-                      <label key={opt.code} title={opt.description} style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer',padding:'10px 12px',borderRadius:9,background:editRegStatus===opt.code?'rgba(109,93,245,.25)':'rgba(255,255,255,.04)',border:`1px solid ${editRegStatus===opt.code?'rgba(109,93,245,.6)':'rgba(255,255,255,.08)'}`,transition:'.15s'}}>
-                        <input type="radio" name="regStatus" value={opt.code} checked={editRegStatus===opt.code} onChange={()=>setEditRegStatus(opt.code)}
-                          style={{accentColor:'#6d5df5',marginTop:2,flexShrink:0}}/>
-                        <div style={{flex:1}}>
-                          <div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{opt.label}</div>
-                          <div style={{fontSize:11,color:'rgba(255,255,255,.45)',marginTop:2,lineHeight:1.4}}>{opt.description}</div>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-
-                  {/* SEBI fields — shown only for RA/RIA */}
-                  {['sebi_ra','sebi_ria'].includes(editRegStatus) && (<>
-                    <div style={{background:'rgba(251,191,36,.08)',border:'1px solid rgba(251,191,36,.25)',borderRadius:10,padding:'12px 14px',marginBottom:14}}>
-                      <div style={{fontSize:12,color:'#fbbf24',lineHeight:1.6}}>
-                        {sebiVerifyMsg || 'Your SEBI registration details will be reviewed by our team. Until verified, your profile will show "Not SEBI Registered". Approved profiles receive a green verified badge within 2–3 business days.'}
-                      </div>
-                    </div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
-                      {[
-                        {label:'SEBI Registration Number',ph:editRegStatus==='sebi_ra'?'INH000XXXXXX':'INA000XXXXXX',val:editSebiNum,set:setEditSebiNum},
-                        {label:'Registration Valid Till',ph:'',val:editSebiTill,set:setEditSebiTill,type:'date'},
-                        {label:'Firm / Employer Name (optional)',ph:'e.g. XYZ Securities',val:editSebiFirm,set:setEditSebiFirm},
-                      ].map((f,i)=>(
-                        <div key={i} style={i===2?{gridColumn:'1/span 2'}:{}}>
-                          <div style={{fontSize:10,color:'rgba(255,255,255,.4)',marginBottom:4}}>{f.label}</div>
-                          <input type={f.type||'text'} value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.ph}
-                            style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.12)',borderRadius:7,padding:'8px 11px',fontSize:12,color:'#fff',fontFamily:'inherit',outline:'none',boxSizing:'border-box',colorScheme:'dark'}}/>
-                        </div>
-                      ))}
-                    </div>
-                  </>)}
-
-                  <div style={{display:'flex',gap:8,marginTop:4,justifyContent:'flex-end'}}>
-                    <button onClick={()=>setEditing(false)}
-                      style={{padding:'8px 16px',borderRadius:10,fontWeight:700,fontSize:13,cursor:'pointer',background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.2)',color:'#fff',fontFamily:'inherit'}}>
-                      Cancel
-                    </button>
-                    <button className="btn btn-pri btn-sm" disabled={savingEdit} onClick={saveEdit}>
-                      {savingEdit?<><Loader size={13} className="spin"/> Saving…</>:<><Check size={13}/> Save</>}
-                    </button>
-                  </div>
-                </div>
-              )}
+              {profile.bio
+                ? <p style={{fontSize:14,color:'rgba(255,255,255,.75)',lineHeight:1.65,margin:'0 0 14px',maxWidth:520}}>{profile.bio}</p>
+                : isOwnProfile && <p style={{fontSize:13,color:'rgba(255,255,255,.25)',fontStyle:'italic',margin:'0 0 14px'}}>No bio yet — click Edit profile to add one.</p>}
 
               {/* Social icons */}
-              {!editing && (
-                <div style={{display:'flex',gap:6}}>
-                  {['twitter','linkedin','telegram','instagram'].map(p=>(
-                    <SocialIconBtn key={p} platform={p} url={profile[`${p}_url`]}/>
-                  ))}
+              <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                {['twitter','linkedin','telegram','instagram'].map(p=>(
+                  <SocialIconBtn key={p} platform={p} url={profile[`${p}_url`]}/>
+                ))}
+                {/* Action buttons */}
+                {showAddBtn && <button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}>{connecting?<><Loader size={13} className="spin"/> Sending…</>:<><UserPlus size={13}/> Add to network</>}</button>}
+                {showPending && <span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/> Request sent</span>}
+                {showConnected && <span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/> Connected</span>}
+                {showJoinBtn && <button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}><UserPlus size={13}/> Join to connect</button>}
+              </div>
+
+              {/* Edit profile button — bottom-right of info section */}
+              {isOwnProfile && (
+                <div style={{marginTop:14}}>
+                  <button onClick={startEdit}
+                    style={{fontSize:12,fontWeight:700,background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',color:'rgba(255,255,255,.7)',cursor:'pointer',padding:'6px 14px',borderRadius:8,display:'inline-flex',alignItems:'center',gap:6,transition:'.12s',fontFamily:'var(--font)'}}>
+                    <Pencil size={12}/> Edit profile
+                  </button>
                 </div>
               )}
-
-              {/* Action buttons */}
-              <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
-                {showAddBtn && <button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect} style={{background:'rgba(109,93,245,.8)',border:'none'}}>{connecting?<><Loader size={13} className="spin"/> Sending…</>:<><UserPlus size={13}/> Add to network</>}</button>}
-                {showPending && <span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5}}><Check size={12}/> Request sent</span>}
-                {showConnected && <span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5}}><Check size={12}/> Connected</span>}
-                {showJoinBtn && <button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.8)',border:'none'}}><UserPlus size={13}/> Join to connect</button>}
-              </div>
             </div>
 
-            {/* ICI Widget — fixed colors for dark background */}
-            <div style={{background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:14,padding:'16px 18px',minWidth:290,flexShrink:0}}>
-              <div style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.4)',textTransform:'uppercase',letterSpacing:.07,marginBottom:12}}>Investor Circle Credibility Index</div>
-              <div style={{display:'flex',gap:14,alignItems:'center'}}>
+            {/* ICI Widget — redesigned */}
+            <div style={{background:'linear-gradient(135deg,rgba(109,93,245,.18),rgba(207,82,216,.12))',border:'1px solid rgba(109,93,245,.35)',borderRadius:16,padding:'20px 22px',minWidth:280,flexShrink:0,backdropFilter:'blur(8px)'}}>
+              <div style={{fontSize:10,fontWeight:800,color:'rgba(255,255,255,.45)',textTransform:'uppercase',letterSpacing:'1px',marginBottom:16}}>Investor Circle Credibility Index</div>
+              <div style={{display:'flex',gap:20,alignItems:'center',marginBottom:18}}>
                 <IciDonut score={ici.score} band={ici.band}/>
-                <div style={{flex:1,display:'flex',flexDirection:'column',gap:5}}>
-                  {ici.components.map(c=>(
-                    <div key={c.label} style={{display:'flex',alignItems:'center',gap:5}}>
-                      <Check size={10} color="rgba(255,255,255,.35)"/>
-                      <span style={{fontSize:10.5,color:'rgba(255,255,255,.65)',flex:1,lineHeight:1.2}}>{c.label}</span>
-                      <span style={{fontSize:9.5,color:'rgba(255,255,255,.4)',fontFamily:"'JetBrains Mono',monospace",width:28,textAlign:'right'}}>{c.max}%</span>
-                      <span style={{fontSize:10.5,color:'rgba(255,255,255,.8)',fontFamily:"'JetBrains Mono',monospace",width:36,textAlign:'right'}}>{c.score}/{c.max}</span>
-                    </div>
-                  ))}
+                <div style={{flex:1}}>
+                  {ici.components.map(c=>{
+                    const pct = c.max > 0 ? (c.score/c.max)*100 : 0;
+                    const barCol = pct>=80?'#4ade80':pct>=50?'#a99dff':'rgba(255,255,255,.25)';
+                    return (
+                      <div key={c.label} style={{marginBottom:8}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:3}}>
+                          <span style={{fontSize:10.5,color:'rgba(255,255,255,.65)',fontWeight:500}}>{c.label}</span>
+                          <span style={{fontSize:10,color:'rgba(255,255,255,.5)',fontWeight:700,fontFamily:'inherit'}}>{c.score}/{c.max}</span>
+                        </div>
+                        <div style={{height:4,background:'rgba(255,255,255,.1)',borderRadius:2,overflow:'hidden'}}>
+                          <div style={{height:'100%',width:`${pct}%`,background:`linear-gradient(90deg,${barCol},${barCol}cc)`,borderRadius:2,transition:'width .4s ease'}}/>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              <div style={{marginTop:10,textAlign:'center'}}><a href="#methodology" style={{fontSize:11,color:'#a99dff',textDecoration:'none'}}>Learn more about ICI methodology →</a></div>
+              <div style={{borderTop:'1px solid rgba(255,255,255,.08)',paddingTop:10,textAlign:'center'}}>
+                <a href="#methodology" style={{fontSize:11,color:'#a99dff',textDecoration:'none',fontWeight:600}}>Learn more about ICI methodology →</a>
+              </div>
             </div>
           </div>
 
           {/* ── Stat strip ── */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',background:'rgba(0,0,0,.25)',borderTop:'1px solid rgba(255,255,255,.06)'}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',background:'rgba(0,0,0,.3)',borderTop:'1px solid rgba(255,255,255,.07)'}}>
             {[
               {val:profile.connection_count||0, label:'Connections'},
               {val:profile.group_count||0,      label:'Groups'},
@@ -3484,15 +3389,126 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
               {val:summary.active,              label:'Active'},
               {val:`${summary.years_history.toFixed(1)} yrs`, label:'Public History'},
             ].map((s,i,arr)=>(
-              <div key={s.label} style={{borderRight:i<arr.length-1?'1px solid rgba(255,255,255,.06)':'none',padding:'14px 8px',textAlign:'center'}}>
-                <div style={{fontSize:24,fontWeight:800,color:'#fff',fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1}}>{s.val}</div>
-                <div style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,.45)',marginTop:4,textTransform:'uppercase',letterSpacing:.06,lineHeight:1.3}}>{s.label}</div>
+              <div key={s.label} style={{borderRight:i<arr.length-1?'1px solid rgba(255,255,255,.07)':'none',padding:'16px 8px',textAlign:'center'}}>
+                <div style={{fontSize:26,fontWeight:900,color:'#fff',letterSpacing:'-1px',lineHeight:1,fontFamily:'var(--font)'}}>{s.val}</div>
+                <div style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.4)',marginTop:5,textTransform:'uppercase',letterSpacing:'.08em',lineHeight:1.3}}>{s.label}</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── SCORECARDS ── */}
+        {/* ── EDIT PROFILE MODAL ── */}
+        {editing && createPortal(
+          <div className="modal-overlay" onClick={()=>setEditing(false)}>
+            <div style={{width:'100%',maxWidth:560,maxHeight:'90vh',overflowY:'auto',background:'#16182a',borderRadius:20,border:'1px solid rgba(255,255,255,.1)',boxShadow:'0 24px 80px rgba(0,0,0,.6)'}} onClick={e=>e.stopPropagation()}>
+              {/* Modal header */}
+              <div style={{padding:'20px 24px 16px',borderBottom:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,background:'#16182a',zIndex:1,borderRadius:'20px 20px 0 0'}}>
+                <div style={{fontSize:17,fontWeight:800,color:'#fff'}}>Edit Profile</div>
+                <button onClick={()=>setEditing(false)} style={{background:'rgba(255,255,255,.08)',border:'none',color:'rgba(255,255,255,.7)',cursor:'pointer',width:32,height:32,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,fontFamily:'inherit'}}>×</button>
+              </div>
+
+              <div style={{padding:'24px'}}>
+                {/* Avatar color */}
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Avatar colour</div>
+                <div style={{display:'flex',gap:8,marginBottom:22}}>
+                  {['#6d5df5','#cf52d8','#15924e','#0ea5b7','#d97706','#e11d48','#2563eb','#64748b'].map(c=>(
+                    <div key={c} onClick={()=>setEditAvatarColor(c)} style={{width:32,height:32,borderRadius:9,background:c,cursor:'pointer',border:editAvatarColor===c?'2px solid #fff':'2px solid transparent',boxSizing:'border-box',transition:'.1s',boxShadow:editAvatarColor===c?`0 0 12px ${c}88`:''}}/>
+                  ))}
+                  <div onClick={()=>setEditAvatarColor('')} style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#6d5df5,#cf52d8)',cursor:'pointer',border:!editAvatarColor?'2px solid #fff':'2px solid transparent',boxSizing:'border-box',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#fff',fontWeight:800}}>AUTO</div>
+                </div>
+
+                {/* Name */}
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Name</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+                  {[{val:editFirstName,set:setEditFirstName,ph:'First name'},{val:editLastName,set:setEditLastName,ph:'Last name'}].map((f,i)=>(
+                    <input key={i} value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.ph}
+                      style={{background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',borderRadius:9,padding:'10px 13px',fontSize:14,color:'#fff',fontFamily:'var(--font)',outline:'none',boxSizing:'border-box',width:'100%'}}/>
+                  ))}
+                </div>
+
+                {/* Read-only username + email — email auto-populated from auth */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+                  {[{label:'Username',val:`@${username}`},{label:'Email',val:profile.email||viewerUser?.email||''}].map((f,i)=>(
+                    <div key={i}>
+                      <div style={{fontSize:11,color:'rgba(255,255,255,.35)',marginBottom:6,display:'flex',alignItems:'center',gap:4,fontWeight:600}}><Lock size={10}/>{f.label} <span style={{fontWeight:400,fontSize:10}}>(cannot be changed)</span></div>
+                      <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',borderRadius:9,padding:'10px 13px',fontSize:13,color:'rgba(255,255,255,.4)',fontFamily:'inherit'}}>{f.val||<span style={{opacity:.4,fontStyle:'italic'}}>not set</span>}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Bio */}
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Bio</div>
+                <textarea value={editBio} onChange={e=>setEditBio(e.target.value)} rows={3} maxLength={300} placeholder="Describe your investment approach…"
+                  style={{width:'100%',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',borderRadius:9,padding:'10px 13px',fontSize:14,color:'#fff',fontFamily:'var(--font)',resize:'vertical',outline:'none',boxSizing:'border-box'}}/>
+                <div style={{fontSize:11,color:'rgba(255,255,255,.3)',textAlign:'right',marginTop:4,marginBottom:20}}>{editBio.length}/300</div>
+
+                {/* Social links */}
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Social profile links</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+                  {[
+                    {key:'twitter',label:'Twitter / X',ph:'https://twitter.com/username'},
+                    {key:'linkedin',label:'LinkedIn',ph:'https://linkedin.com/in/username'},
+                    {key:'telegram',label:'Telegram',ph:'https://t.me/username'},
+                    {key:'instagram',label:'Instagram',ph:'https://instagram.com/username'},
+                  ].map(s=>(
+                    <div key={s.key}>
+                      <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginBottom:6,fontWeight:600}}>{s.label}</div>
+                      <input value={editSocials[s.key]} onChange={e=>setEditSocials(p=>({...p,[s.key]:e.target.value}))} placeholder={s.ph}
+                        style={{width:'100%',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',borderRadius:9,padding:'9px 12px',fontSize:13,color:'#fff',fontFamily:'var(--font)',outline:'none',boxSizing:'border-box'}}/>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Registration status */}
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Investor type</div>
+                <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
+                  {(regOptions.length ? regOptions : [
+                    {code:'self_directed',label:'Self-directed Investor',description:'Invests own money independently.',requires_sebi_fields:false},
+                    {code:'enthusiast',label:'Market Enthusiast',description:'Passionate about markets, shares ideas informally.',requires_sebi_fields:false},
+                    {code:'sebi_ra',label:'SEBI Registered Research Analyst',description:'INH000XXXXXX format.',requires_sebi_fields:true},
+                    {code:'sebi_ria',label:'SEBI Registered Investment Adviser',description:'INA000XXXXXX format.',requires_sebi_fields:true},
+                  ]).map(opt=>(
+                    <label key={opt.code} style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer',padding:'11px 14px',borderRadius:10,background:editRegStatus===opt.code?'rgba(109,93,245,.2)':'rgba(255,255,255,.04)',border:`1px solid ${editRegStatus===opt.code?'rgba(109,93,245,.55)':'rgba(255,255,255,.08)'}`,transition:'.15s'}}>
+                      <input type="radio" name="regStatus" value={opt.code} checked={editRegStatus===opt.code} onChange={()=>setEditRegStatus(opt.code)} style={{accentColor:'#6d5df5',marginTop:3,flexShrink:0}}/>
+                      <div><div style={{fontSize:14,fontWeight:700,color:'#fff'}}>{opt.label}</div><div style={{fontSize:12,color:'rgba(255,255,255,.4)',marginTop:2,lineHeight:1.4}}>{opt.description}</div></div>
+                    </label>
+                  ))}
+                </div>
+
+                {/* SEBI fields */}
+                {['sebi_ra','sebi_ria'].includes(editRegStatus) && (<>
+                  <div style={{background:'rgba(251,191,36,.08)',border:'1px solid rgba(251,191,36,.2)',borderRadius:10,padding:'12px 14px',marginBottom:16,fontSize:13,color:'#fbbf24',lineHeight:1.6}}>
+                    {sebiVerifyMsg || 'Your SEBI registration details will be reviewed by our team within 2–3 business days.'}
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+                    {[
+                      {label:'SEBI Registration Number',ph:editRegStatus==='sebi_ra'?'INH000XXXXXX':'INA000XXXXXX',val:editSebiNum,set:setEditSebiNum},
+                      {label:'Registration Valid Till',ph:'',val:editSebiTill,set:setEditSebiTill,type:'date'},
+                      {label:'Firm / Employer Name (optional)',ph:'e.g. XYZ Securities',val:editSebiFirm,set:setEditSebiFirm},
+                    ].map((f,i)=>(
+                      <div key={i} style={i===2?{gridColumn:'1/span 2'}:{}}>
+                        <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginBottom:6,fontWeight:600}}>{f.label}</div>
+                        <input type={f.type||'text'} value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.ph}
+                          style={{width:'100%',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',borderRadius:9,padding:'10px 13px',fontSize:13,color:'#fff',fontFamily:'var(--font)',outline:'none',boxSizing:'border-box',colorScheme:'dark'}}/>
+                      </div>
+                    ))}
+                  </div>
+                </>)}
+
+                {/* Footer buttons */}
+                <div style={{display:'flex',gap:10,justifyContent:'flex-end',paddingTop:4,borderTop:'1px solid rgba(255,255,255,.07)',paddingTop:16}}>
+                  <button onClick={()=>setEditing(false)} style={{padding:'10px 20px',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontFamily:'var(--font)'}}>
+                    Cancel
+                  </button>
+                  <button className="btn btn-pri" disabled={savingEdit} onClick={saveEdit} style={{padding:'10px 24px',fontSize:14}}>
+                    {savingEdit?<><Loader size={14} className="spin"/> Saving…</>:<><Check size={14}/> Save changes</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
 
           <div className="card">
