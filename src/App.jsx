@@ -3433,7 +3433,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
 
         {/* ── EDIT PROFILE MODAL ── */}
         {editing && createPortal(
-          <div className="modal-overlay" onClick={()=>setEditing(false)}>
+          <div className="modal-overlay" style={{position:'fixed',inset:0,background:'rgba(13,14,30,.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'20px'}} onClick={()=>setEditing(false)}>
             <div style={{width:'100%',maxWidth:560,maxHeight:'90vh',overflowY:'auto',background:'#16182a',borderRadius:20,border:'1px solid rgba(255,255,255,.1)',boxShadow:'0 24px 80px rgba(0,0,0,.6)'}} onClick={e=>e.stopPropagation()}>
               {/* Modal header */}
               <div style={{padding:'20px 24px 16px',borderBottom:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,background:'#16182a',zIndex:1,borderRadius:'20px 20px 0 0'}}>
