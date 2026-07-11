@@ -517,8 +517,8 @@ export default function App() {
       <style>{STYLES}</style>
       <div className="shell">
         <div className="sidebar">
-          <div className="brand"><div className="mark">ic</div>
-            <div><div className="nm">InvestorCircle</div><div className="tag">Social Investing</div></div></div>
+          <div className="brand"><div className="mark" style={{fontSize:14,letterSpacing:'-.5px'}}>mic</div>
+            <div><div className="nm">myInvestorCircle</div><div className="tag">Social Investing</div></div></div>
           {userIsAdmin && <div className="viewing" onClick={()=>setRole(isInv?"admin":"investor")} title="Switch view">
             <div className="ava">{isInv ? ME.initials : "AD"}</div>
             <div style={{flex:1}}><div className="vs">Viewing as</div><div className="role">{isInv?"Investor":"Admin"}</div></div>
@@ -3289,8 +3289,8 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
       <div style={{minHeight:'100vh',background:'var(--bg)',paddingBottom:48}}>
         <div style={{background:'var(--surface)',borderBottom:'1px solid var(--line)',padding:'11px 24px',display:'flex',alignItems:'center',gap:14,position:'sticky',top:0,zIndex:100}}>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <div style={{width:30,height:30,borderRadius:8,background:'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:13,color:'#fff'}}>ic</div>
-            <div><div style={{fontWeight:800,fontSize:13,lineHeight:1.1}}>InvestorCircle</div><div style={{fontSize:10,color:'var(--muted)'}}>Transparency Platform</div></div>
+            <div style={{width:30,height:30,borderRadius:8,background:'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:11,color:'#fff'}}>mic</div>
+            <div><div style={{fontWeight:800,fontSize:13,lineHeight:1.1}}>myInvestorCircle</div><div style={{fontSize:10,color:'var(--muted)'}}>Transparency Platform</div></div>
           </div>
           <div style={{flex:1}}/>
           {viewerUser
@@ -3600,8 +3600,13 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
   const isBuy = (r.recommendation_type||r.recType||'Buy')==='Buy';
 
   return (
-    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,boxShadow:'var(--shadow)',marginBottom:12,overflow:'visible',transition:'box-shadow .15s'}}>
-      <div style={{padding:'16px 18px'}}>
+    <div
+      onClick={()=>setExpanded(v=>!v)}
+      style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,boxShadow:'var(--shadow)',marginBottom:12,overflow:'visible',transition:'box-shadow .15s',cursor:'pointer'}}
+      onMouseEnter={e=>e.currentTarget.style.boxShadow='0 4px 20px rgba(20,20,50,.1)'}
+      onMouseLeave={e=>e.currentTarget.style.boxShadow='var(--shadow)'}
+    >
+      <div style={{padding:'16px 18px'}} onClick={e=>e.stopPropagation()}>
         {/* ── Header row ── */}
         <div style={{display:'flex',alignItems:'flex-start',gap:12,marginBottom:11}}>
           {/* Avatar */}
@@ -3661,25 +3666,25 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
         {/* ── Interaction bar ── */}
         <div style={{display:'flex',alignItems:'center',gap:5,paddingTop:10,borderTop:'1px solid var(--line)'}}>
           {/* Like */}
-          <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={()=>react('like')} style={{width:32,height:32}}>
+          <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={e=>{e.stopPropagation();react('like');}} style={{width:32,height:32}}>
             <ThumbsUp size={14}/>
           </button>
           <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.likes||0}</span>
 
           {/* Dislike */}
-          <button className={"iconbtn"+(r.reaction==='dislike'?' on-dislike':'')} title="Dislike" onClick={()=>react('dislike')} style={{width:32,height:32}}>
+          <button className={"iconbtn"+(r.reaction==='dislike'?' on-dislike':'')} title="Dislike" onClick={e=>{e.stopPropagation();react('dislike');}} style={{width:32,height:32}}>
             <ThumbsDown size={14}/>
           </button>
           <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.dislikes||0}</span>
 
           {/* Comment */}
-          <button className="iconbtn" title="Comment" onClick={()=>setExpanded(v=>!v)} style={{width:32,height:32}}>
+          <button className="iconbtn" title="Comment" onClick={e=>{e.stopPropagation();setExpanded(v=>!v);}} style={{width:32,height:32}}>
             <MessageSquare size={14}/>
           </button>
 
           {/* Share */}
           <div style={{position:'relative'}}>
-            <button className="iconbtn" title="Share" onClick={handleShareClick} style={{width:32,height:32}}>
+            <button className="iconbtn" title="Share" onClick={e=>{e.stopPropagation();handleShareClick(e);}} style={{width:32,height:32}}>
               <Share2 size={14}/>
             </button>
             {showShare&&<ReceivedSharePopover reco={r} fromUsername={shareUsername} anchorEl={shareAnchor}
@@ -3691,7 +3696,7 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
           <button
             className={"iconbtn"+(isTracked?' on-like':'')}
             title={isTracked?'Remove from tracked':'Track this recommendation'}
-            onClick={()=>toggleTrack?.(r.id)}
+            onClick={e=>{e.stopPropagation();toggleTrack?.(r.id);}}
             style={isTracked?{width:32,height:32,background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{width:32,height:32}}>
             <Bookmark size={14}/>
           </button>
@@ -3707,8 +3712,10 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
             {r.invested
               ? <span style={{fontSize:12,fontWeight:700,color:'var(--gain)',display:'flex',alignItems:'center',gap:4}}><Check size={13}/> Invested</span>
-              : <button className="btn btn-ghost btn-sm" style={{fontSize:12,padding:'5px 11px'}} onClick={()=>setExpanded(v=>!v)}>Track this</button>}
-            <button onClick={()=>setExpanded(v=>!v)}
+              : <button className="btn btn-soft btn-sm" style={{fontSize:12,padding:'5px 11px'}} onClick={e=>{e.stopPropagation();patch({isInvested:true,investedPrice:r.price,invested:true});}}>
+                  <Check size={12}/> Mark invested
+                </button>}
+            <button onClick={e=>{e.stopPropagation();setExpanded(v=>!v);}}
               style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:12,color:'var(--accent-ink)',fontWeight:700,fontFamily:'var(--font)',padding:'4px 8px',borderRadius:8,transition:'.12s'}}>
               {expanded?'Less':'More'}<ChevronDown size={14} style={{transform:expanded?'rotate(180deg)':'none',transition:'.15s'}}/>
             </button>
