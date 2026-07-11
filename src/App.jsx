@@ -384,6 +384,20 @@ export default function App() {
   // Clear global search when navigating to a different page
   useEffect(() => { setGlobalSearch(''); }, [investorPage, adminPage]);
 
+  // Profile dropdown: close on click outside using native mousedown
+  const profileRef = useRef(null);
+  useEffect(() => {
+    if (!profileOpen) return;
+    const handler = (e) => {
+      if (profileRef.current && !profileRef.current.contains(e.target)) {
+        setProfileOpen(false);
+      }
+    };
+    // Use mousedown so it fires before React's onClick
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [profileOpen]);
+
   // Close profile dropdown on outside click
   useEffect(() => {
     if (!profileOpen) return;
@@ -668,7 +682,7 @@ export default function App() {
                   onClose={()=>setNotifOpen(false)}
                 />}
               </div>
-              <div style={{position:"relative"}}>
+              <div ref={profileRef} style={{position:"relative"}}>
                 <button
                   onClick={()=>{ setProfileOpen(v=>!v); setNotifOpen(false); }}
                   style={{background:"none",border:"none",padding:0,cursor:"pointer"}}
@@ -687,17 +701,8 @@ export default function App() {
                   </div>
                 </button>
 
-                {/* Invisible backdrop — click outside to close */}
-                {profileOpen && createPortal(
-                  <div style={{position:"fixed",inset:0,zIndex:498}} onClick={()=>setProfileOpen(false)}/>,
-                  document.body
-                )}
-
-                {/* Profile dropdown — stopPropagation so clicks don't reach backdrop or avatar toggle */}
                 {profileOpen && (
-                  <div
-                    onClick={e=>e.stopPropagation()}
-                    style={{position:"absolute",top:"calc(100% + 8px)",right:0,width:260,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:16,boxShadow:"0 12px 40px rgba(0,0,0,.18)",zIndex:499,overflow:"hidden"}}>
+                  <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,width:260,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:16,boxShadow:"0 12px 40px rgba(0,0,0,.18)",zIndex:600,overflow:"hidden"}}>
                     {/* Profile header */}
                     <div style={{padding:"16px 16px 12px",borderBottom:"1px solid var(--line)"}}>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -713,7 +718,8 @@ export default function App() {
                       <div style={{padding:"10px 14px",borderBottom:"1px solid var(--line)"}}>
                         <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>Switch role</div>
                         {["investor","admin"].map(r=>(
-                          <button key={r} onClick={()=>{ setRole(r); setProfileOpen(false); }}
+                          <button key={r}
+                            onMouseDown={e=>{ e.preventDefault(); e.stopPropagation(); setRole(r); setProfileOpen(false); }}
                             style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:10,border:"none",cursor:"pointer",marginBottom:4,fontFamily:"var(--font)",fontSize:13,fontWeight:600,textAlign:"left",
                               background: (r==="investor"&&isInv)||(r==="admin"&&!isInv) ? "var(--accent-soft)" : "transparent",
                               color:      (r==="investor"&&isInv)||(r==="admin"&&!isInv) ? "var(--accent-ink)" : "var(--ink)",
@@ -728,7 +734,8 @@ export default function App() {
                     {/* Edit profile — investors only */}
                     {isInv && (
                       <div style={{padding:"8px 14px",borderBottom:"1px solid var(--line)"}}>
-                        <button onClick={()=>{ setProfileOpen(false); setPage("profile"); }}
+                        <button
+                          onMouseDown={e=>{ e.preventDefault(); e.stopPropagation(); setProfileOpen(false); setPage("profile"); }}
                           style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontSize:13,fontWeight:600,background:"transparent",color:"var(--ink)",textAlign:"left"}}>
                           <UserCog size={15}/> Edit profile
                         </button>
@@ -736,7 +743,8 @@ export default function App() {
                     )}
                     {/* Sign out */}
                     <div style={{padding:"8px 14px"}}>
-                      <button onClick={()=>{ setProfileOpen(false); logout(); }}
+                      <button
+                        onMouseDown={e=>{ e.preventDefault(); e.stopPropagation(); setProfileOpen(false); logout(); }}
                         style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontSize:13,fontWeight:600,background:"transparent",color:"var(--loss)",textAlign:"left"}}>
                         <LogOut size={15}/> Sign out
                       </button>
@@ -5304,7 +5312,7 @@ function AdminGroups({ groups, setGroups, contacts, me }) {
   const [editGroup, setEditGroup] = useState(null);
   const myId = me?.id || "me";
   const nameOfM = (id) => (id==="me"||id===me?.id) ? (me?.name||"You") : (contacts.find(c=>c.id===id)?.name)||(id==="admin"?"Admin Root":id);
-  const removeMember=(gid,mid)=>setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:g.members.filter(m=>m!==mid)}:g));
+  const removeMember=(gid,mid)=>setGroups(gs=>gs.map(g=>g.id===gid?{...g,members:(g.members||[]).filter(m=>m!==mid)}:g));
   const renameGroup=(gid,newName)=>setGroups(gs=>gs.map(g=>g.id===gid?{...g,name:newName}:g));
   const deleteGroup=(g)=>{ if(confirm(`Delete "${g.name}"? All members will lose access. This cannot be undone.`)) setGroups(gs=>gs.filter(x=>x.id!==g.id)); };
   return (<>
@@ -5313,20 +5321,22 @@ function AdminGroups({ groups, setGroups, contacts, me }) {
     {groups.length===0 && <div className="card"><div className="empty">No groups yet. Create one to get started.</div></div>}
     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))", gap:16 }}>
       {groups.map(g=>{
-        const iAmAdmin=g.admins.includes("me")||g.admins.includes(myId);
+        const admins = Array.isArray(g.admins) ? g.admins : [];
+        const members = Array.isArray(g.members) ? g.members : [];
+        const iAmAdmin=admins.includes("me")||admins.includes(myId);
         return (<div key={g.id} className="card"><div className="card-body">
           <div style={{ display:"flex", gap:12, alignItems:"center", marginBottom:13 }}>
             <div className="av" style={{ width:44, height:44, background:g.color }}><Layers size={19}/></div>
-            <div style={{flex:1}}><div style={{fontWeight:700,fontSize:15}}>{g.name}</div><div className="muted small">{g.members.length} members · created {fmtDate(g.created)}</div></div>
+            <div style={{flex:1}}><div style={{fontWeight:700,fontSize:15}}>{g.name}</div><div className="muted small">{members.length} members · created {fmtDate(g.created)}</div></div>
             {iAmAdmin && <div style={{display:"flex",gap:6}}>
               <button className="iconbtn" title="Rename group" onClick={()=>setEditGroup(g)}><Pencil size={14}/></button>
               <button className="iconbtn danger" title="Delete group" onClick={()=>deleteGroup(g)}><Trash2 size={14}/></button>
             </div>}
           </div>
-          <div className="small muted" style={{marginBottom:8}}>Admins: {g.admins.map(nameOfM).join(", ")||"—"}</div>
+          <div className="small muted" style={{marginBottom:8}}>Admins: {admins.map(nameOfM).join(", ")||"—"}</div>
           <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
-            {g.members.map(mid=><span key={mid} className="pill">{nameOfM(mid)} <X size={13} style={{cursor:"pointer"}} onClick={()=>removeMember(g.id,mid)}/></span>)}
-            {g.members.length===0 && <span className="muted small">No members yet</span>}</div>
+            {members.map(mid=><span key={typeof mid==='object'?mid.user_id:mid} className="pill">{nameOfM(typeof mid==='object'?mid.user_id:mid)} <X size={13} style={{cursor:"pointer"}} onClick={()=>removeMember(g.id,mid)}/></span>)}
+            {members.length===0 && <span className="muted small">No members yet</span>}</div>
         </div></div>);})}
     </div>
     {showNew && <CreateGroupModal contacts={contacts} groups={groups} myId={myId} onClose={()=>setShowNew(false)} onCreate={(g)=>{ setGroups(gs=>[...gs,{...g,id:"g"+Date.now(),created:TODAY,admins:[myId],color:CONTACT_COLORS[gs.length%CONTACT_COLORS.length]}]); setShowNew(false); }}/>}
