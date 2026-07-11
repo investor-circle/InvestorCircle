@@ -1805,39 +1805,6 @@ function TrackedSection({ tracked, toggleTrack, me, contacts }) {
         </div>}
   </>);
 }
-    if(!me?.id||!sql){ setLoading(false); return; }
-    setLoading(true);
-
-    // Try with is_invested columns (requires migration_v9 ALTER TABLE)
-    sql`SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class, ir.recommendation_type,
-               ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
-               ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
-               ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
-               up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
-               rt.tracked_at, rt.is_invested, rt.invested_price
-        FROM recommendation_tracking rt
-        JOIN ic_recommendations ir ON rt.reco_id = ir.id
-        JOIN user_profiles up ON ir.recommender_id = up.id
-        WHERE rt.user_id = ${me.id}
-        ORDER BY rt.tracked_at DESC`
-      .then(rows=>{ setRecos(rows); setLoading(false); })
-      .catch(()=>{
-        // Fallback: without is_invested (pre-migration or column missing)
-        sql`SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class, ir.recommendation_type,
-                   ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
-                   ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
-                   ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
-                   up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
-                   rt.tracked_at
-            FROM recommendation_tracking rt
-            JOIN ic_recommendations ir ON rt.reco_id = ir.id
-            JOIN user_profiles up ON ir.recommender_id = up.id
-            WHERE rt.user_id = ${me.id}
-            ORDER BY rt.tracked_at DESC`
-          .then(rows=>{ setRecos(rows.map(r=>({...r, is_invested:false, invested_price:null}))); setLoading(false); })
-          .catch(e=>{ console.error('TrackedSection load failed:', e); setLoading(false); });
-      });
-
 function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload, me, tracked, toggleTrack }) {
   const [q,setQ]=useState(""); const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
@@ -3778,7 +3745,7 @@ function RecoComments({ recoId, me }) {
 }
 
 /* ─── FeedCard — single recommendation card for the homepage ────────────────────── */
-function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleTrack }) {
+function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked, toggleTrack }) {
   const [expanded,  setExpanded]  = useState(false);
   const [shareAnchor, setShareAnchor] = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
@@ -3849,10 +3816,16 @@ function FeedCard({ r, me, contacts, setRecsReceived, onReload, tracked, toggleT
                 {isBuy?'Buy':'Sell'}
               </span>
             </div>
-            <div style={{fontSize:12,color:'var(--muted)',marginTop:3,display:'flex',alignItems:'center',gap:8}}>
+            <div style={{fontSize:12,color:'var(--muted)',marginTop:3,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <span>{fmtDate(r.date)}</span>
               {r.assetClass&&<span style={{display:'flex',alignItems:'center',gap:4}}><span className="dot" style={{background:classColor(r.assetClass),width:7,height:7}}/>{r.assetClass}</span>}
-              {r.priceAt>0&&<span>Entry ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
+              {r.priceAt>0&&<span>Reco ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
+              {/* Sharing tag */}
+              {r.isPublic
+                ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)',border:'1px solid rgba(21,146,78,.2)'}}>Public</span>
+                : r.shareType==='group'
+                  ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',border:'1px solid var(--accent-line)',display:'flex',alignItems:'center',gap:3}}><Layers size={10}/>{r.groupId ? (groups?.find?.(g=>g.id===r.groupId)?.name || 'Group') : 'Group'}</span>
+                  : <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--surface-2)',color:'var(--muted)',border:'1px solid var(--line)'}}>Direct</span>}
             </div>
           </div>
           {/* Return badge */}
@@ -4038,7 +4011,7 @@ function HomeFeed({ setPage, recsReceived, setRecsReceived, configs, holdings, c
             </div>
           : (<>
               {feedRecs.map(r=>(
-                <FeedCard key={r.id} r={r} me={me} contacts={contacts} setRecsReceived={setRecsReceived} tracked={tracked} toggleTrack={toggleTrack}/>
+                <FeedCard key={r.id} r={r} me={me} contacts={contacts} groups={groups} setRecsReceived={setRecsReceived} tracked={tracked} toggleTrack={toggleTrack}/>
               ))}
               {recsReceived.filter(r=>!r.hidden).length>15&&(
                 <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center'}} onClick={()=>setPage('recs')}>
