@@ -985,7 +985,7 @@ export default function App() {
                         Your public profile URL uses your username (e.g. app/#/investor/yourname).
                         Set one in your profile to enable the Track Record page.
                       </div>
-                      <button className="btn btn-pri" onClick={()=>setProfileOpen(true)}>
+                      <button className="btn btn-pri" onClick={()=>setProfileEditOpen(true)}>
                         <Pencil size={15}/> Set username in profile
                       </button>
                     </div></div>
@@ -3464,23 +3464,28 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     if(notFound) return <div style={{textAlign:'center',padding:'60px 0'}}><Globe size={36} color="var(--muted)" style={{marginBottom:14}}/><div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Record not found</div><div className="muted small">@{username} hasn't set up a public profile yet.</div></div>;
     if(!data) return null;
 
-    // Defensive defaults — guard against missing fields when user has no recommendations yet
-    const profile   = data.profile   || {};
-    const summary   = data.summary   || { total:0, closed:0, active:0, years_history:0 };
-    const live      = data.live      || { count:0, in_profit:0, in_loss:0, avg_return:0, avg_holding_days:0, best:null, worst:null };
-    const realized  = data.realized  || { count:0, hit_rate_pct:0, median_return:0, avg_return:0, avg_holding_days:0, win_count:0, loss_count:0, risk_adjusted:0, best:null };
-    const sectors   = data.sectors   || [];
-    const recos     = data.recos     || [];
+    // Defensive defaults — spread-merge so partial objects also get safe fallbacks
+    const profile  = { bio:'', avatar_color:'', connection_count:0, group_count:0, ...(data.profile||{}) };
+    const summary  = { total:0, closed:0, active:0, years_history:0, ...(data.summary||{}) };
+    const live     = { count:0, in_profit:0, in_loss:0, avg_return:0, avg_holding_days:0, best:null, worst:null, ...(data.live||{}) };
+    const realized = { count:0, hit_rate_pct:0, median_return:0, avg_return:0, avg_holding_days:0, win_count:0, loss_count:0, risk_adjusted:0, best:null, ...(data.realized||{}) };
+    const sectors  = Array.isArray(data.sectors) ? data.sectors : [];
+    const recos    = Array.isArray(data.recos)   ? data.recos   : [];
     const displayName=[profile.first_name,profile.last_name].filter(Boolean).join(' ')||profile.full_name||username;
     const memberSince=profile.created_at?new Date(profile.created_at).toLocaleDateString('en-IN',{month:'short',year:'numeric'}):null;
 
-    const ici=computeIci({
-      years_history:    Number(summary.years_history)  || 0,
-      total:            Number(summary.total)           || 0,
-      hit_rate_pct:     Number(realized.hit_rate_pct)  || 0,
-      median_return:    Number(realized.median_return)  || 0,
-      risk_adjusted_return: Number(realized.risk_adjusted) || 0,
-    });
+    // Guard computeIci — it may throw or return without components on edge cases
+    let ici = { score:0, band:'New', components:[] };
+    try {
+      const result = computeIci({
+        years_history:       Number(summary.years_history)  || 0,
+        total:               Number(summary.total)          || 0,
+        hit_rate_pct:        Number(realized.hit_rate_pct)  || 0,
+        median_return:       Number(realized.median_return)  || 0,
+        risk_adjusted_return:Number(realized.risk_adjusted) || 0,
+      });
+      if (result) ici = { ...ici, ...result, components: Array.isArray(result.components) ? result.components : [] };
+    } catch(_) {}
 
     const filteredRecos=recTab==='All'?recos:recos.filter(r=>r.status===recTab);
     const recoIdNotPublic=recoId&&data&&!recos.find(r=>r.id===recoId);
@@ -3966,6 +3971,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
 
 /* ── ProfileEditModal — standalone overlay triggered from the top-nav dropdown ── */
 function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) {
+  const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
   const [firstName,    setFirstName]    = useState(profile?.first_name || '');
   const [lastName,     setLastName]     = useState(profile?.last_name  || '');
   const [avatarColor,  setAvatarColor]  = useState(profile?.avatar_color || '');
@@ -3984,6 +3990,11 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
   const [sebiMsg,      setSebiMsg]      = useState('');
   const [saving,       setSaving]       = useState(false);
   const [err,          setErr]          = useState('');
+  // Username setting — only relevant when username not yet set
+  const [unInput,  setUnInput]  = useState('');
+  const [unStatus, setUnStatus] = useState('idle'); // idle|checking|available|taken|invalid
+  const [unSaving, setUnSaving] = useState(false);
+  const [unSaved,  setUnSaved]  = useState(!!username);  // true once set (or already set)
 
   useEffect(() => {
     if (!sql) return;
@@ -3992,6 +4003,29 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
     sql`SELECT value FROM app_settings WHERE key='sebi_verification_message' LIMIT 1`
       .then(rows => { if (rows[0]) setSebiMsg(rows[0].value); }).catch(() => {});
   }, []);
+
+  // Debounced username availability check
+  useEffect(() => {
+    if (!unInput) { setUnStatus('idle'); return; }
+    if (!USERNAME_RE.test(unInput)) { setUnStatus('invalid'); return; }
+    setUnStatus('checking');
+    const t = setTimeout(async () => {
+      const ok = await dbCheckUsername(unInput, userId);
+      setUnStatus(ok ? 'available' : 'taken');
+    }, 500);
+    return () => clearTimeout(t);
+  }, [unInput]);
+
+  const saveUsername = async () => {
+    if (unStatus !== 'available') return;
+    setUnSaving(true);
+    try {
+      await dbSaveUsername(userId, unInput);
+      patchProfile?.({ username: unInput });
+      setUnSaved(true);
+    } catch(e) { setErr('Could not save username: ' + e.message); }
+    setUnSaving(false);
+  };
 
   const isSebi = ['sebi_ra', 'sebi_ria'].includes(regStatus);
 
@@ -4080,20 +4114,58 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
             <input value={lastName}  onChange={e=>setLastName(e.target.value)}  placeholder="Last name"  style={darkInput}/>
           </div>
 
-          {/* Read-only username + email */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
-            {[{label:'Username',val:`@${username||'not set'}`},{label:'Email',val:profile?.email||''}].map((f,i)=>(
-              <div key={i}>
-                <div style={{fontSize:11,color:'rgba(255,255,255,.35)',marginBottom:6,
-                    display:'flex',alignItems:'center',gap:4,fontWeight:600}}>
-                  <Lock size={10}/> {f.label}<span style={{fontWeight:400,fontSize:10}}>(cannot be changed)</span>
-                </div>
-                <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',
-                    borderRadius:9,padding:'10px 13px',fontSize:13,color:'rgba(255,255,255,.4)',fontFamily:'inherit'}}>
-                  {f.val || <span style={{opacity:.4,fontStyle:'italic'}}>not set</span>}
-                </div>
+          {/* Username — settable if not yet set, locked once chosen */}
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
+                textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Username</div>
+            {(username || unSaved) ? (
+              <div style={{display:'flex',alignItems:'center',gap:8,background:'rgba(255,255,255,.04)',
+                  border:'1px solid rgba(255,255,255,.07)',borderRadius:9,padding:'10px 13px'}}>
+                <Lock size={13} color="rgba(255,255,255,.35)"/>
+                <span style={{fontSize:13,fontWeight:700,color:'rgba(255,255,255,.7)'}}>@{unSaved&&!username?unInput:username}</span>
+                <span style={{fontSize:11,color:'rgba(255,255,255,.3)',marginLeft:4}}>(cannot be changed)</span>
               </div>
-            ))}
+            ) : (
+              <>
+                <div style={{background:'rgba(251,191,36,.08)',border:'1px solid rgba(251,191,36,.2)',
+                    borderRadius:9,padding:'10px 13px',fontSize:12,color:'#fbbf24',marginBottom:10,lineHeight:1.5}}>
+                  ⚠ Choose carefully — username cannot be changed once set.
+                  It becomes part of your permanent public profile URL.
+                </div>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <div style={{flex:1,position:'relative'}}>
+                    <span style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',
+                        color:'rgba(255,255,255,.4)',pointerEvents:'none',fontSize:14}}>@</span>
+                    <input value={unInput}
+                      onChange={e=>setUnInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''))}
+                      maxLength={20} placeholder="your_username"
+                      style={{...darkInput,paddingLeft:28}}/>
+                  </div>
+                  <button className="btn btn-pri btn-sm" disabled={unStatus!=='available'||unSaving}
+                    onClick={saveUsername} style={{flexShrink:0,padding:'10px 16px'}}>
+                    {unSaving?<Loader size={13} className="spin"/>:<><Check size={13}/> Set</>}
+                  </button>
+                </div>
+                <div style={{marginTop:6,fontSize:12,minHeight:16}}>
+                  {unStatus==='checking'  && <span style={{color:'rgba(255,255,255,.4)',display:'flex',alignItems:'center',gap:5}}><Loader size={11} className="spin"/> Checking…</span>}
+                  {unStatus==='available' && <span style={{color:'#4ade80',display:'flex',alignItems:'center',gap:5}}><Check size={11}/> Available</span>}
+                  {unStatus==='taken'     && <span style={{color:'#f87171',display:'flex',alignItems:'center',gap:5}}><X size={11}/> Already taken — try another</span>}
+                  {unStatus==='invalid'   && <span style={{color:'#f87171',fontSize:11}}>5–20 chars, lowercase letters, numbers and underscores only</span>}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Read-only email */}
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:11,color:'rgba(255,255,255,.35)',marginBottom:6,
+                display:'flex',alignItems:'center',gap:4,fontWeight:600}}>
+              <Lock size={10}/> Email <span style={{fontWeight:400,fontSize:10}}>(cannot be changed)</span>
+            </div>
+            <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',
+                borderRadius:9,padding:'10px 13px',fontSize:13,color:'rgba(255,255,255,.4)',fontFamily:'inherit'}}>
+              {profile?.email || <span style={{opacity:.4,fontStyle:'italic'}}>not set</span>}
+            </div>
           </div>
 
           {/* Bio */}
