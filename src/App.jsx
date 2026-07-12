@@ -3462,17 +3462,24 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
   const renderContent=()=>{
     if(loading) return <div style={{textAlign:'center',padding:'60px 0',color:'var(--muted)'}}><Loader size={28} className="spin" style={{marginBottom:14}}/><div>Loading public investment record…</div></div>;
     if(notFound) return <div style={{textAlign:'center',padding:'60px 0'}}><Globe size={36} color="var(--muted)" style={{marginBottom:14}}/><div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Record not found</div><div className="muted small">@{username} hasn't set up a public profile yet.</div></div>;
+    if(!data) return null;
 
-    const { profile, summary, live, realized, sectors, recos } = data;
+    // Defensive defaults — guard against missing fields when user has no recommendations yet
+    const profile   = data.profile   || {};
+    const summary   = data.summary   || { total:0, closed:0, active:0, years_history:0 };
+    const live      = data.live      || { count:0, in_profit:0, in_loss:0, avg_return:0, avg_holding_days:0, best:null, worst:null };
+    const realized  = data.realized  || { count:0, hit_rate_pct:0, median_return:0, avg_return:0, avg_holding_days:0, win_count:0, loss_count:0, risk_adjusted:0, best:null };
+    const sectors   = data.sectors   || [];
+    const recos     = data.recos     || [];
     const displayName=[profile.first_name,profile.last_name].filter(Boolean).join(' ')||profile.full_name||username;
     const memberSince=profile.created_at?new Date(profile.created_at).toLocaleDateString('en-IN',{month:'short',year:'numeric'}):null;
 
     const ici=computeIci({
-      years_history:summary.years_history,
-      total:summary.total,
-      hit_rate_pct:realized.hit_rate_pct,
-      median_return:realized.median_return,
-      risk_adjusted_return:realized.risk_adjusted,
+      years_history:    Number(summary.years_history)  || 0,
+      total:            Number(summary.total)           || 0,
+      hit_rate_pct:     Number(realized.hit_rate_pct)  || 0,
+      median_return:    Number(realized.median_return)  || 0,
+      risk_adjusted_return: Number(realized.risk_adjusted) || 0,
     });
 
     const filteredRecos=recTab==='All'?recos:recos.filter(r=>r.status===recTab);
@@ -4186,6 +4193,7 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
 }
 
 
+function ProfileModal({ me, profile, updateProfile, patchProfile, onClose }) {
   const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 
   // ── Name ──────────────────────────────────────────────────────────────────
