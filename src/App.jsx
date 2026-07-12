@@ -408,6 +408,20 @@ const myPerm = (sharing,id) => { const c=sharing[id]; if(!c||c.visibility==="off
 const setMyPerm = (setSharing,id,val) => setSharing(s=>({ ...s, [id]:{ visibility: val==="off"?"off":"all", level: val==="full"?"full":"names", selected: s[id]?.selected||[] } }));
 const PermBadge = ({ p }) => p==="full" ? <span className="pill accent">Amounts & P&L</span> : p==="names" ? <span className="pill">Only names</span> : <span className="pill">Not shared</span>;
 
+/* ── useIsMobile — JS-driven responsive control (bypasses CSS media query issues) ── */
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width:768px)').matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width:768px)');
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return isMobile;
+}
+
 /* =================================================================== */
 export default function App() {
   const { user, role, setRole, userIsAdmin, logout, authLoading, profile, updateProfile, patchProfile } = useAuth();
@@ -442,6 +456,7 @@ export default function App() {
   const [notifOpen,     setNotifOpen]     = useState(false);
   const [profileOpen,   setProfileOpen]   = useState(false);
   const [navOpen,       setNavOpen]       = useState(false);
+  const isMobile = useIsMobile();
   const [connectConfirm, setConnectConfirm] = useState(null); // { name, username } after auto-connect
 
   // ── Hash routing — for public profile URLs (#/investor/username) ─────────────
@@ -739,7 +754,17 @@ export default function App() {
       <div className="shell">
         {/* Mobile nav backdrop — click to close drawer */}
         <div className={"nav-backdrop"+(navOpen?" open":"")} onClick={()=>setNavOpen(false)}/>
-        <div className={"sidebar"+(navOpen?" nav-open":"")}>
+        <div
+          className={"sidebar"+(navOpen?" nav-open":"")}
+          style={isMobile ? {
+            position:'fixed', top:0, left:0, zIndex:500,
+            width:'256px', height:'100vh',
+            overflowY:'auto', overflowX:'hidden',
+            transform: navOpen ? 'translateX(0)' : 'translateX(-100%)',
+            transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)',
+            boxShadow: navOpen ? '16px 0 48px rgba(0,0,0,.55)' : 'none',
+          } : {}}
+        >
           {/* Brand */}
           <div className="brand"><div className="mark" style={{fontSize:14,letterSpacing:'-.5px'}}>mic</div>
             <div><div className="nm">myInvestorCircle</div><div className="tag">Social Investing</div></div></div>
@@ -765,7 +790,12 @@ export default function App() {
           <div className="topbar">
             {/* Hamburger — mobile only, opens nav drawer */}
             {isInv && (
-              <button className="hamburger" onClick={()=>setNavOpen(v=>!v)} aria-label="Toggle menu">
+              <button
+                className="hamburger"
+                style={{display: isMobile ? 'inline-flex' : 'none'}}
+                onClick={()=>setNavOpen(v=>!v)}
+                aria-label="Toggle menu"
+              >
                 {navOpen ? <X size={20}/> : <Menu size={20}/>}
               </button>
             )}
@@ -910,7 +940,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch}/>}
+            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch}/>}
             {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
             {isInv && page==="network"   && <Network
                 connections={connections} setConnections={setConnections}
@@ -3284,6 +3314,7 @@ function SharePublicPopover({ reco, username, onClose, anchorEl }) {
 
 /* ─── Main PublicProfilePage ─────────────────────────────────────────────────── */
 function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
+  const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [notFound,    setNotFound]    = useState(false);
@@ -3502,15 +3533,17 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
               )}
             </div>
 
-            {/* ICI Widget — redesigned */}
+            {/* ICI Widget — JS-controlled responsive layout */}
             <div className="ici-panel" style={{
               background:'linear-gradient(145deg,#1c0d4a 0%,#160b3d 50%,#0f1130 100%)',
               border:'1px solid rgba(139,92,246,.6)',
               borderRadius:20,
               padding:'24px 26px',
-              minWidth:460,
-              flexShrink:0,
               boxShadow:'0 0 0 1px rgba(139,92,246,.15), 0 4px 24px rgba(109,93,245,.5), 0 16px 48px rgba(109,93,245,.3), inset 0 1px 0 rgba(255,255,255,.08)',
+              ...(isMobile
+                ? {flex:'0 0 100%', minWidth:0}
+                : {minWidth:460, flexShrink:0}
+              ),
             }}>
               {/* Header */}
               <div style={{fontSize:15,fontWeight:800,color:'#fff',letterSpacing:'-.2px',marginBottom:20,display:'flex',alignItems:'center',gap:8}}>
@@ -4622,7 +4655,7 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
 }
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
-function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch }) {
+function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
@@ -4686,8 +4719,21 @@ function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs
       </button>
     </div>
 
-    {/* ── Mobile-only Feed / Pulse tab bar (sticky, hidden on desktop) ── */}
-    <div className="mobile-tabs" role="tablist">
+    {/* ── Mobile-only Feed / Pulse tab bar — JS controlled, no CSS media query needed ── */}
+    <div
+      role="tablist"
+      style={{
+        display: isMobile ? 'flex' : 'none',
+        position: 'sticky', top: 0, zIndex: 190,
+        background: 'rgba(245,245,251,.97)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        borderBottom: '1px solid var(--line)',
+        margin: '0 -14px 16px',
+        padding: '0 14px',
+        gap: 4,
+      }}
+    >
       <button
         role="tab" aria-selected={mobileFeedTab==='feed'}
         className={'mobile-tab'+(mobileFeedTab==='feed'?' active':'')}
@@ -4706,8 +4752,11 @@ function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs
     {/* ── Two-column layout — both start at same height ── */}
     <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
 
-      {/* ── Feed column: hidden on mobile when Pulse tab is active ── */}
-      <div className={mobileFeedTab==='pulse'?'mob-hidden':''}  style={{flex:1,minWidth:0}}>
+      {/* ── Feed column: JS-controlled visibility on mobile ── */}
+      <div style={{
+        flex:1, minWidth:0,
+        display: isMobile && mobileFeedTab==='pulse' ? 'none' : undefined,
+      }}>
 
         {/* Feed cards — searched via top nav bar */}
         {visibleFeed.length===0
@@ -4744,8 +4793,12 @@ function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs
             </>)}
       </div>
 
-      {/* ── Pulse column: on desktop always visible at 252px; on mobile shown when Pulse tab active ── */}
-      <div className={`feed-right-sidebar${mobileFeedTab==='feed'?' mob-hidden':''}`} style={{width:252,flexShrink:0}}>
+      {/* ── Pulse column: desktop = fixed 252px aside; mobile = full-width, shown only on Pulse tab ── */}
+      <div style={{
+        width: isMobile ? '100%' : 252,
+        flexShrink: isMobile ? 1 : 0,
+        display: isMobile && mobileFeedTab==='feed' ? 'none' : undefined,
+      }}>
         {/* Widget #7 — Fresh from Network */}
         <FreshWidget recsReceived={recsReceived} contacts={contacts} setPage={setPage}/>
 
