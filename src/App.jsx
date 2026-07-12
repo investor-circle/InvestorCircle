@@ -751,6 +751,18 @@ export default function App() {
   return (
     <div className="app">
       <style>{STYLES}</style>
+      {/* ── DIAGNOSTIC BANNER — remove after confirming mobile works ── */}
+      {isInv && <div style={{
+        position:'fixed',bottom:12,left:'50%',transform:'translateX(-50%)',
+        background: isMobile ? '#15924e' : '#c2453d',
+        color:'#fff',padding:'6px 16px',borderRadius:999,
+        fontSize:13,fontWeight:700,zIndex:99999,
+        pointerEvents:'none',whiteSpace:'nowrap',
+        boxShadow:'0 2px 12px rgba(0,0,0,.3)',
+      }}>
+        v2 · {isMobile ? '📱 MOBILE' : '🖥 DESKTOP'} · w={typeof window!=='undefined'?window.innerWidth:'?'}px
+      </div>}
+      {/* ── END DIAGNOSTIC ── */}
       <div className="shell">
         {/* Mobile nav backdrop — click to close drawer */}
         <div className={"nav-backdrop"+(navOpen?" open":"")} onClick={()=>setNavOpen(false)}/>
