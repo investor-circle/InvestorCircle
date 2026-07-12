@@ -4926,7 +4926,7 @@ function AdminSeedData() {
     const profHdr = ['email','first_name','last_name','bio','avatar_color','registration_status','twitter_url','linkedin_url','telegram_url','instagram_url'];
     const profRows = [
       ['rahul@example.com','Rahul','Sharma','Long-term equity investor focused on quality compounders and secular growth themes','#6d5df5','self_directed','https://twitter.com/rahulsharma','https://linkedin.com/in/rahulsharma','',''],
-      ['priya@example.com','Priya','Mehta','Thematic investor with conviction in India's infrastructure and domestic consumption story','#15924e','self_directed','','https://linkedin.com/in/priyamehta','https://t.me/priyamehta','https://instagram.com/priyamehta'],
+      ['priya@example.com','Priya','Mehta','Thematic investor with conviction in India\'s infrastructure and domestic consumption story','#15924e','self_directed','','https://linkedin.com/in/priyamehta','https://t.me/priyamehta','https://instagram.com/priyamehta'],
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([profHdr,...profRows]), 'Profiles');
 
