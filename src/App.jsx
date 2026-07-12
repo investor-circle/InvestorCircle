@@ -374,6 +374,45 @@ const classColor = (c) => CLASS_COLOR[c] || "#8d90ad";
 
 const SPARK = [62,61,64,63,67,66,69,72,70,74,77,76,80,84,83,88,92,90,95,100];
 
+/* ── Public-profile navigation helpers ─────────────────────────────────────
+   fetchPublicProfileInfo(userId) queries username + SEBI status once per
+   session and caches the result so FeedCards/Contacts/Groups never fire N+1
+   requests.  openProfile / gotoUserProfile are the call-sites.
+   ─────────────────────────────────────────────────────────────────────────── */
+const _profileInfoCache = new Map(); // userId → { username, isSebiApproved }
+
+async function fetchPublicProfileInfo(userId) {
+  if (!sql || !userId) return null;
+  if (_profileInfoCache.has(userId)) return _profileInfoCache.get(userId);
+  try {
+    const rows = await sql`
+      SELECT username, registration_status, sebi_approval_status
+      FROM user_profiles WHERE id=${userId} LIMIT 1`;
+    if (rows[0]) {
+      const info = {
+        username:      rows[0].username || null,
+        isSebiApproved:
+          ['sebi_ra','sebi_ria'].includes(rows[0].registration_status) &&
+          rows[0].sebi_approval_status === 'approved',
+      };
+      _profileInfoCache.set(userId, info);
+      return info;
+    }
+  } catch(_) {}
+  return null;
+}
+
+/** Navigate to a public profile by username (hash-based routing). */
+function openProfile(username) {
+  if (username) window.location.hash = `#/investor/${username}`;
+}
+
+/** Look up username from userId then navigate — used for click handlers. */
+async function gotoUserProfile(userId) {
+  const info = await fetchPublicProfileInfo(userId);
+  if (info?.username) openProfile(info.username);
+}
+
 const fmt = (n) => "$" + Math.round(n).toLocaleString("en-US");
 const fmtSigned = (n) => (n>=0?"+":"-") + fmt(Math.abs(n));
 const fmtPct = (p) => (p >= 0 ? "+" : "") + (p * 100).toFixed(1) + "%";
@@ -1205,8 +1244,13 @@ function ContactsSection({ connections, setConnections, groups, sharing, setShar
     return (<React.Fragment key={c.connection_id}>
       <tr className={"hoverable"+(c.status!=="accepted"?" hiddenrow":"")} style={{cursor:"pointer"}} onClick={()=>setExpandId(open?null:c.connection_id)}>
         <td><div style={{display:"flex",gap:11,alignItems:"center"}}>
-          <Avatar f={av} size={36}/>
-          <div className="sym">{c.name}</div>
+          {/* Avatar + name: click opens public profile; rest of row click expands */}
+          <div style={{display:"flex",gap:11,alignItems:"center",cursor:"pointer"}}
+            title={`View ${c.name}'s public profile`}
+            onClick={e=>{e.stopPropagation(); gotoUserProfile(c.user_id);}}>
+            <Avatar f={av} size={36}/>
+            <div className="sym" style={{color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{c.name}</div>
+          </div>
           {c.status==="pending"&&c.direction==="sent"     && <span className="pill" style={{fontSize:11,background:"#f59e0b22",color:"#b45309"}}>Pending</span>}
           {c.status==="pending"&&c.direction==="received" && <span className="pill accent" style={{fontSize:11}}>Wants to connect</span>}
           {c.status==="rejected" && <span className="pill loss" style={{fontSize:11}}>Rejected</span>}
@@ -1465,9 +1509,16 @@ function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, 
             <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
               {(g.members||[]).filter(m=>m.status==="active").map(m=>(
                 <div key={m.user_id} style={{display:"flex",alignItems:"center",gap:8,background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10,padding:"6px 12px"}}>
-                  <Avatar f={avOf(m.user_id)} size={28}/>
-                  <div><div style={{fontWeight:600,fontSize:13}}>{m.name||nameOf(m.user_id)}</div>
-                    <div className="muted" style={{fontSize:11}}>{m.role==="admin"?"Admin":"Member"}</div></div>
+                  {/* Avatar + name: click opens public profile */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
+                    title={`View ${m.name||nameOf(m.user_id)}'s public profile`}
+                    onClick={()=>gotoUserProfile(m.user_id)}>
+                    <Avatar f={avOf(m.user_id)} size={28}/>
+                    <div>
+                      <div style={{fontWeight:600,fontSize:13,color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{m.name||nameOf(m.user_id)}</div>
+                      <div className="muted" style={{fontSize:11}}>{m.role==="admin"?"Admin":"Member"}</div>
+                    </div>
+                  </div>
                   {iAmAdmin && m.user_id!==myId && <button className="iconbtn danger" style={{marginLeft:4}} onClick={()=>doRemoveMember(g.id,m.user_id)}><X size={13}/></button>}
                   {!iAmAdmin && m.user_id===myId && <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)",marginLeft:4}} onClick={()=>doExitGroup(g)}>Exit</button>}
                 </div>
@@ -2054,7 +2105,13 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
                         </div>
                       </div>
                     </td>
-                    <td style={{fontSize:13}}>{rName}</td>
+                    <td style={{fontSize:13}}>
+                      {r.recommender_username
+                        ? <span style={{cursor:'pointer',color:'var(--accent-ink)',fontWeight:600,textDecoration:'underline',textDecorationStyle:'dotted',textUnderlineOffset:3}}
+                            title={`View ${rName}'s public profile`}
+                            onClick={()=>openProfile(r.recommender_username)}>{rName}</span>
+                        : <span style={{fontWeight:600}}>{rName}</span>}
+                    </td>
                     <td className="muted small nowrap">{new Date(r.tracked_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'})}</td>
                     <td style={{textAlign:'right'}} className="tnum">{r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:' —'}</td>
                     <td style={{textAlign:'right'}} className="tnum">
@@ -2305,7 +2362,15 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                     </td>
                     {/* Recommended by */}
                     <td style={{maxWidth:130}}>
-                      <div style={{fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{recName(r)}</div>
+                      <div
+                        style={{fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                          cursor:r.from?'pointer':'default',
+                          color:r.from?'var(--accent-ink)':'var(--ink)',
+                          textDecoration:r.from?'underline':'none',
+                          textDecorationStyle:'dotted',textUnderlineOffset:3}}
+                        title={r.from?`View ${recName(r)}'s public profile`:''}
+                        onClick={()=>r.from&&gotoUserProfile(r.from)}
+                      >{recName(r)}</div>
                       {isForwarded(r) && <div style={{fontSize:11,color:"var(--muted)",display:"flex",alignItems:"center",gap:3}}><Forward size={10}/> via {sharedByName(r)}</div>}
                     </td>
                     <td className="muted small nowrap">{fmtDate(r.date)}</td>
@@ -3394,6 +3459,11 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
   const [expandedId,  setExpandedId]  = useState(recoId||null);
   const expandedRef = useRef(null);
 
+  // Public URL — defined early so it's always in scope for both shells
+  const profileUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}`;
+  const copyLink   = () => navigator.clipboard.writeText(profileUrl)
+    .then(()=>{ setCopied(true); setTimeout(()=>setCopied(false), 2000); });
+
   // Profile editing state — covers all editable fields
   const [editing,          setEditing]          = useState(false);
   const [editFirstName,    setEditFirstName]    = useState('');
@@ -3502,15 +3572,6 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     await onRequestConnect(data.profile.id);
     setConnected(true);
     setConnecting(false);
-  };
-
-  // Public URL helpers — used in both standalone nav-bar and embedded page-head
-  const profileUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}`;
-  const copyLink   = ()=>{
-    navigator.clipboard.writeText(profileUrl).then(()=>{
-      setCopied(true);
-      setTimeout(()=>setCopied(false), 2000);
-    });
   };
 
   // ── Content renderer ──────────────────────────────────────────────────────
@@ -4656,9 +4717,15 @@ function RecoComments({ recoId, me }) {
 /* ─── FeedCard — single recommendation card for the homepage ────────────────────── */
 function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked, toggleTrack, initExpanded=false }) {
   const [expanded,  setExpanded]  = useState(initExpanded);
+  const [recommenderInfo, setRecommenderInfo] = useState(null); // { username, isSebiApproved }
   const [shareAnchor, setShareAnchor] = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
   const [showShare, setShowShare] = useState(false);
+
+  // Fetch recommender's username + SEBI status once (cached globally)
+  useEffect(()=>{
+    if(r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo);
+  },[r.from]);
 
   const cf = useMemo(()=>{
     const found = contacts.find(x=>x.id===r.from);
@@ -4671,33 +4738,31 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
   const itm = retPct >= 0;
   const isTracked = tracked?.has(r.id);
   const interactionCount = (r.likes||0)+(r.dislikes||0)+(r.invested?1:0)+(isTracked?1:0);
+  const canOpenProfile = !!recommenderInfo?.username;
 
-  // Patch a received reco optimistically
   const patch=(updates)=>{
     setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,...updates}:x));
-    if(sql&&r.deliveryId) {
-      try{ updateDelivery(r.deliveryId,updates,me?.id); }catch(_){}
-    }
+    if(sql&&r.deliveryId){ try{ updateDelivery(r.deliveryId,updates,me?.id); }catch(_){} }
   };
 
   const react=(val)=>{
     if(!me?.id) return;
     const next=r.reaction===val?'none':val;
     let likes=(r.likes||0), dislikes=(r.dislikes||0);
-    if(r.reaction==='like')    likes    = Math.max(0, likes-1);
-    if(r.reaction==='dislike') dislikes = Math.max(0, dislikes-1);
+    if(r.reaction==='like')    likes    = Math.max(0,likes-1);
+    if(r.reaction==='dislike') dislikes = Math.max(0,dislikes-1);
     if(next==='like')    likes++;
     if(next==='dislike') dislikes++;
-    // Update local state directly — null for 'none' avoids DB constraint violations
     setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes,dislikes}:x));
     if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
   };
 
   const handleShareClick=async(e)=>{
     if(showShare){ setShowShare(false); setShareAnchor(null); return; }
-    setShareAnchor(e.currentTarget);
-    setShowShare(true);
-    if(r.from&&sql&&!shareUsername){
+    setShareAnchor(e.currentTarget); setShowShare(true);
+    const cached=recommenderInfo?.username||null;
+    if(cached){ setShareUsername(cached); return; }
+    if(r.from&&sql){
       try{
         const rows=await sql`SELECT username FROM user_profiles WHERE id=${r.from} AND username IS NOT NULL LIMIT 1`;
         if(rows[0]?.username) setShareUsername(rows[0].username);
@@ -4705,63 +4770,81 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
     }
   };
 
-  const isBuy = (r.recommendation_type||r.recType||'Buy')==='Buy';
+  const isBuy=(r.recommendation_type||r.recType||'Buy')==='Buy';
+
+  // SEBI regulatory badge — shown after recommender info loads
+  const SebiBadge=()=>{
+    if(!recommenderInfo) return null;
+    return recommenderInfo.isSebiApproved
+      ? <span title="SEBI Registered Research Analyst or Investment Adviser — platform-verified"
+          style={{fontSize:9,fontWeight:800,padding:'2px 8px',borderRadius:4,background:'rgba(21,146,78,.12)',color:'var(--gain)',border:'1px solid rgba(21,146,78,.3)',textTransform:'uppercase',letterSpacing:'.05em',whiteSpace:'nowrap',flexShrink:0}}>
+          ✓ SEBI Reg.
+        </span>
+      : <span title="Not SEBI Registered — investing on own account"
+          style={{fontSize:9,fontWeight:700,padding:'2px 8px',borderRadius:4,background:'rgba(141,144,173,.08)',color:'var(--muted)',border:'1px solid rgba(141,144,173,.2)',textTransform:'uppercase',letterSpacing:'.05em',whiteSpace:'nowrap',flexShrink:0}}>
+          Non-SEBI
+        </span>;
+  };
 
   return (
-    <div
-      style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,boxShadow:'var(--shadow)',marginBottom:12,overflow:'visible',transition:'box-shadow .15s',cursor:'pointer'}}
+    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,boxShadow:'var(--shadow)',marginBottom:12,overflow:'visible',transition:'box-shadow .15s'}}
       onMouseEnter={e=>e.currentTarget.style.boxShadow='0 4px 20px rgba(20,20,50,.1)'}
-      onMouseLeave={e=>e.currentTarget.style.boxShadow='var(--shadow)'}
-    >
-      <div style={{padding:'16px 18px'}} onClick={()=>setExpanded(v=>!v)}>
+      onMouseLeave={e=>e.currentTarget.style.boxShadow='var(--shadow)'}>
+      <div style={{padding:'16px 18px'}}>
+
         {/* ── Header row ── */}
         <div style={{display:'flex',alignItems:'flex-start',gap:12,marginBottom:11}}>
-          {/* Avatar */}
-          <div className="av" style={{width:42,height:42,background:cf.color||'var(--grad)',fontSize:15,flexShrink:0}}>
+
+          {/* Avatar — click → profile */}
+          <div className="av"
+            style={{width:42,height:42,background:cf.color||'var(--grad)',fontSize:15,flexShrink:0,cursor:canOpenProfile?'pointer':'default'}}
+            title={canOpenProfile?`View ${cf.name}'s profile`:''}
+            onClick={()=>canOpenProfile&&openProfile(recommenderInfo.username)}>
             {cf.initials||initialsOf(cf.name)}
           </div>
-          {/* Name + meta */}
+
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:14,lineHeight:1.35,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-              <b style={{color:'var(--ink)'}}>{cf.name}</b>
+              {/* Name — click → profile */}
+              <b style={{color:canOpenProfile?'var(--accent-ink)':'var(--ink)',cursor:canOpenProfile?'pointer':'default',
+                  textDecoration:canOpenProfile?'underline':'none',textDecorationStyle:'dotted',textUnderlineOffset:3}}
+                title={canOpenProfile?`View ${cf.name}'s public profile`:''}
+                onClick={()=>canOpenProfile&&openProfile(recommenderInfo.username)}>{cf.name}</b>
               <span style={{color:'var(--muted)',fontWeight:400}}>recommended</span>
               <b style={{color:'var(--ink)'}}>{r.assetName}</b>
               <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:5,
-                background:isBuy?'var(--gain-soft)':'var(--loss-soft)',
-                color:isBuy?'var(--gain)':'var(--loss)'}}>
+                background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
                 {isBuy?'Buy':'Sell'}
               </span>
+              {/* Regulatory badge */}
+              <SebiBadge/>
             </div>
             <div style={{fontSize:12,color:'var(--muted)',marginTop:3,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <span>{fmtDate(r.date)}</span>
               {r.assetClass&&<span style={{display:'flex',alignItems:'center',gap:4}}><span className="dot" style={{background:classColor(r.assetClass),width:7,height:7}}/>{r.assetClass}</span>}
               {r.priceAt>0&&<span>Reco ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
-              {/* Sharing tag */}
               {r.isPublic
                 ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)',border:'1px solid rgba(21,146,78,.2)'}}>Public</span>
                 : r.shareType==='group'
-                  ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',border:'1px solid var(--accent-line)',display:'flex',alignItems:'center',gap:3}}><Layers size={10}/>{r.groupId ? (groups?.find?.(g=>g.id===r.groupId)?.name || 'Group') : 'Group'}</span>
+                  ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',border:'1px solid var(--accent-line)',display:'flex',alignItems:'center',gap:3}}><Layers size={10}/>{r.groupId?(groups?.find?.(g=>g.id===r.groupId)?.name||'Group'):'Group'}</span>
                   : <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--surface-2)',color:'var(--muted)',border:'1px solid var(--line)'}}>Direct</span>}
             </div>
           </div>
-          {/* Return badge */}
-          <div style={{textAlign:'right',flexShrink:0}}>
+
+          {/* Return badge — click to expand */}
+          <div style={{textAlign:'right',flexShrink:0,cursor:'pointer'}} onClick={()=>setExpanded(v=>!v)} title="Expand card">
             <div style={{fontSize:16,fontWeight:800,letterSpacing:'-.3px',color:itm?'var(--gain)':'var(--loss)'}}>
               {itm?'+':''}{(retPct*100).toFixed(1)}%
             </div>
-            <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>
-              ₹{Number(r.price).toLocaleString('en-IN')} now
-            </div>
+            <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>₹{Number(r.price).toLocaleString('en-IN')} now</div>
+            <div style={{fontSize:10,color:'var(--muted)',marginTop:2}}>{expanded?'▲':'▼'}</div>
           </div>
         </div>
 
-        {/* ── Thesis ── */}
+        {/* ── Thesis — click to expand ── */}
         {r.thesis&&r.thesis!=='—'&&(
-          <div style={{fontSize:13.5,color:'var(--ink-soft)',lineHeight:1.65,marginBottom:10,
-            display:expanded?'block':'-webkit-box',
-            WebkitLineClamp:2,WebkitBoxOrient:'vertical',
-            overflow:expanded?'visible':'hidden',
-          }}>
+          <div onClick={()=>setExpanded(v=>!v)} style={{fontSize:13.5,color:'var(--ink-soft)',lineHeight:1.65,marginBottom:10,cursor:'pointer',
+            display:expanded?'block':'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:expanded?'visible':'hidden'}}>
             {r.thesis}
           </div>
         )}
@@ -4778,76 +4861,44 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
 
         {/* ── Interaction bar ── */}
         <div style={{display:'flex',alignItems:'center',gap:5,paddingTop:10,borderTop:'1px solid var(--line)'}}>
-          {/* Like */}
-          <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={e=>{e.stopPropagation();react('like');}} style={{width:32,height:32}}>
-            <ThumbsUp size={14}/>
-          </button>
+          <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={e=>{e.stopPropagation();react('like');}} style={{width:32,height:32}}><ThumbsUp size={14}/></button>
           <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.likes||0}</span>
-
-          {/* Dislike */}
-          <button className={"iconbtn"+(r.reaction==='dislike'?' on-dislike':'')} title="Dislike" onClick={e=>{e.stopPropagation();react('dislike');}} style={{width:32,height:32}}>
-            <ThumbsDown size={14}/>
-          </button>
+          <button className={"iconbtn"+(r.reaction==='dislike'?' on-dislike':'')} title="Dislike" onClick={e=>{e.stopPropagation();react('dislike');}} style={{width:32,height:32}}><ThumbsDown size={14}/></button>
           <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.dislikes||0}</span>
-
-          {/* Comment */}
-          <button className="iconbtn" title="Comment" onClick={e=>{e.stopPropagation();setExpanded(v=>!v);}} style={{width:32,height:32}}>
-            <MessageSquare size={14}/>
-          </button>
-
-          {/* Share */}
+          <button className="iconbtn" title="Comment" onClick={()=>setExpanded(v=>!v)} style={{width:32,height:32}}><MessageSquare size={14}/></button>
           <div style={{position:'relative'}}>
-            <button className="iconbtn" title="Share" onClick={e=>{e.stopPropagation();handleShareClick(e);}} style={{width:32,height:32}}>
-              <Share2 size={14}/>
-            </button>
+            <button className="iconbtn" title="Share" onClick={e=>{e.stopPropagation();handleShareClick(e);}} style={{width:32,height:32}}><Share2 size={14}/></button>
             {showShare&&<ReceivedSharePopover reco={r} fromUsername={shareUsername} anchorEl={shareAnchor}
               onForward={()=>setShowShare(false)}
               onClose={()=>{ setShowShare(false); setShareAnchor(null); }}/>}
           </div>
-
-          {/* Track / Bookmark */}
-          <button
-            className={"iconbtn"+(isTracked?' on-like':'')}
-            title={isTracked?'Remove from tracked':'Track this recommendation'}
-            onClick={e=>{e.stopPropagation();toggleTrack?.(r.id);}}
+          <button className={"iconbtn"+(isTracked?' on-like':'')} title={isTracked?'Remove from tracked':'Track'}
+            onClick={()=>toggleTrack?.(r.id)}
             style={isTracked?{width:32,height:32,background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{width:32,height:32}}>
             <Bookmark size={14}/>
           </button>
-
-          {/* Interaction count badge */}
-          {interactionCount>0&&(
-            <span style={{fontSize:11,color:'var(--muted)',marginLeft:2}}>
-              ✦ {interactionCount} interaction{interactionCount!==1?'s':''}
-            </span>
-          )}
-
-          {/* Right: invested toggle + expand */}
+          {interactionCount>0&&<span style={{fontSize:11,color:'var(--muted)',marginLeft:2}}>✦ {interactionCount}</span>}
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
-            {/* Mark Invested toggle — auto-tracks on invest */}
             <InvestedToggle
-              invested={r.invested}
-              investedPrice={r.investedPrice||r.invested_price}
-              reco={{...r, price: r.price, ticker: r.ticker, assetName: r.assetName, priceAt: r.priceAt}}
+              invested={r.invested} investedPrice={r.investedPrice||r.invested_price}
+              reco={{...r,price:r.price,ticker:r.ticker,assetName:r.assetName,priceAt:r.priceAt}}
               onMark={(price)=>{
                 patch({isInvested:true,investedPrice:price,invested:true});
-                if(sql && me?.id) {
-                  sql`INSERT INTO recommendation_tracking (reco_id, user_id, is_invested, invested_price, invested_at)
-                      VALUES (${r.id}, ${me.id}, true, ${price}, now())
-                      ON CONFLICT (reco_id, user_id) DO UPDATE SET
-                        is_invested=true, invested_price=${price}, invested_at=now()`
-                    .then(()=>{ if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id); })
-                    .catch(()=>{ if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id); });
-                } else if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id);
+                if(sql&&me?.id){
+                  sql`INSERT INTO recommendation_tracking(reco_id,user_id,is_invested,invested_price,invested_at)
+                      VALUES(${r.id},${me.id},true,${price},now())
+                      ON CONFLICT(reco_id,user_id) DO UPDATE SET is_invested=true,invested_price=${price},invested_at=now()`
+                    .then(()=>{ if(toggleTrack&&tracked&&!tracked.has(r.id)) toggleTrack(r.id); })
+                    .catch(()=>{ if(toggleTrack&&tracked&&!tracked.has(r.id)) toggleTrack(r.id); });
+                } else if(toggleTrack&&tracked&&!tracked.has(r.id)) toggleTrack(r.id);
               }}
               onUnmark={()=>{
                 patch({isInvested:false,investedPrice:null,invested:false});
-                if(sql && me?.id) sql`UPDATE recommendation_tracking SET is_invested=false, invested_price=null, invested_at=null WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(console.warn);
+                if(sql&&me?.id) sql`UPDATE recommendation_tracking SET is_invested=false,invested_price=null,invested_at=null WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(console.warn);
               }}
               stopProp={true}
             />
-
-            <button onClick={e=>{e.stopPropagation();setExpanded(v=>!v);}}
-              style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:12,color:'var(--accent-ink)',fontWeight:700,fontFamily:'var(--font)',padding:'4px 8px',borderRadius:8,transition:'.12s'}}>
+            <button onClick={()=>setExpanded(v=>!v)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:12,color:'var(--accent-ink)',fontWeight:700,fontFamily:'var(--font)',padding:'4px 8px',borderRadius:8}}>
               {expanded?'Less':'More'}<ChevronDown size={14} style={{transform:expanded?'rotate(180deg)':'none',transition:'.15s'}}/>
             </button>
           </div>
@@ -4857,7 +4908,6 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
       {/* ── Expanded detail + comments ── */}
       {expanded&&(
         <div style={{borderTop:'1px solid var(--line)',padding:'16px 18px',background:'var(--surface-2)',borderRadius:'0 0 18px 18px'}}>
-          {/* Meta grid */}
           <div style={{display:'flex',gap:22,flexWrap:'wrap',marginBottom:14}}>
             <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
             {r.assetClass&&<div><div className="cap">Class</div><ClassTag c={r.assetClass}/></div>}
@@ -4868,14 +4918,12 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
             {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
             {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
           </div>
-          {/* Full thesis */}
           {r.thesis&&r.thesis!=='—'&&(
             <div style={{marginBottom:16}}>
               <div className="cap" style={{marginBottom:5}}>Thesis</div>
               <div style={{fontSize:13,lineHeight:1.7,color:'var(--ink-soft)'}}>{r.thesis}</div>
             </div>
           )}
-          {/* Comments */}
           <div style={{borderTop:'1px solid var(--line)',paddingTop:14}}>
             <div className="cap" style={{marginBottom:10}}>Comments</div>
             <RecoComments recoId={r.id} me={me}/>
@@ -4885,8 +4933,6 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
     </div>
   );
 }
-
-/* ─── Feed Scoring ────────────────────────────────────────────────────────────── */
 function scoreFeedRec(r, tracked, cfg) {
   let score = 0;
   // Source base score
