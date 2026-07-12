@@ -3488,6 +3488,31 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     setEditing(false);
   };
 
+  // Connection status relative to the viewer
+  const profileUserId = data?.profile?.id;
+  const connStatus = useMemo(()=>{
+    if(!profileUserId||!viewerConnections?.length) return 'none';
+    const c = viewerConnections.find(c=>c.user_id===profileUserId);
+    return c?.status||'none';
+  },[profileUserId, viewerConnections]);
+  useEffect(()=>{ if(connStatus==='accepted') setConnected(true); },[connStatus]);
+
+  const handleConnect = async()=>{
+    setConnecting(true);
+    await onRequestConnect(data.profile.id);
+    setConnected(true);
+    setConnecting(false);
+  };
+
+  // Public URL helpers — used in both standalone nav-bar and embedded page-head
+  const profileUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}`;
+  const copyLink   = ()=>{
+    navigator.clipboard.writeText(profileUrl).then(()=>{
+      setCopied(true);
+      setTimeout(()=>setCopied(false), 2000);
+    });
+  };
+
   // ── Content renderer ──────────────────────────────────────────────────────
   const renderContent=()=>{
     if(loading) return <div style={{textAlign:'center',padding:'60px 0',color:'var(--muted)'}}><Loader size={28} className="spin" style={{marginBottom:14}}/><div>Loading public investment record…</div></div>;
