@@ -685,24 +685,26 @@ export default function App() {
     const pubRecoId   = publicMatch[2] || null;
     return (
       <div className="app"><style>{STYLES}</style>
-        <PublicProfilePage
-          username={pubUsername}
-          recoId={pubRecoId}
-          viewerUser={user}
-          viewerConnections={connections}
-          mode="standalone"
-          onBack={()=>{ window.location.hash=""; }}
-          onRequestConnect={async(targetId)=>{
-            if (!user) {
-              sessionStorage.setItem("pending_connect_username", pubUsername);
-              window.location.hash="";
-              return;
-            }
-            await sendConnectionRequest(user.uid, targetId);
-            const c = await getMyConnections(user.uid);
-            setConnections(c);
-          }}
-        />
+        <ProfileErrorBoundary>
+          <PublicProfilePage
+            username={pubUsername}
+            recoId={pubRecoId}
+            viewerUser={user}
+            viewerConnections={connections}
+            mode="standalone"
+            onBack={()=>{ window.location.hash=""; }}
+            onRequestConnect={async(targetId)=>{
+              if (!user) {
+                sessionStorage.setItem("pending_connect_username", pubUsername);
+                window.location.hash="";
+                return;
+              }
+              await sendConnectionRequest(user.uid, targetId);
+              const c = await getMyConnections(user.uid);
+              setConnections(c);
+            }}
+          />
+        </ProfileErrorBoundary>
       </div>
     );
   }
@@ -963,16 +965,18 @@ export default function App() {
             {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/>}
             {isInv && page==="trackrecord" && (
               ME.username
-                ? <PublicProfilePage
-                    username={ME.username}
-                    viewerUser={user}
-                    viewerConnections={connections}
-                    mode="embedded"
-                    isOwnProfile
-                    patchProfile={patchProfile}
-                    onRequestConnect={()=>{}}
-                    onBack={()=>setPage("home")}
-                  />
+                ? <ProfileErrorBoundary key={ME.username}>
+                    <PublicProfilePage
+                      username={ME.username}
+                      viewerUser={user}
+                      viewerConnections={connections}
+                      mode="embedded"
+                      isOwnProfile
+                      patchProfile={patchProfile}
+                      onRequestConnect={()=>{}}
+                      onBack={()=>setPage("home")}
+                    />
+                  </ProfileErrorBoundary>
                 : <div style={{maxWidth:520}}>
                     <div className="page-head"><div>
                       <div className="eyebrow">Track Record</div>
@@ -3489,6 +3493,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     if(loading) return <div style={{textAlign:'center',padding:'60px 0',color:'var(--muted)'}}><Loader size={28} className="spin" style={{marginBottom:14}}/><div>Loading public investment record…</div></div>;
     if(notFound) return <div style={{textAlign:'center',padding:'60px 0'}}><Globe size={36} color="var(--muted)" style={{marginBottom:14}}/><div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Record not found</div><div className="muted small">@{username} hasn't set up a public profile yet.</div></div>;
     if(!data) return null;
+    try {
 
     // Nullish-coalescing defaults (??) — handles null AND undefined from DB.
     // Spread-merge ({ ...defaults, ...(data.x||{}) }) fails because DB null values
@@ -3864,7 +3869,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
                   <ScoreBox val={<RetBadge pct={realized.avg_return}/>} label="Avg Return" mobile={isMobile}/>
                   <ScoreBox val={`${realized.avg_holding_days||0}d`} label="Avg Holding" mobile={isMobile}/>
                   <ScoreBox val={`${realized.win_count}/${realized.loss_count}`} label="Win/Loss" mobile={isMobile}/>
-                  <ScoreBox val={isNaN(realized.risk_adjusted)?'—':Number(realized.risk_adjusted).toFixed(2)} label="Risk-Adj." mobile={isMobile}/>
+                  <ScoreBox val={(isNaN(realized.risk_adjusted)||!isFinite(realized.risk_adjusted))?'—':Number(realized.risk_adjusted).toFixed(2)} label="Risk-Adj." mobile={isMobile}/>
                 </div>
                 {realized.best&&<div style={{padding:'9px 12px',background:'var(--gain-soft)',borderRadius:9,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
                   <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>Best Closed Trade</span>
@@ -4000,6 +4005,23 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
         </div>
       </>
     );
+    } catch(renderErr) {
+      console.error('PublicProfile renderContent error:', renderErr);
+      return (
+        <div style={{padding:'40px 24px',textAlign:'center'}}>
+          <AlertTriangle size={32} color="var(--loss)" style={{marginBottom:14}}/>
+          <div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Profile failed to render</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:16}}>
+            An error occurred while building your profile view.
+          </div>
+          <div style={{background:'var(--surface-2)',border:'1px solid var(--loss)',borderRadius:10,
+              padding:'12px 16px',fontSize:12,fontFamily:'monospace',color:'var(--loss)',
+              textAlign:'left',maxWidth:560,margin:'0 auto',wordBreak:'break-all'}}>
+            {renderErr.message}
+          </div>
+        </div>
+      );
+    }
   };
 
   // ── Shell wrappers ──────────────────────────────────────────────────────────
@@ -4016,7 +4038,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
             ?<button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
             :<a href={window.location.pathname} style={{fontSize:13,fontWeight:600,color:'var(--accent)',textDecoration:'none'}}>Sign in →</a>}
         </div>
-        <div style={{padding:'20px 20px 0'}}><ProfileErrorBoundary>{renderContent()}</ProfileErrorBoundary></div>
+        <div style={{padding:'20px 20px 0'}}>{renderContent()}</div>
       </div>
     );
   }
@@ -4032,7 +4054,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
         </>}
       </div>
     </div>
-    <ProfileErrorBoundary>{renderContent()}</ProfileErrorBoundary>
+    {renderContent()}
   </>);
 }
 
