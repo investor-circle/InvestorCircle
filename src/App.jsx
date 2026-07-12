@@ -6886,7 +6886,7 @@ function AboutPage() {
             <Loader size={24} className="spin" style={{marginBottom:12}}/>
             <div>Loading…</div>
           </div>
-        : <div style={{maxWidth:740}}>
+        : <div>
             <div className="card">
               <div className="card-body" style={{padding:'32px 36px'}}>
                 <div
@@ -6978,7 +6978,7 @@ function AdminAboutEditor() {
                 </div>
               </div>
             </>
-          : <div style={{maxWidth:740}}>
+          : <div>
               <div className="note ok" style={{marginBottom:14}}>
                 <Eye size={15}/>
                 <div>This is a live preview of how the About MIC page will look to investors after you save.</div>
@@ -6995,25 +6995,30 @@ function AdminAboutEditor() {
 }
 
 /* =================================================================== CONTACT PAGE */
-/*
-  DB tables required (run once in your Neon SQL console):
+/* Module-level style + sub-component so React never recreates them on re-render.
+   Defining components INSIDE a render function causes React to unmount+remount
+   them every state change, which is why typing caused focus to jump out. */
+const contactInputSt = {
+  width:'100%', border:'1px solid var(--line-2)', borderRadius:10,
+  padding:'11px 14px', fontSize:14, outline:'none', fontFamily:'var(--font)',
+  background:'var(--surface)', color:'var(--ink)', transition:'.12s',
+};
 
-  CREATE TABLE IF NOT EXISTS contact_submissions (
-    id SERIAL PRIMARY KEY,
-    name TEXT, email TEXT NOT NULL, subject TEXT NOT NULL,
-    category TEXT, message TEXT NOT NULL, user_id TEXT,
-    status TEXT DEFAULT 'new', created_at TIMESTAMPTZ DEFAULT NOW()
+function ContactFormField({ label, req, children }) {
+  return (
+    <div>
+      <label style={{fontSize:11,fontWeight:800,letterSpacing:'.6px',color:'var(--muted)',
+        display:'block',marginBottom:6,textTransform:'uppercase'}}>
+        {label}{req && <span style={{color:'var(--accent)',marginLeft:3}}>*</span>}
+      </label>
+      {children}
+    </div>
   );
+}
 
-  CREATE TABLE IF NOT EXISTS feature_votes (
-    feature_key TEXT PRIMARY KEY,
-    vote_count INTEGER DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  If the tables don't exist the form gracefully falls back to a mailto link.
-*/
 function ContactPage({ setPage }) {
   const isMobile = useIsMobile();
+  const categoryRef = useRef(null); // used by "Share an idea" button to scroll + auto-select
 
   /* ── form state ── */
   const [name,     setName]     = useState('');
@@ -7035,19 +7040,21 @@ function ContactPage({ setPage }) {
   const [voteOk,    setVoteOk]    = useState(false);
 
   const CATEGORIES = [
-    { key:'bug',        label:'Report a Bug',              emoji:'🐛', color:'#c2453d', bg:'#fef2f2' },
-    { key:'feature',    label:'Suggest a Feature',          emoji:'💡', color:'#6d5df5', bg:'#eeecff' },
-    { key:'question',   label:'Ask a Question',             emoji:'❓', color:'#0284c7', bg:'#e0f2fe' },
-    { key:'partner',    label:'Partnerships',               emoji:'🤝', color:'#15924e', bg:'#ecfdf5' },
-    { key:'media',      label:'Media & Press',              emoji:'📰', color:'#b45309', bg:'#fffbeb' },
-    { key:'misleading', label:'Report Misleading Content',  emoji:'⚠️', color:'#b45309', bg:'#fffbeb' },
-    { key:'abuse',      label:'Report Abuse / Fake Profile',emoji:'🚫', color:'#c2453d', bg:'#fef2f2' },
+    { key:'bug',        label:'Report a Bug',                  emoji:'🐛', color:'#c2453d', bg:'#fef2f2' },
+    { key:'feature',    label:'Suggest a Feature or Idea',     emoji:'💡', color:'#6d5df5', bg:'#eeecff' },
+    { key:'question',   label:'Ask a Question',                emoji:'❓', color:'#0284c7', bg:'#e0f2fe' },
+    { key:'partner',    label:'Partnerships',                  emoji:'🤝', color:'#15924e', bg:'#ecfdf5' },
+    { key:'media',      label:'Media & Press',                 emoji:'📰', color:'#b45309', bg:'#fffbeb' },
+    { key:'misleading', label:'Report Misleading Content',     emoji:'⚠️', color:'#b45309', bg:'#fffbeb' },
+    { key:'abuse',      label:'Report Abuse / Fake Profile',   emoji:'🚫', color:'#c2453d', bg:'#fef2f2' },
+    { key:'other',      label:'Others',                        emoji:'✍️', color:'#8d90ad', bg:'var(--surface-2)' },
   ];
 
   const SUBJECT_MAP = {
-    bug:'Bug Report', feature:'Feature Suggestion', question:'Question',
+    bug:'Bug Report', feature:'Feature / Idea Suggestion', question:'Question',
     partner:'Partnership Inquiry', media:'Media & Press',
     misleading:'Report: Misleading Content', abuse:'Report: Abuse / Fake Profile',
+    other:'General Enquiry',
   };
 
   const FEATURES = [
@@ -7063,11 +7070,11 @@ function ContactPage({ setPage }) {
     { q:'Can I edit my recommendation after publishing?',
       a:'No. Recommendations are immutable to maintain transparency. You can publish follow-up updates or formally close a recommendation — but the original call stays on record.' },
     { q:'Can I delete my recommendations?',
-      a:'No. Investor Circle is designed to maintain a permanent, transparent historical record. Once a recommendation is published it becomes part of your public track record.' },
-    { q:'Are users on Investor Circle verified?',
-      a:'Some profiles display SEBI registration status. Unless explicitly shown on a user\'s profile, Investor Circle does not verify that a user is registered with SEBI or any other regulatory authority.' },
+      a:'No. My Investor Circle is designed to maintain a permanent, transparent historical record. Once a recommendation is published it becomes part of your public track record.' },
+    { q:'Are users on My Investor Circle verified?',
+      a:'Some profiles display SEBI registration status. Unless explicitly shown on a user\'s profile, My Investor Circle does not verify that a user is registered with SEBI or any other regulatory authority.' },
     { q:'Do you provide investment advice?',
-      a:'No. Investor Circle is a technology platform where users share their own investment ideas and build public track records. We do not provide personalised investment advice or recommend any securities.' },
+      a:'No. My Investor Circle is a technology platform where users share their own investment ideas and build public track records. We do not provide personalised investment advice or recommend any securities.' },
     { q:'How is my data used?',
       a:'We only use your data to operate the platform and never sell it to third parties. Recommendations you mark as Public are visible to anyone. Private recommendations are visible only to the people you share them with.' },
     { q:'How do I set up my public profile?',
@@ -7116,25 +7123,18 @@ function ContactPage({ setPage }) {
     if (!saved) {
       // Graceful fallback: open mailto
       const bod = encodeURIComponent(`Name: ${name||'—'}\n\n${message}`);
-      window.open(`mailto:support@investorcircle.in?subject=${encodeURIComponent(subject)}&body=${bod}`);
+      window.open(`mailto:myinvestorcircle@gmail.com?subject=${encodeURIComponent(subject)}&body=${bod}`);
     }
     setSent(true); setSending(false);
   };
 
   /* ── small inline components ── */
-  const Inp = ({label, req, children}) => (
-    <div>
-      <label style={{fontSize:11,fontWeight:800,letterSpacing:'.6px',color:'var(--muted)',display:'block',marginBottom:6,textTransform:'uppercase'}}>
-        {label}{req&&<span style={{color:'var(--accent)',marginLeft:3}}>*</span>}
-      </label>
-      {children}
-    </div>
-  );
-  const inputSt = {width:'100%',border:'1px solid var(--line-2)',borderRadius:10,padding:'11px 14px',fontSize:14,outline:'none',fontFamily:'var(--font)',background:'var(--surface)',color:'var(--ink)',transition:'.12s'};
+  // ContactFormField and contactInputSt are defined at module level above ContactPage
+  // to prevent React remounting them on every state change (which caused focus loss)
 
   const formSection = (
     <div className="card" id="contact-form">
-      <div className="card-head" style={{gap:8}}><Send size={15}/> Send us a message</div>
+      <div className="card-head" style={{justifyContent:'flex-start',gap:8}}><Send size={15}/> Send us a message</div>
       <div className="card-body" style={{display:'flex',flexDirection:'column',gap:16}}>
         {sent
           ? <div style={{textAlign:'center',padding:'28px 12px'}}>
@@ -7147,19 +7147,19 @@ function ContactPage({ setPage }) {
               </button>
             </div>
           : <>
-              <Inp label="Name" req={false}>
-                <input style={inputSt} value={name} placeholder="Your name" onChange={e=>setName(e.target.value)}/>
-              </Inp>
-              <Inp label="Email Address" req>
-                <input style={inputSt} type="email" value={email} placeholder="you@example.com" onChange={e=>setEmail(e.target.value)}/>
-              </Inp>
-              <Inp label="Subject" req>
-                <input style={inputSt} value={subject} placeholder="What's this about?" onChange={e=>setSubject(e.target.value)}/>
-              </Inp>
-              <Inp label="Message" req>
-                <textarea style={{...inputSt,resize:'vertical',lineHeight:1.7}} rows={5} value={message}
+              <ContactFormField label="Name" req={false}>
+                <input style={contactInputSt} value={name} placeholder="Your name" onChange={e=>setName(e.target.value)}/>
+              </ContactFormField>
+              <ContactFormField label="Email Address" req>
+                <input style={contactInputSt} type="email" value={email} placeholder="you@example.com" onChange={e=>setEmail(e.target.value)}/>
+              </ContactFormField>
+              <ContactFormField label="Subject" req>
+                <input style={contactInputSt} value={subject} placeholder="What's this about?" onChange={e=>setSubject(e.target.value)}/>
+              </ContactFormField>
+              <ContactFormField label="Message" req>
+                <textarea style={{...contactInputSt,resize:'vertical',lineHeight:1.7}} rows={5} value={message}
                   placeholder="Tell us what's on your mind…" onChange={e=>setMessage(e.target.value)}/>
-              </Inp>
+              </ContactFormField>
               {formErr && <div style={{fontSize:13,color:'var(--loss)',display:'flex',alignItems:'center',gap:6}}><AlertTriangle size={13}/>{formErr}</div>}
               <button className="btn btn-pri" disabled={sending} onClick={sendForm} style={{alignSelf:'flex-start',gap:7}}>
                 {sending?<><Loader size={14} className="spin"/>Sending…</>:<><Send size={14}/>Send Message</>}
@@ -7274,7 +7274,7 @@ function ContactPage({ setPage }) {
 
           {/* Get in touch */}
           <div className="card">
-            <div className="card-head" style={{gap:8}}><Mail size={15}/> Get in touch</div>
+            <div className="card-head" style={{justifyContent:'flex-start',gap:8}}><Mail size={15}/> Get in touch</div>
             <div className="card-body">
               <div style={{display:'flex',alignItems:'center',gap:14}}>
                 <div style={{width:44,height:44,borderRadius:12,background:'var(--accent-soft)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
@@ -7282,9 +7282,9 @@ function ContactPage({ setPage }) {
                 </div>
                 <div>
                   <div style={{fontSize:12,color:'var(--muted)',fontWeight:600,marginBottom:3,textTransform:'uppercase',letterSpacing:'.5px'}}>Email</div>
-                  <a href="mailto:support@investorcircle.in"
+                  <a href="mailto:myinvestorcircle@gmail.com"
                     style={{fontSize:15,fontWeight:700,color:'var(--accent-ink)',textDecoration:'none'}}>
-                    support@investorcircle.in
+                    myinvestorcircle@gmail.com
                   </a>
                 </div>
               </div>
@@ -7295,8 +7295,8 @@ function ContactPage({ setPage }) {
           </div>
 
           {/* Category picker */}
-          <div className="card">
-            <div className="card-head">What can we help with?</div>
+          <div className="card" ref={categoryRef}>
+            <div className="card-head" style={{justifyContent:'flex-start'}}>What can we help with?</div>
             <div className="card-body">
               <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:9}}>
                 {CATEGORIES.map(cat => {
@@ -7346,10 +7346,13 @@ function ContactPage({ setPage }) {
             Community First 🤝
           </div>
           <div style={{fontSize:14,lineHeight:1.8,color:'rgba(255,255,255,.88)'}}>
-            Investor Circle is being built in public. We're constantly improving based on community feedback. If you have an idea that would make Investor Circle more useful for investors, we'd genuinely love to hear it.
+            My Investor Circle is being built in public. We're constantly improving based on community feedback. If you have an idea that would make My Investor Circle more useful for investors, we'd genuinely love to hear it.
           </div>
         </div>
-        <button onClick={()=>document.getElementById('contact-form')?.scrollIntoView({behavior:'smooth'})}
+        <button onClick={()=>{
+            pickCategory('feature');
+            setTimeout(()=>{ categoryRef.current?.scrollIntoView({behavior:'smooth',block:'start'}); }, 50);
+          }}
           style={{background:'rgba(255,255,255,.18)',color:'#fff',border:'2px solid rgba(255,255,255,.35)',
             borderRadius:12,padding:'11px 22px',fontWeight:700,fontSize:14,cursor:'pointer',
             fontFamily:'var(--font)',backdropFilter:'blur(6px)',whiteSpace:'nowrap',flexShrink:0,
@@ -7361,11 +7364,6 @@ function ContactPage({ setPage }) {
       {/* ── Page footer links ── */}
       <div style={{marginTop:28,paddingTop:18,borderTop:'1px solid var(--line)',display:'flex',gap:24,
           flexWrap:'wrap',justifyContent:'center',alignItems:'center'}}>
-        <a href="mailto:support@investorcircle.in"
-          style={{fontSize:13,color:'var(--muted)',textDecoration:'none',fontWeight:500,display:'flex',alignItems:'center',gap:5}}>
-          <Mail size={13}/>Email us
-        </a>
-        <span style={{color:'var(--line-2)'}}>·</span>
         <button onClick={()=>setPage?.('about')} style={{background:'none',border:'none',cursor:'pointer',
           fontSize:13,color:'var(--muted)',fontWeight:500,fontFamily:'var(--font)',padding:0}}>
           About MIC
