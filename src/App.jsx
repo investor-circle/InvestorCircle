@@ -8,7 +8,7 @@ import {
   List, Table as TableIcon, Mail, UserPlus, Calendar, Crown,
   ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
   Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil, Database,
-  Globe, Trophy, Copy, ExternalLink, ArrowLeft, Link, Flame
+  Globe, Trophy, Copy, ExternalLink, ArrowLeft, Link, Flame, Info
 } from "lucide-react";
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
@@ -236,6 +236,27 @@ tr.hiddenrow > td{opacity:.55;}
 .nowrap{white-space:nowrap;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
 
+/* ─── About page content renderer ─────────────────────────────────────────── */
+.ql-content h1{font-size:26px;font-weight:800;letter-spacing:-.5px;color:var(--ink);margin:0 0 20px;}
+.ql-content h2{font-size:20px;font-weight:700;letter-spacing:-.3px;color:var(--ink);margin:0 0 16px;}
+.ql-content h3{font-size:16px;font-weight:700;color:var(--ink);margin:0 0 12px;}
+.ql-content p{font-size:15px;line-height:1.85;color:var(--ink-soft);margin:0 0 14px;}
+.ql-content ul,.ql-content ol{padding-left:22px;margin:0 0 14px;}
+.ql-content li{font-size:15px;line-height:1.85;color:var(--ink-soft);margin-bottom:6px;}
+.ql-content blockquote{border-left:4px solid var(--accent);padding:14px 20px;margin:16px 0;background:var(--accent-soft);border-radius:0 10px 10px 0;font-style:italic;}
+.ql-content strong{font-weight:700;}
+.ql-content a{color:var(--accent-ink);text-decoration:underline;}
+
+/* ─── Rich text editor toolbar ─────────────────────────────────────────────── */
+.rte-toolbar{background:var(--surface-2);border-bottom:1px solid var(--line);padding:8px 12px;display:flex;gap:5px;flex-wrap:wrap;align-items:center;}
+.rte-btn{height:30px;min-width:30px;border:1px solid var(--line-2);border-radius:6px;background:var(--surface);color:var(--ink);cursor:pointer;font-family:var(--font);font-size:13px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;padding:0 7px;transition:.1s;}
+.rte-btn:hover{background:var(--surface-2);border-color:var(--accent);}
+.rte-btn.active{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent);}
+.rte-sep{width:1px;height:22px;background:var(--line-2);margin:0 3px;flex-shrink:0;}
+.rte-select{height:30px;border:1px solid var(--line-2);border-radius:6px;padding:0 8px;font-size:12px;cursor:pointer;background:var(--surface);color:var(--ink);font-family:var(--font);}
+.rte-area{min-height:420px;padding:22px 26px;outline:none;font-size:15px;line-height:1.85;color:var(--ink);font-family:var(--font);overflow-y:auto;}
+.rte-area:empty:before{content:attr(data-placeholder);color:var(--muted);pointer-events:none;}
+
 /* ─── MOBILE RESPONSIVE (investors only — admin panel stays desktop) ─── */
 
 /* Hamburger button: hidden on desktop, shown on mobile */
@@ -373,6 +394,28 @@ const classColor = (c) => CLASS_COLOR[c] || "#8d90ad";
 
 
 const SPARK = [62,61,64,63,67,66,69,72,70,74,77,76,80,84,83,88,92,90,95,100];
+
+/* ── About MIC — default page content (stored/overridden via app_settings) ── */
+const ABOUT_DEFAULT_HTML = `
+<h2 style="font-size:24px;font-weight:800;letter-spacing:-.5px;color:#13142b;margin:0 0 24px;">About My Investor Circle (MIC)</h2>
+
+<p style="font-size:15px;line-height:1.85;color:#565a78;margin:0 0 18px;">If you've ever come across a stock recommendation on X, Instagram, Telegram or YouTube and wondered, <strong style="color:#13142b;">"Can I really trust this?"</strong> — you're not alone. We asked ourselves the same question. In a world overflowing with market opinions, it's surprisingly difficult to find one simple thing: a transparent, accountable history. What calls has this person made in the past? How did they perform? Were the bad ones still visible, or only the winning calls? We realised there was no easy way to find out.</p>
+
+<p style="font-size:15px;line-height:1.85;color:#565a78;margin:0 0 18px;">That's exactly why we built My Investor Circle. We wanted a place where every investment <em>idea leaves a permanent record — no disappearing posts, no cherry-picked success stories.</em> Just a transparent history of recommendations, their outcomes, and the data that helps you decide who has genuinely earned your trust. Whether someone has 500 followers or 5 million shouldn't matter — what matters is their track record.</p>
+
+<div style="background:#f5f3ff;border-left:4px solid #6d5df5;border-radius:0 12px 12px 0;padding:20px 24px;margin:24px 0;">
+  <p style="font-size:15px;line-height:1.85;color:#13142b;margin:0 0 12px;"><strong>MIC is a community</strong> built for investors and market enthusiasts to share investment ideas, learn from each other, and build a transparent public track record over time. We don't tell you what to buy or sell, and we don't endorse or certify any individual, investment idea, or strategy. Our goal is simply to make it easier for everyone to see the complete picture — so you can evaluate ideas based on history, consistency, and transparency, not just popularity or follower count.</p>
+  <p style="font-size:14px;line-height:1.8;color:#8d90ad;margin:0;">Use the information responsibly, do your own research, and invest according to your own financial goals and risk appetite.</p>
+</div>
+
+<div style="text-align:center;background:linear-gradient(135deg,#6d5df5 0%,#9a55ee 55%,#cf52d8 100%);border-radius:16px;padding:36px 28px;margin:28px 0 0;">
+  <p style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.65);margin:0 0 14px;font-weight:700;">Our philosophy</p>
+  <p style="font-size:30px;font-weight:900;letter-spacing:-1.5px;color:#fff;margin:0 0 4px;line-height:1.1;">SCOREKEEPER</p>
+  <p style="font-size:14px;color:rgba(255,255,255,.6);margin:0 0 4px;">not the</p>
+  <p style="font-size:30px;font-weight:900;letter-spacing:-1.5px;color:rgba(255,255,255,.55);margin:0 0 20px;line-height:1.1;">COACH</p>
+  <p style="font-size:16px;color:rgba(255,255,255,.88);margin:0;line-height:1.65;">You decide who to trust — we simply make it easier to see the full picture.</p>
+</div>
+`.trim();
 
 /* ── Public-profile navigation helpers ─────────────────────────────────────
    fetchPublicProfileInfo(userId) queries username + SEBI status once per
@@ -775,6 +818,7 @@ export default function App() {
     { id:"network",     label:"Network",           icon:Users },
     { id:"trackrecord", label:"Track Record",       icon:Globe },
     { id:"sharing",     label:"Sharing & Privacy", icon:Shield },
+    { id:"about",       label:"About MIC",          icon:Info },
   ] : [
     { id:"users",       label:"Users",             icon:UserCog },
     { id:"groups",      label:"Groups",            icon:Layers },
@@ -783,6 +827,7 @@ export default function App() {
     { id:"feed",        label:"Feed Settings",     icon:Flame },
     { id:"configs",     label:"App Configuration", icon:Settings },
     { id:"seed",        label:"Seed Data",         icon:Sparkles },
+    { id:"about",       label:"About Us Content",  icon:Info },
   ];
 
   // Stats for sidebar footer — no Accounts for investors
@@ -1002,6 +1047,7 @@ export default function App() {
                 globalSearch={globalSearch}
                 onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/>}
             {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/>}
+            {isInv && page==="about"        && <AboutPage/>}
             {isInv && page==="trackrecord" && (
               ME.username
                 ? <ProfileErrorBoundary key={ME.username}>
@@ -1041,6 +1087,7 @@ export default function App() {
             {!isInv && page==="feed"        && <AdminFeedConfig feedConfigOptions={feedConfigOptions} setFeedConfigOptions={setFeedConfigOptions} setEffectiveFeedConfig={setEffectiveFeedConfig} userFeedPrefs={userFeedPrefs}/>}
             {!isInv && page==="configs"     && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
             {!isInv && page==="seed"        && <AdminSeedData/>}
+            {!isInv && page==="about"       && <AdminAboutEditor/>}
           </div>
         </div>
       </div>
@@ -6660,4 +6707,287 @@ function AdminConfigs({ configs, setConfigs, providers, setProviders }) {
         <button className="btn btn-pri" disabled={!newProv} onClick={()=>{ setProviders(ps=>[...ps,newProv]); setNewProv(""); }}><Plus size={15}/> Add</button></div>
     </div></div>
   </>);
+}
+
+/* =================================================================== ABOUT PAGE */
+
+/* ── RichTextEditor — contentEditable-based with toolbar ─────────────────────── */
+function RichTextEditor({ value, onChange }) {
+  const editorRef = useRef(null);
+  const [fmts, setFmts] = useState({});
+
+  // Set initial content once on mount
+  useEffect(() => {
+    if (editorRef.current) editorRef.current.innerHTML = value || '';
+  }, []); // eslint-disable-line
+
+  const refreshFmts = () => setFmts({
+    bold:          document.queryCommandState('bold'),
+    italic:        document.queryCommandState('italic'),
+    underline:     document.queryCommandState('underline'),
+    strikeThrough: document.queryCommandState('strikeThrough'),
+    justifyLeft:   document.queryCommandState('justifyLeft'),
+    justifyCenter: document.queryCommandState('justifyCenter'),
+    justifyRight:  document.queryCommandState('justifyRight'),
+  });
+
+  // Execute a command (use onMouseDown + preventDefault to keep selection)
+  const exec = (cmd, val = null) => {
+    editorRef.current?.focus();
+    document.execCommand(cmd, false, val);
+    onChange(editorRef.current?.innerHTML || '');
+    setTimeout(refreshFmts, 10);
+  };
+
+  const handleInput  = () => onChange(editorRef.current?.innerHTML || '');
+  const handleKeyUp  = refreshFmts;
+  const handleMouseUp = refreshFmts;
+
+  const Btn = ({ cmd, val, children, title }) => (
+    <button
+      className={'rte-btn' + (fmts[cmd] ? ' active' : '')}
+      title={title || cmd}
+      onMouseDown={e => { e.preventDefault(); exec(cmd, val); }}
+    >{children}</button>
+  );
+
+  return (
+    <div style={{border:'1px solid var(--line)',borderRadius:12,overflow:'hidden'}}>
+      {/* ── Toolbar ── */}
+      <div className="rte-toolbar">
+
+        {/* Block format */}
+        <select className="rte-select" style={{width:120}}
+          onChange={e=>{ exec('formatBlock', e.target.value); e.target.value=''; }}>
+          <option value="" disabled>¶ Block</option>
+          <option value="p">Paragraph</option>
+          <option value="h1">Heading 1</option>
+          <option value="h2">Heading 2</option>
+          <option value="h3">Heading 3</option>
+          <option value="blockquote">Blockquote</option>
+          <option value="pre">Code block</option>
+        </select>
+
+        {/* Font size (execCommand sizes 1–7) */}
+        <select className="rte-select" style={{width:96}}
+          onChange={e=>{ exec('fontSize', e.target.value); e.target.value=''; }}>
+          <option value="" disabled>Aa Size</option>
+          <option value="1">Tiny</option>
+          <option value="2">Small</option>
+          <option value="3">Normal</option>
+          <option value="4">Medium</option>
+          <option value="5">Large</option>
+          <option value="6">X-Large</option>
+          <option value="7">Huge</option>
+        </select>
+
+        <div className="rte-sep"/>
+
+        {/* Inline styles */}
+        <Btn cmd="bold"          title="Bold (Ctrl+B)">          <b>B</b></Btn>
+        <Btn cmd="italic"        title="Italic (Ctrl+I)">        <i>I</i></Btn>
+        <Btn cmd="underline"     title="Underline (Ctrl+U)">     <u>U</u></Btn>
+        <Btn cmd="strikeThrough" title="Strikethrough">          <s>S</s></Btn>
+
+        <div className="rte-sep"/>
+
+        {/* Text colour */}
+        <label className="rte-btn" title="Text colour" style={{gap:5,cursor:'pointer'}}>
+          <span style={{fontSize:13,fontWeight:700}}>A</span>
+          <input type="color" defaultValue="#13142b"
+            onChange={e=>exec('foreColor', e.target.value)}
+            style={{width:16,height:16,border:'none',padding:0,cursor:'pointer',borderRadius:3,flexShrink:0}}/>
+        </label>
+
+        {/* Highlight colour */}
+        <label className="rte-btn" title="Highlight colour" style={{gap:5,cursor:'pointer'}}>
+          <span style={{fontSize:13}}>🖊</span>
+          <input type="color" defaultValue="#fffde7"
+            onChange={e=>exec('hiliteColor', e.target.value)}
+            style={{width:16,height:16,border:'none',padding:0,cursor:'pointer',borderRadius:3,flexShrink:0}}/>
+        </label>
+
+        <div className="rte-sep"/>
+
+        {/* Alignment */}
+        <Btn cmd="justifyLeft"   title="Align left">   ≡←</Btn>
+        <Btn cmd="justifyCenter" title="Centre">       ≡↔</Btn>
+        <Btn cmd="justifyRight"  title="Align right">  ≡→</Btn>
+
+        <div className="rte-sep"/>
+
+        {/* Lists */}
+        <Btn cmd="insertUnorderedList" title="Bullet list">• —</Btn>
+        <Btn cmd="insertOrderedList"   title="Numbered list">1. —</Btn>
+
+        {/* Indent / Outdent */}
+        <Btn cmd="indent"  title="Increase indent">→</Btn>
+        <Btn cmd="outdent" title="Decrease indent">←</Btn>
+
+        <div className="rte-sep"/>
+
+        {/* Undo / Redo */}
+        <Btn cmd="undo" title="Undo (Ctrl+Z)">↩</Btn>
+        <Btn cmd="redo" title="Redo (Ctrl+Y)">↪</Btn>
+
+        {/* Clear formatting */}
+        <button className="rte-btn" title="Remove formatting"
+          onMouseDown={e=>{ e.preventDefault(); exec('removeFormat'); }}>
+          ✕ fmt
+        </button>
+
+        {/* Horizontal rule */}
+        <button className="rte-btn" title="Insert divider"
+          onMouseDown={e=>{ e.preventDefault(); exec('insertHorizontalRule'); }}>
+          ───
+        </button>
+      </div>
+
+      {/* ── Editable area ── */}
+      <div
+        ref={editorRef}
+        className="rte-area ql-content"
+        contentEditable
+        suppressContentEditableWarning
+        data-placeholder="Start writing your About Us content here…"
+        onInput={handleInput}
+        onKeyUp={handleKeyUp}
+        onMouseUp={handleMouseUp}
+      />
+    </div>
+  );
+}
+
+/* ── AboutPage — investor-facing view ───────────────────────────────────────── */
+function AboutPage() {
+  const [html,    setHtml]    = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!sql) { setLoading(false); return; }
+    sql`SELECT value FROM app_settings WHERE key='about_us_content' LIMIT 1`
+      .then(rows => { setHtml(rows[0]?.value || null); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">About</div>
+          <div className="page-title">My Investor Circle</div>
+        </div>
+      </div>
+
+      {loading
+        ? <div style={{textAlign:'center',padding:'60px 0',color:'var(--muted)'}}>
+            <Loader size={24} className="spin" style={{marginBottom:12}}/>
+            <div>Loading…</div>
+          </div>
+        : <div style={{maxWidth:740}}>
+            <div className="card">
+              <div className="card-body" style={{padding:'32px 36px'}}>
+                <div
+                  className="ql-content"
+                  dangerouslySetInnerHTML={{ __html: html || ABOUT_DEFAULT_HTML }}
+                />
+              </div>
+            </div>
+          </div>
+      }
+    </>
+  );
+}
+
+/* ── AdminAboutEditor — admin rich-text editor for About Us content ─────────── */
+function AdminAboutEditor() {
+  const [html,    setHtml]    = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+  const [saved,   setSaved]   = useState(false);
+  const [tab,     setTab]     = useState('edit'); // 'edit' | 'preview'
+
+  useEffect(() => {
+    if (!sql) { setHtml(ABOUT_DEFAULT_HTML); setLoading(false); return; }
+    sql`SELECT value FROM app_settings WHERE key='about_us_content' LIMIT 1`
+      .then(rows => { setHtml(rows[0]?.value || ABOUT_DEFAULT_HTML); setLoading(false); })
+      .catch(() => { setHtml(ABOUT_DEFAULT_HTML); setLoading(false); });
+  }, []);
+
+  const save = async () => {
+    if (!sql) return;
+    setSaving(true);
+    try {
+      await sql`INSERT INTO app_settings(key,value) VALUES('about_us_content',${html})
+        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`;
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch(e) { console.warn('Save about content:', e); }
+    setSaving(false);
+  };
+
+  const resetDefault = () => {
+    if (!confirm('Reset to the built-in default content? This will discard any saved edits.')) return;
+    setHtml(ABOUT_DEFAULT_HTML);
+  };
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Admin</div>
+          <div className="page-title">About Us Content</div>
+          <div className="page-sub">Edits here update the About MIC page that all investors see — no code changes needed.</div>
+        </div>
+        <div style={{display:'flex',gap:10,alignItems:'center'}}>
+          {saved && (
+            <span className="pill gain" style={{padding:'6px 12px',fontSize:12,display:'flex',alignItems:'center',gap:5}}>
+              <Check size={13}/> Saved
+            </span>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={resetDefault}>Reset to default</button>
+          <button className="btn btn-pri" disabled={saving||loading} onClick={save}>
+            {saving ? <><Loader size={14} className="spin"/> Saving…</> : <><Check size={14}/> Save & publish</>}
+          </button>
+        </div>
+      </div>
+
+      {/* Edit / Preview tabs */}
+      <div className="seg" style={{marginBottom:18}}>
+        <button className={tab==='edit'?'active':''} onClick={()=>setTab('edit')}>
+          <Pencil size={14}/> Edit
+        </button>
+        <button className={tab==='preview'?'active':''} onClick={()=>setTab('preview')}>
+          <Eye size={14}/> Preview
+        </button>
+      </div>
+
+      {loading
+        ? <div style={{textAlign:'center',padding:'60px 0',color:'var(--muted)'}}><Loader size={22} className="spin"/></div>
+        : tab === 'edit'
+          ? <>
+              <div className="note info" style={{marginBottom:14}}>
+                <Info size={15}/>
+                <div>Use the toolbar to format text. Changes are only published when you click <strong>Save &amp; publish</strong>. Switch to the Preview tab to see how the page will look.</div>
+              </div>
+              <div className="card">
+                <div className="card-body" style={{padding:0}}>
+                  <RichTextEditor key={loading?'loading':'ready'} value={html} onChange={setHtml}/>
+                </div>
+              </div>
+            </>
+          : <div style={{maxWidth:740}}>
+              <div className="note ok" style={{marginBottom:14}}>
+                <Eye size={15}/>
+                <div>This is a live preview of how the About MIC page will look to investors after you save.</div>
+              </div>
+              <div className="card">
+                <div className="card-body" style={{padding:'32px 36px'}}>
+                  <div className="ql-content" dangerouslySetInnerHTML={{ __html: html }}/>
+                </div>
+              </div>
+            </div>
+      }
+    </>
+  );
 }
