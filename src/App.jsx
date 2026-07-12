@@ -3718,109 +3718,99 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
         {/* ── IDENTITY CARD ── */}
         <div style={{background:'#0f1117',borderRadius:18,overflow:'hidden',marginBottom:16,border:'1px solid rgba(255,255,255,.07)',boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
 
-          {/* Header row: avatar + info + ICI */}
-          <div className="profile-hero-row" style={{padding:'18px 28px 14px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
+          {/* ── Hero: strict 50-50 layout — left = avatar+bio, right = ICI ── */}
+          <div style={{display:'flex', flexWrap:'wrap', padding:'18px 28px 0', gap:24, alignItems:'stretch'}}>
 
-            {/* Avatar */}
-            <div style={{width:76,height:76,borderRadius:20,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
-              {initialsOf(displayName)}
-            </div>
-
-            {/* Name + badges + bio + socials — fixed width so ICI gets the rest */}
-            <div style={{flex:'0 0 300px',minWidth:0,display:'flex',flexDirection:'column',gap:10}}>
-              {/* Name row */}
-              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-                <span style={{fontSize:24,fontWeight:900,color:'#fff',letterSpacing:'-.6px',lineHeight:1.1}}>{displayName}</span>
-                {/* Registration status badge */}
-                {(()=>{
-                  const status = profile.registration_status||'self_directed';
-                  const approved = profile.sebi_approval_status==='approved';
-                  const isSebi = ['sebi_ra','sebi_ria'].includes(status);
-                  const statusLabel = isSebi&&approved
-                    ? (status==='sebi_ra'?'SEBI Registered RA':'SEBI Registered RIA')
-                    : (status==='enthusiast'?'Market Enthusiast':'Self-directed Investor');
-                  return <span style={{fontSize:10,fontWeight:800,padding:'4px 10px',borderRadius:6,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.8)',border:'1px solid rgba(255,255,255,.15)',textTransform:'uppercase',letterSpacing:'.06em'}}>{statusLabel}</span>;
-                })()}
-                {/* SEBI badge */}
-                {(()=>{
-                  const status = profile.registration_status||'self_directed';
-                  const approved = profile.sebi_approval_status==='approved';
-                  const isSebi = ['sebi_ra','sebi_ria'].includes(status);
-                  if(isSebi && approved) return (
-                    <span style={{fontSize:10,fontWeight:800,padding:'4px 10px',borderRadius:6,background:'rgba(21,146,78,.2)',color:'#4ade80',border:'1px solid rgba(21,146,78,.35)',textTransform:'uppercase',letterSpacing:'.06em'}}>
-                      ✓ SEBI Registered{profile.sebi_reg_number?` · ${profile.sebi_reg_number}`:''}
-                    </span>
-                  );
-                  return <span style={{fontSize:10,fontWeight:800,padding:'4px 10px',borderRadius:6,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.3)',textTransform:'uppercase',letterSpacing:'.06em'}}>Not SEBI Registered</span>;
-                })()}
+            {/* ── LEFT 50%: avatar + bio ── */}
+            <div style={{
+              ...(isMobile ? {flex:'0 0 100%'} : {flex:'1 1 0', maxWidth:'calc(50% - 12px)'}),
+              minWidth:0, display:'flex', gap:18, alignItems:'flex-start',
+            }}>
+              {/* Avatar */}
+              <div style={{width:76,height:76,borderRadius:20,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
+                {initialsOf(displayName)}
               </div>
 
-              {/* Username + since */}
-              <div style={{fontSize:13,color:'rgba(255,255,255,.45)',display:'flex',alignItems:'center',gap:8}}>
-                <span style={{fontWeight:600}}>@{username}</span>
-                {memberSince&&<><span style={{opacity:.4}}>·</span><span>Member since {memberSince}</span></>}
-              </div>
-
-              {/* Bio */}
-              {profile.bio
-                ? <p style={{fontSize:14,color:'rgba(255,255,255,.75)',lineHeight:1.7,margin:0,maxWidth:480}}>{profile.bio}</p>
-                : isOwnProfile && <p style={{fontSize:13,color:'rgba(255,255,255,.25)',fontStyle:'italic',margin:0}}>No bio yet — click Edit profile to add one.</p>}
-
-              {/* Social icons */}
-              <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-                {['twitter','linkedin','telegram','instagram'].map(p=>(
-                  <SocialIconBtn key={p} platform={p} url={profile[`${p}_url`]}/>
-                ))}
-                {/* Action buttons */}
-                {showAddBtn && <button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}>{connecting?<><Loader size={13} className="spin"/> Sending…</>:<><UserPlus size={13}/> Add to network</>}</button>}
-                {showPending && <span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/> Request sent</span>}
-                {showConnected && <span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/> Connected</span>}
-                {showJoinBtn && <button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}><UserPlus size={13}/> Join to connect</button>}
-              </div>
-
-              {/* Edit profile button */}
-              {isOwnProfile && (
-                <div>
-                  <button onClick={startEdit}
-                    style={{fontSize:12,fontWeight:700,background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',color:'rgba(255,255,255,.7)',cursor:'pointer',padding:'6px 14px',borderRadius:8,display:'inline-flex',alignItems:'center',gap:6,transition:'.12s',fontFamily:'var(--font)'}}>
-                    <Pencil size={12}/> Edit profile
-                  </button>
+              {/* Bio content */}
+              <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:10}}>
+                {/* Name + badges */}
+                <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                  <span style={{fontSize:22,fontWeight:900,color:'#fff',letterSpacing:'-.6px',lineHeight:1.1}}>{displayName}</span>
+                  {(()=>{
+                    const status=profile.registration_status||'self_directed';
+                    const approved=profile.sebi_approval_status==='approved';
+                    const isSebi=['sebi_ra','sebi_ria'].includes(status);
+                    const label=isSebi&&approved?(status==='sebi_ra'?'SEBI RA':'SEBI RIA'):(status==='enthusiast'?'Enthusiast':'Self-directed');
+                    return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.75)',border:'1px solid rgba(255,255,255,.14)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>{label}</span>;
+                  })()}
+                  {(()=>{
+                    const status=profile.registration_status||'self_directed';
+                    const approved=profile.sebi_approval_status==='approved';
+                    const isSebi=['sebi_ra','sebi_ria'].includes(status);
+                    if(isSebi&&approved) return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(21,146,78,.2)',color:'#4ade80',border:'1px solid rgba(21,146,78,.35)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>✓ SEBI{profile.sebi_reg_number?` · ${profile.sebi_reg_number}`:''}</span>;
+                    return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.3)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>Non-SEBI</span>;
+                  })()}
                 </div>
-              )}
+
+                {/* Username + since */}
+                <div style={{fontSize:13,color:'rgba(255,255,255,.45)',display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontWeight:600}}>@{username}</span>
+                  {memberSince&&<><span style={{opacity:.4}}>·</span><span>Member since {memberSince}</span></>}
+                </div>
+
+                {/* Bio */}
+                {profile.bio
+                  ? <p style={{fontSize:14,color:'rgba(255,255,255,.75)',lineHeight:1.7,margin:0}}>{profile.bio}</p>
+                  : isOwnProfile&&<p style={{fontSize:13,color:'rgba(255,255,255,.25)',fontStyle:'italic',margin:0}}>No bio yet — click Edit profile to add one.</p>}
+
+                {/* Social icons + action buttons */}
+                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                  {['twitter','linkedin','telegram','instagram'].map(p=>(
+                    <SocialIconBtn key={p} platform={p} url={profile[`${p}_url`]}/>
+                  ))}
+                  {showAddBtn&&<button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}>{connecting?<><Loader size={13} className="spin"/>Sending…</>:<><UserPlus size={13}/>Add to network</>}</button>}
+                  {showPending&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Request sent</span>}
+                  {showConnected&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Connected</span>}
+                  {showJoinBtn&&<button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}><UserPlus size={13}/>Join to connect</button>}
+                </div>
+
+                {/* Edit button */}
+                {isOwnProfile&&(
+                  <div>
+                    <button onClick={startEdit} style={{fontSize:12,fontWeight:700,background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',color:'rgba(255,255,255,.7)',cursor:'pointer',padding:'6px 14px',borderRadius:8,display:'inline-flex',alignItems:'center',gap:6,fontFamily:'var(--font)'}}>
+                      <Pencil size={12}/>Edit profile
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* ICI Widget — flex:1 so it fills all remaining width */}
+            {/* ── RIGHT 50%: ICI widget ── */}
             <div className="ici-panel" style={{
+              ...(isMobile ? {flex:'0 0 100%',minWidth:0} : {flex:'1 1 0',maxWidth:'calc(50% - 12px)',minWidth:0}),
               background:'linear-gradient(145deg,#1c0d4a 0%,#160b3d 50%,#0f1130 100%)',
               border:'1px solid rgba(139,92,246,.6)',
               borderRadius:20,
-              padding:'22px 26px 18px',
-              boxShadow:'0 0 0 1px rgba(139,92,246,.15), 0 4px 24px rgba(109,93,245,.5), 0 16px 48px rgba(109,93,245,.3), inset 0 1px 0 rgba(255,255,255,.08)',
-              ...(isMobile
-                ? {flex:'0 0 100%', minWidth:0}
-                : {flex:'1 1 440px', minWidth:440}
-              ),
+              padding:'20px 24px 16px',
+              boxShadow:'0 0 0 1px rgba(139,92,246,.15),0 4px 24px rgba(109,93,245,.5),0 16px 48px rgba(109,93,245,.3),inset 0 1px 0 rgba(255,255,255,.08)',
             }}>
-              {/* Header */}
-              <div style={{fontSize:15,fontWeight:800,color:'#fff',letterSpacing:'-.2px',marginBottom:18,display:'flex',alignItems:'center',gap:8}}>
+              <div style={{fontSize:14,fontWeight:800,color:'#fff',letterSpacing:'-.2px',marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
                 <span style={{display:'inline-flex',width:6,height:6,borderRadius:'50%',background:'#a78bfa',boxShadow:'0 0 8px #a78bfa'}}/>
                 Investor Circle Credibility Index
               </div>
-
-              {/* Donut + components side by side */}
-              <div className="ici-body" style={{display:'flex',gap:28,alignItems:'center',marginBottom:18}}>
+              <div className="ici-body" style={{display:'flex',gap:24,alignItems:'center'}}>
                 <IciDonut score={ici.score} band={ici.band}/>
-                <div style={{flex:1}}>
+                <div style={{flex:1,minWidth:0}}>
                   {ici.components.map(c=>{
-                    const pct = c.max > 0 ? (c.score/c.max)*100 : 0;
-                    const barCol = pct>=80?'#4ade80':pct>=50?'#a78bfa':pct>0?'#fbbf24':'rgba(255,255,255,.06)';
+                    const pct=c.max>0?(c.score/c.max)*100:0;
+                    const barCol=pct>=80?'#4ade80':pct>=50?'#a78bfa':pct>0?'#fbbf24':'rgba(255,255,255,.06)';
                     return (
-                      <div key={c.label} style={{marginBottom:14}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:12,marginBottom:5}}>
-                          <span style={{fontSize:12,color:'rgba(255,255,255,.85)',fontWeight:600,flex:1,minWidth:0}}>{c.label}</span>
-                          <span style={{fontSize:12,color:'rgba(255,255,255,.65)',fontWeight:700,flexShrink:0,whiteSpace:'nowrap'}}>{c.score}/{c.max}</span>
+                      <div key={c.label} style={{marginBottom:12}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8,marginBottom:4}}>
+                          <span style={{fontSize:11.5,color:'rgba(255,255,255,.85)',fontWeight:600,flex:1,minWidth:0}}>{c.label}</span>
+                          <span style={{fontSize:11.5,color:'rgba(255,255,255,.65)',fontWeight:700,flexShrink:0}}>{c.score}/{c.max}</span>
                         </div>
-                        <div style={{height:5,background:'rgba(255,255,255,.08)',borderRadius:3,overflow:'hidden'}}>
+                        <div style={{height:4,background:'rgba(255,255,255,.08)',borderRadius:3,overflow:'hidden'}}>
                           <div style={{height:'100%',width:`${pct}%`,background:`linear-gradient(90deg,${barCol},${barCol}bb)`,borderRadius:3,transition:'width .5s ease',boxShadow:pct>0?`0 0 6px ${barCol}88`:'none'}}/>
                         </div>
                       </div>
@@ -3828,33 +3818,41 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
                   })}
                 </div>
               </div>
-
-              <div style={{borderTop:'1px solid rgba(255,255,255,.08)',paddingTop:10,textAlign:'right'}}>
-                <a href="#methodology" style={{fontSize:11.5,color:'#c4b5fd',textDecoration:'none',fontWeight:600,letterSpacing:'.01em'}}>Learn more about ICI methodology →</a>
-              </div>
             </div>
           </div>
 
-          {/* ── Compact stat + methodology footer ── */}
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,background:'rgba(0,0,0,.3)',borderTop:'1px solid rgba(255,255,255,.07)',padding:'10px 28px'}}>
-            {/* Stats — compact inline */}
-            <div style={{display:'flex',gap:20,flexWrap:'wrap',alignItems:'center'}}>
+          {/* ── Footer strip: left 50% = stats (under bio), right 50% = learn more (under ICI) ── */}
+          <div style={{display:'flex',flexWrap:'wrap',borderTop:'1px solid rgba(255,255,255,.07)',marginTop:16,background:'rgba(0,0,0,.25)'}}>
+
+            {/* Left 50%: compact stats — visual extension of bio column */}
+            <div style={{
+              ...(isMobile?{flex:'0 0 100%',borderBottom:'1px solid rgba(255,255,255,.07)'}:{flex:'1 1 0',borderRight:'1px solid rgba(255,255,255,.07)'}),
+              display:'flex',gap:16,flexWrap:'wrap',alignItems:'center',padding:'9px 28px',
+            }}>
               {[
                 {val:profile.connection_count||0, label:'Connections'},
                 {val:profile.group_count||0,      label:'Groups'},
                 {val:summary.total,               label:'Total Recos'},
                 {val:summary.active,              label:'Active'},
                 {val:summary.closed,              label:'Closed'},
-                {val:`${summary.years_history.toFixed(1)} yrs`, label:'History'},
-              ].map((s,i,arr)=>(
+                {val:`${summary.years_history.toFixed(1)}y`, label:'History'},
+              ].map((s,i)=>(
                 <React.Fragment key={s.label}>
-                  {i>0 && <span style={{color:'rgba(255,255,255,.12)',fontSize:14}}>·</span>}
-                  <div style={{display:'flex',alignItems:'baseline',gap:5}}>
-                    <span style={{fontSize:15,fontWeight:800,color:'#fff',letterSpacing:'-0.5px',fontFamily:'var(--font)'}}>{s.val}</span>
-                    <span style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.38)',textTransform:'uppercase',letterSpacing:'.07em'}}>{s.label}</span>
+                  {i>0&&<span style={{color:'rgba(255,255,255,.1)',fontSize:12}}>·</span>}
+                  <div style={{display:'flex',alignItems:'baseline',gap:4}}>
+                    <span style={{fontSize:14,fontWeight:800,color:'#fff',letterSpacing:'-.4px',fontFamily:'var(--font)'}}>{s.val}</span>
+                    <span style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,.35)',textTransform:'uppercase',letterSpacing:'.06em'}}>{s.label}</span>
                   </div>
                 </React.Fragment>
               ))}
+            </div>
+
+            {/* Right 50%: learn more — visual extension of ICI column */}
+            <div style={{
+              ...(isMobile?{flex:'0 0 100%'}:{flex:'1 1 0'}),
+              display:'flex',alignItems:'center',justifyContent:'flex-end',padding:'9px 28px',
+            }}>
+              <a href="#methodology" style={{fontSize:11.5,color:'#c4b5fd',textDecoration:'none',fontWeight:600,letterSpacing:'.01em'}}>Learn more about ICI methodology →</a>
             </div>
           </div>
         </div>
