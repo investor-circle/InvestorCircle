@@ -1889,11 +1889,11 @@ const Money = ({ itm }) => <span className={"pill "+(itm?"gain":"loss")}>{itm?<T
 const ClassTag = ({ c }) => <span className="ttag nowrap"><span className="dot" style={{ background:classColor(c) }}/>{c}</span>;
 const ret = (r) => (r.priceAt && r.priceAt !== 0) ? (r.price - r.priceAt) / r.priceAt : 0;
 
-const HORIZONS = ["3m","6m","12m",">2Y"];
+const HORIZONS = ["<3m","6m","12m",">2Y"];
 const calcTargetDate = (date, horizon) => {
   if (!date || !horizon) return null;
   const d = new Date(date + "T00:00:00");
-  if (horizon==="3m")  d.setMonth(d.getMonth()+3);
+  if (horizon==="<3m") d.setMonth(d.getMonth()+3);
   else if (horizon==="6m")  d.setMonth(d.getMonth()+6);
   else if (horizon==="12m") d.setMonth(d.getMonth()+12);
   else if (horizon===">2Y") d.setFullYear(d.getFullYear()+2);
@@ -2878,8 +2878,6 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
   const [thesis,      setThesis]      = useState("");
   const [targets,     setTargets]     = useState([]);
   const [isPublic,    setIsPublic]    = useState(true);
-  const [adding,      setAdding]      = useState(false);
-  const [newCat,      setNewCat]      = useState("");
 
   // Auto-fetch price whenever instrument changes
   useEffect(() => {
@@ -2910,7 +2908,6 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
   };
 
   const toggle  = (id) => setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
-  const addCat  = () => { const c=newCat.trim(); if(c&&!assetClasses.includes(c)){setAssetClasses(a=>[...a,c]);setCls(c);} setNewCat(""); setAdding(false); };
 
   const create = async () => {
     const rp = priceData?.price || 0;
@@ -2984,11 +2981,8 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
         </div>
       )}
 
-      <div className="field"><label style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Asset class</span>
-        <span className="clickable" style={{fontSize:12}} onClick={()=>setAdding(a=>!a)}><Plus size={13}/> Add category</span></label>
-        {adding
-          ? <div style={{display:"flex",gap:8}}><input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="New category name" onKeyDown={e=>e.key==="Enter"&&addCat()}/><button className="btn btn-pri btn-sm" onClick={addCat}>Add</button></div>
-          : <select value={cls} onChange={e=>setCls(e.target.value)}>{assetClasses.map(c=><option key={c}>{c}</option>)}</select>}</div>
+      <div className="field"><label><span>Asset class</span></label>
+        <select value={cls} onChange={e=>setCls(e.target.value)}>{assetClasses.map(c=><option key={c}>{c}</option>)}</select></div>
 
       {/* Sector — locked from master, editable only when manual */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14}}>
@@ -5273,7 +5267,7 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
     <div
       role="tablist"
       style={{
-        display: isMobile ? 'flex' : 'none',
+        display: isMobile && !showNewReco ? 'flex' : 'none',
         position: 'sticky', top: 0, zIndex: 190,
         background: 'rgba(245,245,251,.97)',
         backdropFilter: 'blur(12px)',
@@ -5479,7 +5473,7 @@ function InstrumentSearch({ onSelect, placeholder, initialValue }) {
 function AdminSeedData() {
   const VALID_CLASSES    = ['Equity','ETF','Crypto','Bond','Commodity','Other'];
   const VALID_EXCHANGES  = ['NSE','BSE','NYSE','NASDAQ','OTHER'];
-  const VALID_HORIZONS   = ['3m','6m','12m','>2Y'];
+  const VALID_HORIZONS   = ['<3m','6m','12m','>2Y'];
   const VALID_CONVICTIONS= ['Low','Medium','High'];
   const VALID_TYPES      = ['Buy','Sell','Hold'];
   const VALID_REG_STATUS = ['self_directed','enthusiast','sebi_ra','sebi_ria'];
@@ -5515,7 +5509,7 @@ function AdminSeedData() {
       ['reco_price','number','Yes','Price at time of recommendation'],
       ['target_price','number','No','Price target (leave blank if none)'],
       ['stop_loss','number','No','Stop-loss price (leave blank if none)'],
-      ['horizon','text','Yes','3m | 6m | 12m | >2Y'],
+      ['horizon','text','Yes','<3m | 6m | 12m | >2Y'],
       ['thesis','text','No','Investment rationale (max 500 chars)'],
       ['sector','text','No','e.g. Technology, Financials, Energy'],
       ['conviction','text','Yes','Low | Medium | High'],
