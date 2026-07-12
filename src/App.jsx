@@ -601,6 +601,7 @@ export default function App() {
     { id:"sebi",        label:"SEBI Approvals",    icon:Shield },
     { id:"feed",        label:"Feed Settings",     icon:Flame },
     { id:"configs",     label:"App Configuration", icon:Settings },
+    { id:"seed",        label:"Seed Data",         icon:Sparkles },
   ];
 
   // Stats for sidebar footer — no Accounts for investors
@@ -833,6 +834,7 @@ export default function App() {
             {!isInv && page==="sebi"        && <AdminSebi/>}
             {!isInv && page==="feed"        && <AdminFeedConfig feedConfigOptions={feedConfigOptions} setFeedConfigOptions={setFeedConfigOptions} setEffectiveFeedConfig={setEffectiveFeedConfig} userFeedPrefs={userFeedPrefs}/>}
             {!isInv && page==="configs"     && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
+            {!isInv && page==="seed"        && <AdminSeedData/>}
           </div>
         </div>
       </div>
@@ -4712,6 +4714,482 @@ function InstrumentSearch({ onSelect, placeholder, initialValue }) {
             </div>
           ))}
           {results.length===0 && <div className="empty" style={{padding:20,fontSize:13}}>No instruments found</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Admin: Seed Data ────────────────────────────────────────────────────────── */
+function AdminSeedData() {
+  const VALID_CLASSES    = ['Equity','ETF','Crypto','Bond','Commodity','Other'];
+  const VALID_EXCHANGES  = ['NSE','BSE','NYSE','NASDAQ','OTHER'];
+  const VALID_HORIZONS   = ['3m','6m','12m','>2Y'];
+  const VALID_CONVICTIONS= ['Low','Medium','High'];
+  const VALID_TYPES      = ['Buy','Sell','Hold'];
+  const VALID_REG_STATUS = ['self_directed','enthusiast','sebi_ra','sebi_ria'];
+
+  const [file,       setFile]       = useState(null);
+  const [parsed,     setParsed]     = useState(null);
+  const [parseErrs,  setParseErrs]  = useState([]);
+  const [seeding,    setSeeding]    = useState(false);
+  const [seedLog,    setSeedLog]    = useState([]);
+  const [seedDone,   setSeedDone]   = useState(false);
+  const [seedMode,   setSeedMode]   = useState('skip'); // 'skip' | 'replace'
+
+  /* ── Template download ── */
+  const downloadTemplate = () => {
+    const wb = XLSX.utils.book_new();
+
+    /* Sheet 1: Instructions */
+    const instr = [
+      ['InvestorCircle — Historical Data Seed Template'],[''],
+      ['OVERVIEW'],
+      ['  1. Fill the Profiles sheet to update user info (matched by email).'],
+      ['  2. Fill the Recommendations sheet with historical trade ideas.'],
+      ['  3. Upload in Admin → Seed Data, choose a conflict mode, and run.'],[''],
+      ['RECOMMENDATIONS — Field Reference'],
+      ['Field','Type','Required','Valid Values / Notes'],
+      ['username','text','Yes','Must match an existing platform username (set via Admin → Users)'],
+      ['asset_name','text','Yes','Full name, e.g. "Reliance Industries Ltd"'],
+      ['ticker','text','Yes','Exchange symbol, e.g. RELIANCE, AAPL'],
+      ['asset_class','text','Yes','Equity | ETF | Crypto | Bond | Commodity | Other'],
+      ['exchange','text','Yes','NSE | BSE | NYSE | NASDAQ | OTHER'],
+      ['currency','text','Yes','INR (for NSE/BSE) | USD (for NYSE/NASDAQ)'],
+      ['recommendation_type','text','Yes','Buy | Sell | Hold'],
+      ['reco_price','number','Yes','Price at time of recommendation'],
+      ['target_price','number','No','Price target (leave blank if none)'],
+      ['stop_loss','number','No','Stop-loss price (leave blank if none)'],
+      ['horizon','text','Yes','3m | 6m | 12m | >2Y'],
+      ['thesis','text','No','Investment rationale (max 500 chars)'],
+      ['sector','text','No','e.g. Technology, Financials, Energy'],
+      ['conviction','text','Yes','Low | Medium | High'],
+      ['created_date','date','Yes','YYYY-MM-DD — date recommendation was made'],
+      ['status','text','Yes','active | closed'],
+      ['exit_price','number','If closed','Price at exit — sets the return calculation'],
+      ['exit_date','date','If closed','YYYY-MM-DD — date the position was closed'],
+      ['is_public','text','Yes','Yes | No — whether this appears on the public profile'],
+      [''],
+      ['HITTING A HIGH ICI SCORE (target 75+/100)'],
+      ['Component','Weight','What to do'],
+      ['Track record length','15%','Backdate oldest recos 3+ years (e.g. 2022)'],
+      ['Recommendation volume','15%','Add 15+ recommendations per user'],
+      ['Hit rate','20%','≥80% of closed Buy recos should have exit_price > reco_price'],
+      ['Median return','15%','Aim for 20%+ median return across closed Buy recos'],
+      ['Risk-adjusted return','15%','High average returns with few large losses helps'],
+      ['Transparency','10%','Set is_public = Yes for all recommendations'],
+      ['Profile verification','10%','Fill bio + at least 2 social links in Profiles sheet'],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(instr), 'Instructions');
+
+    /* Sheet 2: Profiles */
+    const profHdr = ['email','first_name','last_name','bio','avatar_color','registration_status','twitter_url','linkedin_url','telegram_url','instagram_url'];
+    const profRows = [
+      ['rahul@example.com','Rahul','Sharma','Long-term equity investor focused on quality compounders and secular growth themes','#6d5df5','self_directed','https://twitter.com/rahulsharma','https://linkedin.com/in/rahulsharma','',''],
+      ['priya@example.com','Priya','Mehta','Thematic investor with conviction in India's infrastructure and domestic consumption story','#15924e','self_directed','','https://linkedin.com/in/priyamehta','https://t.me/priyamehta','https://instagram.com/priyamehta'],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([profHdr,...profRows]), 'Profiles');
+
+    /* Sheet 3: Recommendations (pre-seeded for HIGH ICI) */
+    const recoHdr = ['username','asset_name','ticker','asset_class','exchange','currency','recommendation_type','reco_price','target_price','stop_loss','horizon','thesis','sector','conviction','created_date','status','exit_price','exit_date','is_public'];
+    const recoRows = [
+      /* ── rahul — closed wins (10) ── */
+      ['rahul','Reliance Industries Ltd','RELIANCE','Equity','NSE','INR','Buy',2280,3200,2000,'>2Y','Refinery-to-retail + Jio 5G + Reliance Retail — three growth engines firing together','Energy','High','2022-01-10','closed',3200,'2023-03-15','Yes'],
+      ['rahul','Tata Consultancy Services','TCS','Equity','NSE','INR','Buy',3500,4500,3100,'12m','AI adoption driving deal wins; margin recovery underway','Technology','Medium','2022-03-15','closed',4200,'2023-04-20','Yes'],
+      ['rahul','HDFC Bank','HDFCBANK','Equity','NSE','INR','Buy',1350,1800,1180,'>2Y','Merger synergies and CASA franchise make this the safest large-cap bank','Financials','High','2022-05-10','closed',1680,'2023-07-15','Yes'],
+      ['rahul','Infosys','INFY','Equity','NSE','INR','Buy',1250,1900,1050,'>2Y','Cheap versus TCS with an improving margin trajectory and cloud pipeline','Technology','High','2022-07-20','closed',1850,'2024-01-10','Yes'],
+      ['rahul','Asian Paints','ASIANPAINT','Equity','NSE','INR','Buy',2800,3800,2400,'12m','Pricing power + volume recovery post-raw-material peak','Consumer','Medium','2022-10-05','closed',3500,'2023-10-20','Yes'],
+      ['rahul','Bajaj Finance','BAJFINANCE','Equity','NSE','INR','Buy',5900,8000,5100,'>2Y','Best-in-class NBFC: consistent 22%+ ROE, strong AUM growth','Financials','High','2023-01-15','closed',7400,'2024-02-10','Yes'],
+      ['rahul','Sun Pharmaceutical','SUNPHARMA','Equity','NSE','INR','Buy',950,1600,820,'12m','Specialty US business de-risked; India branded generics growing 15%+ YoY','Healthcare','High','2023-03-20','closed',1480,'2024-07-15','Yes'],
+      ['rahul','State Bank of India','SBIN','Equity','NSE','INR','Buy',500,850,420,'>2Y','Credit cost normalisation + NIM expansion = ROE rerating story','Financials','High','2023-05-10','closed',780,'2024-08-20','Yes'],
+      ['rahul','Titan Company','TITAN','Equity','NSE','INR','Buy',3200,4200,2700,'>2Y','Jewellery demand structural; CaratLane + Tanishq gaining market share','Consumer','Medium','2023-08-05','closed',3850,'2025-01-15','Yes'],
+      ['rahul','Hindustan Unilever','HINDUNILVR','Equity','NSE','INR','Buy',2500,3200,2100,'>2Y','Rural recovery thesis; HPC segment pricing stabilises','Consumer','Medium','2023-10-15','closed',3000,'2025-02-20','Yes'],
+      /* ── rahul — closed losses (2 — keeps it real) ── */
+      ['rahul','Paytm (One97 Comm.)','PAYTM','Equity','NSE','INR','Buy',600,900,480,'12m','Payment volume growth; path to profitability in sight','Technology','Low','2022-11-20','closed',450,'2023-06-15','Yes'],
+      ['rahul','FSN E-Commerce (Nykaa)','NYKAA','Equity','NSE','INR','Buy',140,220,110,'12m','BPC category growing at 25%+ online; Nykaa brand moat','Consumer','Low','2023-02-10','closed',115,'2023-09-15','Yes'],
+      /* ── rahul — active (5) ── */
+      ['rahul','Tata Motors','TATAMOTORS','Equity','NSE','INR','Buy',800,1200,680,'>2Y','EV transition + JLR order book; cyclical re-rating in progress','Automobiles','High','2024-01-15','active','','','Yes'],
+      ['rahul','Adani Enterprises','ADANIENT','Equity','NSE','INR','Buy',2800,4000,2300,'>2Y','Airport + green hydrogen + data centre capex cycle beneficiary','Infrastructure','Medium','2024-06-20','active','','','Yes'],
+      ['rahul','Wipro','WIPRO','Equity','NSE','INR','Buy',290,420,245,'12m','New management driving deal ramp; margin guidance conservative','Technology','Medium','2025-01-10','active','','','Yes'],
+      ['rahul','LTIMindtree','LTIM','Equity','NSE','INR','Buy',5200,7000,4400,'>2Y','Best mid-cap IT compounder; merger integration complete','Technology','High','2025-03-15','active','','','Yes'],
+      ['rahul','Zomato','ZOMATO','Equity','NSE','INR','Buy',230,340,185,'12m','Quick commerce TAM expansion; Blinkit turning profitable','Consumer','Medium','2025-05-10','active','','','Yes'],
+      /* ── priya — closed wins (10) ── */
+      ['priya','Larsen & Toubro','LT','Equity','NSE','INR','Buy',1800,3800,1550,'>2Y','Infra supercycle: defence + data centres + metro rail + semiconductor fabs','Infrastructure','High','2022-02-10','closed',3500,'2024-01-20','Yes'],
+      ['priya','Kotak Mahindra Bank','KOTAKBANK','Equity','NSE','INR','Buy',1750,2400,1500,'>2Y','Best-in-class private bank; liability franchise sets up for long-term NIMs','Financials','High','2022-04-15','closed',2100,'2023-07-10','Yes'],
+      ['priya','Dr. Reddy\'s Laboratories','DRREDDY','Equity','NSE','INR','Buy',4500,7000,3900,'>2Y','US generic launches accelerating; GLP-1 + biosimilar pipeline visible','Healthcare','High','2022-08-20','closed',6200,'2024-08-10','Yes'],
+      ['priya','Tech Mahindra','TECHM','Equity','NSE','INR','Buy',1050,1700,880,'12m','Telecom spend recovery; new CEO restructuring cost base','Technology','Medium','2022-10-05','closed',1580,'2024-03-15','Yes'],
+      ['priya','UltraTech Cement','ULTRACEMCO','Equity','NSE','INR','Buy',7800,12000,6700,'>2Y','Capacity additions + housing demand + infra boost = strong volume visibility','Materials','High','2023-02-15','closed',11000,'2024-10-20','Yes'],
+      ['priya','Maruti Suzuki','MARUTI','Equity','NSE','INR','Buy',9500,13500,8200,'>2Y','EV-laggard rerating; SUV mix shift; rural demand recovery','Automobiles','High','2023-05-20','closed',12500,'2025-01-10','Yes'],
+      ['priya','Muthoot Finance','MUTHOOTFIN','Equity','NSE','INR','Buy',1200,2500,1000,'>2Y','Gold loan AUM compounding at 20%+; rural credit demand resilient','Financials','Medium','2023-08-10','closed',2200,'2025-03-15','Yes'],
+      ['priya','ONGC','ONGC','Equity','NSE','INR','Buy',210,320,175,'12m','Government capex + high crude realisation; cheap on P/B','Energy','Medium','2024-01-15','closed',310,'2025-02-20','Yes'],
+      ['priya','Bharat Electronics','BEL','Equity','NSE','INR','Buy',170,310,140,'12m','Defence order book doubling; import substitution policy tailwind','Defence','High','2024-03-10','closed',290,'2025-04-15','Yes'],
+      ['priya','Nestle India','NESTLEIND','Equity','NSE','INR','Buy',21000,28000,18500,'>2Y','Premiumisation + distribution deepening; pricing power in staples','Consumer','Medium','2024-06-20','closed',26500,'2025-06-10','Yes'],
+      /* ── priya — closed losses (2) ── */
+      ['priya','IndiaMART InterMesh','INDIAMART','Equity','NSE','INR','Buy',5000,7000,4200,'12m','SME digital adoption + premium subscriber growth story','Technology','Low','2022-11-10','closed',3800,'2023-09-15','Yes'],
+      ['priya','Avenue Supermarts (DMart)','DMART','Equity','NSE','INR','Buy',4200,5500,3600,'>2Y','EDLC model + store expansion; quick commerce threat overstated','Consumer','Low','2023-03-20','closed',3600,'2024-02-10','Yes'],
+      /* ── priya — active (3) ── */
+      ['priya','Coal India','COALINDIA','Equity','NSE','INR','Buy',480,680,390,'12m','Volume growth + e-auction premium; underowned by FIIs','Energy','Medium','2024-08-15','active','','','Yes'],
+      ['priya','Power Finance Corp.','PFC','Equity','NSE','INR','Buy',430,650,360,'>2Y','RE lending growth + dividends; government backing reduces credit risk','Financials','Medium','2025-01-20','active','','','Yes'],
+      ['priya','Hindustan Copper','HINDCOPPER','Equity','NSE','INR','Buy',290,480,230,'>2Y','Copper supply deficit global + domestic capex in EV + renewables','Materials','Medium','2025-04-10','active','','','Yes'],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([recoHdr,...recoRows]), 'Recommendations');
+
+    XLSX.writeFile(wb, 'InvestorCircle_Seed_Template.xlsx');
+  };
+
+  /* ── Parse uploaded file ── */
+  const parseDate = (v) => {
+    if(!v) return null;
+    if(v instanceof Date) return v.toISOString().slice(0,10);
+    const s = String(v).trim();
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const d = new Date(s); return isNaN(d) ? null : d.toISOString().slice(0,10);
+  };
+
+  const handleFile = (f) => {
+    setFile(f); setParsed(null); setParseErrs([]); setSeedLog([]); setSeedDone(false);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type:'binary', cellDates:true });
+        const errs = [];
+
+        /* Profiles */
+        let profiles = [];
+        if(wb.SheetNames.includes('Profiles')) {
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets['Profiles'], { defval:'' });
+          profiles = rows.filter(r=>r.email).map((r,i)=>{
+            if(!r.email) errs.push(`Profiles row ${i+2}: email required`);
+            return {
+              email: String(r.email||'').trim().toLowerCase(),
+              first_name: String(r.first_name||'').trim(),
+              last_name:  String(r.last_name||'').trim(),
+              bio:        String(r.bio||'').trim().slice(0,300) || null,
+              avatar_color:        String(r.avatar_color||'').trim() || null,
+              registration_status: String(r.registration_status||'self_directed').trim(),
+              twitter_url:   String(r.twitter_url||'').trim()   || null,
+              linkedin_url:  String(r.linkedin_url||'').trim()  || null,
+              telegram_url:  String(r.telegram_url||'').trim()  || null,
+              instagram_url: String(r.instagram_url||'').trim() || null,
+            };
+          });
+        }
+
+        /* Recommendations */
+        let recos = [];
+        if(wb.SheetNames.includes('Recommendations')) {
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets['Recommendations'], { defval:'' });
+          recos = rows.filter(r=>r.username&&r.ticker).map((r,i)=>{
+            const row = i+2; const rowErrs = [];
+            if(!r.asset_name)    rowErrs.push('asset_name');
+            if(!r.reco_price)    rowErrs.push('reco_price');
+            if(!r.created_date)  rowErrs.push('created_date');
+            const isClosed = String(r.status||'').trim().toLowerCase()==='closed';
+            if(isClosed && !r.exit_price) rowErrs.push('exit_price (closed)');
+            if(isClosed && !r.exit_date)  rowErrs.push('exit_date (closed)');
+            if(rowErrs.length) errs.push(`Recos row ${row} (@${r.username} ${r.ticker}): missing ${rowErrs.join(', ')}`);
+            const recoPrice = Number(r.reco_price)||0;
+            const exitPrice = r.exit_price ? Number(r.exit_price) : null;
+            return {
+              username:            String(r.username||'').trim().toLowerCase(),
+              asset_name:          String(r.asset_name||'').trim(),
+              ticker:              String(r.ticker||'').trim().toUpperCase(),
+              asset_class:         String(r.asset_class||'Equity').trim(),
+              exchange:            String(r.exchange||'NSE').trim().toUpperCase(),
+              currency:            String(r.currency||'INR').trim().toUpperCase(),
+              recommendation_type: String(r.recommendation_type||'Buy').trim(),
+              reco_price:    recoPrice,
+              current_price: isClosed ? (exitPrice||recoPrice) : recoPrice,
+              target_price:  r.target_price ? Number(r.target_price) : null,
+              stop_loss:     r.stop_loss    ? Number(r.stop_loss)    : null,
+              horizon:    String(r.horizon||'12m').trim(),
+              thesis:     String(r.thesis||'').trim().slice(0,500) || null,
+              sector:     String(r.sector||'').trim() || null,
+              conviction: String(r.conviction||'Medium').trim(),
+              is_public:  String(r.is_public||'Yes').trim().toLowerCase() !== 'no',
+              created_date: parseDate(r.created_date),
+              status:    isClosed ? 'closed' : 'active',
+              exit_price: exitPrice,
+              exit_date:  isClosed ? parseDate(r.exit_date) : null,
+              _rowErrs: rowErrs,
+            };
+          });
+        }
+
+        setParseErrs(errs);
+        setParsed({ profiles, recos });
+      } catch(err) {
+        setParseErrs([`Could not parse file: ${err.message}`]);
+      }
+    };
+    reader.readAsBinaryString(f);
+  };
+
+  /* ── Seed ── */
+  const handleSeed = async () => {
+    if(!parsed||!sql) return;
+    setSeeding(true); setSeedLog([]); setSeedDone(false);
+    const log = (msg, type='info') => setSeedLog(l=>[...l,{msg,type,t:new Date().toLocaleTimeString()}]);
+
+    /* 1 — Profiles */
+    if(parsed.profiles.length) {
+      log(`── Profiles (${parsed.profiles.length} rows) ──`);
+      let ok=0, fail=0;
+      for(const p of parsed.profiles) {
+        try {
+          const res = await sql`
+            UPDATE user_profiles SET
+              first_name=${p.first_name||null}, last_name=${p.last_name||null},
+              full_name=${[p.first_name,p.last_name].filter(Boolean).join(' ')||null},
+              bio=${p.bio}, avatar_color=${p.avatar_color},
+              registration_status=${p.registration_status||'self_directed'},
+              twitter_url=${p.twitter_url}, linkedin_url=${p.linkedin_url},
+              telegram_url=${p.telegram_url}, instagram_url=${p.instagram_url}
+            WHERE email=${p.email} RETURNING id`;
+          if(res.length){ ok++; log(`✓ ${p.email} — profile updated`,'success'); }
+          else { fail++; log(`⚠ ${p.email} — no user found (create account first)`,'warn'); }
+        } catch(e){ fail++; log(`✗ ${p.email} — ${e.message}`,'error'); }
+      }
+      log(`Profiles done: ${ok} updated, ${fail} failed`);
+    }
+
+    /* 2 — Recommendations: build username→id map */
+    if(parsed.recos.length) {
+      log(`── Recommendations (${parsed.recos.length} rows) ──`);
+      const usernames = [...new Set(parsed.recos.map(r=>r.username))];
+      const userMap = {};
+      for(const uname of usernames) {
+        try {
+          const rows = await sql`SELECT id FROM user_profiles WHERE username=${uname} LIMIT 1`;
+          if(rows.length){ userMap[uname]=rows[0].id; log(`Found user: @${uname}`); }
+          else log(`⚠ @${uname} not found — create account and set username first`,'warn');
+        } catch(e){ log(`✗ Lookup @${uname}: ${e.message}`,'error'); }
+      }
+
+      /* Replace mode: delete all existing recos for found users */
+      if(seedMode==='replace') {
+        for(const [uname,uid] of Object.entries(userMap)) {
+          try {
+            const del = await sql`DELETE FROM ic_recommendations WHERE recommender_id=${uid} RETURNING id`;
+            log(`🗑 Deleted ${del.length} existing recos for @${uname}`,'warn');
+          } catch(e){ log(`✗ Delete @${uname}: ${e.message}`,'error'); }
+        }
+      }
+
+      let ok=0, skipped=0, fail=0;
+      for(const r of parsed.recos) {
+        const uid = userMap[r.username];
+        if(!uid){ skipped++; log(`↷ Skip (no user): ${r.ticker} @${r.username}`,'warn'); continue; }
+        if(r._rowErrs.length){ skipped++; log(`↷ Skip (errors): ${r.ticker} — ${r._rowErrs.join(', ')}`,'warn'); continue; }
+
+        /* Skip-mode dedup: (recommender_id, ticker, created_date) */
+        if(seedMode==='skip') {
+          try {
+            const ex = await sql`SELECT id FROM ic_recommendations WHERE recommender_id=${uid} AND ticker=${r.ticker} AND created_at::date=${r.created_date} LIMIT 1`;
+            if(ex.length){ skipped++; log(`↷ Skip (exists): ${r.ticker} on ${r.created_date}`); continue; }
+          } catch(_){}
+        }
+
+        try {
+          await sql`
+            INSERT INTO ic_recommendations (
+              recommender_id, asset_name, ticker, asset_class, exchange, currency,
+              recommendation_type, reco_price, current_price, target_price, stop_loss,
+              horizon, thesis, sector, conviction, is_public,
+              created_at, exit_signal, exit_date
+            ) VALUES (
+              ${uid}, ${r.asset_name}, ${r.ticker}, ${r.asset_class}, ${r.exchange}, ${r.currency},
+              ${r.recommendation_type}, ${r.reco_price}, ${r.current_price},
+              ${r.target_price}, ${r.stop_loss},
+              ${r.horizon}, ${r.thesis}, ${r.sector}, ${r.conviction}, ${r.is_public},
+              ${r.created_date + 'T09:00:00.000Z'},
+              ${r.status==='closed'}, ${r.exit_date}
+            )`;
+          ok++; log(`✓ ${r.ticker} by @${r.username} — ${r.status}${r.exit_price?` @ exit ₹${r.exit_price}`:''}`,'success');
+        } catch(e){ fail++; log(`✗ ${r.ticker}: ${e.message}`,'error'); }
+      }
+      log(`Recommendations done: ${ok} inserted, ${skipped} skipped, ${fail} failed`);
+    }
+
+    log(`── All done ──`,'success');
+    setSeeding(false); setSeedDone(true);
+  };
+
+  /* ── Computed preview stats ── */
+  const stats = parsed ? (() => {
+    const closed = parsed.recos.filter(r=>r.status==='closed');
+    const wins   = closed.filter(r=>r.recommendation_type==='Buy'&&r.exit_price>r.reco_price);
+    const hitRate = closed.length ? Math.round(wins.length/closed.length*100) : 0;
+    const returns = wins.map(r=>((r.exit_price-r.reco_price)/r.reco_price*100));
+    const sorted  = [...returns].sort((a,b)=>a-b);
+    const median  = sorted.length ? (sorted.length%2===0 ? (sorted[sorted.length/2-1]+sorted[sorted.length/2])/2 : sorted[Math.floor(sorted.length/2)]) : 0;
+    return { hitRate, closedCount:closed.length, median: median.toFixed(1) };
+  })() : null;
+
+  /* ── Render ── */
+  const inputStyle = {display:'none'};
+  const labelStyle = {display:'inline-flex',alignItems:'center',gap:8,cursor:'pointer',padding:'10px 18px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,fontSize:13,fontWeight:600,color:'var(--ink)',transition:'.12s'};
+
+  return (
+    <div>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Admin</div>
+          <div className="page-title">Seed Historical Data</div>
+          <div className="page-sub">Bootstrap the platform with realistic track records and recommendations for launch</div>
+        </div>
+      </div>
+
+      {/* Step 1 — Download template */}
+      <div className="card" style={{marginBottom:14}}>
+        <div className="card-head"><span style={{display:'flex',alignItems:'center',gap:7}}><span style={{fontSize:16}}>①</span> Download Template</span></div>
+        <div className="card-body">
+          <p style={{margin:'0 0 14px',fontSize:13,color:'var(--muted)',lineHeight:1.6}}>
+            Download the Excel template. It includes an Instructions sheet, a Profiles sheet (to update user bios/socials), and a Recommendations sheet pre-populated with sample data for two users designed to produce an ICI score of <strong>≥80/100</strong>. Replace the sample usernames/emails with your friends' actual accounts.
+          </p>
+          <button className="btn btn-soft" onClick={downloadTemplate}><Download size={14}/> Download Excel Template</button>
+          <div style={{marginTop:10,fontSize:12,color:'var(--muted)'}}>Tip: User accounts must be created first via Admin → Users. Then set their username via Edit Profile before seeding.</div>
+        </div>
+      </div>
+
+      {/* Step 2 — Upload */}
+      <div className="card" style={{marginBottom:14}}>
+        <div className="card-head"><span style={{display:'flex',alignItems:'center',gap:7}}><span style={{fontSize:16}}>②</span> Upload Filled Template</span></div>
+        <div className="card-body">
+          <input type="file" accept=".xlsx,.xls" id="seed-upload" style={inputStyle} onChange={e=>e.target.files[0]&&handleFile(e.target.files[0])}/>
+          <label htmlFor="seed-upload" style={labelStyle}>
+            <Upload size={14}/> {file ? file.name : 'Choose Excel file (.xlsx)…'}
+          </label>
+          {parseErrs.length>0 && (
+            <div style={{marginTop:12,background:'rgba(244,63,94,.07)',border:'1px solid rgba(244,63,94,.2)',borderRadius:9,padding:'12px 14px'}}>
+              <div style={{fontWeight:700,fontSize:12,color:'#f43f5e',marginBottom:6,textTransform:'uppercase',letterSpacing:'.04em'}}>Validation Issues</div>
+              {parseErrs.slice(0,12).map((e,i)=><div key={i} style={{fontSize:12,color:'#f43f5e',marginBottom:3}}>• {e}</div>)}
+              {parseErrs.length>12&&<div style={{fontSize:12,color:'var(--muted)',marginTop:4}}>…and {parseErrs.length-12} more</div>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Step 3 — Preview & seed */}
+      {parsed && (
+        <div className="card" style={{marginBottom:14}}>
+          <div className="card-head"><span style={{display:'flex',alignItems:'center',gap:7}}><span style={{fontSize:16}}>③</span> Preview & Run Seed</span></div>
+          <div className="card-body">
+
+            {/* Summary stats */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:20}}>
+              {[
+                {label:'Profiles',       val:parsed.profiles.length,                                       col:'var(--accent)'},
+                {label:'Total Recos',    val:parsed.recos.length,                                          col:'var(--ink)'},
+                {label:'Closed',         val:parsed.recos.filter(r=>r.status==='closed').length,           col:'var(--muted)'},
+                {label:'Hit Rate (est.)',val:stats?`${stats.hitRate}%`:'—',                                col:stats?.hitRate>=70?'var(--gain)':'var(--loss)'},
+                {label:'Median Return',  val:stats?.closedCount>0?`+${stats.median}%`:'—',                 col:'var(--gain)'},
+              ].map(s=>(
+                <div key={s.label} style={{background:'var(--surface-2)',borderRadius:10,padding:'12px 14px',border:'1px solid var(--line)',textAlign:'center'}}>
+                  <div style={{fontSize:20,fontWeight:900,color:s.col,letterSpacing:'-1px',lineHeight:1}}>{s.val}</div>
+                  <div style={{fontSize:10,color:'var(--muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',marginTop:5,lineHeight:1.3}}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Conflict mode */}
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8}}>Conflict mode</div>
+              <div style={{display:'flex',gap:10}}>
+                {[
+                  {val:'skip',    label:'Skip existing',  desc:'Insert only; skip if (user + ticker + date) already in DB — safe to re-run'},
+                  {val:'replace', label:'Replace all',    desc:'Delete ALL existing recos for each seeded user, then re-insert — use to correct data'},
+                ].map(o=>(
+                  <label key={o.val} style={{display:'flex',gap:8,cursor:'pointer',padding:'10px 14px',borderRadius:10,background:seedMode===o.val?'rgba(109,93,245,.1)':'var(--surface-2)',border:`1px solid ${seedMode===o.val?'rgba(109,93,245,.45)':'var(--line)'}`,flex:1,transition:'.15s'}}>
+                    <input type="radio" name="seedMode" value={o.val} checked={seedMode===o.val} onChange={()=>setSeedMode(o.val)} style={{accentColor:'var(--accent)',marginTop:2,flexShrink:0}}/>
+                    <div><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>{o.label}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>{o.desc}</div></div>
+                  </label>
+                ))}
+              </div>
+              {seedMode==='replace'&&<div style={{marginTop:8,fontSize:12,color:'#f59e0b',display:'flex',alignItems:'center',gap:6}}><AlertTriangle size={13}/> Replace mode permanently deletes all recommendations for the seeded users before re-inserting. Confirm before running.</div>}
+            </div>
+
+            {/* Profiles preview */}
+            {parsed.profiles.length>0&&(
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8}}>Profiles ({parsed.profiles.length})</div>
+                <div className="tscroll">
+                  <table className="grid">
+                    <thead><tr><th>Email</th><th>Name</th><th>Reg Status</th><th>Bio (preview)</th><th>Socials</th></tr></thead>
+                    <tbody>{parsed.profiles.map((p,i)=>(
+                      <tr key={i}>
+                        <td style={{fontWeight:600}}>{p.email}</td>
+                        <td>{[p.first_name,p.last_name].filter(Boolean).join(' ')||'—'}</td>
+                        <td><span className="pill">{p.registration_status}</span></td>
+                        <td style={{maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--muted)',fontSize:12}}>{p.bio||'—'}</td>
+                        <td style={{fontSize:12,color:'var(--muted)'}}>{[p.twitter_url&&'𝕏',p.linkedin_url&&'LinkedIn',p.telegram_url&&'Telegram',p.instagram_url&&'Instagram'].filter(Boolean).join(' · ')||'—'}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Recos preview */}
+            {parsed.recos.length>0&&(
+              <div style={{marginBottom:18}}>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:8}}>Recommendations ({parsed.recos.length})</div>
+                <div className="tscroll">
+                  <table className="grid">
+                    <thead><tr><th>User</th><th>Ticker</th><th>Asset</th><th>Type</th><th>Reco ₹</th><th>Horizon</th><th>Status</th><th>Exit ₹</th><th>Return</th><th>Date</th><th>Public</th></tr></thead>
+                    <tbody>{parsed.recos.map((r,i)=>{
+                      const ret = r.status==='closed'&&r.exit_price&&r.reco_price
+                        ? ((r.exit_price-r.reco_price)/r.reco_price*100).toFixed(1) : null;
+                      const win = ret!==null ? Number(ret)>0 : null;
+                      return (
+                        <tr key={i} style={r._rowErrs.length?{background:'rgba(244,63,94,.05)'}:{}}>
+                          <td style={{fontWeight:600,color:'var(--accent)'}}>@{r.username}</td>
+                          <td style={{fontWeight:800}}>{r.ticker}</td>
+                          <td style={{maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:12}}>{r.asset_name}</td>
+                          <td><span style={{fontWeight:700,color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>{r.recommendation_type}</span></td>
+                          <td>{Number(r.reco_price).toLocaleString('en-IN')}</td>
+                          <td style={{fontSize:12,color:'var(--muted)'}}>{r.horizon}</td>
+                          <td><span className="pill" style={{color:r.status==='closed'?'var(--muted)':'var(--gain)'}}>{r.status}</span></td>
+                          <td style={{fontSize:12}}>{r.exit_price?Number(r.exit_price).toLocaleString('en-IN'):'—'}</td>
+                          <td style={{fontWeight:700,color:win===null?'var(--muted)':win?'var(--gain)':'var(--loss)'}}>{ret!==null?`${Number(ret)>0?'+':''}${ret}%`:'—'}</td>
+                          <td style={{fontSize:12,color:'var(--muted)',whiteSpace:'nowrap'}}>{r.created_date}</td>
+                          <td style={{textAlign:'center'}}>{r.is_public?<Check size={13} color="var(--gain)"/>:'—'}</td>
+                        </tr>
+                      );
+                    })}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Run button */}
+            <div style={{borderTop:'1px solid var(--line)',paddingTop:16}}>
+              <button className="btn btn-pri" disabled={seeding||!sql} onClick={handleSeed} style={{minWidth:140}}>
+                {seeding?<><Loader size={14} className="spin"/> Seeding…</>:<><Sparkles size={14}/> Run Seed</>}
+              </button>
+              {!sql&&<span style={{marginLeft:12,fontSize:12,color:'var(--loss)'}}>Database not connected</span>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Seed log */}
+      {seedLog.length>0&&(
+        <div className="card">
+          <div className="card-head">
+            <span>Seed Log</span>
+            {seedDone&&<span className="pill" style={{background:'rgba(74,222,128,.15)',color:'var(--gain)',border:'1px solid rgba(74,222,128,.3)'}}>Complete</span>}
+            {seeding&&<Loader size={14} className="spin" color="var(--muted)"/>}
+          </div>
+          <div className="card-body">
+            <div style={{background:'#0d0e1a',borderRadius:10,padding:'14px 16px',fontFamily:'monospace',fontSize:12,lineHeight:1.7,maxHeight:380,overflowY:'auto',color:'#c8c8d8',border:'1px solid rgba(255,255,255,.05)'}}>
+              {seedLog.map((l,i)=>(
+                <div key={i} style={{color:l.type==='error'?'#f87171':l.type==='warn'?'#fbbf24':l.type==='success'?'#4ade80':'#c8c8d8'}}>
+                  <span style={{opacity:.4,marginRight:10,userSelect:'none'}}>{l.t}</span>{l.msg}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
