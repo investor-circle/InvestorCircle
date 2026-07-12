@@ -439,12 +439,6 @@ export default function App() {
     return () => window.removeEventListener("hashchange", h);
   }, []);
 
-  // ── Close mobile nav drawer whenever page changes ──────────────────────────
-  const page = isInv ? investorPage : adminPage;
-  const setPage = isInv
-    ? (p) => { setInvestorPage(p); setNavOpen(false); }
-    : (p) => { setAdminPage(p); };
-
   // ── Post-login/signup: auto-send connection request if user came from a public profile ─
   useEffect(() => {
     if (!user || !sql) return;
@@ -697,6 +691,11 @@ export default function App() {
   // Admin users can toggle between "investor" and "admin" views via the sidebar button.
   const isInv = !userIsAdmin || role === "investor";
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
+  // page + setPage — setPage also closes the mobile nav drawer for investors
+  const page    = isInv ? investorPage : adminPage;
+  const setPage = isInv
+    ? (p) => { setInvestorPage(p); setNavOpen(false); }
+    : (p) => { setAdminPage(p); };
   const canCreateGroups = configs.groupCreationPolicy==="all";
 
   const nav = isInv ? [
