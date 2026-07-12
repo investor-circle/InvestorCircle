@@ -3352,6 +3352,32 @@ function SharePublicPopover({ reco, username, onClose, anchorEl }) {
 }
 
 /* ─── Main PublicProfilePage ─────────────────────────────────────────────────── */
+/* ── ProfileErrorBoundary — catches render errors so the page never goes blank ── */
+class ProfileErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(err) { return { error: err }; }
+  componentDidCatch(err, info) { console.error('PublicProfile render error:', err, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{padding:'40px 24px',textAlign:'center'}}>
+          <AlertTriangle size={32} color="var(--loss)" style={{marginBottom:14}}/>
+          <div style={{fontWeight:700,fontSize:16,marginBottom:8,color:'var(--ink)'}}>Profile failed to render</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:16,maxWidth:440,margin:'0 auto 16px'}}>
+            Something went wrong building the profile view. The error below may help diagnose the issue.
+          </div>
+          <div style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,
+              padding:'12px 16px',fontSize:12,fontFamily:'monospace',color:'var(--loss)',textAlign:'left',
+              maxWidth:560,margin:'0 auto',wordBreak:'break-all'}}>
+            {this.state.error.message}
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
   const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
@@ -3464,13 +3490,54 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     if(notFound) return <div style={{textAlign:'center',padding:'60px 0'}}><Globe size={36} color="var(--muted)" style={{marginBottom:14}}/><div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Record not found</div><div className="muted small">@{username} hasn't set up a public profile yet.</div></div>;
     if(!data) return null;
 
-    // Defensive defaults — spread-merge so partial objects also get safe fallbacks
-    const profile  = { bio:'', avatar_color:'', connection_count:0, group_count:0, ...(data.profile||{}) };
-    const summary  = { total:0, closed:0, active:0, years_history:0, ...(data.summary||{}) };
-    const live     = { count:0, in_profit:0, in_loss:0, avg_return:0, avg_holding_days:0, best:null, worst:null, ...(data.live||{}) };
-    const realized = { count:0, hit_rate_pct:0, median_return:0, avg_return:0, avg_holding_days:0, win_count:0, loss_count:0, risk_adjusted:0, best:null, ...(data.realized||{}) };
-    const sectors  = Array.isArray(data.sectors) ? data.sectors : [];
-    const recos    = Array.isArray(data.recos)   ? data.recos   : [];
+    // Nullish-coalescing defaults (??) — handles null AND undefined from DB.
+    // Spread-merge ({ ...defaults, ...(data.x||{}) }) fails because DB null values
+    // overwrite the defaults; ?? correctly treats null/undefined as "use default".
+    const d_p = data.profile  || {};
+    const d_s = data.summary  || {};
+    const d_l = data.live     || {};
+    const d_r = data.realized || {};
+
+    const profile = {
+      id: d_p.id ?? '', first_name: d_p.first_name ?? '', last_name: d_p.last_name ?? '',
+      full_name: d_p.full_name ?? '', email: d_p.email ?? '', bio: d_p.bio ?? '',
+      avatar_color: d_p.avatar_color ?? '', username: d_p.username ?? '',
+      connection_count: d_p.connection_count ?? 0, group_count: d_p.group_count ?? 0,
+      created_at: d_p.created_at ?? null,
+      registration_status: d_p.registration_status ?? 'self_directed',
+      sebi_approval_status: d_p.sebi_approval_status ?? 'not_applied',
+      sebi_reg_number: d_p.sebi_reg_number ?? null,
+      twitter_url: d_p.twitter_url ?? '', linkedin_url: d_p.linkedin_url ?? '',
+      telegram_url: d_p.telegram_url ?? '', instagram_url: d_p.instagram_url ?? '',
+    };
+    const summary = {
+      total:         d_s.total         ?? 0,
+      closed:        d_s.closed        ?? 0,
+      active:        d_s.active        ?? 0,
+      years_history: d_s.years_history ?? 0,
+    };
+    const live = {
+      count:            d_l.count            ?? 0,
+      in_profit:        d_l.in_profit        ?? 0,
+      in_loss:          d_l.in_loss          ?? 0,
+      avg_return:       d_l.avg_return       ?? 0,
+      avg_holding_days: d_l.avg_holding_days ?? 0,
+      best:             d_l.best             ?? null,
+      worst:            d_l.worst            ?? null,
+    };
+    const realized = {
+      count:            d_r.count            ?? 0,
+      hit_rate_pct:     d_r.hit_rate_pct     ?? 0,
+      median_return:    d_r.median_return     ?? 0,
+      avg_return:       d_r.avg_return        ?? 0,
+      avg_holding_days: d_r.avg_holding_days  ?? 0,
+      win_count:        d_r.win_count         ?? 0,
+      loss_count:       d_r.loss_count        ?? 0,
+      risk_adjusted:    d_r.risk_adjusted      ?? 0,
+      best:             d_r.best               ?? null,
+    };
+    const sectors = Array.isArray(data.sectors) ? data.sectors : [];
+    const recos   = Array.isArray(data.recos)   ? data.recos   : [];
     const displayName=[profile.first_name,profile.last_name].filter(Boolean).join(' ')||profile.full_name||username;
     const memberSince=profile.created_at?new Date(profile.created_at).toLocaleDateString('en-IN',{month:'short',year:'numeric'}):null;
 
@@ -3949,7 +4016,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
             ?<button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
             :<a href={window.location.pathname} style={{fontSize:13,fontWeight:600,color:'var(--accent)',textDecoration:'none'}}>Sign in →</a>}
         </div>
-        <div style={{padding:'20px 20px 0'}}>{renderContent()}</div>
+        <div style={{padding:'20px 20px 0'}}><ProfileErrorBoundary>{renderContent()}</ProfileErrorBoundary></div>
       </div>
     );
   }
@@ -3965,7 +4032,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
         </>}
       </div>
     </div>
-    {renderContent()}
+    <ProfileErrorBoundary>{renderContent()}</ProfileErrorBoundary>
   </>);
 }
 
