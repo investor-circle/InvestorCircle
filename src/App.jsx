@@ -1050,6 +1050,7 @@ export default function App() {
             {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/>}
             {isInv && page==="about"        && <AboutPage/>}
             {isInv && page==="contact"      && <ContactPage setPage={setPage}/>}
+            {isInv && page==="privacy"      && <PrivacyPolicyPage/>}
             {isInv && page==="trackrecord" && (
               ME.username
                 ? <ProfileErrorBoundary key={ME.username}>
@@ -1090,6 +1091,8 @@ export default function App() {
             {!isInv && page==="configs"     && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
             {!isInv && page==="seed"        && <AdminSeedData/>}
             {!isInv && page==="about"       && <AdminAboutEditor/>}
+            {/* ── Site-wide footer — investors only ── */}
+            {isInv && <SiteFooter page={page} setPage={setPage}/>}
           </div>
         </div>
       </div>
@@ -7364,6 +7367,238 @@ function ContactPage({ setPage }) {
         </button>
         <span style={{color:'var(--line-2)'}}>·</span>
         <span style={{fontSize:13,color:'var(--line-2)'}}>Privacy Policy</span>
+      </div>
+    </>
+  );
+}
+
+/* =================================================================== SITE FOOTER */
+function SiteFooter({ page, setPage }) {
+  const links = [
+    { id:'about',   label:'About MIC'      },
+    { id:'privacy', label:'Privacy Policy'  },
+    { id:'contact', label:'Contact Us'      },
+  ];
+  return (
+    <div style={{
+      marginTop:48, paddingTop:18, borderTop:'1px solid var(--line)',
+      display:'flex', gap:6, flexWrap:'wrap', justifyContent:'center',
+      alignItems:'center', fontSize:12,
+    }}>
+      <span style={{color:'var(--muted)'}}>© {new Date().getFullYear()} My Investor Circle</span>
+      {links.map(link => (
+        <React.Fragment key={link.id}>
+          <span style={{color:'var(--line-2)'}}>·</span>
+          <button onClick={()=>setPage(link.id)} style={{
+            background:'none', border:'none', cursor:'pointer', fontSize:12,
+            fontWeight: page===link.id ? 700 : 400,
+            color: page===link.id ? 'var(--accent-ink)' : 'var(--muted)',
+            fontFamily:'var(--font)', padding:0,
+            textDecoration: page===link.id ? 'underline' : 'none',
+            textUnderlineOffset: 3,
+          }}>
+            {link.label}
+          </button>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+/* =================================================================== PRIVACY POLICY PAGE */
+const PRIVACY_HTML = `
+<div style="max-width:720px;margin:0 auto;">
+
+<div style="background:linear-gradient(135deg,#f5f3ff,#fdf1ff);border:1px solid #e0dcff;border-radius:14px;padding:20px 24px;margin-bottom:32px;">
+  <p style="font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#6d5df5;margin:0 0 6px;">Important Regulatory Notice</p>
+  <p style="font-size:14px;line-height:1.75;color:#13142b;margin:0;">My Investor Circle is a <strong>technology platform and information intermediary</strong>. It is <strong>not a SEBI-registered Research Analyst</strong> under the SEBI (Research Analysts) Regulations 2014, <strong>not a SEBI-registered Investment Adviser</strong> under the SEBI (Investment Advisers) Regulations 2013, and <strong>not regulated by the Reserve Bank of India (RBI)</strong>. Content published on this platform represents the personal views of individual users. <strong>Investments in securities markets are subject to market risks. Please read all related documents carefully before investing.</strong></p>
+</div>
+
+<h2 style="font-size:22px;font-weight:800;letter-spacing:-.4px;color:#13142b;margin:0 0 6px;">Privacy Policy</h2>
+<p style="font-size:13px;color:#8d90ad;margin:0 0 28px;"><strong>Effective Date:</strong> July 2025 &nbsp;·&nbsp; <strong>Last Updated:</strong> July 2025 &nbsp;·&nbsp; <strong>Governing Law:</strong> Laws of India</p>
+
+<p style="font-size:15px;line-height:1.85;color:#565a78;margin:0 0 28px;">Welcome to <strong style="color:#13142b;">My Investor Circle</strong>. Your privacy matters to us. This Privacy Policy explains what information we collect, why we collect it, how we use it, and the choices you have. Our goal is to build a transparent investing community while protecting your personal information. By using My Investor Circle, you agree to this Privacy Policy.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">1. Information We Collect</h3>
+
+<p style="font-size:14px;font-weight:700;color:#13142b;margin:0 0 8px;">Information you provide</p>
+<ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 14px;padding-left:20px;">
+  <li>Name, username, email address</li>
+  <li>Profile photo, biography, social media links</li>
+  <li>Country and investment preferences (if voluntarily provided)</li>
+  <li>Correspondence with our support team</li>
+</ul>
+
+<p style="font-size:14px;font-weight:700;color:#13142b;margin:0 0 8px;">Content you publish</p>
+<ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 14px;padding-left:20px;">
+  <li>Investment ideas, comments, and replies</li>
+  <li>Public recommendations and associated metadata</li>
+  <li>Public profile information</li>
+</ul>
+<p style="font-size:13px;line-height:1.75;color:#8d90ad;margin:0 0 14px;">Content you intentionally publish may be visible to other users based on your privacy settings.</p>
+
+<p style="font-size:14px;font-weight:700;color:#13142b;margin:0 0 8px;">Portfolio information (optional)</p>
+<ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 14px;padding-left:20px;">
+  <li>Holdings, transactions, mutual fund investments, demat holdings, asset allocation</li>
+</ul>
+<p style="font-size:13px;line-height:1.75;color:#8d90ad;margin:0 0 14px;">Portfolio imports occur only after your explicit consent and are never publicly shared without your authorisation.</p>
+
+<p style="font-size:14px;font-weight:700;color:#13142b;margin:0 0 8px;">Technical information</p>
+<ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;padding-left:20px;">
+  <li>Device type, browser, operating system, IP address</li>
+  <li>Session logs, crash reports, cookies and similar technologies</li>
+</ul>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">2. How We Use Information</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">Under the <strong>Digital Personal Data Protection Act, 2023 (DPDP Act)</strong>, we process your personal data only for lawful purposes with your consent or as otherwise permitted by law. We use information to:</p>
+<ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;padding-left:20px;">
+  <li>Create and maintain your account</li>
+  <li>Display your public profile and recommendation history</li>
+  <li>Calculate investment analytics and credibility metrics (ICI Score)</li>
+  <li>Improve platform performance and develop new features</li>
+  <li>Detect and prevent abuse, fraud, or manipulation</li>
+  <li>Respond to support and grievance requests</li>
+  <li>Comply with applicable law, including orders from competent authorities</li>
+</ul>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;"><strong>We do not sell, rent, or trade your personal information to third parties.</strong></p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">3. Public Information</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">The following may be publicly visible if you choose to publish it:</p>
+<ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;padding-left:20px;">
+  <li>Username and public profile</li>
+  <li>Investment ideas and recommendation history</li>
+  <li>Performance analytics and credibility score</li>
+  <li>Public comments and replies</li>
+</ul>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">Your email address, mobile number, imported portfolio data, and authentication credentials are <strong>never publicly displayed</strong>.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">4. Recommendation Record Integrity</h3>
+<div style="background:#f5f3ff;border-left:4px solid #6d5df5;border-radius:0 10px 10px 0;padding:16px 20px;margin:0 0 14px;">
+  <p style="font-size:14px;line-height:1.8;color:#13142b;margin:0;">My Investor Circle is designed to maintain a <strong>transparent, tamper-resistant historical record</strong> of investment ideas. Once published, recommendations, timestamps, and associated performance metrics may be retained to preserve the integrity of the platform's analytics and public record. Users may update or close recommendations, but historical records may continue to be displayed as part of the platform's transparency features, subject to applicable law.</p>
+</div>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">Requests to remove or alter historical records will be considered in accordance with legal requirements, privacy obligations, and the platform's legitimate interest in maintaining accurate historical information. Where a user establishes that a published idea infringes their rights under applicable law, we will act in accordance with our obligations as an intermediary under the <strong>Information Technology Act, 2000</strong> and the <strong>IT (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021</strong>.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">5. Data Sharing</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">We may share limited information with trusted service providers for purposes such as:</p>
+<ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;padding-left:20px;">
+  <li>Cloud hosting and infrastructure</li>
+  <li>Authentication services (e.g. Firebase / Google)</li>
+  <li>Email delivery</li>
+  <li>Analytics and error monitoring</li>
+  <li>Market data providers</li>
+  <li>Portfolio import providers</li>
+</ul>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 14px;">These providers process data only on our behalf and under appropriate contractual safeguards. Some of these providers may be located outside India. Where required by the DPDP Act, 2023 or other applicable law, we will implement appropriate safeguards for cross-border data transfers.</p>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">We may also disclose information where required by law, court order, or a competent government or regulatory authority, including SEBI, RBI, or law enforcement agencies.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">6. Your Rights Under the DPDP Act, 2023</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">As a <strong>Data Principal</strong> under the Digital Personal Data Protection Act, 2023, you have the following rights, subject to applicable conditions and exceptions:</p>
+<ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;padding-left:20px;">
+  <li><strong>Right to access</strong> — obtain a summary of personal data we hold about you</li>
+  <li><strong>Right to correction and erasure</strong> — request correction of inaccurate data or erasure of data no longer required</li>
+  <li><strong>Right to grievance redressal</strong> — raise a complaint through our Grievance Officer</li>
+  <li><strong>Right to nominate</strong> — nominate another individual to exercise rights on your behalf in the event of your death or incapacity</li>
+  <li><strong>Right to withdraw consent</strong> — where processing is based on your consent, you may withdraw it at any time (this will not affect prior processing)</li>
+</ul>
+<p style="font-size:13px;line-height:1.75;color:#8d90ad;margin:0 0 24px;">Note: Certain data may be retained where required by law or where necessary to preserve the integrity of the platform's historical analytics. Erasure of account data will not automatically erase publicly-published recommendation history, which may be retained in anonymised or de-identified form.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">7. Grievance Redressal</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">In compliance with the <strong>Information Technology (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021</strong> and the <strong>DPDP Act, 2023</strong>, we have appointed a <strong>Grievance Officer</strong>. If you have any concerns regarding the use of your personal data or any content published on the platform, you may contact:</p>
+<div style="background:#f5f5fb;border:1px solid #e8e8ef;border-radius:12px;padding:18px 22px;margin:0 0 14px;">
+  <p style="font-size:14px;font-weight:700;color:#13142b;margin:0 0 4px;">Grievance Officer — My Investor Circle</p>
+  <p style="font-size:14px;color:#565a78;margin:0 0 2px;">Email: <a href="mailto:myinvestorcircle@gmail.com" style="color:#6d5df5;">myinvestorcircle@gmail.com</a></p>
+  <p style="font-size:13px;color:#8d90ad;margin:0;">We will acknowledge your complaint within <strong>24 hours</strong> and endeavour to resolve it within <strong>15 days</strong> of receipt.</p>
+</div>
+<p style="font-size:13px;line-height:1.75;color:#8d90ad;margin:0 0 24px;">If your grievance is not resolved to your satisfaction, you may approach the Data Protection Board of India once it is constituted under the DPDP Act, 2023.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">8. Investment Risk Disclosure</h3>
+<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:16px 20px;margin:0 0 14px;">
+  <p style="font-size:14px;font-weight:700;color:#92400e;margin:0 0 6px;">Standard Risk Disclosure</p>
+  <p style="font-size:14px;line-height:1.8;color:#78350f;margin:0 0 8px;"><strong>Investments in securities markets are subject to market risks. Please read all related documents carefully before investing.</strong></p>
+  <p style="font-size:14px;line-height:1.8;color:#92400e;margin:0;">Past performance of any investment idea or user on My Investor Circle is not indicative of future results. My Investor Circle does not guarantee the accuracy of any investment idea. Users are solely responsible for their own investment decisions.</p>
+</div>
+<ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;padding-left:20px;">
+  <li>My Investor Circle is <strong>not a SEBI-registered Research Analyst</strong> (SEBI RA Regulations, 2014)</li>
+  <li>My Investor Circle is <strong>not a SEBI-registered Investment Adviser</strong> (SEBI IA Regulations, 2013)</li>
+  <li>My Investor Circle is <strong>not a stock exchange, broker, or sub-broker</strong> and does not execute trades</li>
+  <li>My Investor Circle is <strong>not regulated by the RBI</strong> and does not deal in regulated payment or banking products</li>
+  <li>Users who independently qualify as Research Analysts or Investment Advisers under SEBI regulations are responsible for their own compliance</li>
+</ul>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">9. Cookies</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">We use cookies and similar technologies to keep you signed in, remember preferences, improve performance, measure usage, and detect fraud. You may disable cookies in your browser settings, although some platform functionality may not work correctly.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">10. Data Retention</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">We retain personal data only for as long as reasonably necessary to operate the platform, preserve recommendation history, resolve disputes, meet legal obligations, and protect against fraud. Certain records may be retained longer where required by Indian law or to preserve the integrity of historical analytics.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">11. Security</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">We use reasonable technical and organisational measures to protect your information, including encryption where appropriate, access controls, and secure infrastructure. No online system can guarantee absolute security, and users should also protect their own credentials and not share passwords or OTPs with anyone.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">12. Market Data</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">Market prices displayed on My Investor Circle may be obtained from third-party market data providers and may be delayed. My Investor Circle does not warrant the accuracy or completeness of market data. All trademarks and market data remain the property of their respective owners.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">13. Children's Privacy</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">My Investor Circle is intended for users who are legally permitted to use investment-related services in their jurisdiction. The platform is not directed at children. We do not knowingly collect personal data from minors. If we become aware that a minor has provided personal data, we will take steps to delete it.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">14. Governing Law &amp; Jurisdiction</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">This Privacy Policy is governed by and construed in accordance with the laws of India, including the Digital Personal Data Protection Act, 2023, the Information Technology Act, 2000, and other applicable regulations. Any disputes arising out of or in connection with this Privacy Policy shall be subject to the exclusive jurisdiction of the courts of India.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">15. Changes to This Policy</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">We may update this Privacy Policy from time to time. Material changes will be communicated through the platform or by email where appropriate. Continued use of the platform after such changes constitutes your acceptance of the updated policy.</p>
+
+<hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
+
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">16. Contact</h3>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">For privacy-related questions or to exercise your data rights:</p>
+<p style="font-size:14px;color:#565a78;margin:0;"><strong>Email:</strong> <a href="mailto:myinvestorcircle@gmail.com" style="color:#6d5df5;">myinvestorcircle@gmail.com</a></p>
+
+</div>
+`.trim();
+
+function PrivacyPolicyPage() {
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Legal</div>
+          <div className="page-title">Privacy Policy</div>
+          <div className="page-sub">Effective July 2025 · Governing Law: India · DPDP Act 2023 compliant</div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-body" style={{padding:'32px 36px'}}>
+          <div dangerouslySetInnerHTML={{__html: PRIVACY_HTML}}/>
+        </div>
       </div>
     </>
   );
