@@ -5232,12 +5232,12 @@ function AdminSeedData() {
         try {
           await sql`
             INSERT INTO ic_recommendations (
-              recommender_id, asset_name, ticker, asset_class, exchange, currency,
+              recommender_id, asset_name, ticker, asset_class, exchange,
               recommendation_type, reco_price, current_price, target_price, stop_loss,
               horizon, thesis, sector, conviction, is_public,
               created_at, exit_signal, exit_date
             ) VALUES (
-              ${uid}, ${r.asset_name}, ${r.ticker}, ${r.asset_class}, ${r.exchange}, ${r.currency},
+              ${uid}, ${r.asset_name}, ${r.ticker}, ${r.asset_class}, ${r.exchange},
               ${r.recommendation_type}, ${r.reco_price}, ${r.current_price},
               ${r.target_price}, ${r.stop_loss},
               ${r.horizon}, ${r.thesis}, ${r.sector}, ${r.conviction}, ${r.is_public},
