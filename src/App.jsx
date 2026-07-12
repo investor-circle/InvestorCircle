@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
-  Home, PieChart, Users, Lightbulb, Shield, Search, Bell, Settings,
+  Home, PieChart, Users, Lightbulb, Shield, Search, Bell, Settings, Menu,
   Lock, Eye, EyeOff, TrendingUp, TrendingDown, Plus, X, Check, Send,
   UserCog, Layers, Wallet, ArrowUpRight, ArrowDownRight, MessageSquare,
   Bookmark, ChevronRight, ChevronDown, ChevronsUpDown, Sparkles, ArrowUpDown,
@@ -235,6 +235,113 @@ tr.hiddenrow > td{opacity:.55;}
 @keyframes spin{to{transform:rotate(360deg);}}
 .nowrap{white-space:nowrap;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+
+/* ─── MOBILE RESPONSIVE (investors only — admin panel stays desktop) ─── */
+
+/* Hamburger button: hidden on desktop, shown on mobile */
+.hamburger{display:none;align-items:center;justify-content:center;width:40px;height:40px;background:none;border:none;cursor:pointer;color:var(--ink);border-radius:10px;flex-shrink:0;padding:0;}
+.hamburger:hover{background:var(--surface-2);}
+
+/* Nav drawer backdrop: transparent on desktop */
+.nav-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:498;opacity:0;pointer-events:none;transition:opacity .28s;}
+.nav-backdrop.open{opacity:1;pointer-events:auto;}
+
+/* Feed/Pulse tab bar: hidden on desktop */
+.mobile-tabs{display:none;}
+.mobile-tab{flex:1;position:relative;background:none;border:none;border-bottom:3px solid transparent;padding:11px 8px;font-family:var(--font);font-size:14px;font-weight:700;color:var(--muted);cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center;gap:7px;}
+.mobile-tab.active{color:var(--accent-ink);border-bottom-color:var(--accent);}
+.tab-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px rgba(109,93,245,.8);flex-shrink:0;animation:pulse-dot 2.2s ease-in-out infinite;}
+@keyframes pulse-dot{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.35);opacity:.7;}}
+
+/* Utility: hides an element on mobile only (no-op on desktop) */
+.mob-hidden{}
+
+/* Layout hooks — styled in media queries below */
+.feed-right-sidebar{}
+.ici-panel{}
+.ici-body{}
+.ici-donut-wrapper{}
+.ici-donut-svg{}
+.stat-strip{}
+.portfolio-layout{}
+.search-hide-mobile{}
+.tb-name-role{}
+
+@media(max-width:768px){
+  /* Shell: sidebar becomes fixed off-screen drawer */
+  .shell{position:relative;}
+  .sidebar{
+    position:fixed;left:-264px;top:0;z-index:500;width:256px;height:100%;
+    transition:left .28s cubic-bezier(.4,0,.2,1);
+    box-shadow:none;overflow-y:auto;
+  }
+  .sidebar.nav-open{left:0;box-shadow:16px 0 48px rgba(0,0,0,.55);}
+
+  /* Topbar: tighter, hamburger visible */
+  .topbar{padding:0 12px 0 4px;gap:6px;}
+  .hamburger{display:inline-flex;}
+  .search-hide-mobile{display:none!important;}
+  .tb-name-role{display:none!important;}
+
+  /* Content area */
+  .content{padding:16px 14px;}
+  .page-title{font-size:20px!important;}
+  .page-head{margin-bottom:14px;}
+
+  /* KPI row: 4 cols → 2 cols */
+  .kpi-row{grid-template-columns:repeat(2,1fr);}
+
+  /* Feed/Pulse tabs: sticky below topbar, full-bleed */
+  .mobile-tabs{
+    display:flex;
+    position:sticky;top:0;z-index:190;
+    background:rgba(245,245,251,.96);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);
+    margin:-16px -14px 16px;
+    padding:0 14px;
+    gap:4px;
+  }
+
+  /* Feed/Pulse column switching */
+  .mob-hidden{display:none!important;}
+  .feed-right-sidebar{width:100%!important;flex-shrink:1!important;}
+
+  /* ICI panel: full-width on mobile */
+  .ici-panel{min-width:0!important;width:100%!important;flex-shrink:1!important;}
+  .ici-donut-wrapper{width:140px!important;height:140px!important;}
+  .ici-donut-svg{width:140px!important;height:140px!important;}
+
+  /* Stat strip: 6 cols → 3 cols (two rows) */
+  .stat-strip{grid-template-columns:repeat(3,1fr)!important;}
+
+  /* Portfolio: side-by-side → stacked */
+  .portfolio-layout{grid-template-columns:1fr!important;}
+
+  /* Modals: floating dialog → bottom sheet */
+  .overlay{align-items:flex-end!important;padding:0!important;}
+  .modal{border-radius:20px 20px 0 0!important;width:100%!important;max-height:88vh!important;}
+}
+
+@media(max-width:480px){
+  /* Small phones */
+  .content{padding:12px 10px;}
+  .mobile-tabs{margin:-12px -10px 14px;padding:0 10px;}
+  .topbar{padding:0 8px 0 2px;}
+
+  /* ICI body: donut above, metrics below */
+  .ici-body{flex-direction:column!important;align-items:center!important;}
+  .ici-body > div:last-child{width:100%!important;}
+
+  /* Stat strip: 3 cols → 2 cols on very small screens */
+  .stat-strip{grid-template-columns:repeat(2,1fr)!important;}
+
+  /* KPI: tighter */
+  .kpi-row{gap:8px;}
+  .kpi{padding:12px 12px;}
+  .kpi .val{font-size:19px;}
+}
 `;
 
 /* ---------- mock data ---------- */
@@ -321,6 +428,7 @@ export default function App() {
   const [globalSearch, setGlobalSearch] = useState('');
   const [notifOpen,     setNotifOpen]     = useState(false);
   const [profileOpen,   setProfileOpen]   = useState(false);
+  const [navOpen,       setNavOpen]       = useState(false);
   const [connectConfirm, setConnectConfirm] = useState(null); // { name, username } after auto-connect
 
   // ── Hash routing — for public profile URLs (#/investor/username) ─────────────
@@ -330,6 +438,12 @@ export default function App() {
     window.addEventListener("hashchange", h);
     return () => window.removeEventListener("hashchange", h);
   }, []);
+
+  // ── Close mobile nav drawer whenever page changes ──────────────────────────
+  const page = isInv ? investorPage : adminPage;
+  const setPage = isInv
+    ? (p) => { setInvestorPage(p); setNavOpen(false); }
+    : (p) => { setAdminPage(p); };
 
   // ── Post-login/signup: auto-send connection request if user came from a public profile ─
   useEffect(() => {
@@ -583,8 +697,6 @@ export default function App() {
   // Admin users can toggle between "investor" and "admin" views via the sidebar button.
   const isInv = !userIsAdmin || role === "investor";
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
-  const page = isInv ? investorPage : adminPage;
-  const setPage = isInv ? setInvestorPage : setAdminPage;
   const canCreateGroups = configs.groupCreationPolicy==="all";
 
   const nav = isInv ? [
@@ -613,7 +725,9 @@ export default function App() {
     <div className="app">
       <style>{STYLES}</style>
       <div className="shell">
-        <div className="sidebar">
+        {/* Mobile nav backdrop — click to close drawer */}
+        <div className={"nav-backdrop"+(navOpen?" open":"")} onClick={()=>setNavOpen(false)}/>
+        <div className={"sidebar"+(navOpen?" nav-open":"")}>
           {/* Brand */}
           <div className="brand"><div className="mark" style={{fontSize:14,letterSpacing:'-.5px'}}>mic</div>
             <div><div className="nm">myInvestorCircle</div><div className="tag">Social Investing</div></div></div>
@@ -637,7 +751,13 @@ export default function App() {
 
         <div className="main">
           <div className="topbar">
-            <div className="searchbox" style={{width:300,maxWidth:"40vw"}}>
+            {/* Hamburger — mobile only, opens nav drawer */}
+            {isInv && (
+              <button className="hamburger" onClick={()=>setNavOpen(v=>!v)} aria-label="Toggle menu">
+                {navOpen ? <X size={20}/> : <Menu size={20}/>}
+              </button>
+            )}
+            <div className="searchbox search-hide-mobile" style={{width:300,maxWidth:"40vw"}}>
               <Search size={16} color="var(--muted)"/>
               <input
                 value={globalSearch}
@@ -691,7 +811,7 @@ export default function App() {
                 >
                   <div className="avatar-pill">
                     <div className="gava">{isInv ? ME.initials : "AD"}</div>
-                    <div style={{paddingRight:6}}>
+                    <div className="tb-name-role" style={{paddingRight:6}}>
                       <div style={{fontSize:13,fontWeight:700,lineHeight:1.2}}>
                         {isInv ? ME.name : "Admin"}
                       </div>
@@ -1458,7 +1578,7 @@ function Portfolio({ configs, holdings, setHoldings, refreshPrices, priceRefresh
       <div className="kpi"><div className="lbl">Unrealized P&L</div><div className={"val tnum "+(sPnl>=0?"pos":"neg")}>{mask(fmtSigned(sPnl))}</div><div className={"sub "+(sPnl>=0?"pos":"neg")}>{fmtPct(sPnl/sCost)}</div></div>
       <div className="kpi"><div className="lbl">Holdings</div><div className="val">{shown.length}</div><div className="sub muted">in {new Set(shown.map(r=>r.acct)).size} accounts</div></div>
       <div className="kpi"><div className="lbl">Top position</div><div className="val">{top?.sym}</div><div className="sub muted">{fmt(top?.value||0)}</div></div></div>
-    <div style={{ display:"grid", gridTemplateColumns:"1fr 320px", gap:18 }}>
+    <div className="portfolio-layout" style={{ display:"grid", gridTemplateColumns:"1fr 320px", gap:18 }}>
       <div className="card"><div className="card-head">Holdings
         <select className="inline-select" value={acct} onChange={e=>setAcct(e.target.value)}><option value="all">All accounts</option>{ACCOUNTS.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
         <div className="card-body" style={{ padding:"8px 10px" }}>
@@ -2974,8 +3094,8 @@ function IciDonut({ score, band }) {
   const glow  = score >= 70 ? 'rgba(74,222,128,.55)' : score >= 50 ? 'rgba(167,139,250,.55)' : score >= 30 ? 'rgba(251,191,36,.55)' : 'rgba(248,113,113,.55)';
   return (
     <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,flexShrink:0}}>
-      <div style={{position:'relative',width:170,height:170}}>
-        <svg width={170} height={170} viewBox="0 0 170 170">
+      <div className="ici-donut-wrapper" style={{position:'relative',width:170,height:170}}>
+        <svg className="ici-donut-svg" width={170} height={170} viewBox="0 0 170 170">
           {/* Outer subtle halo ring */}
           <circle cx={cx} cy={cy} r={r+14} fill="none" stroke={col} strokeWidth={1} opacity={.15}/>
           {/* Background fill of track area */}
@@ -3300,7 +3420,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
         <div style={{background:'#0f1117',borderRadius:18,overflow:'hidden',marginBottom:16,border:'1px solid rgba(255,255,255,.07)',boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
 
           {/* Header row: avatar + info + ICI */}
-          <div style={{padding:'20px 28px 16px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
+          <div className="profile-hero-row" style={{padding:'20px 28px 16px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
 
             {/* Avatar */}
             <div style={{width:76,height:76,borderRadius:20,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
@@ -3371,7 +3491,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
             </div>
 
             {/* ICI Widget — redesigned */}
-            <div style={{
+            <div className="ici-panel" style={{
               background:'linear-gradient(145deg,#1c0d4a 0%,#160b3d 50%,#0f1130 100%)',
               border:'1px solid rgba(139,92,246,.6)',
               borderRadius:20,
@@ -3387,7 +3507,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
               </div>
 
               {/* Donut + components side by side */}
-              <div style={{display:'flex',gap:28,alignItems:'center',marginBottom:20}}>
+              <div className="ici-body" style={{display:'flex',gap:28,alignItems:'center',marginBottom:20}}>
                 <IciDonut score={ici.score} band={ici.band}/>
                 <div style={{flex:1}}>
                   {ici.components.map(c=>{
@@ -3416,7 +3536,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
           </div>
 
           {/* ── Stat strip ── */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',background:'rgba(0,0,0,.3)',borderTop:'1px solid rgba(255,255,255,.07)'}}>
+          <div className="stat-strip" style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',background:'rgba(0,0,0,.3)',borderTop:'1px solid rgba(255,255,255,.07)'}}>
             {[
               {val:profile.connection_count||0, label:'Connections'},
               {val:profile.group_count||0,      label:'Groups'},
@@ -4493,7 +4613,10 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
 function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
-  const [showNewReco,  setShowNewReco]  = useState(false);
+  const [showNewReco,    setShowNewReco]    = useState(false);
+  const [mobileFeedTab,  setMobileFeedTab]  = useState('feed'); // 'feed' | 'pulse'
+  // Show notification dot on Pulse tab when there's network activity
+  const hasPulseActivity = contacts.length > 0 || recsReceived.some(r => !r.hidden);
   const [loadedCount,  setLoadedCount]  = useState(20);
   const sentinelRef = useRef(null);
 
@@ -4543,7 +4666,7 @@ function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs
 
   return (
     <>
-    {/* ── Full-width header above both columns ── */}
+    {/* ── Full-width header above both columns (global — always visible) ── */}
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
       <span style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>Welcome back, {firstName}! 👋</span>
       <button className="btn btn-pri btn-sm" onClick={()=>setShowNewReco(true)} style={{marginLeft:'auto'}}>
@@ -4551,11 +4674,28 @@ function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs
       </button>
     </div>
 
+    {/* ── Mobile-only Feed / Pulse tab bar (sticky, hidden on desktop) ── */}
+    <div className="mobile-tabs" role="tablist">
+      <button
+        role="tab" aria-selected={mobileFeedTab==='feed'}
+        className={'mobile-tab'+(mobileFeedTab==='feed'?' active':'')}
+        onClick={()=>setMobileFeedTab('feed')}>
+        Feed
+      </button>
+      <button
+        role="tab" aria-selected={mobileFeedTab==='pulse'}
+        className={'mobile-tab'+(mobileFeedTab==='pulse'?' active':'')}
+        onClick={()=>setMobileFeedTab('pulse')}>
+        Pulse
+        {hasPulseActivity && mobileFeedTab!=='pulse' && <span className="tab-dot" title="New network activity"/>}
+      </button>
+    </div>
+
     {/* ── Two-column layout — both start at same height ── */}
     <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
 
-      {/* ── Feed column ── */}
-      <div style={{flex:1,minWidth:0}}>
+      {/* ── Feed column: hidden on mobile when Pulse tab is active ── */}
+      <div className={mobileFeedTab==='pulse'?'mob-hidden':''}  style={{flex:1,minWidth:0}}>
 
         {/* Feed cards — searched via top nav bar */}
         {visibleFeed.length===0
@@ -4592,8 +4732,8 @@ function HomeFeed({ setPage, setRecoInit, recsReceived, setRecsReceived, configs
             </>)}
       </div>
 
-      {/* ── Right sidebar ── */}
-      <div style={{width:252,flexShrink:0}}>
+      {/* ── Pulse column: on desktop always visible at 252px; on mobile shown when Pulse tab active ── */}
+      <div className={`feed-right-sidebar${mobileFeedTab==='feed'?' mob-hidden':''}`} style={{width:252,flexShrink:0}}>
         {/* Widget #7 — Fresh from Network */}
         <FreshWidget recsReceived={recsReceived} contacts={contacts} setPage={setPage}/>
 
