@@ -268,14 +268,27 @@ tr.hiddenrow > td{opacity:.55;}
 .tb-name-role{}
 
 @media(max-width:768px){
-  /* Shell: sidebar becomes fixed off-screen drawer */
-  .shell{position:relative;}
+  /* Shell: allow fixed sidebar to escape overflow clipping */
+  .shell{overflow:visible!important;}
+
+  /* Sidebar: off-screen via transform (more reliable than left:-Npx in all mobile browsers) */
   .sidebar{
-    position:fixed;left:-264px;top:0;z-index:500;width:256px;height:100%;
-    transition:left .28s cubic-bezier(.4,0,.2,1);
-    box-shadow:none;overflow-y:auto;
+    position:fixed!important;
+    left:0!important;
+    top:0!important;
+    z-index:500!important;
+    width:256px!important;
+    height:100vh!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    transform:translateX(-100%);
+    transition:transform .28s cubic-bezier(.4,0,.2,1)!important;
+    box-shadow:none!important;
   }
-  .sidebar.nav-open{left:0;box-shadow:16px 0 48px rgba(0,0,0,.55);}
+  .sidebar.nav-open{
+    transform:translateX(0)!important;
+    box-shadow:16px 0 48px rgba(0,0,0,.55)!important;
+  }
 
   /* Topbar: tighter, hamburger visible */
   .topbar{padding:0 12px 0 4px;gap:6px;}
@@ -291,15 +304,15 @@ tr.hiddenrow > td{opacity:.55;}
   /* KPI row: 4 cols → 2 cols */
   .kpi-row{grid-template-columns:repeat(2,1fr);}
 
-  /* Feed/Pulse tabs: sticky below topbar, full-bleed */
+  /* Feed/Pulse tab bar: sticky, full-bleed, NO negative top margin */
   .mobile-tabs{
     display:flex;
     position:sticky;top:0;z-index:190;
-    background:rgba(245,245,251,.96);
+    background:rgba(245,245,251,.97);
     backdrop-filter:blur(12px);
     -webkit-backdrop-filter:blur(12px);
     border-bottom:1px solid var(--line);
-    margin:-16px -14px 16px;
+    margin:0 -14px 16px;
     padding:0 14px;
     gap:4px;
   }
@@ -308,8 +321,8 @@ tr.hiddenrow > td{opacity:.55;}
   .mob-hidden{display:none!important;}
   .feed-right-sidebar{width:100%!important;flex-shrink:1!important;}
 
-  /* ICI panel: full-width on mobile */
-  .ici-panel{min-width:0!important;width:100%!important;flex-shrink:1!important;}
+  /* ICI panel: flex:0 0 100% forces it to its OWN row below the bio (flex-shrink:0 is key) */
+  .ici-panel{flex:0 0 100%!important;min-width:0!important;}
   .ici-donut-wrapper{width:140px!important;height:140px!important;}
   .ici-donut-svg{width:140px!important;height:140px!important;}
 
@@ -327,7 +340,7 @@ tr.hiddenrow > td{opacity:.55;}
 @media(max-width:480px){
   /* Small phones */
   .content{padding:12px 10px;}
-  .mobile-tabs{margin:-12px -10px 14px;padding:0 10px;}
+  .mobile-tabs{margin:0 -10px 14px;padding:0 10px;}
   .topbar{padding:0 8px 0 2px;}
 
   /* ICI body: donut above, metrics below */
