@@ -751,18 +751,6 @@ export default function App() {
   return (
     <div className="app">
       <style>{STYLES}</style>
-      {/* ── DIAGNOSTIC BANNER — remove after confirming mobile works ── */}
-      {isInv && <div style={{
-        position:'fixed',bottom:12,left:'50%',transform:'translateX(-50%)',
-        background: isMobile ? '#15924e' : '#c2453d',
-        color:'#fff',padding:'6px 16px',borderRadius:999,
-        fontSize:13,fontWeight:700,zIndex:99999,
-        pointerEvents:'none',whiteSpace:'nowrap',
-        boxShadow:'0 2px 12px rgba(0,0,0,.3)',
-      }}>
-        v2 · {isMobile ? '📱 MOBILE' : '🖥 DESKTOP'} · w={typeof window!=='undefined'?window.innerWidth:'?'}px
-      </div>}
-      {/* ── END DIAGNOSTIC ── */}
       <div className="shell">
         {/* Mobile nav backdrop — click to close drawer */}
         <div className={"nav-backdrop"+(navOpen?" open":"")} onClick={()=>setNavOpen(false)}/>
@@ -3178,11 +3166,39 @@ function IciDonut({ score, band }) {
 }
 
 /* ─── Small helpers ─────────────────────────────────────────────────────────── */
-function ScoreBox({ val, label, big, col }) {
+function ScoreBox({ val, label, big, col, mobile }) {
   return (
-    <div style={{textAlign:'center',padding:'13px 10px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:12,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
-      <div style={{fontSize:big?24:18,fontWeight:800,color:col||'var(--ink)',fontFamily:'var(--font)',letterSpacing:big?'-.5px':'-.2px',lineHeight:1}}>{val}</div>
-      <div style={{fontSize:11,color:'var(--muted)',marginTop:5,fontWeight:600,textTransform:'uppercase',letterSpacing:'.04em',lineHeight:1.2}}>{label}</div>
+    <div style={{
+      textAlign:'center',
+      padding: mobile ? '9px 6px' : '13px 10px',
+      background:'var(--surface-2)',
+      border:'1px solid var(--line)',
+      borderRadius:12,
+      display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+      minWidth:0,overflow:'hidden',
+    }}>
+      <div style={{
+        fontSize: big ? (mobile?19:24) : (mobile?14:18),
+        fontWeight:800,
+        color:col||'var(--ink)',
+        fontFamily:'var(--font)',
+        letterSpacing: big?'-.5px':'-.2px',
+        lineHeight:1,
+        maxWidth:'100%',
+        overflow:'hidden',
+        textOverflow:'ellipsis',
+        whiteSpace:'nowrap',
+      }}>{val}</div>
+      <div style={{
+        fontSize: mobile ? 9.5 : 11,
+        color:'var(--muted)',
+        marginTop:mobile?3:5,
+        fontWeight:600,
+        textTransform:'uppercase',
+        letterSpacing:'.04em',
+        lineHeight:1.2,
+        wordBreak:'break-word',
+      }}>{label}</div>
     </div>
   );
 }
@@ -3722,27 +3738,31 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
           </div>,
           document.body
         )}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
+        <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:14,marginBottom:14}}>
 
           <div className="card">
             <div className="card-head">
-              <span style={{display:'flex',alignItems:'center',gap:6}}><span style={{width:8,height:8,borderRadius:'50%',background:'var(--gain)',display:'inline-block'}}/><span style={{fontSize:13,fontWeight:700}}>Live Scorecard</span><span className="muted small">Active Recommendations</span></span>
+              <span style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                <span style={{width:8,height:8,borderRadius:'50%',background:'var(--gain)',display:'inline-block',flexShrink:0}}/>
+                <span style={{fontSize:13,fontWeight:700}}>Live Scorecard</span>
+                <span className="muted small">Active positions</span>
+              </span>
             </div>
             <div className="card-body">
               {live.count===0?<div className="empty" style={{padding:'20px 0'}}>No active recommendations.</div>:(<>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginBottom:10}}>
-                  <ScoreBox val={live.count} label="Active" big/>
-                  <ScoreBox val={`${live.in_profit} (${live.count?Math.round(live.in_profit/live.count*100):0}%)`} label="In Profit" col="var(--gain)" big/>
-                  <ScoreBox val={`${live.in_loss} (${live.count?Math.round(live.in_loss/live.count*100):0}%)`} label="In Loss" col="var(--loss)" big/>
+                  <ScoreBox val={live.count} label="Active" big mobile={isMobile}/>
+                  <ScoreBox val={`${live.in_profit} (${live.count?Math.round(live.in_profit/live.count*100):0}%)`} label="In Profit" col="var(--gain)" big mobile={isMobile}/>
+                  <ScoreBox val={`${live.in_loss} (${live.count?Math.round(live.in_loss/live.count*100):0}%)`} label="In Loss" col="var(--loss)" big mobile={isMobile}/>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginBottom:10}}>
-                  <ScoreBox val={<RetBadge pct={live.avg_return}/>} label="Avg Live Return"/>
-                  <ScoreBox val={`${live.avg_holding_days||0}d`} label="Avg Holding"/>
-                  <ScoreBox val="—" label="Alpha vs NIFTY"/>
+                  <ScoreBox val={<RetBadge pct={live.avg_return}/>} label="Avg Return" mobile={isMobile}/>
+                  <ScoreBox val={`${live.avg_holding_days||0}d`} label="Avg Holding" mobile={isMobile}/>
+                  <ScoreBox val="—" label="vs NIFTY" mobile={isMobile}/>
                 </div>
                 {(live.best||live.worst)&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:9}}>
-                  {live.best&&<ScoreBox val={<><b>{live.best.ticker}</b> <RetBadge pct={live.best.ret_pct}/></>} label="Best Performer"/>}
-                  {live.worst&&<ScoreBox val={<><b>{live.worst.ticker}</b> <RetBadge pct={live.worst.ret_pct}/></>} label="Worst Performer"/>}
+                  {live.best&&<ScoreBox val={<><b>{live.best.ticker}</b> <RetBadge pct={live.best.ret_pct}/></>} label="Best" mobile={isMobile}/>}
+                  {live.worst&&<ScoreBox val={<><b>{live.worst.ticker}</b> <RetBadge pct={live.worst.ret_pct}/></>} label="Worst" mobile={isMobile}/>}
                 </div>}
               </>)}
             </div>
@@ -3750,22 +3770,26 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
 
           <div className="card">
             <div className="card-head">
-              <span style={{display:'flex',alignItems:'center',gap:6}}><span style={{width:8,height:8,borderRadius:'50%',background:'var(--accent)',display:'inline-block'}}/><span style={{fontSize:13,fontWeight:700}}>Realized Scorecard</span><span className="muted small">Closed only</span></span>
+              <span style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                <span style={{width:8,height:8,borderRadius:'50%',background:'var(--accent)',display:'inline-block',flexShrink:0}}/>
+                <span style={{fontSize:13,fontWeight:700}}>Realized Scorecard</span>
+                <span className="muted small">Closed only</span>
+              </span>
             </div>
             <div className="card-body">
               {realized.count===0?<div className="empty" style={{padding:'20px 0'}}>No closed recommendations yet.</div>:(<>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginBottom:10}}>
-                  <ScoreBox val={realized.count} label="Closed" big/>
-                  <ScoreBox val={`${realized.hit_rate_pct.toFixed(1)}%`} label="Hit Rate" col={realized.hit_rate_pct>=50?'var(--gain)':'var(--loss)'} big/>
-                  <ScoreBox val={<RetBadge pct={realized.median_return}/>} label="Median Return" big/>
+                  <ScoreBox val={realized.count} label="Closed" big mobile={isMobile}/>
+                  <ScoreBox val={`${realized.hit_rate_pct.toFixed(1)}%`} label="Hit Rate" col={realized.hit_rate_pct>=50?'var(--gain)':'var(--loss)'} big mobile={isMobile}/>
+                  <ScoreBox val={<RetBadge pct={realized.median_return}/>} label="Median Ret." big mobile={isMobile}/>
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:9,marginBottom:10}}>
-                  <ScoreBox val={<RetBadge pct={realized.avg_return}/>} label="Avg Return"/>
-                  <ScoreBox val={`${realized.avg_holding_days||0}d`} label="Avg Holding"/>
-                  <ScoreBox val={`${realized.win_count}/${realized.loss_count}`} label="Win/Loss"/>
-                  <ScoreBox val={isNaN(realized.risk_adjusted)?'—':Number(realized.risk_adjusted).toFixed(2)} label="Risk-Adj."/>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'repeat(2,1fr)':'repeat(4,1fr)',gap:9,marginBottom:10}}>
+                  <ScoreBox val={<RetBadge pct={realized.avg_return}/>} label="Avg Return" mobile={isMobile}/>
+                  <ScoreBox val={`${realized.avg_holding_days||0}d`} label="Avg Holding" mobile={isMobile}/>
+                  <ScoreBox val={`${realized.win_count}/${realized.loss_count}`} label="Win/Loss" mobile={isMobile}/>
+                  <ScoreBox val={isNaN(realized.risk_adjusted)?'—':Number(realized.risk_adjusted).toFixed(2)} label="Risk-Adj." mobile={isMobile}/>
                 </div>
-                {realized.best&&<div style={{padding:'9px 12px',background:'var(--gain-soft)',borderRadius:9,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                {realized.best&&<div style={{padding:'9px 12px',background:'var(--gain-soft)',borderRadius:9,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
                   <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>Best Closed Trade</span>
                   <span><b>{realized.best.ticker}</b> <RetBadge pct={realized.best.ret_pct}/></span>
                 </div>}
