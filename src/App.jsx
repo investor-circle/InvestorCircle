@@ -455,7 +455,8 @@ export default function App() {
   const [globalSearch, setGlobalSearch] = useState('');
   const [notifOpen,     setNotifOpen]     = useState(false);
   const [profileOpen,   setProfileOpen]   = useState(false);
-  const [navOpen,       setNavOpen]       = useState(false);
+  const [navOpen,         setNavOpen]         = useState(false);
+  const [profileEditOpen, setProfileEditOpen] = useState(false); // auto-opens edit modal on Track Record page
   const isMobile = useIsMobile();
   const [connectConfirm, setConnectConfirm] = useState(null); // { name, username } after auto-connect
 
@@ -898,7 +899,7 @@ export default function App() {
                     {isInv && (
                       <div style={{padding:"8px 14px",borderBottom:"1px solid var(--line)"}}>
                         <button
-                          onMouseDown={e=>{ e.preventDefault(); e.stopPropagation(); setProfileOpen(false); setPage("profile"); }}
+                          onMouseDown={e=>{ e.preventDefault(); e.stopPropagation(); setProfileOpen(false); setProfileEditOpen(true); setInvestorPage("trackrecord"); setNavOpen(false); }}
                           style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontSize:13,fontWeight:600,background:"transparent",color:"var(--ink)",textAlign:"left"}}>
                           <UserCog size={15}/> Edit profile
                         </button>
@@ -971,6 +972,8 @@ export default function App() {
                     patchProfile={patchProfile}
                     onRequestConnect={()=>{}}
                     onBack={()=>setPage("home")}
+                    autoEdit={profileEditOpen}
+                    onAutoEditDone={()=>setProfileEditOpen(false)}
                   />
                 : <div style={{maxWidth:520}}>
                     <div className="page-head"><div>
@@ -3341,7 +3344,7 @@ function SharePublicPopover({ reco, username, onClose, anchorEl }) {
 }
 
 /* ─── Main PublicProfilePage ─────────────────────────────────────────────────── */
-function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
+function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, patchProfile, onBack, onRequestConnect, autoEdit, onAutoEditDone }) {
   const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -3381,19 +3384,6 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
       setTimeout(()=>expandedRef.current?.scrollIntoView({behavior:'smooth',block:'center'}),200);
   },[recoId,data]);
 
-  const profileUserId=data?.profile?.id;
-  const connStatus=useMemo(()=>{
-    if(!profileUserId||!viewerConnections?.length) return 'none';
-    const c=viewerConnections.find(c=>c.user_id===profileUserId);
-    return c?.status||'none';
-  },[profileUserId,viewerConnections]);
-  useEffect(()=>{ if(connStatus==='accepted') setConnected(true); },[connStatus]);
-
-  const handleConnect=async()=>{ setConnecting(true); await onRequestConnect(data.profile.id); setConnected(true); setConnecting(false); };
-
-  const profileUrl=`${window.location.origin}${window.location.pathname}#/investor/${username}`;
-  const copyLink=()=>{ navigator.clipboard.writeText(profileUrl).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); }); };
-
   // Load registration options + verification message when edit opens
   const startEdit=async()=>{
     const p=data?.profile||{};
@@ -3416,6 +3406,14 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     }
     setEditing(true);
   };
+
+  // Auto-open edit modal when navigated from "Edit profile" in the top nav dropdown
+  useEffect(()=>{
+    if(autoEdit && data && isOwnProfile){
+      startEdit();
+      onAutoEditDone?.();
+    }
+  },[autoEdit, data]);
 
   // Save all profile fields
   const saveEdit=async()=>{
