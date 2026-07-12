@@ -899,7 +899,7 @@ export default function App() {
                     {isInv && (
                       <div style={{padding:"8px 14px",borderBottom:"1px solid var(--line)"}}>
                         <button
-                          onMouseDown={e=>{ e.preventDefault(); e.stopPropagation(); setProfileOpen(false); setProfileEditOpen(true); setInvestorPage("trackrecord"); setNavOpen(false); }}
+                          onMouseDown={e=>{ e.preventDefault(); e.stopPropagation(); setProfileOpen(false); setProfileEditOpen(true); }}
                           style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontSize:13,fontWeight:600,background:"transparent",color:"var(--ink)",textAlign:"left"}}>
                           <UserCog size={15}/> Edit profile
                         </button>
@@ -972,8 +972,6 @@ export default function App() {
                     patchProfile={patchProfile}
                     onRequestConnect={()=>{}}
                     onBack={()=>setPage("home")}
-                    autoEdit={profileEditOpen}
-                    onAutoEditDone={()=>setProfileEditOpen(false)}
                   />
                 : <div style={{maxWidth:520}}>
                     <div className="page-head"><div>
@@ -1003,6 +1001,16 @@ export default function App() {
           </div>
         </div>
       </div>
+      {/* ── Edit profile modal — rendered as a portal, accessible from any page ── */}
+      {profileEditOpen && isInv && (
+        <ProfileEditModal
+          profile={profile}
+          userId={user?.uid}
+          username={ME.username}
+          patchProfile={patchProfile}
+          onClose={()=>setProfileEditOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -3344,7 +3352,7 @@ function SharePublicPopover({ reco, username, onClose, anchorEl }) {
 }
 
 /* ─── Main PublicProfilePage ─────────────────────────────────────────────────── */
-function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, patchProfile, onBack, onRequestConnect, autoEdit, onAutoEditDone }) {
+function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
   const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -3406,14 +3414,6 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     }
     setEditing(true);
   };
-
-  // Auto-open edit modal when navigated from "Edit profile" in the top nav dropdown
-  useEffect(()=>{
-    if(autoEdit && data && isOwnProfile){
-      startEdit();
-      onAutoEditDone?.();
-    }
-  },[autoEdit, data]);
 
   // Save all profile fields
   const saveEdit=async()=>{
@@ -3957,8 +3957,235 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
   </>);
 }
 
+/* ── ProfileEditModal — standalone overlay triggered from the top-nav dropdown ── */
+function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) {
+  const [firstName,    setFirstName]    = useState(profile?.first_name || '');
+  const [lastName,     setLastName]     = useState(profile?.last_name  || '');
+  const [avatarColor,  setAvatarColor]  = useState(profile?.avatar_color || '');
+  const [bio,          setBio]          = useState(profile?.bio || '');
+  const [socials,      setSocials]      = useState({
+    twitter:   profile?.twitter_url   || '',
+    linkedin:  profile?.linkedin_url  || '',
+    telegram:  profile?.telegram_url  || '',
+    instagram: profile?.instagram_url || '',
+  });
+  const [regStatus,    setRegStatus]    = useState(profile?.registration_status || 'self_directed');
+  const [sebiNum,      setSebiNum]      = useState(profile?.sebi_reg_number      || '');
+  const [sebiTill,     setSebiTill]     = useState(profile?.sebi_reg_valid_till  || '');
+  const [sebiFirm,     setSebiFirm]     = useState(profile?.sebi_firm_name       || '');
+  const [regOptions,   setRegOptions]   = useState([]);
+  const [sebiMsg,      setSebiMsg]      = useState('');
+  const [saving,       setSaving]       = useState(false);
+  const [err,          setErr]          = useState('');
 
-function ProfileModal({ me, profile, updateProfile, patchProfile, onClose }) {
+  useEffect(() => {
+    if (!sql) return;
+    sql`SELECT * FROM registration_status_options WHERE is_active=true ORDER BY sort_order`
+      .then(setRegOptions).catch(() => {});
+    sql`SELECT value FROM app_settings WHERE key='sebi_verification_message' LIMIT 1`
+      .then(rows => { if (rows[0]) setSebiMsg(rows[0].value); }).catch(() => {});
+  }, []);
+
+  const isSebi = ['sebi_ra', 'sebi_ria'].includes(regStatus);
+
+  const save = async () => {
+    if (!sql || !userId) return;
+    setSaving(true); setErr('');
+    const fn = firstName.trim(), ln = lastName.trim();
+    try {
+      await sql`UPDATE user_profiles SET
+        first_name=${fn||null}, last_name=${ln||null},
+        full_name=${[fn,ln].filter(Boolean).join(' ')||null},
+        avatar_color=${avatarColor||null},
+        bio=${bio||null},
+        twitter_url=${socials.twitter||null}, linkedin_url=${socials.linkedin||null},
+        telegram_url=${socials.telegram||null}, instagram_url=${socials.instagram||null},
+        registration_status=${regStatus},
+        sebi_reg_number=${isSebi?(sebiNum||null):null},
+        sebi_reg_valid_till=${isSebi?(sebiTill||null):null},
+        sebi_firm_name=${isSebi?(sebiFirm||null):null}
+      WHERE id=${userId}`;
+      patchProfile?.({
+        first_name: fn, last_name: ln, full_name: [fn,ln].filter(Boolean).join(' '),
+        avatar_color: avatarColor, bio,
+        twitter_url: socials.twitter, linkedin_url: socials.linkedin,
+        telegram_url: socials.telegram, instagram_url: socials.instagram,
+        registration_status: regStatus,
+        sebi_reg_number:     isSebi ? sebiNum  : null,
+        sebi_reg_valid_till: isSebi ? sebiTill : null,
+        sebi_firm_name:      isSebi ? sebiFirm : null,
+      });
+      onClose();
+    } catch(e) { setErr('Could not save: ' + e.message); }
+    setSaving(false);
+  };
+
+  const darkInput = {
+    width:'100%', background:'rgba(255,255,255,.07)', border:'1px solid rgba(255,255,255,.12)',
+    borderRadius:9, padding:'10px 13px', fontSize:13, color:'#fff',
+    fontFamily:'var(--font)', outline:'none', boxSizing:'border-box',
+  };
+
+  return createPortal(
+    <div style={{position:'fixed',inset:0,background:'rgba(13,14,30,.65)',backdropFilter:'blur(4px)',
+        display:'flex',alignItems:'center',justifyContent:'center',zIndex:9000,padding:'20px'}}
+      onClick={onClose}>
+      <div style={{width:'100%',maxWidth:560,maxHeight:'90vh',overflowY:'auto',background:'#16182a',
+          borderRadius:20,border:'1px solid rgba(255,255,255,.1)',boxShadow:'0 24px 80px rgba(0,0,0,.6)'}}
+        onClick={e=>e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{padding:'20px 24px 16px',borderBottom:'1px solid rgba(255,255,255,.08)',
+            display:'flex',alignItems:'center',justifyContent:'space-between',
+            position:'sticky',top:0,background:'#16182a',zIndex:1,borderRadius:'20px 20px 0 0'}}>
+          <div style={{fontSize:17,fontWeight:800,color:'#fff'}}>Edit Profile</div>
+          <button onClick={onClose} style={{background:'rgba(255,255,255,.08)',border:'none',
+              color:'rgba(255,255,255,.7)',cursor:'pointer',width:32,height:32,borderRadius:8,
+              display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <X size={16}/>
+          </button>
+        </div>
+
+        <div style={{padding:'24px'}}>
+
+          {/* Avatar colour */}
+          <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
+              textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Avatar colour</div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:22}}>
+            {['#6d5df5','#cf52d8','#15924e','#0ea5b7','#d97706','#e11d48','#2563eb','#64748b'].map(c=>(
+              <div key={c} onClick={()=>setAvatarColor(c)} style={{width:32,height:32,borderRadius:9,
+                  background:c,cursor:'pointer',boxSizing:'border-box',transition:'.1s',
+                  border:avatarColor===c?'2px solid #fff':'2px solid transparent',
+                  boxShadow:avatarColor===c?`0 0 12px ${c}88`:''}}/>
+            ))}
+            <div onClick={()=>setAvatarColor('')} style={{width:32,height:32,borderRadius:9,cursor:'pointer',
+                background:'linear-gradient(135deg,#6d5df5,#cf52d8)',boxSizing:'border-box',
+                display:'flex',alignItems:'center',justifyContent:'center',
+                border:!avatarColor?'2px solid #fff':'2px solid transparent',
+                fontSize:9,color:'#fff',fontWeight:800}}>AUTO</div>
+          </div>
+
+          {/* Name */}
+          <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
+              textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Name</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+            <input value={firstName} onChange={e=>setFirstName(e.target.value)} placeholder="First name" style={darkInput}/>
+            <input value={lastName}  onChange={e=>setLastName(e.target.value)}  placeholder="Last name"  style={darkInput}/>
+          </div>
+
+          {/* Read-only username + email */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+            {[{label:'Username',val:`@${username||'not set'}`},{label:'Email',val:profile?.email||''}].map((f,i)=>(
+              <div key={i}>
+                <div style={{fontSize:11,color:'rgba(255,255,255,.35)',marginBottom:6,
+                    display:'flex',alignItems:'center',gap:4,fontWeight:600}}>
+                  <Lock size={10}/> {f.label}<span style={{fontWeight:400,fontSize:10}}>(cannot be changed)</span>
+                </div>
+                <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',
+                    borderRadius:9,padding:'10px 13px',fontSize:13,color:'rgba(255,255,255,.4)',fontFamily:'inherit'}}>
+                  {f.val || <span style={{opacity:.4,fontStyle:'italic'}}>not set</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bio */}
+          <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
+              textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Bio</div>
+          <textarea value={bio} onChange={e=>setBio(e.target.value)} rows={3} maxLength={300}
+            placeholder="Describe your investment approach…"
+            style={{...darkInput,resize:'vertical'}}/>
+          <div style={{fontSize:11,color:'rgba(255,255,255,.3)',textAlign:'right',
+              marginTop:4,marginBottom:20}}>{bio.length}/300</div>
+
+          {/* Social links */}
+          <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
+              textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Social links</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+            {[
+              {key:'twitter',  label:'Twitter / X', ph:'https://twitter.com/username'},
+              {key:'linkedin', label:'LinkedIn',     ph:'https://linkedin.com/in/username'},
+              {key:'telegram', label:'Telegram',     ph:'https://t.me/username'},
+              {key:'instagram',label:'Instagram',    ph:'https://instagram.com/username'},
+            ].map(s=>(
+              <div key={s.key}>
+                <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginBottom:6,fontWeight:600}}>{s.label}</div>
+                <input value={socials[s.key]} onChange={e=>setSocials(p=>({...p,[s.key]:e.target.value}))}
+                  placeholder={s.ph} style={darkInput}/>
+              </div>
+            ))}
+          </div>
+
+          {/* Investor type */}
+          <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
+              textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Investor type</div>
+          <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
+            {(regOptions.length ? regOptions : [
+              {code:'self_directed',label:'Self-directed Investor',           description:'Invests own money independently.'},
+              {code:'enthusiast',  label:'Market Enthusiast',                 description:'Passionate about markets, shares ideas informally.'},
+              {code:'sebi_ra',     label:'SEBI Registered Research Analyst',  description:'INH000XXXXXX format.'},
+              {code:'sebi_ria',    label:'SEBI Registered Investment Adviser',description:'INA000XXXXXX format.'},
+            ]).map(opt=>(
+              <label key={opt.code} style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer',
+                  padding:'11px 14px',borderRadius:10,transition:'.15s',
+                  background:regStatus===opt.code?'rgba(109,93,245,.2)':'rgba(255,255,255,.04)',
+                  border:`1px solid ${regStatus===opt.code?'rgba(109,93,245,.55)':'rgba(255,255,255,.08)'}`}}>
+                <input type="radio" name="pemRegStatus" value={opt.code}
+                  checked={regStatus===opt.code} onChange={()=>setRegStatus(opt.code)}
+                  style={{accentColor:'#6d5df5',marginTop:3,flexShrink:0}}/>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,color:'#fff'}}>{opt.label}</div>
+                  <div style={{fontSize:12,color:'rgba(255,255,255,.4)',marginTop:2,lineHeight:1.4}}>{opt.description}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {/* SEBI fields */}
+          {isSebi && (<>
+            <div style={{background:'rgba(251,191,36,.08)',border:'1px solid rgba(251,191,36,.2)',
+                borderRadius:10,padding:'12px 14px',marginBottom:16,fontSize:13,color:'#fbbf24',lineHeight:1.6}}>
+              {sebiMsg || 'Your SEBI registration details will be reviewed by our team within 2–3 business days.'}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+              {[
+                {label:'SEBI Reg. Number',       ph:regStatus==='sebi_ra'?'INH000XXXXXX':'INA000XXXXXX',val:sebiNum, set:setSebiNum},
+                {label:'Valid Till',              ph:'',val:sebiTill,set:setSebiTill,type:'date'},
+                {label:'Firm / Employer (opt.)', ph:'e.g. XYZ Securities',val:sebiFirm,set:setSebiFirm,span:true},
+              ].map((f,i)=>(
+                <div key={i} style={f.span?{gridColumn:'1/span 2'}:{}}>
+                  <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginBottom:6,fontWeight:600}}>{f.label}</div>
+                  <input type={f.type||'text'} value={f.val} onChange={e=>f.set(e.target.value)}
+                    placeholder={f.ph} style={{...darkInput,colorScheme:'dark'}}/>
+                </div>
+              ))}
+            </div>
+          </>)}
+
+          {err && <div style={{color:'#f87171',fontSize:12,marginBottom:14,padding:'8px 12px',
+              background:'rgba(248,113,113,.1)',borderRadius:8,border:'1px solid rgba(248,113,113,.2)'}}>{err}</div>}
+
+          {/* Footer */}
+          <div style={{display:'flex',gap:10,justifyContent:'flex-end',
+              borderTop:'1px solid rgba(255,255,255,.07)',paddingTop:16}}>
+            <button onClick={onClose} style={{padding:'10px 20px',borderRadius:10,fontWeight:700,
+                fontSize:14,cursor:'pointer',background:'rgba(255,255,255,.08)',
+                border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontFamily:'var(--font)'}}>
+              Cancel
+            </button>
+            <button className="btn btn-pri" disabled={saving} onClick={save}
+              style={{padding:'10px 24px',fontSize:14}}>
+              {saving?<><Loader size={14} className="spin"/> Saving…</>:<><Check size={14}/> Save changes</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+
   const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 
   // ── Name ──────────────────────────────────────────────────────────────────
