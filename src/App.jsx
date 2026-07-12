@@ -283,7 +283,7 @@ tr.hiddenrow > td{opacity:.55;}
 .ici-body{}
 .ici-donut-wrapper{}
 .ici-donut-svg{}
-.stat-strip{}
+.ici-panel{}
 .portfolio-layout{}
 .search-hide-mobile{}
 .tb-name-role{}
@@ -348,7 +348,7 @@ tr.hiddenrow > td{opacity:.55;}
   .ici-donut-svg{width:140px!important;height:140px!important;}
 
   /* Stat strip: 6 cols → 3 cols (two rows) */
-  .stat-strip{grid-template-columns:repeat(3,1fr)!important;}
+
 
   /* Portfolio: side-by-side → stacked */
   .portfolio-layout{grid-template-columns:1fr!important;}
@@ -369,7 +369,7 @@ tr.hiddenrow > td{opacity:.55;}
   .ici-body > div:last-child{width:100%!important;}
 
   /* Stat strip: 3 cols → 2 cols on very small screens */
-  .stat-strip{grid-template-columns:repeat(2,1fr)!important;}
+
 
   /* KPI: tighter */
   .kpi-row{gap:8px;}
@@ -3232,19 +3232,28 @@ const SOCIAL_PATHS = {
   instagram: "M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12c0 3.259.014 3.668.072 4.948.058 1.278.262 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24c3.259 0 3.668-.014 4.948-.072 1.277-.058 2.148-.262 2.913-.558.788-.306 1.459-.717 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.635.558-2.913.06-1.28.072-1.689.072-4.948 0-3.259-.013-3.667-.072-4.947-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06zm0 3.678a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405a1.441 1.441 0 10-2.88 0 1.44 1.44 0 002.88 0z",
 };
 
+const SOCIAL_BRAND = {
+  twitter:   { active:'rgba(29,161,242,.18)',  icon:'#1DA1F2', border:'rgba(29,161,242,.45)' },
+  linkedin:  { active:'rgba(10,102,194,.2)',   icon:'#0A66C2', border:'rgba(10,102,194,.45)' },
+  telegram:  { active:'rgba(38,165,228,.18)',  icon:'#26A5E4', border:'rgba(38,165,228,.45)' },
+  instagram: { active:'rgba(225,48,108,.18)',  icon:'#E1306C', border:'rgba(225,48,108,.45)' },
+};
+
 function SocialIconBtn({ platform, url }) {
+  const brand = SOCIAL_BRAND[platform] || {};
+  const hasBrand = url && brand.icon;
   const inner = (
     <div style={{
       width:34, height:34, borderRadius:9,
-      background: url ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.05)',
-      border: '1px solid rgba(255,255,255,.12)',
+      background: hasBrand ? brand.active : url ? 'rgba(255,255,255,.1)' : 'rgba(255,255,255,.04)',
+      border: `1px solid ${hasBrand ? brand.border : 'rgba(255,255,255,.1)'}`,
       display:'flex', alignItems:'center', justifyContent:'center',
       cursor: url ? 'pointer' : 'default',
-      transition:'background .15s',
+      transition:'all .15s',
     }}
-    onMouseEnter={e=>{ if(url) e.currentTarget.style.background='rgba(255,255,255,.24)'; }}
-    onMouseLeave={e=>{ e.currentTarget.style.background = url ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.05)'; }}>
-      <svg width={16} height={16} viewBox="0 0 24 24" fill={url ? 'rgba(255,255,255,.9)' : 'rgba(255,255,255,.25)'}>
+    onMouseEnter={e=>{ if(url) e.currentTarget.style.background = hasBrand ? brand.active.replace('.18','.32').replace('.2','.32') : 'rgba(255,255,255,.18)'; }}
+    onMouseLeave={e=>{ e.currentTarget.style.background = hasBrand ? brand.active : url ? 'rgba(255,255,255,.1)' : 'rgba(255,255,255,.04)'; }}>
+      <svg width={16} height={16} viewBox="0 0 24 24" fill={hasBrand ? brand.icon : url ? 'rgba(255,255,255,.6)' : 'rgba(255,255,255,.2)'}>
         <path d={SOCIAL_PATHS[platform]}/>
       </svg>
     </div>
@@ -3255,34 +3264,39 @@ function SocialIconBtn({ platform, url }) {
 
 /* ─── ICI Donut ─────────────────────────────────────────────────────────────── */
 function IciDonut({ score, band }) {
-  const r = 68, cx = 85, cy = 85, circ = 2 * Math.PI * r;
-  const filled = (score / 100) * circ;
-  const col   = score >= 70 ? '#4ade80' : score >= 50 ? '#a78bfa' : score >= 30 ? '#fbbf24' : '#f87171';
-  const dark  = score >= 70 ? '#052e16' : score >= 50 ? '#2e1065' : score >= 30 ? '#451a03' : '#3b0a14';
-  const glow  = score >= 70 ? 'rgba(74,222,128,.55)' : score >= 50 ? 'rgba(167,139,250,.55)' : score >= 30 ? 'rgba(251,191,36,.55)' : 'rgba(248,113,113,.55)';
+  const SIZE = 200;
+  const cx = SIZE / 2, cy = SIZE / 2;
+  const r = 82;
+  const circ    = 2 * Math.PI * r;
+  const pct     = Math.max(0, Math.min(100, score || 0));
+  const filled  = (pct / 100) * circ;          // exact score% of circumference
+  const col  = pct >= 70 ? '#4ade80' : pct >= 50 ? '#a78bfa' : pct >= 30 ? '#fbbf24' : '#f87171';
+  const dark = pct >= 70 ? '#052e16' : pct >= 50 ? '#2e1065' : pct >= 30 ? '#451a03' : '#3b0a14';
+  const glow = pct >= 70 ? 'rgba(74,222,128,.6)' : pct >= 50 ? 'rgba(167,139,250,.6)' : pct >= 30 ? 'rgba(251,191,36,.6)' : 'rgba(248,113,113,.6)';
   return (
     <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,flexShrink:0}}>
-      <div className="ici-donut-wrapper" style={{position:'relative',width:170,height:170}}>
-        <svg className="ici-donut-svg" width={170} height={170} viewBox="0 0 170 170">
-          {/* Outer subtle halo ring */}
-          <circle cx={cx} cy={cy} r={r+14} fill="none" stroke={col} strokeWidth={1} opacity={.15}/>
-          {/* Background fill of track area */}
-          <circle cx={cx} cy={cy} r={r} fill={dark} opacity={.6}/>
-          {/* Track (unfilled portion) */}
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth={15}/>
-          {/* Score arc with glow */}
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke={col} strokeWidth={15}
-            strokeDasharray={`${filled} ${circ}`}
-            strokeDashoffset={circ/4}
-            strokeLinecap="round"
-            style={{filter:`drop-shadow(0 0 9px ${glow})`}}/>
-          {/* Center score */}
-          <text x={cx} y={cy-10} textAnchor="middle" dominantBaseline="middle"
-            fontSize={42} fontWeight={900} fill="#fff"
+      <div style={{position:'relative',width:SIZE,height:SIZE}}>
+        <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+          {/* Outer halo ring */}
+          <circle cx={cx} cy={cy} r={r+15} fill="none" stroke={col} strokeWidth={1} opacity={.12}/>
+          {/* Inner dark fill of donut hole */}
+          <circle cx={cx} cy={cy} r={r} fill={dark} opacity={.55}/>
+          {/* Track — full grey ring */}
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth={16}/>
+          {/* Score arc — starts at 12 o'clock via rotate(-90), fills exactly score% clockwise */}
+          <g transform={`rotate(-90 ${cx} ${cy})`}>
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={col} strokeWidth={16}
+              strokeDasharray={`${filled} ${circ - filled}`}
+              strokeLinecap="round"
+              style={{filter:`drop-shadow(0 0 10px ${glow})`}}/>
+          </g>
+          {/* Centre text */}
+          <text x={cx} y={cy - 11} textAnchor="middle" dominantBaseline="middle"
+            fontSize={46} fontWeight={900} fill="#fff"
             fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
             letterSpacing="-2">{score}</text>
-          <text x={cx} y={cy+20} textAnchor="middle" dominantBaseline="middle"
-            fontSize={12} fill="rgba(255,255,255,.38)"
+          <text x={cx} y={cy + 22} textAnchor="middle" dominantBaseline="middle"
+            fontSize={13} fill="rgba(255,255,255,.35)"
             fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">/100</text>
         </svg>
       </div>
@@ -3705,17 +3719,17 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
         <div style={{background:'#0f1117',borderRadius:18,overflow:'hidden',marginBottom:16,border:'1px solid rgba(255,255,255,.07)',boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
 
           {/* Header row: avatar + info + ICI */}
-          <div className="profile-hero-row" style={{padding:'20px 28px 16px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
+          <div className="profile-hero-row" style={{padding:'18px 28px 14px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
 
             {/* Avatar */}
             <div style={{width:76,height:76,borderRadius:20,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
               {initialsOf(displayName)}
             </div>
 
-            {/* Name + badges + bio + socials */}
-            <div style={{flex:1,minWidth:0}}>
+            {/* Name + badges + bio + socials — fixed width so ICI gets the rest */}
+            <div style={{flex:'0 0 300px',minWidth:0,display:'flex',flexDirection:'column',gap:10}}>
               {/* Name row */}
-              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:6}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                 <span style={{fontSize:24,fontWeight:900,color:'#fff',letterSpacing:'-.6px',lineHeight:1.1}}>{displayName}</span>
                 {/* Registration status badge */}
                 {(()=>{
@@ -3742,15 +3756,15 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
               </div>
 
               {/* Username + since */}
-              <div style={{fontSize:13,color:'rgba(255,255,255,.45)',marginBottom:12,display:'flex',alignItems:'center',gap:8}}>
+              <div style={{fontSize:13,color:'rgba(255,255,255,.45)',display:'flex',alignItems:'center',gap:8}}>
                 <span style={{fontWeight:600}}>@{username}</span>
                 {memberSince&&<><span style={{opacity:.4}}>·</span><span>Member since {memberSince}</span></>}
               </div>
 
               {/* Bio */}
               {profile.bio
-                ? <p style={{fontSize:14,color:'rgba(255,255,255,.75)',lineHeight:1.65,margin:'0 0 14px',maxWidth:520}}>{profile.bio}</p>
-                : isOwnProfile && <p style={{fontSize:13,color:'rgba(255,255,255,.25)',fontStyle:'italic',margin:'0 0 14px'}}>No bio yet — click Edit profile to add one.</p>}
+                ? <p style={{fontSize:14,color:'rgba(255,255,255,.75)',lineHeight:1.7,margin:0,maxWidth:480}}>{profile.bio}</p>
+                : isOwnProfile && <p style={{fontSize:13,color:'rgba(255,255,255,.25)',fontStyle:'italic',margin:0}}>No bio yet — click Edit profile to add one.</p>}
 
               {/* Social icons */}
               <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
@@ -3764,9 +3778,9 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
                 {showJoinBtn && <button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}><UserPlus size={13}/> Join to connect</button>}
               </div>
 
-              {/* Edit profile button — bottom-right of info section */}
+              {/* Edit profile button */}
               {isOwnProfile && (
-                <div style={{marginTop:14}}>
+                <div>
                   <button onClick={startEdit}
                     style={{fontSize:12,fontWeight:700,background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',color:'rgba(255,255,255,.7)',cursor:'pointer',padding:'6px 14px',borderRadius:8,display:'inline-flex',alignItems:'center',gap:6,transition:'.12s',fontFamily:'var(--font)'}}>
                     <Pencil size={12}/> Edit profile
@@ -3775,31 +3789,30 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
               )}
             </div>
 
-            {/* ICI Widget — JS-controlled responsive layout */}
+            {/* ICI Widget — flex:1 so it fills all remaining width */}
             <div className="ici-panel" style={{
               background:'linear-gradient(145deg,#1c0d4a 0%,#160b3d 50%,#0f1130 100%)',
               border:'1px solid rgba(139,92,246,.6)',
               borderRadius:20,
-              padding:'24px 26px',
+              padding:'22px 26px 18px',
               boxShadow:'0 0 0 1px rgba(139,92,246,.15), 0 4px 24px rgba(109,93,245,.5), 0 16px 48px rgba(109,93,245,.3), inset 0 1px 0 rgba(255,255,255,.08)',
               ...(isMobile
                 ? {flex:'0 0 100%', minWidth:0}
-                : {minWidth:460, flexShrink:0}
+                : {flex:'1 1 440px', minWidth:440}
               ),
             }}>
               {/* Header */}
-              <div style={{fontSize:15,fontWeight:800,color:'#fff',letterSpacing:'-.2px',marginBottom:20,display:'flex',alignItems:'center',gap:8}}>
+              <div style={{fontSize:15,fontWeight:800,color:'#fff',letterSpacing:'-.2px',marginBottom:18,display:'flex',alignItems:'center',gap:8}}>
                 <span style={{display:'inline-flex',width:6,height:6,borderRadius:'50%',background:'#a78bfa',boxShadow:'0 0 8px #a78bfa'}}/>
                 Investor Circle Credibility Index
               </div>
 
               {/* Donut + components side by side */}
-              <div className="ici-body" style={{display:'flex',gap:28,alignItems:'center',marginBottom:20}}>
+              <div className="ici-body" style={{display:'flex',gap:28,alignItems:'center',marginBottom:18}}>
                 <IciDonut score={ici.score} band={ici.band}/>
                 <div style={{flex:1}}>
                   {ici.components.map(c=>{
                     const pct = c.max > 0 ? (c.score/c.max)*100 : 0;
-                    /* Fix: rgba(255,255,255,.2) was invisible on dark track — use amber for low non-zero progress */
                     const barCol = pct>=80?'#4ade80':pct>=50?'#a78bfa':pct>0?'#fbbf24':'rgba(255,255,255,.06)';
                     return (
                       <div key={c.label} style={{marginBottom:14}}>
@@ -3816,27 +3829,33 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
                 </div>
               </div>
 
-              <div style={{borderTop:'1px solid rgba(255,255,255,.08)',paddingTop:12,textAlign:'center'}}>
+              <div style={{borderTop:'1px solid rgba(255,255,255,.08)',paddingTop:10,textAlign:'right'}}>
                 <a href="#methodology" style={{fontSize:11.5,color:'#c4b5fd',textDecoration:'none',fontWeight:600,letterSpacing:'.01em'}}>Learn more about ICI methodology →</a>
               </div>
             </div>
           </div>
 
-          {/* ── Stat strip ── */}
-          <div className="stat-strip" style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',background:'rgba(0,0,0,.3)',borderTop:'1px solid rgba(255,255,255,.07)'}}>
-            {[
-              {val:profile.connection_count||0, label:'Connections'},
-              {val:profile.group_count||0,      label:'Groups'},
-              {val:summary.total,               label:'Total Recommendations'},
-              {val:summary.closed,              label:'Closed'},
-              {val:summary.active,              label:'Active'},
-              {val:`${summary.years_history.toFixed(1)} yrs`, label:'Public History'},
-            ].map((s,i,arr)=>(
-              <div key={s.label} style={{borderRight:i<arr.length-1?'1px solid rgba(255,255,255,.07)':'none',padding:'12px 8px',textAlign:'center'}}>
-                <div style={{fontSize:26,fontWeight:900,color:'#fff',letterSpacing:'-1px',lineHeight:1,fontFamily:'var(--font)'}}>{s.val}</div>
-                <div style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.4)',marginTop:5,textTransform:'uppercase',letterSpacing:'.08em',lineHeight:1.3}}>{s.label}</div>
-              </div>
-            ))}
+          {/* ── Compact stat + methodology footer ── */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,background:'rgba(0,0,0,.3)',borderTop:'1px solid rgba(255,255,255,.07)',padding:'10px 28px'}}>
+            {/* Stats — compact inline */}
+            <div style={{display:'flex',gap:20,flexWrap:'wrap',alignItems:'center'}}>
+              {[
+                {val:profile.connection_count||0, label:'Connections'},
+                {val:profile.group_count||0,      label:'Groups'},
+                {val:summary.total,               label:'Total Recos'},
+                {val:summary.active,              label:'Active'},
+                {val:summary.closed,              label:'Closed'},
+                {val:`${summary.years_history.toFixed(1)} yrs`, label:'History'},
+              ].map((s,i,arr)=>(
+                <React.Fragment key={s.label}>
+                  {i>0 && <span style={{color:'rgba(255,255,255,.12)',fontSize:14}}>·</span>}
+                  <div style={{display:'flex',alignItems:'baseline',gap:5}}>
+                    <span style={{fontSize:15,fontWeight:800,color:'#fff',letterSpacing:'-0.5px',fontFamily:'var(--font)'}}>{s.val}</span>
+                    <span style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.38)',textTransform:'uppercase',letterSpacing:'.07em'}}>{s.label}</span>
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
           </div>
         </div>
 
