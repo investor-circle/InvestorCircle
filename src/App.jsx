@@ -772,6 +772,9 @@ export default function App() {
     return () => clearInterval(iv);
   }, [user?.uid]);
 
+  // securityTicker must be here — before ANY conditional return — Rules of Hooks
+  const [securityTicker, setSecurityTicker] = useState(null);
+
   // ── Public profile route — no auth required ────────────────────────────────
   // Matches: #/investor/username  OR  #/investor/username/reco/recoId
   const publicMatch = pageHash.match(/^#\/investor\/([a-z0-9_]+)(?:\/reco\/([a-zA-Z0-9-]+))?/i);
@@ -810,7 +813,6 @@ export default function App() {
       <div style={{color:"#8a8daa",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15}}>Loading…</div>
     </div>
   );
-  const [securityTicker, setSecurityTicker] = useState(null); // Security Intelligence navigation
   if (!user) return <LoginPage />;
 
 
