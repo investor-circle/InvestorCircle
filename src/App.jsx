@@ -8,7 +8,8 @@ import {
   List, Table as TableIcon, Mail, UserPlus, Calendar, Crown,
   ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
   Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil, Database,
-  Globe, Trophy, Copy, ExternalLink, ArrowLeft, Link, Flame, Info
+  Globe, Trophy, Copy, ExternalLink, ArrowLeft, Link, Flame, Info,
+  BarChart2, Activity, Zap, Target, TrendingDown as TrendDown
 } from "lucide-react";
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
@@ -805,6 +806,8 @@ export default function App() {
   const isInv = !userIsAdmin || role === "investor";
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
   // page + setPage — setPage also closes the mobile nav drawer for investors
+  const [securityTicker, setSecurityTicker] = useState(null); // { ticker, name } for Security Intelligence
+  const openSecurity = (ticker, name) => { setSecurityTicker({ ticker, name }); setPage('sec_intel'); };
   const page    = isInv ? investorPage : adminPage;
   const setPage = isInv
     ? (p) => { setInvestorPage(p); setNavOpen(false); }
@@ -814,7 +817,9 @@ export default function App() {
   const nav = isInv ? [
     { id:"home",        label:"Home",             icon:Home },
     ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", icon:Lightbulb, badge:newRecs }] : []),
-    { id:"portfolio",   label:"My Portfolio",      icon:PieChart },
+    { id:"portfolio",    label:"Portfolio Intelligence", icon:BarChart2 },
+    { id:"market_intel", label:"Market Intelligence",    icon:TrendingUp },
+    { id:"sec_intel",    label:"Security Intelligence",  icon:Activity },
     { id:"network",     label:"Network",           icon:Users },
     { id:"trackrecord", label:"Track Record",       icon:Globe },
     { id:"sharing",     label:"Sharing & Privacy", icon:Shield },
@@ -1029,7 +1034,9 @@ export default function App() {
               </div>
             )}
             {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch}/>}
-            {isInv && page==="portfolio" && <Portfolio configs={configs} holdings={holdings} setHoldings={setHoldings} refreshPrices={refreshPrices} priceRefresh={priceRefresh}/>}
+            {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
+            {isInv && page==="market_intel" && <MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
+            {isInv && page==="sec_intel"    && <SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
             {isInv && page==="network"   && <Network
                 connections={connections} setConnections={setConnections}
                 groups={groups} setGroups={setGroups}
@@ -7812,6 +7819,715 @@ function PrivacyPolicyPage() {
           <div dangerouslySetInnerHTML={{__html: PRIVACY_HTML}}/>
         </div>
       </div>
+    </>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   INTELLIGENCE LAYER — shared helpers + three page components
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── consensus computation ────────────────────────────────────────── */
+function computeConsensus(recos=[]) {
+  if (!recos.length) return {bull:0,bear:0,neutral:0,bullPct:0,bearPct:0,neutralPct:0,strength:0,label:'No Data',total:0};
+  const bull = recos.filter(r=>r.recommendation_type==='Buy').length;
+  const bear = recos.filter(r=>r.recommendation_type==='Sell').length;
+  const total = recos.length;
+  const bullPct = Math.round(bull/total*100);
+  const bearPct = Math.round(bear/total*100);
+  const neutralPct = 100-bullPct-bearPct;
+  const strength = Math.abs(bullPct-bearPct);
+  const label = bullPct>=70?'Strong Bullish':bullPct>=55?'Bullish':bearPct>=70?'Strong Bearish':bearPct>=55?'Bearish':total>0?'Neutral':'No Data';
+  return {bull,bear,neutral:total-bull-bear,bullPct,bearPct,neutralPct,strength,label,total};
+}
+
+function ConsensusBar({cons={},width=110,mini=false}) {
+  if (!cons.total) return <span style={{color:'var(--muted)',fontSize:12}}>—</span>;
+  const col = cons.bullPct>=55?'var(--gain)':cons.bearPct>=55?'var(--loss)':'var(--muted)';
+  return (
+    <div>
+      <div style={{fontSize:mini?10:12,fontWeight:700,color:col,marginBottom:2}}>{cons.label}</div>
+      <div style={{display:'flex',height:4,borderRadius:3,overflow:'hidden',width,background:'rgba(141,144,173,.15)'}}>
+        <div style={{width:`${cons.bullPct}%`,background:'var(--gain)',transition:'width .4s'}}/>
+        <div style={{width:`${cons.neutralPct}%`,background:'rgba(141,144,173,.35)'}}/>
+        <div style={{width:`${cons.bearPct}%`,background:'var(--loss)',transition:'width .4s'}}/>
+      </div>
+      {!mini&&<div style={{fontSize:10,color:'var(--muted)',marginTop:3,display:'flex',gap:10}}>
+        <span style={{color:'var(--gain)'}}>{cons.bullPct}% B</span>
+        <span style={{color:'var(--loss)'}}>{cons.bearPct}% S</span>
+        <span>{cons.total} investor{cons.total!==1?'s':''}</span>
+      </div>}
+    </div>
+  );
+}
+
+function StrengthDot({strength=0}) {
+  const col = strength>=65?'var(--gain)':strength>=40?'#fbbf24':'var(--muted)';
+  const label = strength>=65?'Strong':strength>=40?'Moderate':'Weak';
+  return (
+    <div style={{textAlign:'center'}}>
+      <div style={{fontSize:22,fontWeight:900,color:col,lineHeight:1}}>{strength}</div>
+      <div style={{fontSize:10,color:col,fontWeight:700}}>{label}</div>
+    </div>
+  );
+}
+
+/* ── quick security panel (shared between Portfolio + Market pages) ──*/
+function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,onClose}) {
+  const community = computeConsensus(allRecos);
+  const circle    = computeConsensus(circleRecos);
+  const recent    = allRecos.slice(0,3);
+  return (
+    <div className="card" style={{position:'sticky',top:80}}>
+      <div className="card-head" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
+        <div>
+          <div style={{fontWeight:900,fontSize:16}}>{ticker}</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginTop:2,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</div>
+        </div>
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          <button className="btn btn-pri btn-sm" onClick={onOpenFull} style={{fontSize:11}}>Full View →</button>
+          <button className="iconbtn" onClick={onClose}><X size={15}/></button>
+        </div>
+      </div>
+      <div className="card-body" style={{padding:'14px 16px',display:'flex',flexDirection:'column',gap:14}}>
+        {/* Consensus overview */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          {[['Community',community],['My Circle',circle]].map(([label,c])=>(
+            <div key={label} style={{background:'var(--surface-2)',borderRadius:10,padding:'10px 12px'}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8}}>{label}</div>
+              <ConsensusBar cons={c} width={100}/>
+            </div>
+          ))}
+        </div>
+        {/* Strength gauge */}
+        <div style={{textAlign:'center',padding:'8px 0',borderTop:'1px solid var(--line)',borderBottom:'1px solid var(--line)'}}>
+          <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:6}}>Consensus Strength</div>
+          <StrengthDot strength={community.strength}/>
+        </div>
+        {/* Recent recommendations */}
+        <div>
+          <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8}}>Recent Recommendations</div>
+          {recent.length ? recent.map((r,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 0',borderBottom:i<recent.length-1?'1px solid var(--line)':'none'}}>
+              <div style={{fontSize:12,color:'var(--ink-soft)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.full_name||r.username||'Investor'}</div>
+              <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
+                <span style={{fontSize:10,fontWeight:800,padding:'2px 7px',borderRadius:4,
+                  background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
+                  color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>
+                  {r.recommendation_type==='Buy'?'BUY':'SELL'}
+                </span>
+                <span style={{fontSize:10,color:'var(--muted)'}}>{r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short'}):'—'}</span>
+              </div>
+            </div>
+          )) : <div style={{fontSize:12,color:'var(--muted)'}}>No recent recommendations</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PORTFOLIO INTELLIGENCE
+   ═══════════════════════════════════════════════════════════════════ */
+function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refreshPrices, priceRefresh, onOpenSecurity, setPage }) {
+  const [recoMap, setRecoMap] = useState({}); // { ticker: [reco,...] }
+  const [loading, setLoading] = useState(true);
+  const [selectedTicker, setSelectedTicker] = useState(null);
+  const [showManage, setShowManage] = useState(false);
+  const [tab, setTab] = useState('all'); // all | bullish | neutral | bearish
+
+  const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
+
+  // Load ALL active recommendations (once, cached per session)
+  useEffect(()=>{
+    if (!sql) { setLoading(false); return; }
+    sql`SELECT ticker, recommendation_type, "from", conviction, created_at, full_name, username
+        FROM ic_recommendations r
+        LEFT JOIN user_profiles up ON r."from" = up.id
+        WHERE r.status = 'active'`
+      .then(rows=>{
+        const map={};
+        rows.forEach(r=>{ (map[r.ticker]=map[r.ticker]||[]).push(r); });
+        setRecoMap(map); setLoading(false);
+      }).catch(()=>setLoading(false));
+  },[]);
+
+  const holdingsData = useMemo(()=>holdings.map(h=>{
+    const allR   = recoMap[h.sym]||[];
+    const circleR= allR.filter(r=>circleIds.includes(r.from));
+    const community = computeConsensus(allR);
+    const circle    = computeConsensus(circleR);
+    const value = (h.sh||0)*(h.price||0);
+    const gain  = h.cost>0?((h.price-h.cost)/h.cost*100):0;
+    return {...h, community, circle, value, gain, allR, circleR};
+  }),[holdings,recoMap,circleIds]);
+
+  const filtered = holdingsData.filter(h=>
+    tab==='all'||
+    (tab==='bullish'&&h.community.bullPct>=55)||
+    (tab==='bearish'&&h.community.bearPct>=55)||
+    (tab==='neutral'&&h.community.bullPct<55&&h.community.bearPct<55)
+  );
+
+  const totalValue = holdingsData.reduce((s,h)=>s+(h.value||0),0);
+  const avgBull = holdingsData.filter(h=>h.community.total>0).reduce((s,h,_,a)=>s+h.community.bullPct/a.length,0)||0;
+  const highConv = holdingsData.filter(h=>h.community.strength>=60).length;
+  const selected = holdingsData.find(h=>h.sym===selectedTicker);
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Intelligence</div>
+          <div className="page-title">Portfolio Intelligence</div>
+          <div className="page-sub">See what the market and your circle think about the stocks you hold</div>
+        </div>
+        <div style={{display:'flex',gap:10}}>
+          {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
+          <button className="btn btn-ghost btn-sm" onClick={()=>setPage('portfolio_manage')}><Settings size={13}/> Manage Holdings</button>
+          <button className="btn btn-soft btn-sm" onClick={()=>setShowManage(true)}><Upload size={13}/> Upload CAS</button>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12,marginBottom:20}}>
+        {[
+          {icon:<BarChart2 size={18}/>,label:'Total Holdings',val:holdings.length,sub:holdings.length?`${holdingsData.filter(h=>h.community.total>0).length} tracked by community`:'Upload CAS to begin'},
+          {icon:<Globe size={18}/>,label:'Total Value',val:`₹${Math.round(totalValue).toLocaleString('en-IN')}`,accent:true},
+          {icon:<TrendingUp size={18}/>,label:'Avg Market Sentiment',val:`${Math.round(avgBull)}% Bullish`,bar:true,pct:avgBull},
+          {icon:<Zap size={18}/>,label:'High Conviction',val:highConv,sub:`holdings with strong consensus`},
+        ].map((s,i)=>(
+          <div key={i} className="card" style={{padding:'16px 18px'}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,color:'var(--accent-ink)',opacity:.7}}>{s.icon}</div>
+            <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:4}}>{s.label}</div>
+            <div style={{fontSize:20,fontWeight:900,color:s.accent?'var(--accent-ink)':'var(--ink)'}}>{s.val}</div>
+            {s.sub&&<div style={{fontSize:11,color:'var(--muted)',marginTop:3}}>{s.sub}</div>}
+            {s.bar&&<div style={{height:3,borderRadius:2,overflow:'hidden',marginTop:8,background:'var(--line)'}}>
+              <div style={{width:`${s.pct}%`,background:'var(--gain)',height:'100%',transition:'width .6s'}}/>
+            </div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Filter tabs */}
+      <div className="seg" style={{marginBottom:16}}>
+        {[['all','All Holdings'],['bullish','Bullish'],['neutral','Neutral'],['bearish','Bearish']].map(([v,l])=>(
+          <button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)}>{l}</button>
+        ))}
+      </div>
+
+      {/* Main grid: table + quick panel */}
+      <div style={{display:'grid',gridTemplateColumns:selected?'1fr 340px':'1fr',gap:16,alignItems:'start'}}>
+        <div className="card">
+          <div className="card-head"><BarChart2 size={15}/> My Holdings — Market Consensus Overlay</div>
+          {holdings.length===0?(
+            <div style={{padding:'48px 24px',textAlign:'center'}}>
+              <Upload size={32} style={{color:'var(--muted)',marginBottom:12,opacity:.5}}/>
+              <div style={{fontSize:15,fontWeight:700,marginBottom:6}}>No holdings yet</div>
+              <div style={{fontSize:13,color:'var(--muted)',marginBottom:16}}>Upload your CAS PDF to see market consensus overlaid on your portfolio</div>
+              <button className="btn btn-pri" onClick={()=>setShowManage(true)}><Upload size={14}/> Upload CAS PDF</button>
+            </div>
+          ):(
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom:'2px solid var(--line)'}}>
+                    {['Stock','Current Value','Overall Gain','Market Consensus (All Investors)','Consensus in My Circle','Strength',''].map((h,i)=>(
+                      <th key={i} style={{padding:'10px 14px',textAlign:i===0?'left':'center',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'var(--muted)',whiteSpace:'nowrap'}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(h=>{
+                    const sel = h.sym===selectedTicker;
+                    return (
+                      <tr key={h.id} onClick={()=>setSelectedTicker(sel?null:h.sym)}
+                        style={{borderBottom:'1px solid var(--line)',cursor:'pointer',background:sel?'var(--accent-soft)':'transparent',transition:'background .12s'}}>
+                        <td style={{padding:'13px 14px'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:10}}>
+                            <div className="av" style={{width:34,height:34,fontSize:12,flexShrink:0,background:'var(--grad)'}}>{h.sym?.slice(0,2)||'—'}</div>
+                            <div>
+                              <div style={{fontWeight:800,fontSize:14}}>{h.sym}</div>
+                              <div style={{fontSize:11,color:'var(--muted)',maxWidth:130,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
+                              <div style={{fontSize:10,color:'var(--muted)'}}>{h.sh} shares · ₹{Number(h.cost).toLocaleString('en-IN')} avg</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{padding:'13px 14px',textAlign:'center'}}>
+                          <div style={{fontWeight:700,fontSize:14}}>₹{Math.round(h.value).toLocaleString('en-IN')}</div>
+                          <div style={{fontSize:11,color:'var(--muted)'}}>₹{Number(h.price).toLocaleString('en-IN')} now</div>
+                        </td>
+                        <td style={{padding:'13px 14px',textAlign:'center'}}>
+                          <span style={{fontWeight:800,color:h.gain>=0?'var(--gain)':'var(--loss)',fontSize:15}}>{h.gain>=0?'+':''}{h.gain.toFixed(1)}%</span>
+                          <div style={{fontSize:10,color:'var(--muted)'}}>₹{Math.round((h.price-h.cost)*h.sh).toLocaleString('en-IN')}</div>
+                        </td>
+                        <td style={{padding:'13px 14px',textAlign:'center',minWidth:140}}>
+                          <ConsensusBar cons={h.community} width={120}/>
+                        </td>
+                        <td style={{padding:'13px 14px',textAlign:'center',minWidth:140}}>
+                          <ConsensusBar cons={h.circle} width={120}/>
+                        </td>
+                        <td style={{padding:'13px 14px',textAlign:'center',minWidth:70}}>
+                          <StrengthDot strength={h.community.strength}/>
+                        </td>
+                        <td style={{padding:'13px 14px',textAlign:'center'}}>
+                          <button className="iconbtn" title="Security Intelligence"
+                            onClick={e=>{e.stopPropagation();onOpenSecurity(h.sym,h.name);}}>
+                            <ChevronRight size={16}/>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {selected&&(
+          <SecurityQuickPanel
+            ticker={selected.sym} name={selected.name}
+            allRecos={selected.allR} circleRecos={selected.circleR}
+            onOpenFull={()=>onOpenSecurity(selected.sym,selected.name)}
+            onClose={()=>setSelectedTicker(null)}
+          />
+        )}
+      </div>
+
+      {/* CAS Upload modal trigger */}
+      {showManage&&<PanPullModal onClose={()=>setShowManage(false)} onApply={(h,mode)=>{ if(mode==='replace')setHoldings(h); else setHoldings(p=>[...p,...h.filter(nh=>!p.find(x=>x.sym===nh.sym))]); setShowManage(false); }}/>}
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MARKET INTELLIGENCE
+   ═══════════════════════════════════════════════════════════════════ */
+function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
+  const [recos, setRecos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('all'); // all | circle | community | verified
+  const [sector, setSector] = useState('all');
+  const [period, setPeriod] = useState('all');
+  const [search, setSearch] = useState('');
+  const [selectedTicker, setSelectedTicker] = useState(null);
+
+  const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
+
+  useEffect(()=>{
+    if (!sql) { setLoading(false); return; }
+    sql`SELECT r.ticker, r.asset_name, r.recommendation_type, r."from", r.conviction, r.created_at, r.sector,
+               up.username, up.full_name, up.ici_score, up.registration_status
+        FROM ic_recommendations r
+        LEFT JOIN user_profiles up ON r."from" = up.id
+        WHERE r.status = 'active'
+        ORDER BY r.created_at DESC`
+      .then(rows=>{ setRecos(rows); setLoading(false); })
+      .catch(()=>setLoading(false));
+  },[]);
+
+  // Group by ticker
+  const tickerMap = useMemo(()=>{
+    const byT={};
+    recos.forEach(r=>{
+      if (!byT[r.ticker]) byT[r.ticker]={ticker:r.ticker,name:r.asset_name||r.ticker,sector:r.sector||'',recos:[]};
+      byT[r.ticker].recos.push(r);
+    });
+    return byT;
+  },[recos]);
+
+  const allTickers = useMemo(()=>Object.values(tickerMap).map(t=>{
+    const filtered = tab==='circle' ? t.recos.filter(r=>circleIds.includes(r.from))
+      : tab==='verified' ? t.recos.filter(r=>['sebi_ra','sebi_ria'].includes(r.registration_status))
+      : t.recos;
+    const community  = computeConsensus(t.recos);
+    const circle     = computeConsensus(t.recos.filter(r=>circleIds.includes(r.from)));
+    const tabCons    = computeConsensus(filtered);
+    return {...t, community, circle, tabCons, filteredRecos:filtered};
+  }).filter(t=>t.filteredRecos.length>0
+    && (sector==='all'||t.sector===sector)
+    && (!search||t.ticker.includes(search.toUpperCase())||t.name.toLowerCase().includes(search.toLowerCase()))
+  ).sort((a,b)=>b.filteredRecos.length-a.filteredRecos.length),[tickerMap,tab,circleIds,sector,search]);
+
+  // Discovery cards
+  const strongest   = [...allTickers].sort((a,b)=>b.tabCons.strength-a.tabCons.strength)[0];
+  const emerging    = [...allTickers].filter(t=>t.filteredRecos.length>=2&&t.filteredRecos.length<=5).sort((a,b)=>b.tabCons.bullPct-a.tabCons.bullPct)[0];
+  const mostDiscussed= [...allTickers].sort((a,b)=>b.filteredRecos.length-a.filteredRecos.length)[0];
+  const mostDivided = [...allTickers].filter(t=>t.tabCons.total>=3).sort((a,b)=>Math.abs(50-b.tabCons.bullPct)-Math.abs(50-a.tabCons.bullPct))[0];
+
+  const sectors = ['all',...[...new Set(recos.map(r=>r.sector).filter(Boolean))]];
+  const selData  = selectedTicker ? tickerMap[selectedTicker] : null;
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Intelligence</div>
+          <div className="page-title">Market Intelligence</div>
+          <div className="page-sub">Track market sentiment and investor conviction across stocks and sectors</div>
+        </div>
+        {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
+      </div>
+
+      {/* Discovery cards */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12,marginBottom:20}}>
+        {[
+          {label:'Strongest Consensus',icon:<Target size={16}/>,item:strongest},
+          {label:'Biggest Conviction Increase',icon:<Zap size={16}/>,item:emerging},
+          {label:'Most Discussed',icon:<MessageSquare size={16}/>,item:mostDiscussed},
+          {label:'Most Divided',icon:<Activity size={16}/>,item:mostDivided},
+        ].map(({label,icon,item},i)=>item?(
+          <div key={i} className="card" style={{padding:'14px 16px',cursor:'pointer'}} onClick={()=>setSelectedTicker(item.ticker)}>
+            <div style={{display:'flex',alignItems:'center',gap:6,color:'var(--accent-ink)',opacity:.7,marginBottom:8}}>{icon}<span style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)'}}>{label}</span></div>
+            <div style={{fontWeight:900,fontSize:18,marginBottom:2}}>{item.ticker}</div>
+            <ConsensusBar cons={item.tabCons} width={130} mini/>
+            <div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>{item.filteredRecos.length} investor{item.filteredRecos.length!==1?'s':''}</div>
+          </div>
+        ):null)}
+      </div>
+
+      {/* Filters + tabs */}
+      <div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap',marginBottom:16}}>
+        <div className="seg">
+          {[['all','All Stocks'],['circle','My Circle'],['community','Community'],['verified','Verified Investors']].map(([v,l])=>(
+            <button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)}>{l}</button>
+          ))}
+        </div>
+        <select className="rte-select" value={sector} onChange={e=>setSector(e.target.value)} style={{height:32}}>
+          {sectors.map(s=><option key={s} value={s}>{s==='all'?'All Sectors':s}</option>)}
+        </select>
+        <div style={{position:'relative',flex:1,maxWidth:220}}>
+          <Search size={14} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--muted)'}}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search stocks…"
+            style={{width:'100%',paddingLeft:30,height:32,border:'1px solid var(--line-2)',borderRadius:8,fontSize:13,outline:'none',background:'var(--surface)',color:'var(--ink)'}}/>
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:selData?'1fr 340px':'1fr',gap:16,alignItems:'start'}}>
+        <div className="card">
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead>
+                <tr style={{borderBottom:'2px solid var(--line)'}}>
+                  {['Stock','My Circle Consensus','Community Consensus','Trend (7d)','Investors','Avg Credibility','Action'].map((h,i)=>(
+                    <th key={i} style={{padding:'10px 14px',textAlign:i===0?'left':'center',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'var(--muted)',whiteSpace:'nowrap'}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {allTickers.slice(0,30).map(t=>{
+                  const sel = t.ticker===selectedTicker;
+                  const avgIci = Math.round(t.recos.reduce((s,r)=>s+(Number(r.ici_score)||0),0)/Math.max(t.recos.length,1));
+                  return (
+                    <tr key={t.ticker} onClick={()=>setSelectedTicker(sel?null:t.ticker)}
+                      style={{borderBottom:'1px solid var(--line)',cursor:'pointer',background:sel?'var(--accent-soft)':'transparent',transition:'background .12s'}}>
+                      <td style={{padding:'12px 14px'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:10}}>
+                          <div className="av" style={{width:32,height:32,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{t.ticker.slice(0,2)}</div>
+                          <div>
+                            <div style={{fontWeight:800,fontSize:14}}>{t.ticker}</div>
+                            <div style={{fontSize:11,color:'var(--muted)',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>
+                            {t.sector&&<div style={{fontSize:10,color:'var(--muted)'}}>{t.sector}</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{padding:'12px 14px',textAlign:'center',minWidth:130}}><ConsensusBar cons={t.circle} width={110}/></td>
+                      <td style={{padding:'12px 14px',textAlign:'center',minWidth:130}}><ConsensusBar cons={t.community} width={110}/></td>
+                      <td style={{padding:'12px 14px',textAlign:'center'}}>
+                        <span style={{fontSize:12,color:t.community.bullPct>=55?'var(--gain)':t.community.bearPct>=55?'var(--loss)':'var(--muted)',fontWeight:700}}>
+                          {t.community.bullPct>=55?'↑':t.community.bearPct>=55?'↓':'→'}
+                          {' '}{t.community.bullPct>=55?'Bullish':t.community.bearPct>=55?'Bearish':'Neutral'}
+                        </span>
+                      </td>
+                      <td style={{padding:'12px 14px',textAlign:'center'}}>
+                        <div style={{fontWeight:700,fontSize:16}}>{t.filteredRecos.length}</div>
+                        <div style={{fontSize:10,color:'var(--muted)'}}>investors</div>
+                      </td>
+                      <td style={{padding:'12px 14px',textAlign:'center'}}>
+                        <div style={{fontWeight:700,fontSize:16,color:'var(--accent-ink)'}}>{avgIci||'—'}</div>
+                        <div style={{fontSize:10,color:'var(--muted)'}}>ICI avg</div>
+                      </td>
+                      <td style={{padding:'12px 14px',textAlign:'center'}}>
+                        <button className="iconbtn" title="Security Intelligence" onClick={e=>{e.stopPropagation();onOpenSecurity(t.ticker,t.name);}}><ChevronRight size={16}/></button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {allTickers.length===0&&!loading&&<tr><td colSpan={7} style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>{recos.length===0?'No recommendations on the platform yet.':'No results match your filters.'}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {selData&&(
+          <SecurityQuickPanel
+            ticker={selData.ticker} name={selData.name}
+            allRecos={selData.recos} circleRecos={selData.recos.filter(r=>circleIds.includes(r.from))}
+            onOpenFull={()=>onOpenSecurity(selData.ticker,selData.name)}
+            onClose={()=>setSelectedTicker(null)}
+          />
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SECURITY INTELLIGENCE
+   ═══════════════════════════════════════════════════════════════════ */
+function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity }) {
+  const { ticker, name } = securityTicker || {};
+  const [recos, setRecos]     = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [tab, setTab]         = useState('consensus'); // consensus | timeline | investors
+
+  const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
+
+  useEffect(()=>{
+    if (!ticker||!sql) return;
+    setLoading(true); setRecos([]);
+    sql`SELECT r.id, r.ticker, r.asset_name, r.recommendation_type, r.conviction, r.created_at,
+               r.thesis, r.price_at, r.price, r.status, r."from", r.exit, r.exit_date, r.exit_price,
+               up.username, up.full_name, up.ici_score, up.registration_status, up.sebi_approval_status
+        FROM ic_recommendations r
+        LEFT JOIN user_profiles up ON r."from" = up.id
+        WHERE r.ticker = ${ticker}
+        ORDER BY r.created_at DESC`
+      .then(rows=>{ setRecos(rows); setLoading(false); })
+      .catch(()=>setLoading(false));
+  },[ticker]);
+
+  if (!ticker) return (
+    <>
+      <div className="page-head">
+        <div><div className="eyebrow">Intelligence</div><div className="page-title">Security Intelligence</div></div>
+      </div>
+      <div style={{padding:'64px 24px',textAlign:'center'}}>
+        <Activity size={36} style={{color:'var(--muted)',marginBottom:14,opacity:.4}}/>
+        <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>Select a security to explore</div>
+        <div style={{fontSize:14,color:'var(--muted)',marginBottom:20}}>Click any stock in Portfolio Intelligence or Market Intelligence to open its detailed view here.</div>
+        <button className="btn btn-pri" onClick={()=>onOpenSecurity&&null}>Go to Market Intelligence</button>
+      </div>
+    </>
+  );
+
+  const activeRecos  = recos.filter(r=>r.status==='active');
+  const circleRecos  = activeRecos.filter(r=>circleIds.includes(r.from));
+  const community    = computeConsensus(activeRecos);
+  const circle       = computeConsensus(circleRecos);
+
+  // Group investors with their latest recommendation
+  const investorMap = {};
+  recos.forEach(r=>{
+    if (!investorMap[r.from]) investorMap[r.from] = {...r};
+  });
+  const investors = Object.values(investorMap);
+  const inCircle  = investors.filter(r=>circleIds.includes(r.from));
+  const notCircle = investors.filter(r=>!circleIds.includes(r.from));
+
+  return (
+    <>
+      <div className="page-head" style={{alignItems:'flex-start'}}>
+        <div style={{flex:1}}>
+          <div className="eyebrow">Security Intelligence</div>
+          <div style={{display:'flex',alignItems:'baseline',gap:14,flexWrap:'wrap'}}>
+            <div className="page-title">{ticker}</div>
+            <div style={{fontSize:16,color:'var(--muted)',fontWeight:400}}>{name}</div>
+          </div>
+          <div className="page-sub">{activeRecos.length} active recommendation{activeRecos.length!==1?'s':''} · {investors.length} investor{investors.length!==1?'s':''} tracking</div>
+        </div>
+        {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
+      </div>
+
+      {/* Consensus header */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:20}}>
+        {[['Community Consensus',community,'All Investors on MIC'],['My Circle Consensus',circle,`${circleIds.length} connections`]].map(([label,cons,sub])=>(
+          <div key={label} className="card" style={{padding:'20px 22px'}}>
+            <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:12}}>{label}</div>
+            {cons.total>0?(
+              <>
+                <div style={{fontSize:32,fontWeight:900,color:cons.bullPct>=55?'var(--gain)':cons.bearPct>=55?'var(--loss)':'var(--muted)',marginBottom:4}}>{cons.bullPct}%<span style={{fontSize:16,fontWeight:400,color:'var(--muted)'}}> Bullish</span></div>
+                <ConsensusBar cons={cons} width={'100%'}/>
+                <div style={{fontSize:12,color:'var(--muted)',marginTop:8}}>{sub}</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
+                  {[['Buy',cons.bull,'var(--gain)'],['Neutral',cons.neutral,'var(--muted)'],['Sell',cons.bear,'var(--loss)']].map(([l,v,c])=>(
+                    <div key={l} style={{textAlign:'center',padding:'8px',background:'var(--surface-2)',borderRadius:8}}>
+                      <div style={{fontSize:18,fontWeight:900,color:c}}>{v}</div>
+                      <div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ):<div style={{fontSize:13,color:'var(--muted)',paddingTop:8}}>{sub==='All Investors on MIC'?'No recommendations on platform yet':'None of your connections have recommended this'}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="seg" style={{marginBottom:16}}>
+        {[['consensus','Consensus Strength'],['timeline','Recommendation History'],['investors','Investors']].map(([v,l])=>(
+          <button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)}>{l}</button>
+        ))}
+      </div>
+
+      {/* Tab: Consensus */}
+      {tab==='consensus'&&(
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+          {/* Strength gauge */}
+          <div className="card">
+            <div className="card-head"><Target size={15}/> Consensus Strength</div>
+            <div className="card-body" style={{textAlign:'center',padding:'24px'}}>
+              <div style={{fontSize:64,fontWeight:900,color:community.strength>=65?'var(--gain)':community.strength>=40?'#fbbf24':'var(--muted)',lineHeight:1,marginBottom:8}}>
+                {community.strength}
+              </div>
+              <div style={{fontSize:14,fontWeight:700,color:'var(--ink)',marginBottom:4}}>{community.label}</div>
+              <div style={{fontSize:12,color:'var(--muted)',marginBottom:20}}>out of 100 — based on {community.total} active recommendations</div>
+              <div style={{height:8,borderRadius:6,overflow:'hidden',background:'var(--line)',position:'relative'}}>
+                <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${community.strength}%`,
+                  background:`linear-gradient(90deg,var(--gain),${community.strength>=65?'var(--gain)':'#fbbf24'})`,transition:'width .6s'}}/>
+              </div>
+            </div>
+          </div>
+          {/* Circle vs Community */}
+          <div className="card">
+            <div className="card-head"><Globe size={15}/> Circle vs Community</div>
+            <div className="card-body" style={{display:'flex',flexDirection:'column',gap:16,padding:'16px 18px'}}>
+              {[['My Circle',circle],['Community',community]].map(([l,c])=>(
+                <div key={l}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                    <span style={{fontSize:13,fontWeight:600}}>{l}</span>
+                    <span style={{fontSize:13,fontWeight:700,color:c.bullPct>=55?'var(--gain)':c.bearPct>=55?'var(--loss)':'var(--muted)'}}>{c.label}</span>
+                  </div>
+                  <ConsensusBar cons={c} width={'100%'}/>
+                  <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{c.total} investor{c.total!==1?'s':''}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Recommendation History */}
+      {tab==='timeline'&&(
+        <div className="card">
+          <div className="card-head"><Clock size={15}/> Recommendation History <span style={{fontSize:11,color:'var(--muted)',fontWeight:400,marginLeft:4}}>(immutable — all calls are permanent)</span></div>
+          {recos.length===0&&!loading?(
+            <div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>No recommendations for {ticker} yet.</div>
+          ):(
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom:'2px solid var(--line)'}}>
+                    {['Investor','Type','Date','Entry Price','Conviction','Status'].map((h,i)=>(
+                      <th key={i} style={{padding:'10px 14px',textAlign:i===0?'left':'center',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'var(--muted)'}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {recos.map(r=>{
+                    const inMyCircle = circleIds.includes(r.from);
+                    return (
+                      <tr key={r.id} style={{borderBottom:'1px solid var(--line)'}}>
+                        <td style={{padding:'12px 14px'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:8}}>
+                            <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                            <div>
+                              <div style={{fontWeight:700,fontSize:13}}>{r.full_name||r.username||'Anonymous'}</div>
+                              {inMyCircle&&<span style={{fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.05em'}}>My Circle</span>}
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{padding:'12px 14px',textAlign:'center'}}>
+                          <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,
+                            background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
+                            color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>
+                            {r.recommendation_type==='Buy'?'BUY':'SELL'}
+                          </span>
+                        </td>
+                        <td style={{padding:'12px 14px',textAlign:'center',fontSize:13,color:'var(--muted)'}}>
+                          {r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'}
+                        </td>
+                        <td style={{padding:'12px 14px',textAlign:'center',fontSize:13,fontWeight:600}}>
+                          {r.price_at?`₹${Number(r.price_at).toLocaleString('en-IN')}`:'—'}
+                        </td>
+                        <td style={{padding:'12px 14px',textAlign:'center'}}><ConvBadge level={r.conviction}/></td>
+                        <td style={{padding:'12px 14px',textAlign:'center'}}>
+                          <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:5,
+                            background:r.status==='active'?'var(--gain-soft)':r.status==='exited'?'var(--accent-soft)':'var(--surface-2)',
+                            color:r.status==='active'?'var(--gain)':r.status==='exited'?'var(--accent-ink)':'var(--muted)'}}>
+                            {r.status==='active'?'Active':r.status==='exited'?'Exited':'Closed'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Investors */}
+      {tab==='investors'&&(
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          {inCircle.length>0&&(
+            <div className="card">
+              <div className="card-head"><Users size={15}/> In My Circle ({inCircle.length})</div>
+              <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10,padding:'12px 16px'}}>
+                {inCircle.map(r=>(
+                  <div key={r.from} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
+                    <div className="av" style={{width:38,height:38,fontSize:13,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:14}}>{r.full_name||r.username||'Anonymous'}</div>
+                      {r.username&&<div style={{fontSize:12,color:'var(--muted)'}}>@{r.username}</div>}
+                    </div>
+                    <div style={{textAlign:'center',flexShrink:0}}>
+                      <div style={{fontSize:18,fontWeight:900,color:'var(--accent-ink)'}}>{r.ici_score||'—'}</div>
+                      <div style={{fontSize:10,color:'var(--muted)'}}>ICI Score</div>
+                    </div>
+                    <ConvBadge level={r.conviction}/>
+                    <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,
+                      background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
+                      color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)',flexShrink:0}}>
+                      {r.recommendation_type==='Buy'?'BUY':'SELL'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {notCircle.length>0&&(
+            <div className="card">
+              <div className="card-head"><Globe size={15}/> Community ({notCircle.length})</div>
+              <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10,padding:'12px 16px'}}>
+                {notCircle.map(r=>(
+                  <div key={r.from} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
+                    <div className="av" style={{width:38,height:38,fontSize:13,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:14}}>{r.full_name||r.username||'Anonymous'}</div>
+                      {r.username&&<div style={{fontSize:12,color:'var(--muted)'}}>@{r.username}</div>}
+                    </div>
+                    <div style={{textAlign:'center',flexShrink:0}}>
+                      <div style={{fontSize:18,fontWeight:900,color:'var(--accent-ink)'}}>{r.ici_score||'—'}</div>
+                      <div style={{fontSize:10,color:'var(--muted)'}}>ICI</div>
+                    </div>
+                    <ConvBadge level={r.conviction}/>
+                    <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,
+                      background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
+                      color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)',flexShrink:0}}>
+                      {r.recommendation_type==='Buy'?'BUY':'SELL'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {investors.length===0&&!loading&&<div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>No investor recommendations for {ticker} yet.</div></div>}
+        </div>
+      )}
     </>
   );
 }
