@@ -17,7 +17,7 @@ import { getPreviousClose, getTodayClose, sourceName, isPriceServiceConfigured }
 import {
   setExitSignal as dbSetExit, cancelExitSignal as dbCancelExit,
 } from "./db";
-import { fetchHoldingsByPAN, isValidPAN } from "./services/pan";
+import { parseCasPdf } from "./services/cas";
 import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 import { useAuth } from "./AuthContext";
 import { sql } from "./supabaseClient";
@@ -1704,7 +1704,7 @@ function Portfolio({ configs, holdings, setHoldings, refreshPrices, priceRefresh
         </div>
         <button className="btn btn-soft btn-sm" disabled={importBusy} onClick={()=>fileRef.current?.click()}>
           {importBusy ? <><Loader size={15} className="spin"/> Reading…</> : <><Upload size={15}/> Import</>}</button>
-        <button className="btn btn-soft btn-sm" onClick={()=>setShowPan(true)}><CreditCard size={15}/> Link via PAN</button>
+        <button className="btn btn-soft btn-sm" onClick={()=>setShowPan(true)}><Upload size={15}/> Upload CAS</button>
         <button className="btn btn-ghost btn-sm" onClick={()=>setHide(v=>!v)}>{hide?<Eye size={15}/>:<EyeOff size={15}/>} {hide?"Show values":"Hide values"}</button>
       </div></div>
 
@@ -2597,31 +2597,226 @@ function ImportPreviewModal({ result, onClose, onApply }) {
   </div></div>);
 }
 
+/* ── CAS PDF Upload Modal ────────────────────────────────────────────────────
+   Replaces the old mock "Link via PAN" modal.
+   Step 1: drop / browse PDF + enter password → Parse
+   Step 2: preview MF & equity holdings + choose append/replace → Import
+   ─────────────────────────────────────────────────────────────────────────── */
 function PanPullModal({ onClose, onApply }) {
-  const [pan,setPan]=useState(""); const [status,setStatus]=useState("idle"); const [err,setErr]=useState(""); const [result,setResult]=useState(null); const [mode,setMode]=useState("append");
-  const ok = isValidPAN(pan);
-  const pull=async()=>{ setStatus("loading"); setErr(""); try{ const h=await fetchHoldingsByPAN(pan); setResult(h); setStatus("done"); }catch(e){ setErr(e.message); setStatus("idle"); } };
-  return (<div className="overlay" onClick={onClose}><div className="modal" style={{width:result?720:480}} onClick={e=>e.stopPropagation()}>
-    <div className="modal-head"><h3><CreditCard size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Link holdings via PAN</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
-    <div className="modal-body">
-      <div className="note info" style={{marginBottom:16}}><Shield size={16}/><div>Demo only — this calls a mock service. A production build would use a consented aggregator (India's Account Aggregator framework, or a CAS/depository API). Try <b>ABCDE1234F</b> or <b>AAAPZ1234C</b>.</div></div>
-      <div className="field"><label>PAN number</label>
-        <input autoFocus maxLength={10} style={{textTransform:"uppercase",letterSpacing:1}} value={pan} onChange={e=>{setPan(e.target.value.toUpperCase());setResult(null);setStatus("idle");}} onKeyDown={e=>e.key==="Enter"&&ok&&pull()} placeholder="ABCDE1234F"/>
-        {pan && !ok && <div className="neg small" style={{marginTop:6}}>Format: 5 letters, 4 digits, 1 letter.</div>}
-        {err && <div className="neg small" style={{marginTop:6}}>{err}</div>}</div>
-      {status==="loading" && <div className="muted small" style={{display:"flex",alignItems:"center",gap:8}}><Loader size={15} className="spin"/> Fetching holdings…</div>}
-      {result && <>
-        <div className="muted small" style={{margin:"4px 0 12px"}}>Found <b style={{color:"var(--ink)"}}>{result.length}</b> holdings linked to this PAN.</div>
-        <div style={{maxHeight:280,overflow:"auto",border:"1px solid var(--line)",borderRadius:12}}><HoldPreviewTable holdings={result}/></div>
-        <div style={{display:"flex",gap:18,marginTop:16}}>
-          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:600}}><input type="radio" checked={mode==="append"} onChange={()=>setMode("append")} style={{accentColor:"var(--accent)"}}/> Add to my portfolio</label>
-          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:600}}><input type="radio" checked={mode==="replace"} onChange={()=>setMode("replace")} style={{accentColor:"var(--accent)"}}/> Replace everything</label></div>
-      </>}
+  const [file,     setFile]     = useState(null);
+  const [password, setPassword] = useState('');
+  const [showPwd,  setShowPwd]  = useState(false);
+  const [drag,     setDrag]     = useState(false);
+  const [parsing,  setParsing]  = useState(false);
+  const [parsed,   setParsed]   = useState(null);   // { mf, equity, investor, warnings }
+  const [mode,     setMode]     = useState('append');
+  const [err,      setErr]      = useState('');
+  const dropRef = useRef(null);
+
+  const allHoldings = parsed ? [...(parsed.mf||[]), ...(parsed.equity||[])] : [];
+
+  const pickFile = f => {
+    if (!f || f.type !== 'application/pdf') { setErr('Please select a PDF file.'); return; }
+    setFile(f); setErr(''); setParsed(null);
+  };
+
+  const onDrop = e => {
+    e.preventDefault(); setDrag(false);
+    pickFile(e.dataTransfer.files[0]);
+  };
+
+  const parse = async () => {
+    if (!file) return;
+    setParsing(true); setErr('');
+    try {
+      const result = await parseCasPdf(file, password);
+      setParsed(result);
+      if (!result.mf.length && !result.equity.length) {
+        setErr('No holdings found. Check your password and try again.');
+        setParsed(null);
+      }
+    } catch(e) { setErr(e.message); }
+    setParsing(false);
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" style={{width: parsed ? 760 : 500, maxWidth:'95vw'}}
+           onClick={e=>e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="modal-head">
+          <h3><CreditCard size={18} style={{verticalAlign:-3,color:'var(--accent)'}}/>
+            {' '}Import portfolio via CAS
+          </h3>
+          <button className="icon-btn" onClick={onClose}><X size={20}/></button>
+        </div>
+
+        <div className="modal-body">
+          {!parsed ? (
+            <>
+              {/* What is CAS */}
+              <div className="note info" style={{marginBottom:16}}>
+                <Shield size={15}/>
+                <div>
+                  A <strong>Consolidated Account Statement (CAS)</strong> contains
+                  all your mutual fund and demat (equity) holdings in one PDF.
+                  {' '}<a href="https://www.camsonline.com/Investors/Statements/ConsolidatedAccountStatement"
+                     target="_blank" rel="noopener noreferrer"
+                     style={{color:'var(--accent-ink)',fontWeight:600}}>Get your CAS from CAMS →</a>
+                </div>
+              </div>
+
+              {/* Drop zone */}
+              <div ref={dropRef}
+                   onDragOver={e=>{e.preventDefault();setDrag(true);}}
+                   onDragLeave={()=>setDrag(false)}
+                   onDrop={onDrop}
+                   onClick={()=>dropRef.current.querySelector('input').click()}
+                   style={{
+                     border:`2px dashed ${drag?'var(--accent)':'var(--line-2)'}`,
+                     borderRadius:14, padding:'28px 20px', textAlign:'center',
+                     cursor:'pointer', transition:'.15s',
+                     background:drag?'var(--accent-soft)':'var(--surface-2)',
+                   }}>
+                <input type="file" accept=".pdf" style={{display:'none'}}
+                  onChange={e=>pickFile(e.target.files[0])}/>
+                {file
+                  ? <div>
+                      <div style={{fontSize:15,fontWeight:700,color:'var(--ink)',marginBottom:4}}>
+                        📄 {file.name}
+                      </div>
+                      <div style={{fontSize:12,color:'var(--muted)'}}>
+                        {(file.size/1024/1024).toFixed(2)} MB · Click to change
+                      </div>
+                    </div>
+                  : <>
+                      <Upload size={28} color="var(--muted)" style={{marginBottom:10}}/>
+                      <div style={{fontSize:14,fontWeight:600,color:'var(--ink)',marginBottom:4}}>
+                        Drop your CAS PDF here
+                      </div>
+                      <div style={{fontSize:12,color:'var(--muted)'}}>or click to browse</div>
+                    </>}
+              </div>
+
+              {/* Password */}
+              <div className="field" style={{marginTop:14}}>
+                <label style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span>PDF Password</span>
+                  <button onClick={()=>setShowPwd(v=>!v)}
+                    style={{background:'none',border:'none',cursor:'pointer',fontSize:12,
+                      color:'var(--accent-ink)',fontWeight:600,fontFamily:'var(--font)',padding:0}}>
+                    {showPwd?'Hide':'Show hint'}
+                  </button>
+                </label>
+                <div style={{position:'relative'}}>
+                  <input type="text" value={password} placeholder="Leave blank if no password"
+                    onChange={e=>{setPassword(e.target.value);setErr('');}}
+                    onKeyDown={e=>e.key==='Enter'&&file&&parse()}
+                    style={{width:'100%',paddingRight:36}}/>
+                </div>
+                {showPwd && (
+                  <div style={{marginTop:8,padding:'10px 14px',background:'var(--surface-2)',
+                    border:'1px solid var(--line)',borderRadius:10,fontSize:12,lineHeight:1.8,color:'var(--muted)'}}>
+                    <strong style={{color:'var(--ink)'}}>Typical passwords:</strong><br/>
+                    <span style={{display:'block',marginTop:4}}>
+                      CDSL / NSDL CAS:&nbsp;
+                      <code style={{color:'var(--accent-ink)'}}>your PAN in lowercase</code>
+                      &nbsp;(e.g. <code>abcde1234f</code>)
+                    </span>
+                    <span style={{display:'block'}}>
+                      CAMS CAS:&nbsp;
+                      <code style={{color:'var(--accent-ink)'}}>first 4 chars of email + date of birth</code>
+                      &nbsp;(e.g. <code>ankuDDMMYYYY</code>)
+                    </span>
+                    <span style={{display:'block'}}>
+                      No password?&nbsp; Leave the field blank.
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {err && (
+                <div style={{display:'flex',gap:7,alignItems:'flex-start',color:'var(--loss)',fontSize:13,marginTop:6}}>
+                  <AlertTriangle size={14} style={{flexShrink:0,marginTop:2}}/>{err}
+                </div>
+              )}
+            </>
+          ) : (
+            /* ── Preview ── */
+            <>
+              {/* Investor info */}
+              {parsed.investor?.name && (
+                <div style={{display:'flex',gap:16,alignItems:'center',padding:'10px 14px',
+                  background:'var(--surface-2)',border:'1px solid var(--line)',
+                  borderRadius:12,marginBottom:14,fontSize:13}}>
+                  <div style={{fontWeight:700,color:'var(--ink)'}}>{parsed.investor.name}</div>
+                  {parsed.investor.pan && <div style={{color:'var(--muted)',fontFamily:'monospace'}}>{parsed.investor.pan}</div>}
+                  {parsed.investor.email && <div style={{color:'var(--muted)'}}>{parsed.investor.email}</div>}
+                </div>
+              )}
+
+              {/* Holdings split */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+                {[
+                  {label:'Mutual Funds', count:parsed.mf.length,    icon:'📈', col:'var(--accent-ink)'},
+                  {label:'Equity / ETF', count:parsed.equity.length, icon:'🏦', col:'var(--gain)'},
+                ].map(s=>(
+                  <div key={s.label} style={{padding:'12px 16px',background:'var(--surface-2)',
+                    border:'1px solid var(--line)',borderRadius:12,textAlign:'center'}}>
+                    <div style={{fontSize:24,marginBottom:4}}>{s.icon}</div>
+                    <div style={{fontSize:22,fontWeight:900,color:s.col}}>{s.count}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.06em'}}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Warnings */}
+              {parsed.warnings?.filter(w=>w).map((w,i)=>(
+                <div key={i} className="note" style={{marginBottom:8,fontSize:12,padding:'8px 12px'}}>
+                  <AlertTriangle size={13}/><div>{w}</div>
+                </div>
+              ))}
+
+              {/* Holdings table */}
+              <div style={{maxHeight:260,overflow:'auto',border:'1px solid var(--line)',borderRadius:12,marginBottom:14}}>
+                <HoldPreviewTable holdings={allHoldings}/>
+              </div>
+
+              {/* Mode selector */}
+              <div style={{display:'flex',gap:20}}>
+                {[['append','Add to my portfolio'],['replace','Replace everything']].map(([v,label])=>(
+                  <label key={v} style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontWeight:600,fontSize:14}}>
+                    <input type="radio" checked={mode===v} onChange={()=>setMode(v)} style={{accentColor:'var(--accent)'}}/>
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={parsed ? ()=>setParsed(null) : onClose}>
+            {parsed ? '← Back' : 'Cancel'}
+          </button>
+          <div style={{display:'flex',gap:10,alignItems:'center'}}>
+            {parsing && <span style={{fontSize:12,color:'var(--muted)',display:'flex',alignItems:'center',gap:6}}><Loader size={14} className="spin"/>Parsing…</span>}
+            {!parsed
+              ? <button className="btn btn-pri" disabled={!file||parsing} onClick={parse}>
+                  <Upload size={14}/> Parse CAS
+                </button>
+              : <button className="btn btn-pri" disabled={allHoldings.length===0}
+                  onClick={()=>onApply(allHoldings, mode)}>
+                  <Check size={14}/> Import {allHoldings.length} holding{allHoldings.length!==1?'s':''}
+                </button>}
+          </div>
+        </div>
+
+      </div>
     </div>
-    <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      {result ? <button className="btn btn-pri" onClick={()=>onApply(result,mode)}><Check size={15}/> Import {result.length}</button>
-              : <button className="btn btn-pri" disabled={!ok||status==="loading"} onClick={pull}><CreditCard size={15}/> Fetch holdings</button>}</div></div>
-  </div></div>);
+  );
 }
 
 function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings, me, onReload, globalSearch }) {
