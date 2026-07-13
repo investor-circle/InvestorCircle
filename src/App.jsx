@@ -1795,119 +1795,6 @@ function Portfolio({ configs, holdings, setHoldings, refreshPrices, priceRefresh
     {showAddHolding && <AddHoldingModal onClose={()=>setShowAddHolding(false)} onAdd={(h)=>{ setHoldings(hs=>[...hs,h]); setShowAddHolding(false); }}/>}
   </>);
 }
-
-function AddHoldingModal({ onClose, onAdd }) {
-  const [instr,    setInstr]    = useState(null);   // from InstrumentSearch
-  const [sym,      setSym]      = useState("");
-  const [name,     setName]     = useState("");
-  const [type,     setType]     = useState("Stock");
-  const [account,  setAccount]  = useState("");
-  const [shares,   setShares]   = useState("");
-  const [costPer,  setCostPer]  = useState("");     // cost per share
-  const [pricePer, setPricePer] = useState("");     // current price per share (optional)
-
-  const onInstrSelect = (inst) => {
-    if (!inst) { setSym(""); setName(""); setType("Stock"); return; }
-    setInstr(inst);
-    setSym(inst.symbol);
-    setName(inst.name);
-    setType(inst.type==="ETF" ? "ETF" : inst.type==="MF" ? "Fund" : "Stock");
-  };
-
-  const valid = (sym.trim()||name.trim()) && +shares > 0 && +costPer > 0;
-
-  const save = () => {
-    const sh   = +shares;
-    const cost = +costPer;
-    const price = +pricePer || cost;   // default current price to cost if not given
-    onAdd({
-      id:       "h" + Date.now(),
-      sym:      sym.trim().toUpperCase() || name.trim().toUpperCase().slice(0,6),
-      name:     name.trim() || sym.trim(),
-      type,
-      acct:     "manual",
-      acctName: account.trim() || "Manual entry",
-      sh,
-      cost,
-      price,
-    });
-  };
-
-  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-head">
-      <h3><Plus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add holding</h3>
-      <button className="icon-btn" onClick={onClose}><X size={20}/></button>
-    </div>
-    <div className="modal-body">
-
-      {/* Instrument search */}
-      <div className="field">
-        <label>Search instrument <span className="muted small">(type symbol or company name)</span></label>
-        <InstrumentSearch onSelect={onInstrSelect} placeholder="e.g. RELIANCE or Reliance Industries…"/>
-      </div>
-
-      {/* Show selected badge */}
-      {instr && (
-        <div style={{display:"flex",gap:8,marginBottom:14,padding:"9px 12px",background:"var(--accent-soft)",borderRadius:10,alignItems:"center"}}>
-          <Check size={15} color="var(--accent-ink)"/>
-          <span style={{fontSize:13,fontWeight:600,color:"var(--accent-ink)"}}>{instr.symbol} — {instr.name}</span>
-          <span className="chip mini" style={{marginLeft:"auto"}}>{instr.exchange}</span>
-          <span className="chip mini">{instr.assetClass}</span>
-        </div>
-      )}
-
-      {/* Manual override */}
-      <details style={{marginBottom:14}}>
-        <summary style={{fontSize:12,fontWeight:600,color:"var(--muted)",cursor:"pointer",userSelect:"none"}}>Not in the list? Enter manually</summary>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14,paddingTop:10}}>
-          <div className="field"><label>Symbol / Ticker</label><input value={sym} onChange={e=>setSym(e.target.value.toUpperCase())} placeholder="RELIANCE"/></div>
-          <div className="field"><label>Name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Reliance Industries"/></div>
-        </div>
-      </details>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:14}}>
-        <div className="field"><label>Type</label>
-          <select value={type} onChange={e=>setType(e.target.value)}>
-            {["Stock","ETF","Fund","Crypto","Bonds","Other"].map(t=><option key={t}>{t}</option>)}
-          </select>
-        </div>
-        <div className="field"><label>Account / Broker <span className="muted small">(optional)</span></label>
-          <input value={account} onChange={e=>setAccount(e.target.value)} placeholder="e.g. Zerodha"/>
-        </div>
-        <div className="field"><label>Number of shares / units <span style={{color:"var(--loss)"}}>*</span></label>
-          <input type="number" min="0" value={shares} onChange={e=>setShares(e.target.value)} placeholder="e.g. 10"/>
-        </div>
-        <div className="field"><label>Average cost per share <span style={{color:"var(--loss)"}}>*</span></label>
-          <input type="number" min="0" value={costPer} onChange={e=>setCostPer(e.target.value)} placeholder="e.g. 2400"/>
-        </div>
-        <div className="field" style={{gridColumn:"1 / span 2"}}>
-          <label>Current price per share <span className="muted small">(optional — defaults to cost if blank)</span></label>
-          <input type="number" min="0" value={pricePer} onChange={e=>setPricePer(e.target.value)} placeholder="e.g. 2550"/>
-        </div>
-      </div>
-
-      {/* Live summary */}
-      {valid && (
-        <div style={{background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:12,padding:"12px 14px",display:"flex",gap:20,flexWrap:"wrap"}}>
-          <div><div className="cap">Cost basis</div><b className="tnum">{fmt(+shares * +costPer)}</b></div>
-          <div><div className="cap">Market value</div><b className="tnum">{fmt(+shares * (+pricePer||+costPer))}</b></div>
-          <div><div className="cap">Unrealised P&L</div>
-            <b className={"tnum "+(+pricePer>=+costPer?"pos":"neg")}>
-              {pricePer ? fmtSigned(+shares*(+pricePer-+costPer)) : "—"}
-            </b>
-          </div>
-        </div>
-      )}
-    </div>
-    <div className="modal-foot"><span/>
-      <div style={{display:"flex",gap:10}}>
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-pri" disabled={!valid} onClick={save}><Check size={14}/> Add to portfolio</button>
-      </div>
-    </div>
-  </div></div>);
-}
-
 /* =================================================================== RECOMMENDATIONS */
 const Money = ({ itm }) => <span className={"pill "+(itm?"gain":"loss")}>{itm?<TrendingUp size={12}/>:<TrendingDown size={12}/>} {itm?"In the money":"Out of the money"}</span>;
 const ClassTag = ({ c }) => <span className="ttag nowrap"><span className="dot" style={{ background:classColor(c) }}/>{c}</span>;
@@ -7962,6 +7849,7 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
   const [loading, setLoading] = useState(true);
   const [selectedTicker, setSelectedTicker] = useState(null);
   const [showManage, setShowManage] = useState(false);
+  const [showAddHolding, setShowAddHolding] = useState(false);
   const [tab, setTab] = useState('all'); // all | bullish | neutral | bearish
 
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
@@ -8010,9 +7898,9 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
           <div className="page-title">Portfolio Intelligence</div>
           <div className="page-sub">See what the market and your circle think about the stocks you hold</div>
         </div>
-        <div style={{display:'flex',gap:10}}>
-          {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
-          <button className="btn btn-ghost btn-sm" onClick={()=>setPage('portfolio_manage')}><Settings size={13}/> Manage Holdings</button>
+        <div style={{display:'flex',gap:10,flexWrap:'wrap',justifyContent:'flex-end'}}>
+          {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)',marginRight:4}}/>}
+          <button className="btn btn-ghost btn-sm" onClick={()=>setShowAddHolding(true)}><Plus size={13}/> Add Holding</button>
           <button className="btn btn-soft btn-sm" onClick={()=>setShowManage(true)}><Upload size={13}/> Upload CAS</button>
         </div>
       </div>
@@ -8050,17 +7938,20 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
           <div className="card-head"><BarChart2 size={15}/> My Holdings — Market Consensus Overlay</div>
           {holdings.length===0?(
             <div style={{padding:'48px 24px',textAlign:'center'}}>
-              <Upload size={32} style={{color:'var(--muted)',marginBottom:12,opacity:.5}}/>
+              <BarChart2 size={32} style={{color:'var(--muted)',marginBottom:12,opacity:.4}}/>
               <div style={{fontSize:15,fontWeight:700,marginBottom:6}}>No holdings yet</div>
-              <div style={{fontSize:13,color:'var(--muted)',marginBottom:16}}>Upload your CAS PDF to see market consensus overlaid on your portfolio</div>
-              <button className="btn btn-pri" onClick={()=>setShowManage(true)}><Upload size={14}/> Upload CAS PDF</button>
+              <div style={{fontSize:13,color:'var(--muted)',marginBottom:20}}>Add holdings manually or import your entire portfolio from a CAS PDF</div>
+              <div style={{display:'flex',gap:10,justifyContent:'center',flexWrap:'wrap'}}>
+                <button className="btn btn-pri" onClick={()=>setShowAddHolding(true)}><Plus size={14}/> Add Holding</button>
+                <button className="btn btn-ghost" onClick={()=>setShowManage(true)}><Upload size={14}/> Upload CAS PDF</button>
+              </div>
             </div>
           ):(
             <div style={{overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse'}}>
                 <thead>
                   <tr style={{borderBottom:'2px solid var(--line)'}}>
-                    {['Stock','Current Value','Overall Gain','Market Consensus (All Investors)','Consensus in My Circle','Strength',''].map((h,i)=>(
+                    {['Stock','Current Value','Overall Gain','Market Consensus (All Investors)','Consensus in My Circle','Strength','',''].map((h,i)=>(
                       <th key={i} style={{padding:'10px 14px',textAlign:i===0?'left':'center',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'var(--muted)',whiteSpace:'nowrap'}}>{h}</th>
                     ))}
                   </tr>
@@ -8104,6 +7995,15 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
                             <ChevronRight size={16}/>
                           </button>
                         </td>
+                        <td style={{padding:'13px 6px',textAlign:'center'}}>
+                          <button className="iconbtn" title="Remove holding"
+                            onClick={e=>{e.stopPropagation();setHoldings(p=>p.filter(x=>x.id!==h.id));}}
+                            style={{opacity:.4,color:'var(--loss)'}}
+                            onMouseEnter={e=>e.currentTarget.style.opacity=1}
+                            onMouseLeave={e=>e.currentTarget.style.opacity=.4}>
+                            <Trash2 size={14}/>
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -8120,9 +8020,233 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
         )}
       </div>
 
-      {/* CAS Upload modal trigger */}
+      {/* Modals */}
       {showManage&&<PanPullModal onClose={()=>setShowManage(false)} onApply={(h,mode)=>{ if(mode==='replace')setHoldings(h); else setHoldings(p=>[...p,...h.filter(nh=>!p.find(x=>x.sym===nh.sym))]); setShowManage(false); }}/>}
+      {showAddHolding&&<AddHoldingModal onClose={()=>setShowAddHolding(false)} onAdd={h=>{ setHoldings(p=>[...p,h]); setShowAddHolding(false); }}/>}
     </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ADD HOLDING MODAL
+   ═══════════════════════════════════════════════════════════════════ */
+function AddHoldingModal({ onClose, onAdd }) {
+  const [mode,        setMode]        = useState('search');   // 'search' | 'manual'
+  const [selected,    setSelected]    = useState(null);        // instrument from search
+  const [ticker,      setTicker]      = useState('');
+  const [name,        setName]        = useState('');
+  const [assetType,   setAssetType]   = useState('Stock');
+  const [sector,      setSector]      = useState('');
+  const [currency,    setCurrency]    = useState('INR');
+  // Optional financial fields
+  const [qty,         setQty]         = useState('');
+  const [purchPrice,  setPurchPrice]  = useState('');
+  const [purchDate,   setPurchDate]   = useState('');
+  const [err,         setErr]         = useState('');
+
+  const TYPE_OPTS = ['Stock','ETF','Fund','Crypto','Bond','REIT','Others'];
+  const CCY_OPTS  = ['INR','USD','EUR','GBP','JPY','SGD','AED'];
+
+  const handleSelect = instr => {
+    setSelected(instr);
+    setTicker((instr.symbol||instr.ticker||'').toUpperCase());
+    setName(instr.name||'');
+    setSector(instr.sector||'');
+    setCurrency(instr.currency||'INR');
+    // Map asset_class → holding type
+    const ac = (instr.asset_class||instr.type||'').toLowerCase();
+    setAssetType(ac.includes('etf')?'ETF':ac.includes('fund')||ac.includes('mf')?'Fund':ac.includes('crypto')?'Crypto':'Stock');
+  };
+
+  const canAdd = ticker.trim() && name.trim();
+
+  const handleAdd = () => {
+    if (!ticker.trim()) { setErr('Ticker / symbol is required.'); return; }
+    if (!name.trim())   { setErr('Asset name is required.'); return; }
+    const sh   = parseFloat(qty)        || 0;
+    const cost = parseFloat(purchPrice) || 0;
+    onAdd({
+      id:        `hold_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+      sym:       ticker.trim().toUpperCase(),
+      name:      name.trim(),
+      type:      assetType,
+      acct:      'manual',
+      acctName:  'Manual Portfolio',
+      sh,
+      cost,
+      price:     cost,   // use purchase price as proxy until live price refreshes
+      isin:      selected?.isin || '',
+      sector:    sector.trim(),
+      currency,
+      purchaseDate: purchDate || new Date().toISOString().slice(0,10),
+      source:    'manual',
+    });
+  };
+
+  const FieldLabel = ({children,hint}) => (
+    <label style={{fontSize:12,fontWeight:700,color:'var(--muted)',display:'block',marginBottom:5}}>
+      {children}{hint&&<span style={{fontWeight:400,marginLeft:6,fontSize:11}}>{hint}</span>}
+    </label>
+  );
+
+  const inputSt = {
+    width:'100%', padding:'8px 10px', borderRadius:8, border:'1px solid var(--line-2)',
+    background:'var(--surface)', color:'var(--ink)', fontSize:13, outline:'none',
+    boxSizing:'border-box',
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" style={{width:540, maxHeight:'92vh', overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="modal-head">
+          <h3 style={{display:'flex',alignItems:'center',gap:8}}>
+            <Plus size={18} style={{color:'var(--accent-ink)'}}/> Add Holding
+          </h3>
+          <button className="icon-btn" onClick={onClose}><X size={20}/></button>
+        </div>
+
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:18,padding:'20px 24px'}}>
+
+          {/* Mode toggle */}
+          <div className="seg">
+            <button className={mode==='search'?'active':''} onClick={()=>setMode('search')}>Search Asset</button>
+            <button className={mode==='manual'?'active':''} onClick={()=>setMode('manual')}>Add Manually</button>
+          </div>
+
+          {/* Search mode */}
+          {mode==='search'&&(
+            <div>
+              <FieldLabel>Search by name or ticker</FieldLabel>
+              <InstrumentSearch
+                onSelect={handleSelect}
+                placeholder="e.g. Reliance, HDFCBANK, Nifty 50 ETF…"
+                initialValue={ticker}
+              />
+              {selected&&(
+                <div style={{marginTop:10,padding:'10px 14px',background:'var(--accent-soft)',borderRadius:10,
+                  border:'1px solid var(--line-2)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontWeight:800,fontSize:14}}>{selected.symbol||selected.ticker}</div>
+                    <div style={{fontSize:12,color:'var(--muted)'}}>{selected.name}
+                      {selected.exchange&&<span> · {selected.exchange}</span>}
+                      {(selected.sector)&&<span> · {selected.sector}</span>}
+                    </div>
+                  </div>
+                  <button className="iconbtn" onClick={()=>{setSelected(null);setTicker('');setName('');}} title="Clear"><X size={14}/></button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Manual mode — ticker + name */}
+          {mode==='manual'&&(
+            <div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:12}}>
+              <div>
+                <FieldLabel>Ticker / Symbol *</FieldLabel>
+                <input value={ticker} onChange={e=>{setTicker(e.target.value.toUpperCase());setErr('');}}
+                  placeholder="e.g. RELIANCE" maxLength={20} style={inputSt} autoFocus/>
+              </div>
+              <div>
+                <FieldLabel>Asset Name *</FieldLabel>
+                <input value={name} onChange={e=>{setName(e.target.value);setErr('');}}
+                  placeholder="e.g. Reliance Industries Ltd" style={inputSt}/>
+              </div>
+            </div>
+          )}
+
+          {/* Asset details — shown once ticker+name are available */}
+          {(mode==='manual'||(mode==='search'&&selected))&&(
+            <>
+              {/* Separator */}
+              <div style={{borderTop:'1px solid var(--line)',margin:'0 -24px'}}/>
+
+              {/* Ticker/name row for search mode (editable override) */}
+              {mode==='search'&&(
+                <div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:12}}>
+                  <div>
+                    <FieldLabel hint="editable">Ticker</FieldLabel>
+                    <input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())} maxLength={20} style={inputSt}/>
+                  </div>
+                  <div>
+                    <FieldLabel hint="editable">Name</FieldLabel>
+                    <input value={name} onChange={e=>setName(e.target.value)} style={inputSt}/>
+                  </div>
+                </div>
+              )}
+
+              {/* Type / Sector / Currency */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
+                <div>
+                  <FieldLabel>Asset Type</FieldLabel>
+                  <select value={assetType} onChange={e=>setAssetType(e.target.value)} style={inputSt}>
+                    {TYPE_OPTS.map(t=><option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel hint="(optional)">Sector</FieldLabel>
+                  <input value={sector} onChange={e=>setSector(e.target.value)} placeholder="e.g. Banking" style={inputSt}/>
+                </div>
+                <div>
+                  <FieldLabel>Currency</FieldLabel>
+                  <select value={currency} onChange={e=>setCurrency(e.target.value)} style={inputSt}>
+                    {CCY_OPTS.map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Optional section */}
+              <div style={{background:'var(--surface-2)',borderRadius:12,padding:'16px 18px'}}>
+                <div style={{fontSize:11,fontWeight:800,textTransform:'uppercase',letterSpacing:'.07em',
+                  color:'var(--muted)',marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+                  <span>Track Amounts</span>
+                  <span style={{fontWeight:400,textTransform:'none',letterSpacing:0,fontSize:11}}>— optional, leave blank to track without disclosing</span>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
+                  <div>
+                    <FieldLabel>Quantity / Units</FieldLabel>
+                    <input type="number" min="0" step="any" value={qty}
+                      onChange={e=>setQty(e.target.value)} placeholder="e.g. 50" style={inputSt}/>
+                  </div>
+                  <div>
+                    <FieldLabel>Purchase Price {currency&&<span style={{color:'var(--muted)',fontWeight:400}}>({currency})</span>}</FieldLabel>
+                    <input type="number" min="0" step="any" value={purchPrice}
+                      onChange={e=>setPurchPrice(e.target.value)} placeholder="per unit" style={inputSt}/>
+                  </div>
+                  <div>
+                    <FieldLabel>Purchase Date</FieldLabel>
+                    <input type="date" value={purchDate} onChange={e=>setPurchDate(e.target.value)}
+                      max={new Date().toISOString().slice(0,10)} style={inputSt}/>
+                  </div>
+                </div>
+                {qty&&purchPrice&&(
+                  <div style={{marginTop:10,fontSize:12,color:'var(--muted)'}}>
+                    Total invested: <strong style={{color:'var(--ink)'}}>{currency} {(parseFloat(qty)*parseFloat(purchPrice)).toLocaleString('en-IN',{maximumFractionDigits:2})}</strong>
+                  </div>
+                )}
+              </div>
+
+              {err&&<div style={{color:'var(--loss)',fontSize:13,fontWeight:600}}>{err}</div>}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="modal-foot" style={{justifyContent:'space-between'}}>
+          <div style={{fontSize:12,color:'var(--muted)'}}>
+            {!canAdd&&<span>* Ticker and name required</span>}
+          </div>
+          <div style={{display:'flex',gap:10}}>
+            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="btn btn-pri" disabled={!canAdd} onClick={handleAdd}>
+              <Plus size={14}/> Add to Portfolio
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
   );
 }
 
