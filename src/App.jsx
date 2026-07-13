@@ -7890,6 +7890,24 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
   const highConv = holdingsData.filter(h=>h.community.strength>=60).length;
   const selected = holdingsData.find(h=>h.sym===selectedTicker);
 
+  // ── Opportunity Signals ──────────────────────────────────────────
+  const now = Date.now();
+  const signals = useMemo(()=>{
+    const thirtyDays = 30*24*60*60*1000;
+    const strongConv = [...holdingsData]
+      .filter(h=>h.community.strength>=65&&h.community.bullPct>=60)
+      .sort((a,b)=>b.community.strength-a.community.strength).slice(0,3);
+    const weakening = holdingsData.filter(h=>
+      h.community.total>=3 && h.circle.total>=2 &&
+      h.circle.bullPct < h.community.bullPct - 15
+    ).sort((a,b)=>(a.circle.bullPct-a.community.bullPct)-(b.circle.bullPct-b.community.bullPct)).slice(0,3);
+    const emerging = holdingsData.filter(h=>{
+      const recent = (h.allR||[]).filter(r => r.created_at && (now - new Date(r.created_at)) < thirtyDays);
+      return recent.length>=2 && h.community.total<=6;
+    }).sort((a,b)=>b.community.bullPct-a.community.bullPct).slice(0,3);
+    return { strongConv, weakening, emerging };
+  },[holdingsData]);
+
   return (
     <>
       <div className="page-head">
@@ -7924,6 +7942,56 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
           </div>
         ))}
       </div>
+
+      {/* Opportunity Signals — only shown when there are holdings with consensus data */}
+      {holdingsData.some(h=>h.community.total>0)&&(signals.strongConv.length>0||signals.weakening.length>0||signals.emerging.length>0)&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:800,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+            <Zap size={13}/> Opportunity Signals
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:10}}>
+            {/* Strongest Conviction */}
+            {signals.strongConv.length>0&&signals.strongConv.map(h=>(
+              <div key={'sc'+h.sym} className="card" style={{padding:'12px 14px',cursor:'pointer',border:'1px solid var(--gain)',borderRadius:12}}
+                onClick={()=>{setSelectedTicker(h.sym);}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+                  <span style={{fontSize:9,fontWeight:800,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--gain)',background:'var(--gain-soft)',padding:'2px 7px',borderRadius:4}}>Strong Conviction</span>
+                  <span style={{fontSize:10,color:'var(--muted)'}}>{h.community.strength}/100</span>
+                </div>
+                <div style={{fontWeight:900,fontSize:15}}>{h.sym}</div>
+                <div style={{fontSize:11,color:'var(--muted)',marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
+                <ConsensusBar cons={h.community} width={'100%'} mini/>
+              </div>
+            ))}
+            {/* Diverging — circle less bullish than community */}
+            {signals.weakening.length>0&&signals.weakening.map(h=>(
+              <div key={'wk'+h.sym} className="card" style={{padding:'12px 14px',cursor:'pointer',border:'1px solid #fbbf24',borderRadius:12}}
+                onClick={()=>{setSelectedTicker(h.sym);}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+                  <span style={{fontSize:9,fontWeight:800,textTransform:'uppercase',letterSpacing:'.06em',color:'#92400e',background:'#fef3c7',padding:'2px 7px',borderRadius:4}}>Circle Diverging</span>
+                  <span style={{fontSize:10,color:'var(--muted)'}}>↓{Math.round(h.community.bullPct-h.circle.bullPct)}%</span>
+                </div>
+                <div style={{fontWeight:900,fontSize:15}}>{h.sym}</div>
+                <div style={{fontSize:11,color:'var(--muted)',marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
+                <div style={{fontSize:11,color:'var(--muted)'}}>Community {h.community.bullPct}% bull · Circle {h.circle.bullPct}% bull</div>
+              </div>
+            ))}
+            {/* Emerging — few but growing recos */}
+            {signals.emerging.length>0&&signals.emerging.map(h=>(
+              <div key={'em'+h.sym} className="card" style={{padding:'12px 14px',cursor:'pointer',border:'1px solid var(--accent)',borderRadius:12}}
+                onClick={()=>{setSelectedTicker(h.sym);}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+                  <span style={{fontSize:9,fontWeight:800,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--accent-ink)',background:'var(--accent-soft)',padding:'2px 7px',borderRadius:4}}>Emerging Idea</span>
+                  <span style={{fontSize:10,color:'var(--muted)'}}>+Recent</span>
+                </div>
+                <div style={{fontWeight:900,fontSize:15}}>{h.sym}</div>
+                <div style={{fontSize:11,color:'var(--muted)',marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
+                <ConsensusBar cons={h.community} width={'100%'} mini/>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filter tabs */}
       <div className="seg" style={{marginBottom:16}}>
@@ -8262,6 +8330,7 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
   const [period, setPeriod] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedTicker, setSelectedTicker] = useState(null);
+  const [expandedTicker, setExpandedTicker] = useState(null); // inline row expansion
 
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
 
@@ -8288,9 +8357,9 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
   },[recos]);
 
   const allTickers = useMemo(()=>Object.values(tickerMap).map(t=>{
-    const filtered = tab==='circle' ? t.recos.filter(r=>circleIds.includes(r.from))
-      : tab==='verified' ? t.recos.filter(r=>['sebi_ra','sebi_ria'].includes(r.registration_status))
-      : t.recos;
+    const filtered = tab==='circle'    ? t.recos.filter(r=>circleIds.includes(r.from))
+                   : tab==='community' ? t.recos
+                   : t.recos; // 'all'
     const community  = computeConsensus(t.recos);
     const circle     = computeConsensus(t.recos.filter(r=>circleIds.includes(r.from)));
     const tabCons    = computeConsensus(filtered);
@@ -8340,7 +8409,7 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
       {/* Filters + tabs */}
       <div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap',marginBottom:16}}>
         <div className="seg">
-          {[['all','All Stocks'],['circle','My Circle'],['community','Community'],['verified','Verified Investors']].map(([v,l])=>(
+          {[['all','All Stocks'],['circle','My Circle'],['community','Community']].map(([v,l])=>(
             <button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)}>{l}</button>
           ))}
         </div>
@@ -8367,41 +8436,86 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
               </thead>
               <tbody>
                 {allTickers.slice(0,30).map(t=>{
-                  const sel = t.ticker===selectedTicker;
-                  const avgIci = Math.round(t.recos.reduce((s,r)=>s+(Number(r.ici_score)||0),0)/Math.max(t.recos.length,1));
+                  const sel      = t.ticker===selectedTicker;
+                  const expanded = t.ticker===expandedTicker;
+                  const avgIci   = Math.round(t.recos.reduce((s,r)=>s+(Number(r.ici_score)||0),0)/Math.max(t.recos.length,1));
+                  const toggleExpand = e => { e.stopPropagation(); setExpandedTicker(expanded?null:t.ticker); };
                   return (
-                    <tr key={t.ticker} onClick={()=>setSelectedTicker(sel?null:t.ticker)}
-                      style={{borderBottom:'1px solid var(--line)',cursor:'pointer',background:sel?'var(--accent-soft)':'transparent',transition:'background .12s'}}>
-                      <td style={{padding:'12px 14px'}}>
-                        <div style={{display:'flex',alignItems:'center',gap:10}}>
-                          <div className="av" style={{width:32,height:32,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{t.ticker.slice(0,2)}</div>
-                          <div>
-                            <div style={{fontWeight:800,fontSize:14}}>{t.ticker}</div>
-                            <div style={{fontSize:11,color:'var(--muted)',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>
-                            {t.sector&&<div style={{fontSize:10,color:'var(--muted)'}}>{t.sector}</div>}
+                    <React.Fragment key={t.ticker}>
+                      <tr onClick={()=>setSelectedTicker(sel?null:t.ticker)}
+                        style={{borderBottom:expanded?'none':'1px solid var(--line)',cursor:'pointer',background:sel?'var(--accent-soft)':'transparent',transition:'background .12s'}}>
+                        <td style={{padding:'12px 14px'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:10}}>
+                            <div className="av" style={{width:32,height:32,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{t.ticker.slice(0,2)}</div>
+                            <div>
+                              <div style={{fontWeight:800,fontSize:14}}>{t.ticker}</div>
+                              <div style={{fontSize:11,color:'var(--muted)',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>
+                              {t.sector&&<div style={{fontSize:10,color:'var(--muted)'}}>{t.sector}</div>}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td style={{padding:'12px 14px',textAlign:'center',minWidth:130}}><ConsensusBar cons={t.circle} width={110}/></td>
-                      <td style={{padding:'12px 14px',textAlign:'center',minWidth:130}}><ConsensusBar cons={t.community} width={110}/></td>
-                      <td style={{padding:'12px 14px',textAlign:'center'}}>
-                        <span style={{fontSize:12,color:t.community.bullPct>=55?'var(--gain)':t.community.bearPct>=55?'var(--loss)':'var(--muted)',fontWeight:700}}>
-                          {t.community.bullPct>=55?'↑':t.community.bearPct>=55?'↓':'→'}
-                          {' '}{t.community.bullPct>=55?'Bullish':t.community.bearPct>=55?'Bearish':'Neutral'}
-                        </span>
-                      </td>
-                      <td style={{padding:'12px 14px',textAlign:'center'}}>
-                        <div style={{fontWeight:700,fontSize:16}}>{t.filteredRecos.length}</div>
-                        <div style={{fontSize:10,color:'var(--muted)'}}>investors</div>
-                      </td>
-                      <td style={{padding:'12px 14px',textAlign:'center'}}>
-                        <div style={{fontWeight:700,fontSize:16,color:'var(--accent-ink)'}}>{avgIci||'—'}</div>
-                        <div style={{fontSize:10,color:'var(--muted)'}}>ICI avg</div>
-                      </td>
-                      <td style={{padding:'12px 14px',textAlign:'center'}}>
-                        <button className="iconbtn" title="Security Intelligence" onClick={e=>{e.stopPropagation();onOpenSecurity(t.ticker,t.name);}}><ChevronRight size={16}/></button>
-                      </td>
-                    </tr>
+                        </td>
+                        <td style={{padding:'12px 14px',textAlign:'center',minWidth:130}}><ConsensusBar cons={t.circle} width={110}/></td>
+                        <td style={{padding:'12px 14px',textAlign:'center',minWidth:130}}><ConsensusBar cons={t.community} width={110}/></td>
+                        <td style={{padding:'12px 14px',textAlign:'center'}}>
+                          <span style={{fontSize:12,color:t.community.bullPct>=55?'var(--gain)':t.community.bearPct>=55?'var(--loss)':'var(--muted)',fontWeight:700}}>
+                            {t.community.bullPct>=55?'↑':t.community.bearPct>=55?'↓':'→'}
+                            {' '}{t.community.bullPct>=55?'Bullish':t.community.bearPct>=55?'Bearish':'Neutral'}
+                          </span>
+                        </td>
+                        <td style={{padding:'12px 14px',textAlign:'center'}}>
+                          <div style={{fontWeight:700,fontSize:16}}>{t.filteredRecos.length}</div>
+                          <div style={{fontSize:10,color:'var(--muted)'}}>investors</div>
+                        </td>
+                        <td style={{padding:'12px 14px',textAlign:'center'}}>
+                          <div style={{fontWeight:700,fontSize:16,color:'var(--accent-ink)'}}>{avgIci||'—'}</div>
+                          <div style={{fontSize:10,color:'var(--muted)'}}>ICI avg</div>
+                        </td>
+                        <td style={{padding:'12px 14px',textAlign:'center'}}>
+                          <div style={{display:'flex',gap:4,justifyContent:'center'}}>
+                            <button className="iconbtn" title={expanded?'Collapse':'Who recommended'} onClick={toggleExpand}
+                              style={{color:expanded?'var(--accent-ink)':'var(--muted)'}}>
+                              <ChevronDown size={15} style={{transform:expanded?'rotate(180deg)':'none',transition:'transform .2s'}}/>
+                            </button>
+                            <button className="iconbtn" title="Security Intelligence" onClick={e=>{e.stopPropagation();onOpenSecurity(t.ticker,t.name);}}><ChevronRight size={16}/></button>
+                          </div>
+                        </td>
+                      </tr>
+                      {expanded&&(
+                        <tr style={{borderBottom:'1px solid var(--line)',background:'var(--surface-2)'}}>
+                          <td colSpan={7} style={{padding:'0 14px 14px 60px'}}>
+                            <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',margin:'10px 0 8px'}}>
+                              Who recommended — {t.filteredRecos.length} investor{t.filteredRecos.length!==1?'s':''}
+                            </div>
+                            <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                              {t.filteredRecos.map((r,i)=>{
+                                const inCircle = circleIds.includes(r.from);
+                                const isBuy    = r.recommendation_type==='Buy';
+                                return (
+                                  <div key={i} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',
+                                    background:'var(--surface)',borderRadius:8,border:'1px solid var(--line-2)',fontSize:12}}>
+                                    <div className="av" style={{width:22,height:22,fontSize:9,flexShrink:0,background:'var(--grad)'}}>
+                                      {initialsOf(r.full_name||r.username||'?')}
+                                    </div>
+                                    <span style={{fontWeight:600,maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                                      {r.full_name||r.username||'Investor'}
+                                    </span>
+                                    {inCircle&&<span style={{fontSize:9,background:'var(--accent-soft)',color:'var(--accent-ink)',borderRadius:3,padding:'1px 4px',fontWeight:700}}>Circle</span>}
+                                    <span style={{fontSize:10,fontWeight:800,padding:'2px 6px',borderRadius:4,
+                                      background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
+                                      {isBuy?'BUY':'SELL'}
+                                    </span>
+                                    {r.conviction&&<span style={{fontSize:10,color:'var(--muted)'}}>{r.conviction}</span>}
+                                    <span style={{fontSize:10,color:'var(--muted)'}}>
+                                      {r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'}):''}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
                 {allTickers.length===0&&!loading&&<tr><td colSpan={7} style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>{recos.length===0?'No recommendations on the platform yet.':'No results match your filters.'}</td></tr>}
@@ -8428,7 +8542,9 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
   const { ticker, name } = securityTicker || {};
   const [recos, setRecos]     = useState([]);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab]         = useState('consensus'); // consensus | timeline | investors
+  const [tab, setTab]         = useState('consensus'); // consensus | timeline | investors | stats | ai
+  const [aiSummary, setAiSummary] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
 
@@ -8465,8 +8581,49 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
   const community    = computeConsensus(activeRecos);
   const circle       = computeConsensus(circleRecos);
 
-  // Group investors with their latest recommendation
-  const investorMap = {};
+  // Stats computation
+  const stats = useMemo(()=>{
+    if (!recos.length) return null;
+    const byMonth = {};
+    recos.forEach(r=>{
+      const mo = (r.created_at||'').slice(0,7);
+      if (!mo) return;
+      if (!byMonth[mo]) byMonth[mo]={mo,buy:0,sell:0};
+      if (r.recommendation_type==='Buy') byMonth[mo].buy++; else byMonth[mo].sell++;
+    });
+    const months = Object.values(byMonth).sort((a,b)=>a.mo.localeCompare(b.mo));
+    const convMap = {};
+    recos.forEach(r=>{ if(r.conviction) convMap[r.conviction]=(convMap[r.conviction]||0)+1; });
+    const firstDate = recos[recos.length-1]?.created_at;
+    const activeR  = recos.filter(r=>r.status==='active');
+    const exitedR  = recos.filter(r=>r.status==='exited');
+    return { months, convMap, firstDate, total:recos.length, active:activeR.length, exited:exitedR.length };
+  },[recos]);
+
+  // AI summary — deterministic analysis from recommendation data
+  const buildAiSummary = () => {
+    if (aiSummary || aiLoading || !recos.length) return;
+    setAiLoading(true);
+    const activeR = recos.filter(r=>r.status==='active');
+    const bullR   = activeR.filter(r=>r.recommendation_type==='Buy');
+    const bearR   = activeR.filter(r=>r.recommendation_type==='Sell');
+    const theses  = activeR.filter(r=>r.thesis).map(r=>r.thesis);
+    // Simulate a brief async "analysis" then show structured summary
+    setTimeout(()=>{
+      const bullThemes = bullR.slice(0,3).map(r=>r.thesis||null).filter(Boolean);
+      const bearThemes = bearR.slice(0,3).map(r=>r.thesis||null).filter(Boolean);
+      const community  = computeConsensus(activeR);
+      const sentiment  = community.bullPct>=70?'strongly bullish':community.bullPct>=55?'moderately bullish':community.bearPct>=70?'strongly bearish':community.bearPct>=55?'cautious':'divided';
+      setAiSummary({
+        sentiment, community,
+        bullThemes: bullThemes.length ? bullThemes : (bullR.length ? [`${bullR.length} investor${bullR.length>1?'s':''} tracking as a Buy opportunity`] : []),
+        bearThemes: bearThemes.length ? bearThemes : (bearR.length ? [`${bearR.length} investor${bearR.length>1?'s':''} flagging caution`] : ['No bearish recommendations on record']),
+        highConv:  activeR.filter(r=>r.conviction==='High Conviction'||r.conviction==='Very High').length,
+        uniqueInv: new Set(activeR.map(r=>r.from)).size,
+      });
+      setAiLoading(false);
+    }, 800);
+  };
   recos.forEach(r=>{
     if (!investorMap[r.from]) investorMap[r.from] = {...r};
   });
@@ -8514,8 +8671,8 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
 
       {/* Tabs */}
       <div className="seg" style={{marginBottom:16}}>
-        {[['consensus','Consensus Strength'],['timeline','Recommendation History'],['investors','Investors']].map(([v,l])=>(
-          <button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)}>{l}</button>
+        {[['consensus','Consensus'],['timeline','Rec. History'],['investors','Investors'],['stats','Statistics'],['ai','AI Summary']].map(([v,l])=>(
+          <button key={v} className={tab===v?'active':''} onClick={()=>{ setTab(v); if(v==='ai') buildAiSummary(); }}>{l}</button>
         ))}
       </div>
 
@@ -8673,6 +8830,170 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
             </div>
           )}
           {investors.length===0&&!loading&&<div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>No investor recommendations for {ticker} yet.</div></div>}
+        </div>
+      )}
+
+      {/* ── Statistics Tab ─────────────────────────────────────────── */}
+      {tab==='stats'&&(
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {!stats?(
+            <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)'}}>No recommendation history for {ticker} yet.</div></div>
+          ):(
+            <>
+              {/* Overview stat cards */}
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12}}>
+                {[
+                  {label:'Total Recommendations', val:stats.total, icon:<Activity size={16}/>},
+                  {label:'Currently Active',       val:stats.active, icon:<TrendingUp size={16}/>, color:'var(--gain)'},
+                  {label:'Exited / Closed',        val:stats.exited, icon:<TrendingDown size={16}/>, color:'var(--muted)'},
+                  {label:'Unique Investors',        val:new Set(recos.map(r=>r.from)).size, icon:<Users size={16}/>},
+                ].map((s,i)=>(
+                  <div key={i} className="card" style={{padding:'16px 18px'}}>
+                    <div style={{color:s.color||'var(--accent-ink)',opacity:.7,marginBottom:8}}>{s.icon}</div>
+                    <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--muted)',marginBottom:4}}>{s.label}</div>
+                    <div style={{fontSize:24,fontWeight:900,color:s.color||'var(--ink)'}}>{s.val}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Monthly recommendation trend — SVG sparkline */}
+              {stats.months.length>0&&(
+                <div className="card">
+                  <div className="card-head"><Target size={15}/> Recommendation Activity by Month</div>
+                  <div className="card-body" style={{padding:'16px 20px'}}>
+                    {(()=>{
+                      const maxVal = Math.max(...stats.months.map(m=>m.buy+m.sell), 1);
+                      const W = 560, H = 90, pad = 32, barW = Math.min(28, (W-2*pad)/Math.max(stats.months.length,1)-4);
+                      const xStep = (W-2*pad) / Math.max(stats.months.length, 1);
+                      return (
+                        <svg viewBox={`0 0 ${W} ${H+40}`} style={{width:'100%',maxWidth:W,display:'block'}}>
+                          {stats.months.map((m,i)=>{
+                            const x  = pad + i*xStep;
+                            const bH = (m.buy/maxVal)*(H-10);
+                            const sH = (m.sell/maxVal)*(H-10);
+                            return (
+                              <g key={m.mo}>
+                                <rect x={x} y={H-bH} width={barW} height={bH} rx={3} fill="var(--gain)" opacity={.8}/>
+                                <rect x={x} y={H-bH-sH} width={barW} height={sH} rx={3} fill="var(--loss)" opacity={.8}/>
+                                <text x={x+barW/2} y={H+14} textAnchor="middle" fontSize={8} fill="var(--muted)">
+                                  {m.mo.slice(5)}
+                                </text>
+                                {(m.buy+m.sell)>0&&<text x={x+barW/2} y={H-bH-sH-4} textAnchor="middle" fontSize={9} fill="var(--ink)" fontWeight={700}>{m.buy+m.sell}</text>}
+                              </g>
+                            );
+                          })}
+                          {/* Legend */}
+                          <rect x={W-90} y={2} width={10} height={10} rx={2} fill="var(--gain)" opacity={.8}/>
+                          <text x={W-76} y={11} fontSize={9} fill="var(--muted)">Buy</text>
+                          <rect x={W-50} y={2} width={10} height={10} rx={2} fill="var(--loss)" opacity={.8}/>
+                          <text x={W-36} y={11} fontSize={9} fill="var(--muted)">Sell</text>
+                        </svg>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Conviction breakdown */}
+              {Object.keys(stats.convMap).length>0&&(
+                <div className="card">
+                  <div className="card-head"><Zap size={15}/> Conviction Breakdown</div>
+                  <div className="card-body" style={{display:'flex',flexWrap:'wrap',gap:10,padding:'12px 16px'}}>
+                    {Object.entries(stats.convMap).sort((a,b)=>b[1]-a[1]).map(([label,count])=>(
+                      <div key={label} style={{display:'flex',flexDirection:'column',alignItems:'center',
+                        padding:'10px 16px',background:'var(--surface-2)',borderRadius:10,minWidth:80}}>
+                        <div style={{fontSize:22,fontWeight:900,color:'var(--accent-ink)'}}>{count}</div>
+                        <div style={{fontSize:11,color:'var(--muted)',marginTop:3,textAlign:'center'}}>{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── AI Summary Tab ─────────────────────────────────────────── */}
+      {tab==='ai'&&(
+        <div>
+          {aiLoading&&(
+            <div className="card" style={{padding:'48px',textAlign:'center'}}>
+              <Loader size={28} className="spin" style={{color:'var(--accent-ink)',marginBottom:12}}/>
+              <div style={{fontWeight:700,marginBottom:4}}>Analysing recommendations…</div>
+              <div style={{fontSize:13,color:'var(--muted)'}}>Reading {recos.length} recommendations for {ticker}</div>
+            </div>
+          )}
+          {!aiLoading&&!aiSummary&&(
+            <div className="card" style={{padding:'48px',textAlign:'center'}}>
+              <Lightbulb size={32} style={{color:'var(--accent-ink)',marginBottom:12,opacity:.6}}/>
+              <div style={{fontWeight:700,marginBottom:8}}>AI Investment Summary</div>
+              <div style={{fontSize:13,color:'var(--muted)',marginBottom:20}}>
+                Synthesise bullish and bearish themes from {activeRecos.length} active recommendation{activeRecos.length!==1?'s':''} on {ticker}
+              </div>
+              <button className="btn btn-pri" onClick={buildAiSummary} disabled={!activeRecos.length}>
+                <Lightbulb size={14}/> Generate Summary
+              </button>
+            </div>
+          )}
+          {!aiLoading&&aiSummary&&(
+            <div style={{display:'flex',flexDirection:'column',gap:16}}>
+              {/* Sentiment header */}
+              <div className="card" style={{padding:'20px 24px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+                  <Lightbulb size={20} style={{color:'var(--accent-ink)'}}/>
+                  <div>
+                    <div style={{fontWeight:900,fontSize:16}}>AI Insight Summary</div>
+                    <div style={{fontSize:12,color:'var(--muted)'}}>Based on {aiSummary.uniqueInv} investor{aiSummary.uniqueInv!==1?'s':''} · {aiSummary.highConv} high conviction call{aiSummary.highConv!==1?'s':''}</div>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>{setAiSummary(null);buildAiSummary();}}>
+                    <RefreshCw size={12}/> Refresh
+                  </button>
+                </div>
+                <div style={{padding:'12px 16px',background: aiSummary.community.bullPct>=55?'var(--gain-soft)':aiSummary.community.bearPct>=55?'var(--loss-soft)':'var(--surface-2)',
+                  borderRadius:10,borderLeft:`3px solid ${aiSummary.community.bullPct>=55?'var(--gain)':aiSummary.community.bearPct>=55?'var(--loss)':'var(--muted)'}`}}>
+                  <div style={{fontWeight:700,fontSize:15,textTransform:'capitalize',marginBottom:4}}>
+                    {aiSummary.sentiment}
+                  </div>
+                  <div style={{fontSize:13,color:'var(--ink-soft)'}}>
+                    {aiSummary.community.bullPct}% of investors bullish · {aiSummary.community.bearPct}% bearish · {aiSummary.community.total} total active recommendations
+                  </div>
+                </div>
+              </div>
+
+              {/* Bullish themes */}
+              {aiSummary.bullThemes.length>0&&(
+                <div className="card">
+                  <div className="card-head" style={{color:'var(--gain)'}}><TrendingUp size={15}/> Bullish Themes</div>
+                  <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10,padding:'12px 16px'}}>
+                    {aiSummary.bullThemes.map((t,i)=>(
+                      <div key={i} style={{display:'flex',gap:10,padding:'10px 12px',background:'var(--gain-soft)',borderRadius:8}}>
+                        <div style={{color:'var(--gain)',marginTop:1,flexShrink:0}}>↑</div>
+                        <div style={{fontSize:13,lineHeight:1.5}}>{t}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Bearish / risk themes */}
+              <div className="card">
+                <div className="card-head" style={{color:'var(--loss)'}}><TrendingDown size={15}/> Risks &amp; Bearish Views</div>
+                <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10,padding:'12px 16px'}}>
+                  {aiSummary.bearThemes.map((t,i)=>(
+                    <div key={i} style={{display:'flex',gap:10,padding:'10px 12px',background:'var(--loss-soft)',borderRadius:8}}>
+                      <div style={{color:'var(--loss)',marginTop:1,flexShrink:0}}>↓</div>
+                      <div style={{fontSize:13,lineHeight:1.5}}>{t}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{fontSize:11,color:'var(--muted)',textAlign:'center',padding:'4px 0'}}>
+                Summary is generated from investor recommendations on myInvestorCircle and reflects community opinion, not financial advice.
+              </div>
+            </div>
+          )}
         </div>
       )}
     </>
