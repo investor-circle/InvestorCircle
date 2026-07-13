@@ -1,11 +1,8 @@
 {
   "version": 2,
-  "buildCommand": null,
-  "outputDirectory": null,
-  "installCommand": null,
   "functions": {
-    "api/*.js": { "runtime": "nodejs22.x", "maxDuration": 15 },
-    "api/*.py": { "runtime": "python3.12",  "maxDuration": 30 }
+    "api/*.js": { "maxDuration": 15 },
+    "api/*.py": { "maxDuration": 30 }
   },
   "headers": [
     {
