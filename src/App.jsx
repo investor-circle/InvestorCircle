@@ -798,6 +798,7 @@ export default function App() {
       <div style={{color:"#8a8daa",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15}}>Loading…</div>
     </div>
   );
+  const [securityTicker, setSecurityTicker] = useState(null); // Security Intelligence navigation
   if (!user) return <LoginPage />;
 
 
@@ -806,7 +807,6 @@ export default function App() {
   const isInv = !userIsAdmin || role === "investor";
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
   // page + setPage — setPage also closes the mobile nav drawer for investors
-  const [securityTicker, setSecurityTicker] = useState(null); // { ticker, name } for Security Intelligence
   const openSecurity = (ticker, name) => { setSecurityTicker({ ticker, name }); setPage('sec_intel'); };
   const page    = isInv ? investorPage : adminPage;
   const setPage = isInv
