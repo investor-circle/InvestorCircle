@@ -7874,12 +7874,13 @@ function StrengthDot({strength=0}) {
 }
 
 /* ── quick security panel (shared between Portfolio + Market pages) ──*/
-function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,onClose}) {
+function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,onClose,modal=false}) {
   const community = computeConsensus(allRecos);
   const circle    = computeConsensus(circleRecos);
   const recent    = allRecos.slice(0,3);
-  return (
-    <div className="card" style={{position:'sticky',top:80}}>
+
+  const content = (
+    <div className="card" style={modal?{}:{position:'sticky',top:80}}>
       <div className="card-head" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
         <div>
           <div style={{fontWeight:900,fontSize:16}}>{ticker}</div>
@@ -7891,7 +7892,6 @@ function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,o
         </div>
       </div>
       <div className="card-body" style={{padding:'14px 16px',display:'flex',flexDirection:'column',gap:14}}>
-        {/* Consensus overview */}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
           {[['Community',community],['My Circle',circle]].map(([label,c])=>(
             <div key={label} style={{background:'var(--surface-2)',borderRadius:10,padding:'10px 12px'}}>
@@ -7900,12 +7900,10 @@ function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,o
             </div>
           ))}
         </div>
-        {/* Strength gauge */}
         <div style={{textAlign:'center',padding:'8px 0',borderTop:'1px solid var(--line)',borderBottom:'1px solid var(--line)'}}>
           <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:6}}>Consensus Strength</div>
           <StrengthDot strength={community.strength}/>
         </div>
-        {/* Recent recommendations */}
         <div>
           <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8}}>Recent Recommendations</div>
           {recent.length ? recent.map((r,i)=>(
@@ -7925,12 +7923,27 @@ function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,o
       </div>
     </div>
   );
+
+  // On mobile: render as a fixed bottom sheet overlay
+  if (modal) return (
+    <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}
+      onClick={onClose}>
+      <div style={{background:'var(--surface)',borderRadius:'20px 20px 0 0',boxShadow:'0 -8px 40px rgba(0,0,0,.35)',maxHeight:'75vh',overflowY:'auto'}}
+        onClick={e=>e.stopPropagation()}>
+        <div style={{width:36,height:4,background:'var(--line-2)',borderRadius:2,margin:'12px auto 0'}}/>
+        {content}
+      </div>
+    </div>
+  );
+
+  return content;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
    PORTFOLIO INTELLIGENCE
    ═══════════════════════════════════════════════════════════════════ */
 function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refreshPrices, priceRefresh, onOpenSecurity, setPage }) {
+  const isMobile = useIsMobile();
   const [recoMap, setRecoMap] = useState({}); // { ticker: [reco,...] }
   const [loading, setLoading] = useState(true);
   const [selectedTicker, setSelectedTicker] = useState(null);
@@ -8017,8 +8030,8 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
         ))}
       </div>
 
-      {/* Main grid: table + quick panel */}
-      <div style={{display:'grid',gridTemplateColumns:selected?'1fr 340px':'1fr',gap:16,alignItems:'start'}}>
+      {/* Main grid: table + quick panel — stacks on mobile */}
+      <div style={{display:'grid',gridTemplateColumns:selected&&!isMobile?'1fr 340px':'1fr',gap:16,alignItems:'start'}}>
         <div className="card">
           <div className="card-head"><BarChart2 size={15}/> My Holdings — Market Consensus Overlay</div>
           {holdings.length===0?(
@@ -8087,12 +8100,9 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
         </div>
 
         {selected&&(
-          <SecurityQuickPanel
-            ticker={selected.sym} name={selected.name}
-            allRecos={selected.allR} circleRecos={selected.circleR}
-            onOpenFull={()=>onOpenSecurity(selected.sym,selected.name)}
-            onClose={()=>setSelectedTicker(null)}
-          />
+          isMobile
+            ? <SecurityQuickPanel ticker={selected.sym} name={selected.name} allRecos={selected.allR} circleRecos={selected.circleR} onOpenFull={()=>onOpenSecurity(selected.sym,selected.name)} onClose={()=>setSelectedTicker(null)} modal/>
+            : <SecurityQuickPanel ticker={selected.sym} name={selected.name} allRecos={selected.allR} circleRecos={selected.circleR} onOpenFull={()=>onOpenSecurity(selected.sym,selected.name)} onClose={()=>setSelectedTicker(null)}/>
         )}
       </div>
 
@@ -8106,6 +8116,7 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
    MARKET INTELLIGENCE
    ═══════════════════════════════════════════════════════════════════ */
 function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
+  const isMobile = useIsMobile();
   const [recos, setRecos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('all'); // all | circle | community | verified
@@ -8205,7 +8216,7 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
         </div>
       </div>
 
-      <div style={{display:'grid',gridTemplateColumns:selData?'1fr 340px':'1fr',gap:16,alignItems:'start'}}>
+      <div style={{display:'grid',gridTemplateColumns:selData&&!isMobile?'1fr 340px':'1fr',gap:16,alignItems:'start'}}>
         <div className="card">
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -8262,12 +8273,9 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
         </div>
 
         {selData&&(
-          <SecurityQuickPanel
-            ticker={selData.ticker} name={selData.name}
-            allRecos={selData.recos} circleRecos={selData.recos.filter(r=>circleIds.includes(r.from))}
-            onOpenFull={()=>onOpenSecurity(selData.ticker,selData.name)}
-            onClose={()=>setSelectedTicker(null)}
-          />
+          isMobile
+            ? <SecurityQuickPanel ticker={selData.ticker} name={selData.name} allRecos={selData.recos} circleRecos={selData.recos.filter(r=>circleIds.includes(r.from))} onOpenFull={()=>onOpenSecurity(selData.ticker,selData.name)} onClose={()=>setSelectedTicker(null)} modal/>
+            : <SecurityQuickPanel ticker={selData.ticker} name={selData.name} allRecos={selData.recos} circleRecos={selData.recos.filter(r=>circleIds.includes(r.from))} onOpenFull={()=>onOpenSecurity(selData.ticker,selData.name)} onClose={()=>setSelectedTicker(null)}/>
         )}
       </div>
     </>
@@ -8278,6 +8286,7 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
    SECURITY INTELLIGENCE
    ═══════════════════════════════════════════════════════════════════ */
 function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity }) {
+  const isMobile = useIsMobile();
   const { ticker, name } = securityTicker || {};
   const [recos, setRecos]     = useState([]);
   const [loading, setLoading] = useState(false);
@@ -8342,7 +8351,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
       </div>
 
       {/* Consensus header */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:20}}>
+      <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12,marginBottom:20}}>
         {[['Community Consensus',community,'All Investors on MIC'],['My Circle Consensus',circle,`${circleIds.length} connections`]].map(([label,cons,sub])=>(
           <div key={label} className="card" style={{padding:'20px 22px'}}>
             <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:12}}>{label}</div>
@@ -8374,7 +8383,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
 
       {/* Tab: Consensus */}
       {tab==='consensus'&&(
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+        <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
           {/* Strength gauge */}
           <div className="card">
             <div className="card-head"><Target size={15}/> Consensus Strength</div>
