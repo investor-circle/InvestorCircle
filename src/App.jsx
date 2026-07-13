@@ -9,7 +9,7 @@ import {
   ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
   Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil, Database,
   Globe, Trophy, Copy, ExternalLink, ArrowLeft, Link, Flame, Info,
-  BarChart2, Activity, Zap, Target, TrendingDown as TrendDown
+  BarChart2, Activity, Zap, Target, Clock
 } from "lucide-react";
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
