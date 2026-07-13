@@ -18,7 +18,6 @@ import { getPreviousClose, getTodayClose, sourceName, isPriceServiceConfigured }
 import {
   setExitSignal as dbSetExit, cancelExitSignal as dbCancelExit,
 } from "./db";
-import { parseCasPdf } from "./services/cas";
 import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 import { useAuth } from "./AuthContext";
 import { sql } from "./supabaseClient";
@@ -45,6 +44,19 @@ import {
    light content; green/red only for gains/losses.
    Single-file React artifact. All data is mock / in-memory.
    ============================================================ */
+
+/* ── CAS PDF upload helper (calls Vercel /api/cas) ─── */
+const _CAS_API = import.meta.env.VITE_CAS_API_URL
+  ? `${import.meta.env.VITE_CAS_API_URL}/api/cas`
+  : '/api/cas';
+async function parseCasPdf(file, password = '') {
+  const form = new FormData();
+  form.append('file', file, file.name || 'cas.pdf');
+  form.append('password', (password || '').trim());
+  const res = await fetch(_CAS_API, { method: 'POST', body: form });
+  if (!res.ok) { const t = await res.text(); throw new Error(t || `HTTP ${res.status}`); }
+  return res.json();
+}
 
 const STYLES = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
