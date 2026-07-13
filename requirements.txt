@@ -1,0 +1,4 @@
+# Python dependencies for Vercel serverless functions in api/*.py
+# Pin exact versions to prevent silent breakage.
+casparser==2.2.1
+pdfplumber==0.11.4
