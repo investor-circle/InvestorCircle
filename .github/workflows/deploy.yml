@@ -38,7 +38,7 @@ jobs:
           VITE_FIREBASE_APP_ID:             ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_FINNHUB_KEY:                 ${{ secrets.VITE_FINNHUB_KEY }}
           VITE_DATABASE_URL:                ${{ secrets.VITE_DATABASE_URL }}
-          VITE_PRICE_API_URL:                "https://investor-circle.vercel.app"
+          VITE_PRICE_API_URL:                ${{ secrets.VITE_PRICE_API_URL }}
           VITE_CAS_API_URL:                  ${{ secrets.VITE_CAS_API_URL }}
 
       - name: Deploy to GitHub Pages
