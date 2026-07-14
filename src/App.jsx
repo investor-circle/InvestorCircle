@@ -7955,22 +7955,33 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
     } catch(e) { console.warn('replaceAllHoldings:', e?.message||e); }
   };
 
-  // Load ALL active recommendations (once, cached per session)
+  // Load ALL active recommendations — re-runs whenever holding count changes
+  // so consensus overlay stays fresh after CAS imports and manual additions
   useEffect(()=>{
     if (!sql) { setLoading(false); return; }
-    sql`SELECT ticker, recommendation_type, "from", conviction, created_at, full_name, username
+    setLoading(true);
+    sql`SELECT r.ticker, r.recommendation_type, r."from", r.conviction, r.created_at,
+               up.full_name, up.username
         FROM ic_recommendations r
         LEFT JOIN user_profiles up ON r."from" = up.id
-        WHERE r.status = 'active'`
+        WHERE LOWER(r.status) = 'active'`
       .then(rows=>{
         const map={};
-        rows.forEach(r=>{ (map[r.ticker]=map[r.ticker]||[]).push(r); });
+        // Uppercase the key so 'KPL', 'kpl', 'Kpl' all match holdings.sym
+        rows.forEach(r=>{
+          const key=(r.ticker||'').toUpperCase().trim();
+          if(key)(map[key]=map[key]||[]).push(r);
+        });
         setRecoMap(map); setLoading(false);
-      }).catch(()=>setLoading(false));
-  },[]);
+      })
+      .catch(e=>{ console.warn('recoMap load failed:',e?.message||e); setLoading(false); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[holdings.length]); // re-runs on holding add/remove; covers CAS upload + manual add
 
   const holdingsData = useMemo(()=>holdings.map(h=>{
-    const allR   = recoMap[h.sym]||[];
+    // Uppercase both sides so 'KPL' matches 'kpl' in recoMap
+    const key    = (h.sym||'').toUpperCase().trim();
+    const allR   = recoMap[key]||[];
     const circleR= allR.filter(r=>circleIds.includes(r.from));
     const community = computeConsensus(allR);
     const circle    = computeConsensus(circleR);
@@ -8019,6 +8030,10 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
         </div>
         <div style={{display:'flex',gap:10,flexWrap:'wrap',justifyContent:'flex-end'}}>
           {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)',marginRight:4}}/>}
+          <button className="btn btn-ghost btn-sm" title="Reload consensus data from latest recommendations"
+            onClick={()=>{ setRecoMap({}); setLoading(true); /* holdings.length dep triggers reload */ setHoldings(h=>[...h]); }}>
+            <RefreshCw size={13}/> Refresh Intelligence
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={()=>setShowAddHolding(true)}><Plus size={13}/> Add Holding</button>
           <button className="btn btn-soft btn-sm" onClick={()=>setShowManage(true)}><Upload size={13}/> Upload CAS</button>
         </div>
