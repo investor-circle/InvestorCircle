@@ -49,12 +49,30 @@ import {
 const _CAS_API = import.meta.env.VITE_CAS_API_URL
   ? `${import.meta.env.VITE_CAS_API_URL}/api/cas`
   : '/api/cas';
+
+const _CAS_CONFIGURED = !!import.meta.env.VITE_CAS_API_URL;
+
 async function parseCasPdf(file, password = '') {
   const form = new FormData();
   form.append('file', file, file.name || 'cas.pdf');
   form.append('password', (password || '').trim());
-  const res = await fetch(_CAS_API, { method: 'POST', body: form });
-  if (!res.ok) { const t = await res.text(); throw new Error(t || `HTTP ${res.status}`); }
+  let res;
+  try {
+    res = await fetch(_CAS_API, { method: 'POST', body: form });
+  } catch (networkErr) {
+    throw new Error('Network error — could not reach the CAS API. Check your internet connection.');
+  }
+  if (!res.ok) {
+    const t = await res.text().catch(()=>'');
+    // 405 from GitHub Pages means VITE_CAS_API_URL is not set
+    if (res.status === 405 || t.includes('<html') || t.includes('Not Allowed')) {
+      throw new Error(
+        'CAS API not configured. Add VITE_CAS_API_URL=https://your-project.vercel.app ' +
+        'to your GitHub repository → Settings → Secrets → Actions, then re-deploy.'
+      );
+    }
+    throw new Error(t || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
@@ -2563,6 +2581,18 @@ function PanPullModal({ onClose, onApply }) {
         <div className="modal-body">
           {!parsed ? (
             <>
+              {/* API not configured warning */}
+              {!_CAS_CONFIGURED&&(
+                <div className="note" style={{marginBottom:12,background:'#fef3c7',border:'1px solid #fbbf24',borderRadius:10,padding:'10px 14px',display:'flex',gap:8,alignItems:'flex-start'}}>
+                  <AlertTriangle size={15} style={{color:'#92400e',flexShrink:0,marginTop:1}}/>
+                  <div style={{fontSize:12,color:'#78350f'}}>
+                    <strong>CAS API not configured.</strong> Add{' '}
+                    <code style={{background:'rgba(0,0,0,.08)',padding:'1px 5px',borderRadius:3}}>VITE_CAS_API_URL=https://your-project.vercel.app</code>{' '}
+                    to GitHub → Settings → Secrets → Actions, then redeploy. Until then, CAS import will fail with a 405 error.
+                  </div>
+                </div>
+              )}
+
               {/* What is CAS */}
               <div className="note info" style={{marginBottom:16}}>
                 <Shield size={15}/>
@@ -7851,8 +7881,79 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
   const [showManage, setShowManage] = useState(false);
   const [showAddHolding, setShowAddHolding] = useState(false);
   const [tab, setTab] = useState('all'); // all | bullish | neutral | bearish
+  const [dbLoaded, setDbLoaded] = useState(false);
 
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
+
+  // ── DB helpers ───────────────────────────────────────────────
+  const ownerId = me?.id || '';
+
+  /** Convert a DB row → app holding object */
+  const dbRow2Holding = r => ({
+    id:           r.id,
+    sym:          r.sym   || '',
+    name:         r.name  || '',
+    type:         r.type  || 'Stock',
+    acct:         r.acct  || 'manual',
+    acctName:     r.acct_name || 'Manual Portfolio',
+    sh:           Number(r.sh)   || 0,
+    cost:         Number(r.cost) || 0,
+    price:        Number(r.price)|| 0,
+    isin:         r.isin  || '',
+    sector:       r.sector|| '',
+    currency:     r.currency || 'INR',
+    purchaseDate: r.purchase_date || null,
+    source:       r.source || 'manual',
+  });
+
+  /** Load holdings from DB on first render */
+  useEffect(()=>{
+    if (!sql || !ownerId || dbLoaded) return;
+    setDbLoaded(true);
+    sql`SELECT * FROM portfolio_holdings WHERE owner_id=${ownerId} ORDER BY created_at ASC`
+      .then(rows => { if (rows?.length) setHoldings(rows.map(dbRow2Holding)); })
+      .catch(e => console.warn('load holdings:', e?.message||e));
+  },[ownerId]);
+
+  /** Upsert a single holding to DB */
+  const saveHolding = async (h) => {
+    if (!sql || !ownerId) return;
+    try {
+      await sql`
+        INSERT INTO portfolio_holdings
+          (id, owner_id, sym, name, type, acct, acct_name, sh, cost, price, isin, sector, currency, purchase_date, source)
+        VALUES
+          (${h.id}, ${ownerId}, ${h.sym}, ${h.name||''}, ${h.type||'Stock'},
+           ${h.acct||'manual'}, ${h.acctName||'Manual Portfolio'},
+           ${h.sh||0}, ${h.cost||0}, ${h.price||0},
+           ${h.isin||''}, ${h.sector||''}, ${h.currency||'INR'},
+           ${h.purchaseDate||null}, ${h.source||'manual'})
+        ON CONFLICT (id) DO UPDATE SET
+          sym=EXCLUDED.sym, name=EXCLUDED.name, type=EXCLUDED.type,
+          sh=EXCLUDED.sh, cost=EXCLUDED.cost, price=EXCLUDED.price,
+          isin=EXCLUDED.isin, sector=EXCLUDED.sector, currency=EXCLUDED.currency,
+          purchase_date=EXCLUDED.purchase_date, source=EXCLUDED.source,
+          updated_at=NOW()
+      `;
+    } catch(e) { console.warn('saveHolding:', e?.message||e); }
+  };
+
+  /** Delete a holding from DB */
+  const deleteHolding = async (id) => {
+    if (!sql || !ownerId) return;
+    try {
+      await sql`DELETE FROM portfolio_holdings WHERE id=${id} AND owner_id=${ownerId}`;
+    } catch(e) { console.warn('deleteHolding:', e?.message||e); }
+  };
+
+  /** Bulk-replace all holdings in DB (used by CAS import replace mode) */
+  const replaceAllHoldings = async (newHoldings) => {
+    if (!sql || !ownerId) return;
+    try {
+      await sql`DELETE FROM portfolio_holdings WHERE owner_id=${ownerId}`;
+      for (const h of newHoldings) await saveHolding(h);
+    } catch(e) { console.warn('replaceAllHoldings:', e?.message||e); }
+  };
 
   // Load ALL active recommendations (once, cached per session)
   useEffect(()=>{
@@ -8065,7 +8166,7 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
                         </td>
                         <td style={{padding:'13px 6px',textAlign:'center'}}>
                           <button className="iconbtn" title="Remove holding"
-                            onClick={e=>{e.stopPropagation();setHoldings(p=>p.filter(x=>x.id!==h.id));}}
+                            onClick={e=>{e.stopPropagation();setHoldings(p=>p.filter(x=>x.id!==h.id));deleteHolding(h.id);}}
                             style={{opacity:.4,color:'var(--loss)'}}
                             onMouseEnter={e=>e.currentTarget.style.opacity=1}
                             onMouseLeave={e=>e.currentTarget.style.opacity=.4}>
@@ -8089,8 +8190,16 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
       </div>
 
       {/* Modals */}
-      {showManage&&<PanPullModal onClose={()=>setShowManage(false)} onApply={(h,mode)=>{ if(mode==='replace')setHoldings(h); else setHoldings(p=>[...p,...h.filter(nh=>!p.find(x=>x.sym===nh.sym))]); setShowManage(false); }}/>}
-      {showAddHolding&&<AddHoldingModal onClose={()=>setShowAddHolding(false)} onAdd={h=>{ setHoldings(p=>[...p,h]); setShowAddHolding(false); }}/>}
+      {showManage&&<PanPullModal onClose={()=>setShowManage(false)} onApply={async (h,mode)=>{
+          if (mode==='replace') { setHoldings(h); await replaceAllHoldings(h); }
+          else {
+            const toAdd = h.filter(nh=>!holdings.find(x=>x.sym===nh.sym));
+            setHoldings(p=>[...p,...toAdd]);
+            for (const nh of toAdd) await saveHolding(nh);
+          }
+          setShowManage(false);
+        }}/>}
+      {showAddHolding&&<AddHoldingModal onClose={()=>setShowAddHolding(false)} onAdd={async h=>{ setHoldings(p=>[...p,h]); await saveHolding(h); setShowAddHolding(false); }}/>}
     </>
   );
 }
