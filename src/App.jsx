@@ -7846,7 +7846,7 @@ function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,o
   const trend      = computeTrend(circleRecos.length>=2 ? circleRecos : allRecos);
   const recent     = (circleRecos.length ? circleRecos : allRecos).slice(0,3);
   const circleUniq = [...new Map(circleRecos.map(r=>[r.from,r])).values()].slice(0,5);
-  const latestPrice= allRecos.find(r=>r.price)?.price;
+  const latestPrice= allRecos.find(r=>r.current_price||r.reco_price)?.current_price || allRecos.find(r=>r.reco_price)?.reco_price;
 
   const content = (
     <div style={{background:'var(--surface)',overflow:'hidden'}}>
@@ -8101,27 +8101,22 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
   useEffect(()=>{
     if (!sql) { setLoading(false); return; }
     setLoading(true);
-    // No WHERE status filter — the app stores various status values ('Active','active','open',NULL).
-    // We filter in JS below to exclude only explicitly closed/exited ones.
-    sql`SELECT r.ticker, r.recommendation_type, r."from", r.conviction, r.created_at, r.status,
+    // Column is recommender_id (confirmed from INSERT at line 5904), NOT "from".
+    // Alias as "from" so JS filtering (circleIds.includes(r.from)) continues to work.
+    sql`SELECT r.ticker, r.asset_name, r.recommendation_type,
+               r.recommender_id as "from", r.conviction, r.created_at,
                up.full_name, up.username
         FROM ic_recommendations r
-        LEFT JOIN user_profiles up ON r."from" = up.id`
+        LEFT JOIN user_profiles up ON r.recommender_id = up.id`
       .then(rows=>{
         const map={};
-        rows
-          .filter(r => {
-            // Exclude only explicitly closed / exited recommendations
-            const s = (r.status || '').toLowerCase();
-            return !s.includes('exit') && !s.includes('close') && !s.includes('sold');
-          })
-          .forEach(r=>{
-            const key=(r.ticker||'').toUpperCase().trim();
-            if(key)(map[key]=map[key]||[]).push(r);
-          });
+        rows.forEach(r=>{
+          const key=(r.ticker||'').toUpperCase().trim();
+          if(key)(map[key]=map[key]||[]).push(r);
+        });
         setRecoMap(map); setLoading(false);
       })
-      .catch(e=>{ console.warn('recoMap load failed:',e?.message||e); setLoading(false); });
+      .catch(e=>{ console.warn('recoMap SQL error:',e?.message||e); setLoading(false); });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[holdings.length]); // re-runs on holding add/remove; covers CAS upload + manual add
 
@@ -8607,24 +8602,16 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
 
   useEffect(()=>{
     if (!sql) { setLoading(false); return; }
-    // Minimal SELECT — only columns confirmed to exist in ic_recommendations.
-    // r.sector and up.registration_status omitted (may not exist → silently breaks entire query).
-    // Status filter removed from SQL — we filter in JS to handle any status value.
-    sql`SELECT r.ticker, r.asset_name, r.recommendation_type, r."from", r.conviction,
-               r.created_at, r.status, r.price,
+    // Column confirmed from INSERT: recommender_id, asset_name, ticker, sector, conviction, etc.
+    // Alias recommender_id as "from" so JS filters (circleIds.includes(r.from)) work.
+    sql`SELECT r.ticker, r.asset_name, r.recommendation_type,
+               r.recommender_id as "from", r.conviction, r.created_at, r.sector,
                up.username, up.full_name, up.ici_score
         FROM ic_recommendations r
-        LEFT JOIN user_profiles up ON r."from" = up.id
+        LEFT JOIN user_profiles up ON r.recommender_id = up.id
         ORDER BY r.created_at DESC`
-      .then(rows=>{
-        // Keep only non-closed recommendations
-        const active = rows.filter(r=>{
-          const s=(r.status||'').toLowerCase();
-          return !s.includes('exit')&&!s.includes('close')&&!s.includes('sold');
-        });
-        setRecos(active); setLoading(false);
-      })
-      .catch(e=>{ console.warn('Market Intel SQL failed:',e?.message||e); setLoading(false); });
+      .then(rows=>{ setRecos(rows); setLoading(false); })
+      .catch(e=>{ console.warn('Market Intel SQL error:',e?.message||e); setLoading(false); });
   },[]);
 
   // Group by ticker
@@ -8842,11 +8829,12 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
   useEffect(()=>{
     if (!ticker||!sql) return;
     setLoading(true); setRecos([]);
-    sql`SELECT r.id, r.ticker, r.asset_name, r.recommendation_type, r.conviction, r.created_at,
-               r.thesis, r.price_at, r.price, r.status, r."from", r.exit, r.exit_date, r.exit_price,
-               up.username, up.full_name, up.ici_score, up.registration_status, up.sebi_approval_status
+    sql`SELECT r.id, r.ticker, r.asset_name, r.recommendation_type,
+               r.recommender_id as "from", r.conviction, r.created_at,
+               r.thesis, r.reco_price, r.current_price, r.sector, r.exchange,
+               up.username, up.full_name, up.ici_score, up.registration_status
         FROM ic_recommendations r
-        LEFT JOIN user_profiles up ON r."from" = up.id
+        LEFT JOIN user_profiles up ON r.recommender_id = up.id
         WHERE r.ticker = ${ticker}
         ORDER BY r.created_at DESC`
       .then(rows=>{ setRecos(rows); setLoading(false); })
@@ -8867,8 +8855,9 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
     </>
   );
 
-  const activeRecos  = recos.filter(r=>r.status==='active');
-  const circleRecos  = activeRecos.filter(r=>circleIds.includes(r.from));
+  // No status filter - column not confirmed in schema; show all recommendations
+  const activeRecos  = recos;  // all fetched recos are current (no status column)
+  const circleRecos  = recos.filter(r=>circleIds.includes(r.from));
   const community    = computeConsensus(activeRecos);
   const circle       = computeConsensus(circleRecos);
 
@@ -8886,8 +8875,8 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
     const convMap = {};
     recos.forEach(r=>{ if(r.conviction) convMap[r.conviction]=(convMap[r.conviction]||0)+1; });
     const firstDate = recos[recos.length-1]?.created_at;
-    const activeR  = recos.filter(r=>r.status==='active');
-    const exitedR  = recos.filter(r=>r.status==='exited');
+    const activeR  = recos;
+    const exitedR  = [];  // status column not in schema
     return { months, convMap, firstDate, total:recos.length, active:activeR.length, exited:exitedR.length };
   },[recos]);
 
@@ -8895,7 +8884,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
   const buildAiSummary = () => {
     if (aiSummary || aiLoading || !recos.length) return;
     setAiLoading(true);
-    const activeR = recos.filter(r=>r.status==='active');
+    const activeR = recos;
     const bullR   = activeR.filter(r=>r.recommendation_type==='Buy');
     const bearR   = activeR.filter(r=>r.recommendation_type==='Sell');
     const theses  = activeR.filter(r=>r.thesis).map(r=>r.thesis);
@@ -9045,14 +9034,13 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
                           {r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'}
                         </td>
                         <td style={{padding:'12px 14px',textAlign:'center',fontSize:13,fontWeight:600}}>
-                          {r.price_at?`₹${Number(r.price_at).toLocaleString('en-IN')}`:'—'}
+                          {r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'}
                         </td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}><ConvBadge level={r.conviction}/></td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}>
                           <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:5,
-                            background:r.status==='active'?'var(--gain-soft)':r.status==='exited'?'var(--accent-soft)':'var(--surface-2)',
-                            color:r.status==='active'?'var(--gain)':r.status==='exited'?'var(--accent-ink)':'var(--muted)'}}>
-                            {r.status==='active'?'Active':r.status==='exited'?'Exited':'Closed'}
+                            background:'var(--gain-soft)',color:'var(--gain)'}}>
+                            Active
                           </span>
                         </td>
                       </tr>
