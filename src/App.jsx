@@ -8602,11 +8602,12 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
 
   useEffect(()=>{
     if (!sql) { setLoading(false); return; }
-    // Column confirmed from INSERT: recommender_id, asset_name, ticker, sector, conviction, etc.
-    // Alias recommender_id as "from" so JS filters (circleIds.includes(r.from)) work.
+    // CONFIRMED columns only (validated against INSERT at line 5904 + working admin queries).
+    // up.ici_score deliberately excluded — NOT present in any confirmed user_profiles query;
+    // including it silently blows up the entire SELECT.
     sql`SELECT r.ticker, r.asset_name, r.recommendation_type,
                r.recommender_id as "from", r.conviction, r.created_at, r.sector,
-               up.username, up.full_name, up.ici_score
+               up.username, up.full_name
         FROM ic_recommendations r
         LEFT JOIN user_profiles up ON r.recommender_id = up.id
         ORDER BY r.created_at DESC`
@@ -8716,7 +8717,7 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                 {allTickers.slice(0,30).map(t=>{
                   const sel      = t.ticker===selectedTicker;
                   const expanded = t.ticker===expandedTicker;
-                  const avgIci   = Math.round(t.recos.reduce((s,r)=>s+(Number(r.ici_score)||0),0)/Math.max(t.recos.length,1));
+                  const avgIci   = null; // ici_score not a confirmed DB column — show '—'
                   const toggleExpand = e => { e.stopPropagation(); setExpandedTicker(expanded?null:t.ticker); };
                   return (
                     <React.Fragment key={t.ticker}>
@@ -8832,7 +8833,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
     sql`SELECT r.id, r.ticker, r.asset_name, r.recommendation_type,
                r.recommender_id as "from", r.conviction, r.created_at,
                r.thesis, r.reco_price, r.current_price, r.sector, r.exchange,
-               up.username, up.full_name, up.ici_score, up.registration_status
+               up.username, up.full_name, up.registration_status
         FROM ic_recommendations r
         LEFT JOIN user_profiles up ON r.recommender_id = up.id
         WHERE r.ticker = ${ticker}
@@ -9068,7 +9069,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
                       {r.username&&<div style={{fontSize:12,color:'var(--muted)'}}>@{r.username}</div>}
                     </div>
                     <div style={{textAlign:'center',flexShrink:0}}>
-                      <div style={{fontSize:18,fontWeight:900,color:'var(--accent-ink)'}}>{r.ici_score||'—'}</div>
+                      <div style={{fontSize:18,fontWeight:900,color:'var(--accent-ink)'}}>{'—'}</div>
                       <div style={{fontSize:10,color:'var(--muted)'}}>ICI Score</div>
                     </div>
                     <ConvBadge level={r.conviction}/>
@@ -9094,7 +9095,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
                       {r.username&&<div style={{fontSize:12,color:'var(--muted)'}}>@{r.username}</div>}
                     </div>
                     <div style={{textAlign:'center',flexShrink:0}}>
-                      <div style={{fontSize:18,fontWeight:900,color:'var(--accent-ink)'}}>{r.ici_score||'—'}</div>
+                      <div style={{fontSize:18,fontWeight:900,color:'var(--accent-ink)'}}>{'—'}</div>
                       <div style={{fontSize:10,color:'var(--muted)'}}>ICI</div>
                     </div>
                     <ConvBadge level={r.conviction}/>
