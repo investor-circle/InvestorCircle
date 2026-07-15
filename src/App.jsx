@@ -7888,16 +7888,12 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
   const [showManage, setShowManage] = useState(false);
   const [showAddHolding, setShowAddHolding] = useState(false);
   const [tab, setTab] = useState('all'); // all | bullish | neutral | bearish
-  const [dbLoaded, setDbLoaded] = useState(false);
 
-  // PRIVACY: reset dbLoaded if the owner changes mid-session
-  useEffect(() => { setDbLoaded(false); }, [ownerId]);
-
+  // Declare ownerId BEFORE any hooks that reference it in dependency arrays (prevents TDZ crash)
+  const ownerId   = me?.id || '';
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
 
   // ── DB helpers ───────────────────────────────────────────────
-  const ownerId = me?.id || '';
-
   /** Convert a DB row → app holding object */
   const dbRow2Holding = r => ({
     id:           r.id,
@@ -7916,16 +7912,15 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
     source:       r.source || 'manual',
   });
 
-  /** Load holdings from DB on first render */
+  // Load holdings from DB whenever owner changes.
+  // [ownerId] dependency ensures this re-runs on account switch — no dbLoaded flag needed.
   useEffect(()=>{
-    if (!sql || !ownerId || dbLoaded) return;
-    setDbLoaded(true);
+    if (!sql || !ownerId) return;
     sql`SELECT * FROM portfolio_holdings WHERE owner_id=${ownerId} ORDER BY created_at ASC`
       .then(rows => {
-        // ALWAYS replace holdings state — even with empty array.
-        // If rows?.length guard was here and User B has no holdings,
-        // User A's stale state would persist and User B would see User A's data.
-        setHoldings((rows || []).map(dbRow2Holding));
+        // Always replace state even with []. Removing this guard was the privacy fix:
+        // a user with 0 holdings must not see a previous user's stale state.
+        setHoldings((rows||[]).map(dbRow2Holding));
       })
       .catch(e => console.warn('load holdings:', e?.message||e));
   },[ownerId]);
