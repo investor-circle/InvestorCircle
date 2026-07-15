@@ -7811,70 +7811,194 @@ function StrengthDot({strength=0}) {
   );
 }
 
-/* ── quick security panel (shared between Portfolio + Market pages) ──*/
+/* ── SparkLine — simple SVG trend line ─────────────────────────── */
+function SparkLine({data=[], color='var(--gain)', height=50}) {
+  if (data.length < 2) return null;
+  const max=Math.max(...data,1), min=Math.min(...data,0), range=max-min||1;
+  const pts = data.map((v,i)=>`${(i/(data.length-1))*100},${100-((v-min)/range)*80-10}`).join(' ');
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{width:'100%',height,display:'block'}}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="3"
+        strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+    </svg>
+  );
+}
+
+/* ── computeTrend — monthly bullish% from recommendation dates ──── */
+function computeTrend(recos=[], months=6) {
+  if (!recos.length) return [];
+  const now=new Date(), result=[];
+  for (let i=months-1; i>=0; i--) {
+    const from=new Date(now.getFullYear(),now.getMonth()-i,1);
+    const to  =new Date(now.getFullYear(),now.getMonth()-i+1,0);
+    const mo  =recos.filter(r=>{ const d=new Date(r.created_at); return d>=from&&d<=to; });
+    if (mo.length) {
+      result.push(Math.round((mo.filter(r=>r.recommendation_type==='Buy').length/mo.length)*100));
+    } else if (result.length) result.push(result[result.length-1]);
+  }
+  return result;
+}
+
+/* ── SecurityQuickPanel — redesigned to match BRD wireframe ────── */
 function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,onClose,modal=false}) {
-  const community = computeConsensus(allRecos);
-  const circle    = computeConsensus(circleRecos);
-  const recent    = allRecos.slice(0,3);
+  const community  = computeConsensus(allRecos);
+  const circle     = computeConsensus(circleRecos);
+  const trend      = computeTrend(circleRecos.length>=2 ? circleRecos : allRecos);
+  const recent     = (circleRecos.length ? circleRecos : allRecos).slice(0,3);
+  const circleUniq = [...new Map(circleRecos.map(r=>[r.from,r])).values()].slice(0,5);
+  const latestPrice= allRecos.find(r=>r.price)?.price;
 
   const content = (
-    <div className="card" style={modal?{}:{position:'sticky',top:80}}>
-      <div className="card-head" style={{justifyContent:'space-between',alignItems:'flex-start'}}>
+    <div style={{background:'var(--surface)',overflow:'hidden'}}>
+
+      {/* Header */}
+      <div style={{padding:'14px 18px',borderBottom:'1px solid var(--line)',display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
         <div>
-          <div style={{fontWeight:900,fontSize:16}}>{ticker}</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginTop:2,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</div>
+          <div style={{fontWeight:900,fontSize:17,lineHeight:1.2}}>{ticker}</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{name}</div>
+          {latestPrice&&<div style={{fontSize:13,fontWeight:700,marginTop:4}}>₹{Number(latestPrice).toLocaleString('en-IN')}</div>}
         </div>
-        <div style={{display:'flex',gap:6,alignItems:'center'}}>
-          <button className="btn btn-pri btn-sm" onClick={onOpenFull} style={{fontSize:11}}>Full View →</button>
+        <div style={{display:'flex',gap:6,alignItems:'flex-start'}}>
+          <button className="btn btn-ghost btn-sm" style={{fontSize:11,whiteSpace:'nowrap'}} onClick={onOpenFull}>Full Page →</button>
           <button className="iconbtn" onClick={onClose}><X size={15}/></button>
         </div>
       </div>
-      <div className="card-body" style={{padding:'14px 16px',display:'flex',flexDirection:'column',gap:14}}>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-          {[['Community',community],['My Circle',circle]].map(([label,c])=>(
-            <div key={label} style={{background:'var(--surface-2)',borderRadius:10,padding:'10px 12px'}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8}}>{label}</div>
-              <ConsensusBar cons={c} width={100}/>
+
+      {/* Scrollable body */}
+      <div style={{maxHeight:modal?'72vh':'calc(100vh - 180px)',overflowY:'auto',padding:'14px 18px',display:'flex',flexDirection:'column',gap:14}}>
+
+        {/* Consensus bar */}
+        {community.total>0&&(
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8}}>
+              Consensus Overview <span style={{fontWeight:400}}>(All Investors)</span>
+            </div>
+            <div style={{display:'flex',height:10,borderRadius:6,overflow:'hidden',marginBottom:8}}>
+              <div style={{width:`${community.bullPct}%`,background:'var(--gain)',transition:'width .4s'}}/>
+              <div style={{width:`${community.neutralPct}%`,background:'rgba(141,144,173,.3)'}}/>
+              <div style={{width:`${community.bearPct}%`,background:'var(--loss)',transition:'width .4s'}}/>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:11}}>
+              <span style={{color:'var(--gain)',fontWeight:700}}>{community.bullPct}% Bullish</span>
+              <span style={{color:'var(--muted)'}}>{community.neutralPct}% Neutral</span>
+              <span style={{color:'var(--loss)',fontWeight:700}}>{community.bearPct}% Bearish</span>
+            </div>
+          </div>
+        )}
+
+        {/* My Circle vs Community comparison */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          {[['My Circle',circle,circleRecos.length],['Community',community,allRecos.length]].map(([label,c,count])=>(
+            <div key={label} style={{background:'var(--surface-2)',borderRadius:10,padding:'12px 14px'}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:6}}>{label}</div>
+              {c.total>0?(
+                <>
+                  <div style={{fontSize:24,fontWeight:900,lineHeight:1,color:c.bullPct>=55?'var(--gain)':c.bearPct>=55?'var(--loss)':'var(--muted)'}}>{c.bullPct}%</div>
+                  <div style={{fontSize:11,fontWeight:700,color:c.bullPct>=55?'var(--gain)':c.bearPct>=55?'var(--loss)':'var(--muted)',marginTop:2}}>{c.label}</div>
+                  <div style={{fontSize:10,color:'var(--muted)',marginTop:2}}>{count} investor{count!==1?'s':''}</div>
+                </>
+              ):<div style={{fontSize:12,color:'var(--muted)',paddingTop:4}}>No data</div>}
             </div>
           ))}
         </div>
-        <div style={{textAlign:'center',padding:'8px 0',borderTop:'1px solid var(--line)',borderBottom:'1px solid var(--line)'}}>
-          <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:6}}>Consensus Strength</div>
-          <StrengthDot strength={community.strength}/>
-        </div>
-        <div>
-          <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8}}>Recent Recommendations</div>
-          {recent.length ? recent.map((r,i)=>(
-            <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 0',borderBottom:i<recent.length-1?'1px solid var(--line)':'none'}}>
-              <div style={{fontSize:12,color:'var(--ink-soft)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.full_name||r.username||'Investor'}</div>
-              <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
-                <span style={{fontSize:10,fontWeight:800,padding:'2px 7px',borderRadius:4,
-                  background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
-                  color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>
-                  {r.recommendation_type==='Buy'?'BUY':'SELL'}
-                </span>
-                <span style={{fontSize:10,color:'var(--muted)'}}>{r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short'}):'—'}</span>
+
+        {/* Avatar stack of circle investors */}
+        {circleUniq.length>0&&(
+          <div style={{display:'flex',alignItems:'center',gap:2}}>
+            {circleUniq.map((r,i)=>(
+              <div key={i} className="av" style={{width:28,height:28,fontSize:10,flexShrink:0,
+                marginLeft:i?-8:0,border:'2px solid var(--surface)',background:'var(--grad)',zIndex:5-i}}>
+                {initialsOf(r.full_name||r.username||'?')}
               </div>
+            ))}
+            {circleRecos.length>5&&<span style={{fontSize:11,color:'var(--muted)',marginLeft:12}}>+{circleRecos.length-5}</span>}
+          </div>
+        )}
+
+        {/* Recommended by */}
+        {recent.length>0&&(
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span>Recommended by {circleRecos.length?'(My Circle)':'(Community)'}</span>
+              {(circleRecos.length||allRecos.length)>3&&(
+                <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 8px'}} onClick={onOpenFull}>
+                  View All {circleRecos.length||allRecos.length}
+                </button>
+              )}
             </div>
-          )) : <div style={{fontSize:12,color:'var(--muted)'}}>No recent recommendations</div>}
-        </div>
+            {recent.map((r,i)=>{
+              const isBuy=r.recommendation_type==='Buy';
+              return (
+                <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:i<recent.length-1?'1px solid var(--line)':'none'}}>
+                  <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.full_name||r.username||'Investor'}</div>
+                    {r.conviction&&<div style={{fontSize:10,color:'var(--muted)'}}>{r.conviction}</div>}
+                  </div>
+                  <span style={{fontSize:10,color:'var(--muted)',flexShrink:0}}>
+                    {r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'}):''}
+                  </span>
+                  <span style={{fontSize:10,fontWeight:800,padding:'2px 8px',borderRadius:4,flexShrink:0,
+                    background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
+                    {isBuy?'BUY':'SELL'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Consensus trend chart */}
+        {trend.length>=2&&(
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:4,display:'flex',justifyContent:'space-between'}}>
+              <span>Consensus Trend {circleRecos.length>=2?'(My Circle)':'(Community)'}</span>
+              <span style={{fontWeight:900,color:circle.bullPct>=55?'var(--gain)':circle.bearPct>=55?'var(--loss)':'var(--muted)'}}>{trend[trend.length-1]}%</span>
+            </div>
+            <SparkLine data={trend} color={circle.bullPct>=55?'var(--gain)':circle.bearPct>=55?'var(--loss)':'#8d90ad'} height={55}/>
+          </div>
+        )}
+
+        {/* AI Insight summary */}
+        {allRecos.length>=2&&(
+          <div style={{padding:'12px 14px',background:'var(--accent-soft)',borderRadius:10,borderLeft:'3px solid var(--accent-ink)'}}>
+            <div style={{fontSize:11,fontWeight:800,color:'var(--accent-ink)',marginBottom:5,display:'flex',alignItems:'center',gap:6}}>
+              <Lightbulb size={13}/> AI Insight Summary
+            </div>
+            <div style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.55}}>
+              {ticker} is seeing <strong>{community.label.toLowerCase()}</strong> sentiment from {community.total} investor{community.total!==1?'s':''}.
+              {community.bullPct>=60?' Strong buy conviction from the community.' :
+               community.bearPct>=60?' Investors are flagging caution on this stock.' :
+               ' Community opinion is mixed — review individual theses below.'}
+            </div>
+          </div>
+        )}
+
+        <button className="btn btn-pri" style={{width:'100%',justifyContent:'center'}} onClick={onOpenFull}>
+          View Security Intelligence →
+        </button>
+
+        {allRecos.length===0&&(
+          <div style={{textAlign:'center',padding:'8px 0',color:'var(--muted)',fontSize:13}}>No recommendations for {ticker} yet.</div>
+        )}
       </div>
     </div>
   );
 
-  // On mobile: render as a fixed bottom sheet overlay
   if (modal) return (
-    <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}
-      onClick={onClose}>
-      <div style={{background:'var(--surface)',borderRadius:'20px 20px 0 0',boxShadow:'0 -8px 40px rgba(0,0,0,.35)',maxHeight:'75vh',overflowY:'auto'}}
-        onClick={e=>e.stopPropagation()}>
-        <div style={{width:36,height:4,background:'var(--line-2)',borderRadius:2,margin:'12px auto 0'}}/>
+    <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
+      <div style={{background:'var(--surface)',borderRadius:'20px 20px 0 0',boxShadow:'0 -8px 40px rgba(0,0,0,.35)',overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:36,height:4,background:'var(--line-2)',borderRadius:2,margin:'12px auto 4px'}}/>
         {content}
       </div>
     </div>
   );
 
-  return content;
+  return (
+    <div style={{position:'sticky',top:80,background:'var(--surface)',borderRadius:12,border:'1px solid var(--line-2)',overflow:'hidden',boxShadow:'0 4px 24px rgba(0,0,0,.08)'}}>
+      {content}
+    </div>
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -7977,18 +8101,24 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
   useEffect(()=>{
     if (!sql) { setLoading(false); return; }
     setLoading(true);
-    sql`SELECT r.ticker, r.recommendation_type, r."from", r.conviction, r.created_at,
+    // No WHERE status filter — the app stores various status values ('Active','active','open',NULL).
+    // We filter in JS below to exclude only explicitly closed/exited ones.
+    sql`SELECT r.ticker, r.recommendation_type, r."from", r.conviction, r.created_at, r.status,
                up.full_name, up.username
         FROM ic_recommendations r
-        LEFT JOIN user_profiles up ON r."from" = up.id
-        WHERE LOWER(r.status) = 'active'`
+        LEFT JOIN user_profiles up ON r."from" = up.id`
       .then(rows=>{
         const map={};
-        // Uppercase the key so 'KPL', 'kpl', 'Kpl' all match holdings.sym
-        rows.forEach(r=>{
-          const key=(r.ticker||'').toUpperCase().trim();
-          if(key)(map[key]=map[key]||[]).push(r);
-        });
+        rows
+          .filter(r => {
+            // Exclude only explicitly closed / exited recommendations
+            const s = (r.status || '').toLowerCase();
+            return !s.includes('exit') && !s.includes('close') && !s.includes('sold');
+          })
+          .forEach(r=>{
+            const key=(r.ticker||'').toUpperCase().trim();
+            if(key)(map[key]=map[key]||[]).push(r);
+          });
         setRecoMap(map); setLoading(false);
       })
       .catch(e=>{ console.warn('recoMap load failed:',e?.message||e); setLoading(false); });
@@ -8477,14 +8607,24 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
 
   useEffect(()=>{
     if (!sql) { setLoading(false); return; }
-    sql`SELECT r.ticker, r.asset_name, r.recommendation_type, r."from", r.conviction, r.created_at, r.sector,
-               up.username, up.full_name, up.ici_score, up.registration_status
+    // Minimal SELECT — only columns confirmed to exist in ic_recommendations.
+    // r.sector and up.registration_status omitted (may not exist → silently breaks entire query).
+    // Status filter removed from SQL — we filter in JS to handle any status value.
+    sql`SELECT r.ticker, r.asset_name, r.recommendation_type, r."from", r.conviction,
+               r.created_at, r.status, r.price,
+               up.username, up.full_name, up.ici_score
         FROM ic_recommendations r
         LEFT JOIN user_profiles up ON r."from" = up.id
-        WHERE r.status = 'active'
         ORDER BY r.created_at DESC`
-      .then(rows=>{ setRecos(rows); setLoading(false); })
-      .catch(()=>setLoading(false));
+      .then(rows=>{
+        // Keep only non-closed recommendations
+        const active = rows.filter(r=>{
+          const s=(r.status||'').toLowerCase();
+          return !s.includes('exit')&&!s.includes('close')&&!s.includes('sold');
+        });
+        setRecos(active); setLoading(false);
+      })
+      .catch(e=>{ console.warn('Market Intel SQL failed:',e?.message||e); setLoading(false); });
   },[]);
 
   // Group by ticker
@@ -8533,15 +8673,25 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
       {/* Discovery cards */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12,marginBottom:20}}>
         {[
-          {label:'Strongest Consensus',icon:<Target size={16}/>,item:strongest},
-          {label:'Biggest Conviction Increase',icon:<Zap size={16}/>,item:emerging},
-          {label:'Most Discussed',icon:<MessageSquare size={16}/>,item:mostDiscussed},
-          {label:'Most Divided',icon:<Activity size={16}/>,item:mostDivided},
+          {label:'Strongest Consensus',   icon:<Target size={16}/>,      item:strongest},
+          {label:'Biggest Conviction Increase', icon:<Zap size={16}/>,  item:emerging},
+          {label:'Most Discussed',        icon:<MessageSquare size={16}/>,item:mostDiscussed},
+          {label:'Most Divided',          icon:<Activity size={16}/>,    item:mostDivided},
         ].map(({label,icon,item},i)=>item?(
-          <div key={i} className="card" style={{padding:'14px 16px',cursor:'pointer'}} onClick={()=>setSelectedTicker(item.ticker)}>
-            <div style={{display:'flex',alignItems:'center',gap:6,color:'var(--accent-ink)',opacity:.7,marginBottom:8}}>{icon}<span style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)'}}>{label}</span></div>
-            <div style={{fontWeight:900,fontSize:18,marginBottom:2}}>{item.ticker}</div>
-            <ConsensusBar cons={item.tabCons} width={130} mini/>
+          <div key={i} className="card" style={{padding:'14px 16px',cursor:'pointer',minWidth:0}} onClick={()=>setSelectedTicker(item.ticker)}>
+            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+              <span style={{color:'var(--accent-ink)',opacity:.7}}>{icon}</span>
+              <span style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)'}}>{label}</span>
+            </div>
+            <div style={{fontWeight:900,fontSize:18,marginBottom:3}}>{item.ticker}</div>
+            <div style={{fontSize:12,color:item.tabCons.bullPct>=55?'var(--gain)':item.tabCons.bearPct>=55?'var(--loss)':'var(--muted)',fontWeight:700,marginBottom:6}}>
+              {item.tabCons.bullPct>=55?'+':''}{item.tabCons.bullPct}% {item.tabCons.label}
+            </div>
+            <SparkLine
+              data={computeTrend(item.filteredRecos)}
+              color={item.tabCons.bullPct>=55?'var(--gain)':item.tabCons.bearPct>=55?'var(--loss)':'#8d90ad'}
+              height={36}
+            />
             <div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>{item.filteredRecos.length} investor{item.filteredRecos.length!==1?'s':''}</div>
           </div>
         ):null)}
