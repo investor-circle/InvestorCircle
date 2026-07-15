@@ -602,6 +602,13 @@ export default function App() {
       .catch(console.warn);
   }, [user?.uid]);
   const [holdings,      setHoldings]      = useState(HOLDINGS);
+
+  // PRIVACY CRITICAL: clear holdings whenever the authenticated user changes.
+  // Without this, if User A's holdings are in state and User B signs in
+  // (same browser tab), User B would see User A's portfolio data.
+  useEffect(() => {
+    setHoldings([]);
+  }, [user?.uid]); // runs on every user change, including logout → login switches
   const [assetClasses,  setAssetClasses]  = useState(DEFAULT_CLASSES);
   const [users,         setUsers]         = useState([]);
   const [configs,       setConfigs]       = useState({
@@ -7883,6 +7890,9 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
   const [tab, setTab] = useState('all'); // all | bullish | neutral | bearish
   const [dbLoaded, setDbLoaded] = useState(false);
 
+  // PRIVACY: reset dbLoaded if the owner changes mid-session
+  useEffect(() => { setDbLoaded(false); }, [ownerId]);
+
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
 
   // ── DB helpers ───────────────────────────────────────────────
@@ -7911,13 +7921,22 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
     if (!sql || !ownerId || dbLoaded) return;
     setDbLoaded(true);
     sql`SELECT * FROM portfolio_holdings WHERE owner_id=${ownerId} ORDER BY created_at ASC`
-      .then(rows => { if (rows?.length) setHoldings(rows.map(dbRow2Holding)); })
+      .then(rows => {
+        // ALWAYS replace holdings state — even with empty array.
+        // If rows?.length guard was here and User B has no holdings,
+        // User A's stale state would persist and User B would see User A's data.
+        setHoldings((rows || []).map(dbRow2Holding));
+      })
       .catch(e => console.warn('load holdings:', e?.message||e));
   },[ownerId]);
 
   /** Upsert a single holding to DB */
   const saveHolding = async (h) => {
-    if (!sql || !ownerId) return;
+    // PRIVACY: never write a holding without a validated, non-empty owner id
+    if (!sql || !ownerId || ownerId.length < 4) {
+      console.error('saveHolding blocked — invalid ownerId:', ownerId);
+      return;
+    }
     try {
       await sql`
         INSERT INTO portfolio_holdings
@@ -7940,7 +7959,7 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
 
   /** Delete a holding from DB */
   const deleteHolding = async (id) => {
-    if (!sql || !ownerId) return;
+    if (!sql || !ownerId || ownerId.length < 4) return;
     try {
       await sql`DELETE FROM portfolio_holdings WHERE id=${id} AND owner_id=${ownerId}`;
     } catch(e) { console.warn('deleteHolding:', e?.message||e); }
@@ -7948,7 +7967,10 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
 
   /** Bulk-replace all holdings in DB (used by CAS import replace mode) */
   const replaceAllHoldings = async (newHoldings) => {
-    if (!sql || !ownerId) return;
+    if (!sql || !ownerId || ownerId.length < 4) {
+      console.error('replaceAllHoldings blocked — invalid ownerId:', ownerId);
+      return;
+    }
     try {
       await sql`DELETE FROM portfolio_holdings WHERE owner_id=${ownerId}`;
       for (const h of newHoldings) await saveHolding(h);
