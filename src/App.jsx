@@ -487,10 +487,11 @@ async function gotoUserProfile(userId) {
   if (info?.username) openProfile(info.username);
 }
 
-const fmt = (n) => "$" + Math.round(n).toLocaleString("en-US");
-const fmtSigned = (n) => (n>=0?"+":"-") + fmt(Math.abs(n));
-const fmtPct = (p) => (p >= 0 ? "+" : "") + (p * 100).toFixed(1) + "%";
-const fmtDate = (iso) => new Date(iso+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+const CURRENCY_SYM = { INR:'₹', USD:'$', GBP:'£', EUR:'€' };
+const fmt     = (n, cur='INR') => (CURRENCY_SYM[cur]||cur) + Math.round(n).toLocaleString('en-IN');
+const fmtSigned = (n, cur='INR') => (n>=0?'+':'-') + fmt(Math.abs(n), cur);
+const fmtPct  = (p) => (p >= 0 ? '+' : '') + (p * 100).toFixed(1) + '%';
+const fmtDate = (iso) => new Date(iso+'T00:00:00').toLocaleDateString('en-IN',{month:'short',day:'numeric',year:'numeric'});
 const initialsOf = (name) => name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
 
 const NOTIONAL = 1000; // assumed notional per acted recommendation, for demo P&L
@@ -1910,6 +1911,7 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
 
 /* ─── TrackedSection — My Tracked / Saved list ─────────────────────────────── */
 function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, globalSearch }) {
+  const isMobile = useIsMobile();
   const [recos,         setRecos]         = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [openRow,       setOpenRow]       = useState(null);
@@ -2047,6 +2049,51 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
 
     {sorted.length===0
       ? <div className="card"><div className="empty">No tracked recommendations match your filters.</div></div>
+      : isMobile
+      ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {sorted.map(r=>{
+            const recoRet=r.reco_price?(r.current_price-r.reco_price)/r.reco_price:0;
+            const myRet=r.is_invested&&r.invested_price?(r.current_price-r.invested_price)/r.invested_price:null;
+            const isBuy=(r.recommendation_type||'Buy')==='Buy';
+            const isInv=r.is_invested||false;
+            const cur=r.currency||'INR';
+            const fn=r.first_name||''; const ln=r.last_name||'';
+            const rName=fn&&ln&&fn!==ln?`${fn} ${ln}`:(fn||r.recommender_name||'Unknown');
+            return (
+              <div key={r.id} className="card" style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)')}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                  <div>
+                    <div style={{fontWeight:800,fontSize:15,marginBottom:2}}>{r.asset_name}</div>
+                    <div style={{fontSize:11,color:'var(--muted)'}}>{r.ticker} · By {rName}</div>
+                  </div>
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+                  {[['Reco Price',r.reco_price?fmt(r.reco_price,cur):'—'],['Current',r.current_price?fmt(r.current_price,cur):'—'],['Return',r.reco_price?fmtPct(recoRet):'—']].map(([label,val],i)=>(
+                    <div key={i} style={{background:'var(--surface-2)',borderRadius:8,padding:'8px 10px'}}>
+                      <div style={{fontSize:10,color:'var(--muted)',marginBottom:2}}>{label}</div>
+                      <div style={{fontWeight:700,fontSize:13,color:i===2?(recoRet>=0?'var(--gain)':'var(--loss)'):'var(--ink)'}}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                    {r.horizon&&<span className="pill accent" style={{fontSize:10}}>{r.horizon}</span>}
+                    {isInv&&<span className="pill gain" style={{fontSize:10}}>Invested</span>}
+                    <span style={{fontSize:10,color:'var(--muted)'}}>Tracked {new Date(r.tracked_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>
+                  </div>
+                  <div style={{display:'flex',gap:4}}>
+                    <InvestedToggle invested={isInv} investedPrice={r.invested_price}
+                      reco={{id:r.id,price:r.current_price,ticker:r.ticker,assetName:r.asset_name,priceAt:r.reco_price}}
+                      onMark={(price)=>{patchInvested(r,{is_invested:true,invested_price:price});if(!tracked?.has(r.id))toggleTrack?.(r.id);}}
+                      onUnmark={()=>patchInvested(r,{is_invested:false,invested_price:null})}/>
+                    <button className="iconbtn" title="Remove from tracked" onClick={()=>toggleTrack(r.id)} style={{background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}}><Bookmark size={13}/></button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       : <div className="card">
           <div className="card-body" style={{padding:"6px 0"}}>
             <div className="tscroll">
@@ -2055,9 +2102,9 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
                 <SortTh label="Asset"        k="asset"   sort={sort} setSort={setSort}/>
                 <th style={{whiteSpace:"normal",lineHeight:1.3,minWidth:60}}>Reco By</th>
                 <th style={{textAlign:"left",whiteSpace:"normal",lineHeight:1.3,minWidth:60,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"tracked",dir:s.key==="tracked"&&s.dir==="asc"?"desc":"asc"}))}>Tracked<br/>On<span className="si">{sort.key==="tracked"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
-                <SortTh label="Reco ₹"       k="reco"    sort={sort} setSort={setSort} align="right"/>
-                <SortTh label="Entry ₹"      k="entry"   sort={sort} setSort={setSort} align="right"/>
-                <SortTh label="Current ₹"    k="cur"     sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Reco Price"   k="reco"    sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Entry Price"  k="entry"   sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Current"      k="cur"     sort={sort} setSort={setSort} align="right"/>
                 <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:72,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"recret",dir:s.key==="recret"&&s.dir==="asc"?"desc":"asc"}))}>Reco<br/>Return<span className="si">{sort.key==="recret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:64,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"myret",dir:s.key==="myret"&&s.dir==="asc"?"desc":"asc"}))}>My<br/>Return<span className="si">{sort.key==="myret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th>Status</th>
@@ -2098,13 +2145,13 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
                         : <span style={{fontWeight:600}}>{rName}</span>}
                     </td>
                     <td className="muted small nowrap">{new Date(r.tracked_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'})}</td>
-                    <td style={{textAlign:'right'}} className="tnum">{r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:' —'}</td>
+                    <td style={{textAlign:'right'}} className="tnum">{r.reco_price?fmt(r.reco_price,r.currency||'INR'):' —'}</td>
                     <td style={{textAlign:'right'}} className="tnum">
                       {isInv && r.invested_price
-                        ? <span style={{fontWeight:600,color:'var(--accent-ink)'}}>₹{Number(r.invested_price).toLocaleString('en-IN')}</span>
+                        ? <span style={{fontWeight:600,color:'var(--accent-ink)'}}>{fmt(r.invested_price,r.currency||'INR')}</span>
                         : <span className="muted">—</span>}
                     </td>
-                    <td style={{textAlign:'right'}} className="tnum">{r.current_price?`₹${Number(r.current_price).toLocaleString('en-IN')}`:' —'}</td>
+                    <td style={{textAlign:'right'}} className="tnum">{r.current_price?fmt(r.current_price,r.currency||'INR'):' —'}</td>
                     <td style={{textAlign:'right',fontWeight:700}} className={"tnum "+(itm?"pos":"neg")}>{r.reco_price?`${itm?'+':''}${(recoRet*100).toFixed(1)}%`:'—'}</td>
                     <td style={{textAlign:'right',fontWeight:700}}>
                       {myRet!==null
@@ -2152,9 +2199,9 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
                     <tr className="expand-row"><td colSpan={11}><div className="expand-inner">
                       <div style={{display:'flex',gap:24,flexWrap:'wrap',marginBottom:12}}>
                         <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
-                        {isInv && r.invested_price&&<div><div className="cap">My entry price</div><b className="tnum" style={{color:'var(--accent-ink)'}}>₹{Number(r.invested_price).toLocaleString('en-IN')}</b></div>}
-                        {r.target_price&&<div><div className="cap">Target</div><b className="tnum">₹{Number(r.target_price).toLocaleString('en-IN')}</b></div>}
-                        {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">₹{Number(r.stop_loss).toLocaleString('en-IN')}</b></div>}
+                        {isInv && r.invested_price&&<div><div className="cap">My entry price</div><b className="tnum" style={{color:'var(--accent-ink)'}}>{fmt(r.invested_price,r.currency||'INR')}</b></div>}
+                        {r.target_price&&<div><div className="cap">Target</div><b className="tnum">{fmt(r.target_price,r.currency||'INR')}</b></div>}
+                        {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">{fmt(r.stop_loss,r.currency||'INR')}</b></div>}
                         {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
                         {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
                         <div><div className="cap">Reco Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
@@ -2179,6 +2226,7 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
   </>);
 }
 function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload, me, tracked, toggleTrack, globalSearch }) {
+  const isMobile = useIsMobile();
   const [q,setQ]=useState(globalSearch||""); const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
   const [fInv,setFInv]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
@@ -2314,6 +2362,44 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
 
     {rows.length===0
       ? <div className="card"><div className="empty">No recommendations match your filters.</div></div>
+      : isMobile
+      ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {rows.map(r=>{
+            const isBuy=(r.recommendation_type||r.recType||'Buy')==='Buy';
+            const recoRet=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
+            const cur=r.currency||'INR';
+            const fromName=r.byName||(typeof contactName==='function'?contactName(r.from):'Someone');
+            return (
+              <div key={r.id} className="card" style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)')}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                  <div>
+                    <div style={{fontWeight:800,fontSize:15,marginBottom:2}}>{r.assetName||r.asset_name}</div>
+                    <div style={{fontSize:11,color:'var(--muted)'}}>{r.ticker} · From {fromName}</div>
+                  </div>
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+                  {[['Reco Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
+                    <div key={i} style={{background:'var(--surface-2)',borderRadius:8,padding:'8px 10px'}}>
+                      <div style={{fontSize:10,color:'var(--muted)',marginBottom:2}}>{label}</div>
+                      <div style={{fontWeight:700,fontSize:13,color:i===2?(recoRet>=0?'var(--gain)':'var(--loss)'):'var(--ink)'}}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                  <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                    {r.horizon&&<span className="pill accent" style={{fontSize:10}}>{r.horizon}</span>}
+                    {r.conviction&&<ConvBadge level={r.conviction}/>}
+                    <span style={{fontSize:10,color:'var(--muted)'}}>{fmtDate(r.date)}</span>
+                  </div>
+                  <div style={{display:'flex',gap:4}}>
+                    <button className="iconbtn" title={tracked?.has(r.id)?'Tracked':'Track'} onClick={()=>toggleTrack?.(r.id)} style={tracked?.has(r.id)?{background:'var(--accent-soft)',color:'var(--accent-ink)'}:{}}><Bookmark size={13}/></button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       : <div className="card">
           <div className="card-body" style={{padding:"6px 0"}}>
             <table className="grid" style={{width:"100%"}}>
@@ -2765,6 +2851,7 @@ function PanPullModal({ onClose, onApply }) {
 }
 
 function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings, me, onReload, globalSearch }) {
+  const isMobile = useIsMobile();
   const [q,setQ]=useState(""); const [fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fHorizon,setFHorizon]=useState("all");
   useEffect(()=>{ setQ(globalSearch||""); },[globalSearch]);
   const [showExpired,setShowExpired]=useState(false);
@@ -2853,14 +2940,54 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
 
     {rows.length===0
       ? <div className="card"><div className="empty">No recommendations match your filters.</div></div>
+      : isMobile
+      ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {rows.map(r=>{
+            const isBuy=(r.recType||'Buy')==='Buy';
+            const recoRet=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
+            const cur=r.currency||'INR';
+            return (
+              <div key={r.id} className="card" style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)')}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                  <div>
+                    <div style={{fontWeight:800,fontSize:15,marginBottom:2}}>{r.assetName}</div>
+                    <div style={{fontSize:11,color:'var(--muted)'}}>{r.ticker} · {fmtDate(r.date)}</div>
+                  </div>
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+                  {[['Reco Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
+                    <div key={i} style={{background:'var(--surface-2)',borderRadius:8,padding:'8px 10px'}}>
+                      <div style={{fontSize:10,color:'var(--muted)',marginBottom:2}}>{label}</div>
+                      <div style={{fontWeight:700,fontSize:13,color:i===2?(recoRet>=0?'var(--gain)':'var(--loss)'):'var(--ink)'}}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                  <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                    {r.horizon&&<span className="pill accent" style={{fontSize:10}}>{r.horizon}</span>}
+                    {r.conviction&&<ConvBadge level={r.conviction}/>}
+                    {(r.recipients?.length||0)>0&&<span style={{fontSize:10,color:'var(--muted)'}}>Sent to {reach(r.recipients)} people</span>}
+                    {r.exit&&<span className="pill loss" style={{fontSize:10}}><LogOut size={10}/> Exited</span>}
+                  </div>
+                  <div style={{display:'flex',gap:4}}>
+                    <button className="iconbtn" title="Share" onClick={()=>setShare(r)}><Share2 size={13}/></button>
+                    {!r.exit&&<button className="iconbtn" title="Mark exit" onClick={()=>toggleExit(r)} style={{color:'var(--muted)'}}><LogOut size={13}/></button>}
+                    <button className="iconbtn danger" title="Delete" onClick={()=>del(r)}><Trash2 size={13}/></button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       : <div className="card">
           <div className="card-body" style={{padding:"6px 0"}}>
             <table className="grid" style={{width:"100%"}}>
               <thead><tr>
                 <SortTh label="Asset" k="assetName" sort={sort} setSort={setSort}/>
                 <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
-                <SortTh label="Reco ₹" k="reco" sort={sort} setSort={setSort} align="right"/>
-                <SortTh label="Current ₹" k="cur" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Reco Price" k="reco" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Current" k="cur" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
                 <th>Status</th>
                 <SortTh label="Horizon" k="horizon" sort={sort} setSort={setSort}/>
