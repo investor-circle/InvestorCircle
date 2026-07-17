@@ -111,7 +111,35 @@ def tpl_connection_accepted(data):
     }
 
 
+def tpl_signup_welcome(data):
+    first_name = data.get("first_name") or data.get("full_name", "there").split()[0]
+    email      = data.get("to_email", "")
+    return {
+        "subject": f"Welcome to myInvestorCircle, {first_name}! 🎉",
+        "html": layout(f"""
+            <h2 style="margin:0 0 8px;">Welcome to myInvestorCircle! 👋</h2>
+            <p style="color:#555;margin-bottom:20px;">
+              Hi <strong>{first_name}</strong>, great to have you on board.
+            </p>
+            <p>
+              Your account has been created and is ready to use.
+              Start sharing investment ideas with your trusted circle and discover what
+              other investors are recommending.
+            </p>
+            <p style="margin:24px 0;">{btn('Go to myInvestorCircle →', APP_URL)}</p>
+
+            <div style="margin-top:28px;padding:16px 18px;background:#fff8ed;border:1px solid #f5c97a;
+                        border-radius:10px;font-size:13px;color:#7a5a1a;line-height:1.6;">
+              <strong>⚠ Didn't register?</strong><br/>
+              This account was created using <strong>{email}</strong>.
+              If you didn't sign up for myInvestorCircle, please reply to this email immediately
+              so we can investigate and secure your address.
+            </div>"""),
+    }
+
+
 TEMPLATES = {
+    "signup_welcome":       tpl_signup_welcome,
     "invite":               tpl_invite,
     "welcome_referred":     tpl_welcome_referred,
     "referral_converted":   tpl_referral_converted,
