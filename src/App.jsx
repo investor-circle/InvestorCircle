@@ -491,7 +491,15 @@ const CURRENCY_SYM = { INR:'₹', USD:'$', GBP:'£', EUR:'€' };
 const fmt     = (n, cur='INR') => (CURRENCY_SYM[cur]||cur) + Math.round(n).toLocaleString('en-IN');
 const fmtSigned = (n, cur='INR') => (n>=0?'+':'-') + fmt(Math.abs(n), cur);
 const fmtPct  = (p) => (p >= 0 ? '+' : '') + (p * 100).toFixed(1) + '%';
-const fmtDate = (iso) => new Date(iso+'T00:00:00').toLocaleDateString('en-IN',{month:'short',day:'numeric',year:'numeric'});
+// Robust date formatter: handles Date objects, ISO strings, timestamps — never shows "Invalid Date"
+const fmtDate = (d) => {
+  if (!d) return '—';
+  // If it's already a Date object (Neon returns these), use directly
+  const dt = d instanceof Date ? d
+    : typeof d === 'string' && d.length === 10 ? new Date(d + 'T00:00:00')  // bare date "2024-05-10"
+    : new Date(d);  // ISO timestamp, epoch ms, etc.
+  return isNaN(dt) ? '—' : dt.toLocaleDateString('en-IN', { month:'short', day:'numeric', year:'numeric' });
+};
 const initialsOf = (name) => name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
 
 const NOTIONAL = 1000; // assumed notional per acted recommendation, for demo P&L
@@ -565,6 +573,7 @@ export default function App() {
   const [userFeedPrefs,           setUserFeedPrefs]           = useState({}); // {key: boolean} user overrides
   const [effectiveFeedConfig,     setEffectiveFeedConfig]     = useState({}); // merged effective config
   const [networkEngagementRecos,  setNetworkEngagementRecos]  = useState([]); // extended feed recos
+  const [publicFeedRecos,         setPublicFeedRecos]         = useState([]); // public recommendations from all users
   // Global search — shared across all pages via top nav bar
   const [globalSearch, setGlobalSearch] = useState('');
   const [notifOpen,     setNotifOpen]     = useState(false);
@@ -738,7 +747,7 @@ export default function App() {
           setEffectiveFeedConfig(effective);
         } catch(_) {
           // table may not exist pre-migration — use safe defaults
-          effective = { src_direct:true, src_group:true, src_network_engagement:true,
+          effective = { src_direct:true, src_group:true, src_network_engagement:true, src_public:true,
                         rank_engagement:true, rank_price_movement:true, rank_untracked_first:true };
           setEffectiveFeedConfig(effective);
         }
@@ -775,8 +784,40 @@ export default function App() {
             }
           } catch(_) {}
         }
-      } catch(e) { console.warn("Data load failed:", e.message); }
-      // Load registered users for admin panel
+
+        // Load public recommendations — visible to all users when is_public = true.
+        // Excludes the user's own recos and ones already in their direct feed.
+        try {
+          const pubRows = await sql`
+            SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class,
+                   ir.recommendation_type, ir.reco_price, ir.current_price,
+                   ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
+                   ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
+                   up.full_name as by_name, up.id as from_id, up.username as from_username
+            FROM ic_recommendations ir
+            JOIN user_profiles up ON up.id = ir.recommender_id
+            WHERE ir.is_public = true
+              AND ir.recommender_id != ${user.uid}
+            ORDER BY ir.created_at DESC
+            LIMIT 100`;
+          setPublicFeedRecos(pubRows.map(r => ({
+            ...r,
+            assetName:    r.asset_name,
+            priceAt:      r.reco_price,
+            price:        r.current_price,
+            targetPrice:  r.target_price,
+            stopLoss:     r.stop_loss,
+            byName:       r.by_name,
+            from:         r.from_id,
+            feedSource:   'public',
+            reaction:     'none',
+            hidden:       false,
+            invested:     false,
+            deliveryId:   null,
+            isPublic:     true,
+          })));
+        } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
+      } catch(e) { console.warn("Data load failed:", e.message); }      // Load registered users for admin panel
       try {
         const profiles = await sql`SELECT * FROM user_profiles ORDER BY created_at`;
         if (profiles.length) setUsers(profiles.map(p => ({
@@ -998,7 +1039,7 @@ export default function App() {
                 </button>
 
                 {profileOpen && (
-                  <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,width:260,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:16,boxShadow:"0 12px 40px rgba(0,0,0,.18)",zIndex:600,overflow:"hidden"}}>
+                  <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,width:"min(260px,calc(100vw - 24px))",background:"var(--surface)",border:"1px solid var(--line)",borderRadius:16,boxShadow:"0 12px 40px rgba(0,0,0,.18)",zIndex:600,overflow:"hidden"}}>
                     {/* Profile header */}
                     <div style={{padding:"16px 16px 12px",borderBottom:"1px solid var(--line)"}}>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -1073,7 +1114,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch}/>}
+            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} publicFeedRecos={publicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
             {isInv && page==="market_intel" && <MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
             {isInv && page==="sec_intel"    && <SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
@@ -1187,6 +1228,7 @@ function RecoBreakdown({ stats, onPnl, pnlLabel }) {
 
 /* ── Notification Panel ─────────────────────────────────────────────────────── */
 function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, onReadAll, onClose }) {
+  const isMobile = useIsMobile();
   const unread = notifications.filter(n => !n.is_read);
   const TYPE_LABEL = {
     connection_request:  "wants to connect with you",
@@ -1197,9 +1239,19 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
     recommendation:      "shared a recommendation with you",
     exit_signal:         "issued an exit signal",
   };
+  // On mobile: fixed to viewport (prevents overflow beyond screen edges)
+  // On desktop: absolute, anchored to the bell button
+  const panelStyle = isMobile
+    ? { position:'fixed', top:68, left:8, right:8, width:'auto',
+        background:'var(--surface)', border:'1px solid var(--line)',
+        borderRadius:16, boxShadow:'0 8px 32px rgba(0,0,0,.18)', zIndex:300,
+        maxHeight:'70vh', display:'flex', flexDirection:'column' }
+    : { position:'absolute', top:44, right:0, width:380,
+        background:'var(--surface)', border:'1px solid var(--line)',
+        borderRadius:16, boxShadow:'0 8px 32px rgba(0,0,0,.12)', zIndex:200,
+        maxHeight:520, display:'flex', flexDirection:'column' };
   return (
-    <div style={{position:"absolute",top:44,right:0,width:380,background:"var(--surface)",border:"1px solid var(--line)",borderRadius:16,boxShadow:"0 8px 32px rgba(0,0,0,.12)",zIndex:200,maxHeight:520,display:"flex",flexDirection:"column"}}
-         onClick={e=>e.stopPropagation()}>
+    <div style={panelStyle} onClick={e=>e.stopPropagation()}>
       <div style={{padding:"14px 18px",borderBottom:"1px solid var(--line)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <b style={{fontSize:14}}>Notifications {unread.length>0 && <span className="nav-badge" style={{position:"static",marginLeft:6}}>{unread.length}</span>}</b>
         <div style={{display:"flex",gap:8}}>
@@ -1217,7 +1269,7 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
                 {n.metadata?.groupName && <> — <b>{n.metadata.groupName}</b></>}
                 {n.metadata?.ticker    && <> — <b>{n.metadata.ticker}</b></>}
               </div>
-              <div className="muted small">{fmtDate(n.created_at?.toString?.()?.slice(0,10)||"")}</div>
+              <div className="muted small">{fmtDate(n.created_at)}</div>
               {/* Action buttons for connection requests */}
               {n.type==="connection_request" && !n.is_read && (
                 <div style={{display:"flex",gap:8,marginTop:8}}>
@@ -1588,7 +1640,7 @@ function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, 
           <tr className="hoverable" style={{cursor:"pointer"}} onClick={()=>setExpanded(open?null:g.id)}>
             <td><span className="nowrap"><span className="av" style={{width:28,height:28,background:g.color,fontSize:12,marginRight:8,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:8}}><Layers size={13}/></span>
               <b>{g.name}</b><ChevronDown size={14} style={{transform:open?"rotate(180deg)":"none",transition:".15s",marginLeft:6}}/></span></td>
-            <td className="muted small">{fmtDate(g.created_at?.toString?.()?.slice(0,10)||"")}</td>
+            <td className="muted small">{fmtDate(g.created_at)}</td>
             <td><span className="pill">{(g.members||[]).filter(m=>m.status==="active").length} members</span></td>
             <td>{iAmAdmin ? <span className="pill accent">Admin</span> : <span className="pill">Member</span>}</td>
             <td className="tnum">{statsOf(g).count}</td>
@@ -1873,7 +1925,7 @@ function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
         <div style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px',marginTop:2}}>Ideas worth tracking</div>
       </div>
       {/* Tabs — Tracked first */}
-      <div style={{display:"flex",gap:6,background:"var(--surface-2)",borderRadius:14,padding:4}}>
+      <div style={{display:"flex",gap:6,background:"var(--surface-2)",borderRadius:14,padding:4,flexWrap:"wrap"}}>
         {[
           {id:"tracked",  label:"My Tracked",  count:trackedCount,  icon:Bookmark},
           {id:"received", label:"Received",     count:receivedCount, icon:Lightbulb},
@@ -2402,6 +2454,7 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
         </div>
       : <div className="card">
           <div className="card-body" style={{padding:"6px 0"}}>
+            <div className="tscroll">
             <table className="grid" style={{width:"100%"}}>
               <thead><tr>
                 <SortTh label="Asset" k="assetName" sort={sort} setSort={setSort}/>
@@ -2539,6 +2592,7 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                 </React.Fragment>);
               })}</tbody>
             </table>
+            </div>{/* /tscroll */}
           </div>
         </div>}
 
@@ -2982,6 +3036,7 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
         </div>
       : <div className="card">
           <div className="card-body" style={{padding:"6px 0"}}>
+            <div className="tscroll">
             <table className="grid" style={{width:"100%"}}>
               <thead><tr>
                 <SortTh label="Asset" k="assetName" sort={sort} setSort={setSort}/>
@@ -3083,6 +3138,7 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
                 </React.Fragment>);
               })}</tbody>
             </table>
+            </div>{/* /tscroll */}
           </div>
         </div>}
 
@@ -3280,7 +3336,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
           </select></div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",columnGap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",columnGap:14,rowGap:0}}>
         {/* Currency — locked from master, editable only when manual */}
         <div className="field">
           <label style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -5153,7 +5209,9 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
               <span>{fmtDate(r.date)}</span>
               {r.assetClass&&<span style={{display:'flex',alignItems:'center',gap:4}}><span className="dot" style={{background:classColor(r.assetClass),width:7,height:7}}/>{r.assetClass}</span>}
               {r.priceAt>0&&<span>Reco ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
-              {r.isPublic
+              {r.feedSource==='public'
+                ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(99,102,241,.1)',color:'rgb(99,102,241)',border:'1px solid rgba(99,102,241,.25)',display:'flex',alignItems:'center',gap:3}}><Globe size={9}/> Platform</span>
+                : r.isPublic
                 ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)',border:'1px solid rgba(21,146,78,.2)'}}>Public</span>
                 : r.shareType==='group'
                   ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',border:'1px solid var(--accent-line)',display:'flex',alignItems:'center',gap:3}}><Layers size={10}/>{r.groupId?(groups?.find?.(g=>g.id===r.groupId)?.name||'Group'):'Group'}</span>
@@ -5334,7 +5392,7 @@ function FreshWidget({ recsReceived, contacts, setPage }) {
   const cf = (r) => { const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName,color:'#8d90ad'}:{name:'?',color:'#8d90ad'}); };
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <WidgetHeader icon={Bell} label="Fresh from Network" action="View all" onAction={()=>setPage('recs')}/>
+      <WidgetHeader icon={Bell} label="Fresh Ideas" action="View all" onAction={()=>setPage('recs')}/>
       {fresh.length===0
         ? <div className="muted small" style={{padding:'10px 14px 12px',fontStyle:'italic'}}>No new recommendations yet.</div>
         : fresh.map(r=>{
@@ -5460,7 +5518,7 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
   const cf=(r)=>{ const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName,color:'#8d90ad'}:{name:'?',color:'#8d90ad'}); };
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <WidgetHeader icon={Flame} label="Trending in Network"/>
+      <WidgetHeader icon={Flame} label="Trending on Platform"/>
       {trending.map((r,i)=>{
         const perf=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
         const c=cf(r);
@@ -5486,30 +5544,52 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
 }
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
-function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch }) {
+function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, publicFeedRecos=[], feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
   const [mobileFeedTab,  setMobileFeedTab]  = useState('feed'); // 'feed' | 'pulse'
-  // Show notification dot on Pulse tab when there's network activity
-  const hasPulseActivity = contacts.length > 0 || recsReceived.some(r => !r.hidden);
+  // Merged pool for Pulse widgets: direct deliveries + public platform recommendations
+  // Deduped so items already in recsReceived don't appear twice.
+  const allFeedRecos = useMemo(() => {
+    const seenIds = new Set(recsReceived.map(r => r.id));
+    return [
+      ...recsReceived,
+      ...publicFeedRecos.filter(r => !seenIds.has(r.id)),
+    ];
+  }, [recsReceived, publicFeedRecos]);
+
+  // Show Pulse notification dot when there's any activity — direct or public
+  const hasPulseActivity = contacts.length > 0
+    || recsReceived.some(r => !r.hidden)
+    || publicFeedRecos.length > 0;
   const [loadedCount,  setLoadedCount]  = useState(20);
   const sentinelRef = useRef(null);
 
-  // Build + rank the full scored feed (no slice — pagination handled in render)
   const feedRecs = useMemo(() => {
     const cfg = effectiveFeedConfig;
     const directIds = new Set(recsReceived.map(r=>r.id));
     let items = recsReceived.filter(r=>!r.hidden).map(r=>({...r, feedSource: r.feedSource||'direct'}));
+
+    // Source 2: recommendations liked/commented on by connections
     if (cfg.src_network_engagement) {
       const extra = networkEngagementRecos.filter(r=>!directIds.has(r.id));
       items = [...items, ...extra];
     }
+
+    // Source 3: public recommendations from all users across the platform
+    // cfg.src_public defaults to true (undefined = enabled)
+    if (cfg.src_public !== false) {
+      const seenIds = new Set(items.map(r=>r.id));
+      const pubExtra = publicFeedRecos.filter(r => !seenIds.has(r.id));
+      items = [...items, ...pubExtra];
+    }
+
     if (cfg.filter_hide_invested) items = items.filter(r=>!r.invested);
     return items
       .map(r=>({...r, _score: scoreFeedRec(r, tracked, cfg)}))
       .sort((a,b)=>b._score-a._score);
-  }, [recsReceived, networkEngagementRecos, tracked, effectiveFeedConfig]);
+  }, [recsReceived, networkEngagementRecos, publicFeedRecos, tracked, effectiveFeedConfig]);
 
   // Search filter applied to all currently loaded items
   const visibleFeed = useMemo(() => {
@@ -5630,17 +5710,17 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
         flexShrink: isMobile ? 1 : 0,
         display: isMobile && mobileFeedTab==='feed' ? 'none' : undefined,
       }}>
-        {/* Widget #7 — Fresh from Network */}
-        <FreshWidget recsReceived={recsReceived} contacts={contacts} setPage={setPage}/>
+        {/* Widget #7 — Fresh Ideas (network + public platform) */}
+        <FreshWidget recsReceived={allFeedRecos} contacts={contacts} setPage={setPage}/>
 
         {/* Widget #6 — Tracked Summary Donut */}
-        <TrackedSummaryWidget recsReceived={recsReceived} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit}/>
+        <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit}/>
 
         {/* Widget #5 — Missed Opportunities */}
-        <MissedOppsWidget recsReceived={recsReceived} tracked={tracked} contacts={contacts}/>
+        <MissedOppsWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts}/>
 
-        {/* Widget #4 — Trending in Network */}
-        <TrendingWidget recsReceived={recsReceived} tracked={tracked} contacts={contacts}/>
+        {/* Widget #4 — Trending on Platform */}
+        <TrendingWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts}/>
       </div>
     </div>
 
@@ -8729,14 +8809,13 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
 
   useEffect(()=>{
     if (!sql) { setLoading(false); return; }
-    // CONFIRMED columns only (validated against INSERT at line 5904 + working admin queries).
-    // up.ici_score deliberately excluded — NOT present in any confirmed user_profiles query;
-    // including it silently blows up the entire SELECT.
+    // Only public recommendations contribute to community-wide market intelligence.
     sql`SELECT r.ticker, r.asset_name, r.recommendation_type,
                r.recommender_id as "from", r.conviction, r.created_at, r.sector,
                up.username, up.full_name
         FROM ic_recommendations r
         LEFT JOIN user_profiles up ON r.recommender_id = up.id
+        WHERE r.is_public = true
         ORDER BY r.created_at DESC`
       .then(rows=>{ setRecos(rows); setLoading(false); })
       .catch(e=>{ console.warn('Market Intel SQL error:',e?.message||e); setLoading(false); });
