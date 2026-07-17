@@ -5651,54 +5651,52 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
       </button>
     </div>
 
-    {/* ── Mobile-only Feed / Pulse tab bar — sticky below topbar ── */}
-    <div
-      role="tablist"
-      style={{
-        display: isMobile && !showNewReco ? 'flex' : 'none',
-        position: 'sticky',
-        top: 64,       // sits flush below the 64px topbar, not behind it
-        zIndex: 190,
-        background: 'rgba(245,245,251,.97)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        borderBottom: '2px solid var(--line)',
-        margin: '0 -14px 16px',
-        padding: '6px 14px',
-        gap: 8,
-      }}
-    >
-      {[['feed','Feed',null],['pulse','Pulse',hasPulseActivity && mobileFeedTab!=='pulse']].map(([id,label,dot])=>(
-        <button
-          key={id}
-          role="tab"
-          aria-selected={mobileFeedTab===id}
-          onClick={()=>setMobileFeedTab(id)}
-          style={{
-            flex: 1,
-            padding: '10px 12px',
-            border: 'none',
-            borderRadius: 12,
-            fontFamily: 'var(--font)',
-            fontSize: 15,
-            fontWeight: 800,
-            cursor: 'pointer',
-            transition: '.15s',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            background: mobileFeedTab===id ? 'var(--accent)' : 'transparent',
-            color: mobileFeedTab===id ? '#fff' : 'var(--muted)',
-          }}
-        >
-          {label}
-          {dot && <span style={{width:7,height:7,borderRadius:'50%',background:mobileFeedTab===id?'rgba(255,255,255,.7)':'var(--accent)',boxShadow:'0 0 6px rgba(109,93,245,.8)',flexShrink:0,animation:'pulse-dot 2.2s ease-in-out infinite'}}/>}
-        </button>
-      ))}
-    </div>
-
-    {/* ── Two-column layout — both start at same height ── */}
+    {/* ── Mobile Feed/Pulse tab bar — position:fixed keeps it pinned
+         at all scroll depths. The 56px spacer below ensures content
+         starts below the bar — cards never scroll under it.         ── */}
+    {isMobile && !showNewReco && (
+      <div
+        role="tablist"
+        style={{
+          position: 'fixed',
+          top: 64,
+          left: 0,
+          right: 0,
+          height: 56,
+          zIndex: 185,
+          background: 'var(--surface)',
+          borderBottom: '2px solid var(--line)',
+          boxShadow: '0 2px 8px rgba(0,0,0,.07)',
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 16px',
+          gap: 8,
+        }}
+      >
+        {[['feed','Feed',null],['pulse','Pulse',hasPulseActivity && mobileFeedTab!=='pulse']].map(([id,label,dot])=>(
+          <button key={id} role="tab" aria-selected={mobileFeedTab===id}
+            onClick={()=>setMobileFeedTab(id)}
+            style={{
+              flex:1, height:40, border:'none', borderRadius:10,
+              fontFamily:'var(--font)', fontSize:15, fontWeight:800,
+              cursor:'pointer', transition:'.15s',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              background: mobileFeedTab===id ? 'var(--accent)' : 'transparent',
+              color:       mobileFeedTab===id ? '#fff' : 'var(--muted)',
+            }}
+          >
+            {label}
+            {dot && <span style={{width:7,height:7,borderRadius:'50%',
+              background:mobileFeedTab===id?'rgba(255,255,255,.7)':'var(--accent)',
+              boxShadow:'0 0 6px rgba(109,93,245,.8)',flexShrink:0,
+              animation:'pulse-dot 2.2s ease-in-out infinite'}}/>}
+          </button>
+        ))}
+      </div>
+    )}
+    {/* Flow spacer — reserves the 56px fixed bar's space so the first
+        feed card is never hidden underneath it. */}
+    {isMobile && !showNewReco && <div aria-hidden="true" style={{height:56,flexShrink:0,marginBottom:16}}/>}
     <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
 
       {/* ── Feed column: JS-controlled visibility on mobile ── */}
