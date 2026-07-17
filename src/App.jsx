@@ -770,6 +770,36 @@ export default function App() {
 
   // ── Invite modal state ────────────────────────────────────────────────────────
   const [showInvite, setShowInvite] = useState(false);
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [searchPeople,     setSearchPeople]     = useState([]);
+
+  // Debounced people search — drives both topbar dropdown and mobile search overlay
+  useEffect(() => {
+    const q = globalSearch.trim();
+    if (!q || q.length < 2 || !sql) { setSearchPeople([]); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const rows = await sql`
+          SELECT id, username, full_name, first_name, last_name,
+                 registration_status, sebi_approval_status
+          FROM user_profiles
+          WHERE (full_name   ILIKE ${'%'+q+'%'}
+              OR username    ILIKE ${'%'+q+'%'}
+              OR first_name  ILIKE ${'%'+q+'%'}
+              OR last_name   ILIKE ${'%'+q+'%'})
+            AND id != ${ME?.id||'none'}
+          ORDER BY
+            CASE WHEN LOWER(username)  = LOWER(${q})         THEN 0
+                 WHEN LOWER(username)  LIKE LOWER(${q})||'%' THEN 1
+                 WHEN LOWER(full_name) LIKE LOWER(${q})||'%' THEN 2
+                 ELSE 3 END,
+            full_name
+          LIMIT 6`;
+        setSearchPeople(rows);
+      } catch(e) { console.warn('topbar people search:', e?.message||e); }
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [globalSearch, ME?.id]);
   const referralCount = useMemo(()=>
     connections.filter(c=>c.referred_by_me || c.source==='referral').length
   ,[connections]);
@@ -1048,20 +1078,82 @@ export default function App() {
                 {navOpen ? <X size={20}/> : <Menu size={20}/>}
               </button>
             )}
-            <div className="searchbox search-hide-mobile" style={{width:300,maxWidth:"40vw"}}>
+
+            {/* ── Desktop search with live people dropdown ── */}
+            <div className="searchbox search-hide-mobile" style={{width:300,maxWidth:'40vw',position:'relative',flexShrink:0}}>
               <Search size={16} color="var(--muted)"/>
               <input
                 value={globalSearch}
                 onChange={e=>setGlobalSearch(e.target.value)}
+                onFocus={()=>{}}
                 placeholder="Search investors, tickers…"
               />
               {globalSearch && (
-                <button onClick={()=>setGlobalSearch('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
+                <button onClick={()=>{setGlobalSearch('');setSearchPeople([]);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
                   <X size={14}/>
                 </button>
               )}
+              {/* People search results dropdown */}
+              {globalSearch.trim().length >= 2 && searchPeople.length > 0 && (
+                <div style={{position:'absolute',top:'calc(100% + 8px)',left:0,right:0,zIndex:400,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,.14)',overflow:'hidden'}}>
+                  <div style={{padding:'7px 14px 3px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)'}}>Investors</div>
+                  {searchPeople.map((u,i)=>{
+                    const isConn = connections.some(c=>c.id===u.id&&c.status==='active');
+                    const isPend = connections.some(c=>c.id===u.id&&c.status!=='active');
+                    const isSebi = u.sebi_approval_status==='approved'||['sebi_ra','sebi_ria'].includes(u.registration_status||'');
+                    return (
+                      <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',borderTop:i>0?'1px solid var(--line)':'none',transition:'background .1s'}}
+                        onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
+                        onMouseLeave={e=>e.currentTarget.style.background=''}
+                        onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); } }}>
+                        <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.full_name||u.username}</div>
+                          {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
+                        </div>
+                        {isSebi&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)',flexShrink:0}}>SEBI</span>}
+                        {isConn ? <span style={{fontSize:11,fontWeight:700,color:'var(--gain)',flexShrink:0}}>Connected</span>
+                         : isPend ? <span style={{fontSize:11,color:'var(--muted)',flexShrink:0}}>Pending</span>
+                         : <button className="btn btn-pri btn-sm" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
+                             onClick={e=>{e.stopPropagation();handlePeopleConnect(u.id);}}>
+                             Connect
+                           </button>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
+
             <div className="tb-right">
+              {/* ── Mobile search icon ── */}
+              {isInv && (
+                <button
+                  className="icon-btn"
+                  style={{display: isMobile ? 'inline-flex' : 'none'}}
+                  onClick={()=>{ setShowMobileSearch(v=>!v); if(showMobileSearch) { setGlobalSearch(''); setSearchPeople([]); } }}
+                  aria-label="Search"
+                  title="Search"
+                >
+                  {showMobileSearch ? <X size={18}/> : <Search size={18}/>}
+                </button>
+              )}
+
+              {/* ── Invite button (desktop: text+icon; mobile: icon only) ── */}
+              {isInv && (
+                isMobile
+                  ? <button className="icon-btn" onClick={()=>setShowInvite(true)} title="Invite friends" aria-label="Invite friends">
+                      <UserPlus size={18}/>
+                    </button>
+                  : <button
+                      className="btn btn-pri btn-sm"
+                      onClick={()=>setShowInvite(true)}
+                      style={{marginRight:4,padding:'6px 14px',fontSize:13}}
+                    >
+                      <UserPlus size={14}/> Invite
+                    </button>
+              )}
+
               {/* Notification bell */}
               <div style={{position:"relative"}}>
                 <button className="icon-btn" onClick={()=>setNotifOpen(v=>!v)}>
@@ -1166,6 +1258,57 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* ── Mobile search overlay — fixed below topbar, toggled by search icon ── */}
+          {isInv && isMobile && showMobileSearch && (
+            <div style={{position:'fixed',top:64,left:0,right:0,zIndex:300,background:'var(--surface)',borderBottom:'1px solid var(--line)',boxShadow:'0 4px 20px rgba(0,0,0,.1)',padding:'10px 14px'}}>
+              {/* Search input */}
+              <div style={{display:'flex',alignItems:'center',gap:8,background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:12,padding:'9px 14px'}}>
+                <Search size={15} color="var(--muted)" style={{flexShrink:0}}/>
+                <input
+                  autoFocus
+                  value={globalSearch}
+                  onChange={e=>setGlobalSearch(e.target.value)}
+                  placeholder="Search investors, tickers…"
+                  style={{flex:1,border:'none',background:'none',fontSize:14,fontFamily:'var(--font)',color:'var(--ink)',outline:'none'}}
+                />
+                {globalSearch && (
+                  <button onClick={()=>{setGlobalSearch('');setSearchPeople([]);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
+                    <X size={14}/>
+                  </button>
+                )}
+              </div>
+              {/* People results */}
+              {searchPeople.length > 0 && (
+                <div style={{marginTop:8,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,overflow:'hidden'}}>
+                  <div style={{padding:'6px 14px 2px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)'}}>Investors</div>
+                  {searchPeople.map((u,i)=>{
+                    const isConn = connections.some(c=>c.id===u.id&&c.status==='active');
+                    const isPend = connections.some(c=>c.id===u.id&&c.status!=='active');
+                    return (
+                      <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid var(--line)':'none'}}
+                        onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); setShowMobileSearch(false); } }}>
+                        <div className="av" style={{width:32,height:32,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:13}}>{u.full_name||u.username}</div>
+                          {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
+                        </div>
+                        {isConn ? <span style={{fontSize:11,fontWeight:700,color:'var(--gain)',flexShrink:0}}>Connected</span>
+                         : isPend ? <span style={{fontSize:11,color:'var(--muted)',flexShrink:0}}>Pending</span>
+                         : <button className="btn btn-pri btn-sm" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
+                             onClick={e=>{e.stopPropagation();handlePeopleConnect(u.id);}}>
+                             Connect
+                           </button>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {globalSearch.trim().length >= 2 && searchPeople.length === 0 && (
+                <div style={{padding:'12px 14px',textAlign:'center',fontSize:13,color:'var(--muted)'}}>No investors found for "{globalSearch.trim()}"</div>
+              )}
+            </div>
+          )}
 
           <div className="content">
             {/* Connection-request confirmation banner — shown after signup from a public profile */}
@@ -5791,8 +5934,8 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
         flex:1, minWidth:0,
         display: isMobile && mobileFeedTab==='pulse' ? 'none' : undefined,
       }}>
-        {/* ── People Search — find investors by name / username ── */}
-        <PeopleSearch me={me} connections={connections} onConnect={onPeopleConnect}/>
+
+        {/* Feed cards */}
 
         {/* Feed cards — searched via top nav bar */}
         {visibleFeed.length===0
