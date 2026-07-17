@@ -725,7 +725,7 @@ export default function App() {
       // Look up the referrer by their username
       const refs = await sql`
         SELECT id, full_name FROM user_profiles
-        WHERE LOWER(username) = ${refUsername} AND id != ${newUserId}
+        WHERE LOWER(username) = ${refUsername.toLowerCase()} AND id != ${newUserId}
         LIMIT 1`;
       if (!refs.length) { localStorage.removeItem('mic_ref'); return; }
 
@@ -735,9 +735,24 @@ export default function App() {
       await sql`UPDATE user_profiles SET referred_by = ${referrer.id}
                 WHERE id = ${newUserId} AND referred_by IS NULL`;
 
-      // Auto-send a connection request so both users can see each other's recommendations.
-      // The referrer still needs to accept, but they'll get a notification.
-      await sendConnectionRequest(newUserId, referrer.id).catch(()=>{});
+      // Auto-connect: insert directly as 'accepted' — no approval step needed for referrals.
+      // Both users agreed implicitly: the referrer shared their link, the new user accepted.
+      // ON CONFLICT DO NOTHING makes this safe to re-run.
+      await sql`
+        INSERT INTO connections (requester_id, addressee_id, status)
+        VALUES (${newUserId}, ${referrer.id}, 'accepted')
+        ON CONFLICT DO NOTHING
+      `;
+
+      // Notify the referrer that their invite converted
+      await sql`
+        INSERT INTO notifications (user_id, type, from_user_id)
+        VALUES (${referrer.id}, 'connection_accepted', ${newUserId})
+      `.catch(() => {}); // non-fatal
+
+      // Refresh connection list so the new user immediately sees the referrer in their circle
+      const conns = await getMyConnections(newUserId);
+      setConnections(conns);
 
       localStorage.removeItem('mic_ref');
     } catch(e) { console.warn('processReferral:', e?.message||e); }
