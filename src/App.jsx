@@ -5643,36 +5643,36 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
 
   return (
     <>
-    {/* ── Full-width header above both columns (global — always visible) ── */}
-    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
-      <span style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>Welcome back, {firstName}! 👋</span>
-      <button className="btn btn-pri btn-sm" onClick={()=>setShowNewReco(true)} style={{marginLeft:'auto'}}>
-        <Lightbulb size={14}/> Recommend an idea
-      </button>
-    </div>
-
-    {/* ── Mobile Feed/Pulse tab bar — position:fixed keeps it pinned
-         at all scroll depths. The 56px spacer below ensures content
-         starts below the bar — cards never scroll under it.         ── */}
+    {/* ── Mobile: header + tabs merged into one fixed block ──────────────
+         Keeps Welcome, Recommend an idea, and Feed/Pulse tabs pinned
+         below the topbar at ALL scroll depths. Nothing overlaps content
+         because the 104px spacer below reserves the exact same height
+         in the flow.                                                 ── */}
     {isMobile && !showNewReco && (
-      <div
-        role="tablist"
-        style={{
-          position: 'fixed',
-          top: 64,
-          left: 0,
-          right: 0,
-          height: 56,
-          zIndex: 185,
-          background: 'var(--surface)',
-          borderBottom: '2px solid var(--line)',
-          boxShadow: '0 2px 8px rgba(0,0,0,.07)',
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 16px',
-          gap: 8,
-        }}
-      >
+      <div style={{
+        position:'fixed', top:64, left:0, right:0, zIndex:185,
+        background:'var(--surface)',
+        borderBottom:'2px solid var(--line)',
+        boxShadow:'0 2px 8px rgba(0,0,0,.07)',
+      }}>
+        {/* Row 1 — Welcome greeting + Recommend button */}
+        <div style={{
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'10px 16px 0', gap:10,
+        }}>
+          <span style={{fontSize:17,fontWeight:800,letterSpacing:'-.3px',lineHeight:1.2}}>
+            Welcome back, {firstName}! 👋
+          </span>
+          <button
+            className="btn btn-pri btn-sm"
+            onClick={()=>setShowNewReco(true)}
+            style={{flexShrink:0}}
+          >
+            <Lightbulb size={14}/> Recommend
+          </button>
+        </div>
+        {/* Row 2 — Feed / Pulse tab switcher */}
+        <div role="tablist" style={{display:'flex', gap:8, padding:'8px 16px 8px'}}>
         {[['feed','Feed',null],['pulse','Pulse',hasPulseActivity && mobileFeedTab!=='pulse']].map(([id,label,dot])=>(
           <button key={id} role="tab" aria-selected={mobileFeedTab===id}
             onClick={()=>setMobileFeedTab(id)}
@@ -5692,11 +5692,22 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
               animation:'pulse-dot 2.2s ease-in-out infinite'}}/>}
           </button>
         ))}
+        </div>
       </div>
     )}
-    {/* Flow spacer — reserves the 56px fixed bar's space so the first
-        feed card is never hidden underneath it. */}
-    {isMobile && !showNewReco && <div aria-hidden="true" style={{height:56,flexShrink:0,marginBottom:16}}/>}
+    {/* Spacer = fixed header height (10+32+8+40+8+2 = 100px, +4 buffer = 104px).
+        Prevents the first feed card from hiding underneath the fixed header. */}
+    {isMobile && !showNewReco && <div aria-hidden="true" style={{height:104,flexShrink:0}}/>}
+
+    {/* ── Desktop: normal in-flow header ── */}
+    {!isMobile && (
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
+        <span style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>Welcome back, {firstName}! 👋</span>
+        <button className="btn btn-pri btn-sm" onClick={()=>setShowNewReco(true)} style={{marginLeft:'auto'}}>
+          <Lightbulb size={14}/> Recommend an idea
+        </button>
+      </div>
+    )}
     <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
 
       {/* ── Feed column: JS-controlled visibility on mobile ── */}
@@ -5757,6 +5768,28 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
 
         {/* Widget #4 — Trending on Platform */}
         <TrendingWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts}/>
+
+        {/* ── Market Intelligence CTA — bottom of Pulse, both mobile + desktop ── */}
+        <div style={{
+          background:'var(--surface)', border:'1px solid var(--line)',
+          borderRadius:16, boxShadow:'var(--shadow)', padding:'16px 18px',
+          marginBottom:12,
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+            <TrendingUp size={16} color="var(--accent-ink)"/>
+            <span style={{fontWeight:800,fontSize:13}}>Market Intelligence</span>
+          </div>
+          <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.55,marginBottom:14}}>
+            Explore community consensus, trending stocks and sentiment across all sectors.
+          </div>
+          <button
+            className="btn btn-pri btn-sm"
+            style={{width:'100%',justifyContent:'center'}}
+            onClick={()=>setPage('market_intel')}
+          >
+            <TrendingUp size={14}/> Explore Market Intelligence →
+          </button>
+        </div>
       </div>
     </div>
 
