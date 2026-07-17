@@ -123,6 +123,20 @@ export default function LoginPage() {
       // which will read back the DB (now already containing the correct names).
       await updateProfile(cred.user, { displayName: fullName });
 
+      // Send welcome / security-confirmation email.
+      // Fire-and-forget — email failure must never break the signup flow.
+      const emailApi = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
+      fetch(emailApi, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type:       'signup_welcome',
+          to_email:   signupEmail.trim(),
+          first_name: firstName.trim(),
+          full_name:  fullName,
+        }),
+      }).catch(() => {}); // intentionally not awaited — non-fatal
+
       // Auth state change fires → AuthContext logs user in → App.jsx referral processing runs
     } catch (e) {
       setErr(friendlyError(e.code, true));
