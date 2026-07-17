@@ -702,6 +702,63 @@ export default function App() {
     }
   };
 
+  // ── Capture referral code from URL on first load ─────────────────────────────
+  // Stores ?ref=username in localStorage so it survives the Firebase signup flow,
+  // then removes the ref param from the URL to keep it clean.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref) {
+      localStorage.setItem('mic_ref', ref.toLowerCase().trim());
+      // Clean the URL — remove ?ref= without triggering a page reload
+      const clean = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, '', clean);
+    }
+  }, []);
+
+  // ── Process referral after a new user signs up ───────────────────────────────
+  // Called once from the login effect when we detect a stored referral code.
+  const processReferral = async (newUserId) => {
+    const refUsername = localStorage.getItem('mic_ref');
+    if (!refUsername || !sql) return;
+    try {
+      // Look up the referrer by their username
+      const refs = await sql`
+        SELECT id, full_name FROM user_profiles
+        WHERE LOWER(username) = ${refUsername} AND id != ${newUserId}
+        LIMIT 1`;
+      if (!refs.length) { localStorage.removeItem('mic_ref'); return; }
+
+      const referrer = refs[0];
+
+      // Record the referral on the new user's profile (idempotent)
+      await sql`UPDATE user_profiles SET referred_by = ${referrer.id}
+                WHERE id = ${newUserId} AND referred_by IS NULL`;
+
+      // Auto-send a connection request so both users can see each other's recommendations.
+      // The referrer still needs to accept, but they'll get a notification.
+      await sendConnectionRequest(newUserId, referrer.id).catch(()=>{});
+
+      localStorage.removeItem('mic_ref');
+    } catch(e) { console.warn('processReferral:', e?.message||e); }
+  };
+
+  // ── People Connect — used by PeopleSearch ────────────────────────────────────
+  const handlePeopleConnect = async (targetId) => {
+    if (!user) return;
+    try {
+      await sendConnectionRequest(user.uid, targetId);
+      const conns = await getMyConnections(user.uid);
+      setConnections(conns);
+    } catch(e) { console.warn('handlePeopleConnect:', e?.message||e); }
+  };
+
+  // ── Invite modal state ────────────────────────────────────────────────────────
+  const [showInvite, setShowInvite] = useState(false);
+  const referralCount = useMemo(()=>
+    connections.filter(c=>c.referred_by_me || c.source==='referral').length
+  ,[connections]);
+
   // ── Load all shared data from Neon on login ─────────────────────────────────
   useEffect(() => {
     if (!user || !sql) return;
@@ -721,6 +778,8 @@ export default function App() {
         setRecsMade(made);
         setNotifications(notifs);
         setSharing(shr);
+        // Process any stored referral code (fires only when localStorage has one)
+        processReferral(user.uid);
         // Load tracked recommendation IDs
         try {
           const tr = await sql`SELECT reco_id FROM recommendation_tracking WHERE user_id=${user.uid}`;
@@ -817,7 +876,8 @@ export default function App() {
             isPublic:     true,
           })));
         } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
-      } catch(e) { console.warn("Data load failed:", e.message); }      // Load registered users for admin panel
+      } catch(e) { console.warn("Data load failed:", e.message); }
+      // Load registered users for admin panel
       try {
         const profiles = await sql`SELECT * FROM user_profiles ORDER BY created_at`;
         if (profiles.length) setUsers(profiles.map(p => ({
@@ -1114,7 +1174,8 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} publicFeedRecos={publicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch}/>}
+            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} publicFeedRecos={publicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)}/>}
+            {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
             {isInv && page==="market_intel" && <MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
             {isInv && page==="sec_intel"    && <SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
@@ -5565,7 +5626,7 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
 }
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
-function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, publicFeedRecos=[], feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch }) {
+function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, publicFeedRecos=[], feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
@@ -5715,6 +5776,8 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
         flex:1, minWidth:0,
         display: isMobile && mobileFeedTab==='pulse' ? 'none' : undefined,
       }}>
+        {/* ── People Search — find investors by name / username ── */}
+        <PeopleSearch me={me} connections={connections} onConnect={onPeopleConnect}/>
 
         {/* Feed cards — searched via top nav bar */}
         {visibleFeed.length===0
@@ -5788,6 +5851,28 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
             onClick={()=>setPage('market_intel')}
           >
             <TrendingUp size={14}/> Explore Market Intelligence →
+          </button>
+        </div>
+
+        {/* ── Invite Friends CTA ── */}
+        <div style={{
+          background:'var(--surface)', border:'1px solid var(--line)',
+          borderRadius:16, boxShadow:'var(--shadow)', padding:'16px 18px',
+          marginBottom:12,
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+            <UserPlus size={16} color="var(--accent-ink)"/>
+            <span style={{fontWeight:800,fontSize:13}}>Invite Friends</span>
+          </div>
+          <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.55,marginBottom:14}}>
+            Share your personal invite link. Friends who join are auto-added to your circle.
+          </div>
+          <button
+            className="btn btn-soft btn-sm"
+            style={{width:'100%',justifyContent:'center'}}
+            onClick={onShowInvite}
+          >
+            <Link size={14}/> Get My Invite Link
           </button>
         </div>
       </div>
@@ -8088,6 +8173,210 @@ function StrengthDot({strength=0}) {
 }
 
 /* ── SparkLine — simple SVG trend line ─────────────────────────── */
+/* ─── PeopleSearch — search users by name or username ──────────────────────── */
+function PeopleSearch({ me, connections=[], onConnect }) {
+  const [query,   setQuery]   = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  // Derive connection status sets from current connections
+  const activeIds  = useMemo(()=>new Set(connections.filter(c=>c.status==='active').map(c=>c.id)),[connections]);
+  const pendingIds = useMemo(()=>new Set(connections.filter(c=>c.status&&c.status!=='active').map(c=>c.id)),[connections]);
+
+  // Debounced search — fires 300ms after the user stops typing
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || q.length < 2) { setResults([]); return; }
+    const timer = setTimeout(async () => {
+      if (!sql) return;
+      setLoading(true);
+      try {
+        const rows = await sql`
+          SELECT id, username, full_name, first_name, last_name,
+                 registration_status, sebi_approval_status
+          FROM user_profiles
+          WHERE (full_name   ILIKE ${'%'+q+'%'}
+              OR username    ILIKE ${'%'+q+'%'}
+              OR first_name  ILIKE ${'%'+q+'%'}
+              OR last_name   ILIKE ${'%'+q+'%'})
+            AND id != ${me?.id||'none'}
+          ORDER BY
+            CASE WHEN LOWER(username)  = LOWER(${q})         THEN 0
+                 WHEN LOWER(username)  LIKE LOWER(${q})||'%' THEN 1
+                 WHEN LOWER(full_name) LIKE LOWER(${q})||'%' THEN 2
+                 ELSE 3 END,
+            full_name
+          LIMIT 15`;
+        setResults(rows);
+      } catch(e) { console.warn('People search:', e?.message||e); }
+      finally    { setLoading(false); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, me?.id]);
+
+  const clear = () => { setQuery(''); setResults([]); };
+
+  const isSebi = u => u.sebi_approval_status==='approved'||['sebi_ra','sebi_ria'].includes(u.registration_status||'');
+
+  return (
+    <div style={{marginBottom:16}}>
+      {/* Search input */}
+      <div style={{position:'relative'}}>
+        <Search size={15} style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'var(--muted)',pointerEvents:'none'}}/>
+        <input
+          value={query}
+          onChange={e=>setQuery(e.target.value)}
+          placeholder="Search investors by name or @username…"
+          style={{width:'100%',boxSizing:'border-box',padding:'10px 36px',border:'1px solid var(--line)',borderRadius:12,fontFamily:'var(--font)',fontSize:14,background:'var(--surface)',color:'var(--ink)',outline:'none'}}
+        />
+        {query && (
+          <button onClick={clear} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',border:'none',background:'none',cursor:'pointer',color:'var(--muted)',padding:4}}>
+            <X size={14}/>
+          </button>
+        )}
+      </div>
+
+      {/* Results */}
+      {(results.length>0||loading||(query.trim().length>=2&&!loading)) && (
+        <div className="card" style={{marginTop:6,padding:0,overflow:'hidden'}}>
+          {loading && <div style={{padding:'14px',textAlign:'center',color:'var(--muted)',fontSize:13}}>Searching…</div>}
+
+          {!loading && results.length===0 && query.trim().length>=2 && (
+            <div style={{padding:'14px 16px',fontSize:13,color:'var(--muted)',textAlign:'center'}}>
+              No investors found for "{query.trim()}"
+            </div>
+          )}
+
+          {results.map((u,i) => {
+            const connected = activeIds.has(u.id);
+            const pending   = pendingIds.has(u.id);
+            const name      = u.full_name || u.username || 'Investor';
+            return (
+              <div key={u.id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',
+                borderBottom:i<results.length-1?'1px solid var(--line)':'none'}}>
+                {/* Avatar */}
+                <div className="av" style={{width:38,height:38,fontSize:13,flexShrink:0,background:'var(--grad)'}}>
+                  {initialsOf(name)}
+                </div>
+
+                {/* Name + meta */}
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:700,fontSize:14,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    {name}
+                  </div>
+                  <div style={{display:'flex',gap:6,alignItems:'center',marginTop:2,flexWrap:'wrap'}}>
+                    {u.username && <span style={{fontSize:12,color:'var(--muted)'}}>@{u.username}</span>}
+                    {isSebi(u) && (
+                      <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)'}}>
+                        SEBI
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
+                  {u.username && (
+                    <button className="btn btn-ghost btn-sm" style={{fontSize:11}}
+                      onClick={()=>{ window.location.hash=`#/investor/${u.username}`; clear(); }}>
+                      View
+                    </button>
+                  )}
+                  {connected  && <span style={{fontSize:11,fontWeight:700,color:'var(--gain)'}}>Connected</span>}
+                  {pending    && <span style={{fontSize:11,color:'var(--muted)'}}>Pending</span>}
+                  {!connected && !pending && (
+                    <button className="btn btn-pri btn-sm" style={{fontSize:11}}
+                      onClick={()=>{ onConnect(u.id); setResults(rs=>rs.map(r=>r.id===u.id?{...r,_pendingLocal:true}:r)); }}>
+                      <UserPlus size={12}/> Connect
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── InviteModal — personal referral link sharing ──────────────────────────── */
+function InviteModal({ username, referralCount=0, onClose }) {
+  const isMobile = useIsMobile();
+  const [copied, setCopied] = useState(false);
+  const link = `${window.location.origin}${window.location.pathname}?ref=${username||''}`;
+  const waText = encodeURIComponent(
+    `Hey! I track and share stock ideas on myInvestorCircle — a trusted network for serious investors. Join me here:\n${link}`
+  );
+  const copy = () => {
+    navigator.clipboard.writeText(link)
+      .then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); })
+      .catch(()=>{});
+  };
+
+  const content = (
+    <div style={{padding: isMobile?'20px 20px 36px':'28px 28px 24px'}}>
+      {!isMobile && <div style={{fontWeight:900,fontSize:20,marginBottom:4}}>Invite Friends to myInvestorCircle</div>}
+      <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.55,marginBottom:20}}>
+        Share your personal invite link. Anyone who signs up through it is automatically added to your investment circle — you can see each other's recommendations right away.
+      </div>
+
+      {/* Referral stats */}
+      {referralCount > 0 && (
+        <div style={{background:'var(--gain-soft)',borderRadius:10,padding:'10px 14px',marginBottom:16,fontSize:13,fontWeight:700,color:'var(--gain)',display:'flex',alignItems:'center',gap:8}}>
+          🎉 {referralCount} friend{referralCount!==1?'s':''} joined through your invite!
+        </div>
+      )}
+
+      {/* Link box */}
+      <div style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,padding:'10px 14px',fontSize:12,color:'var(--muted)',wordBreak:'break-all',marginBottom:14,lineHeight:1.5}}>
+        {link}
+      </div>
+
+      {/* Actions */}
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        <button className="btn btn-pri" style={{justifyContent:'center'}} onClick={copy}>
+          {copied ? <><Check size={15}/> Copied!</> : <><Copy size={15}/> Copy Invite Link</>}
+        </button>
+        <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer"
+          className="btn btn-soft" style={{justifyContent:'center',textDecoration:'none'}} onClick={onClose}>
+          <span style={{fontSize:17,lineHeight:1}}>💬</span> Share on WhatsApp
+        </a>
+      </div>
+
+      <div style={{fontSize:11,color:'var(--muted)',marginTop:14,textAlign:'center',lineHeight:1.5}}>
+        They get added to your circle as soon as they sign up — no extra steps needed.
+      </div>
+
+      <button className="btn btn-ghost" style={{width:'100%',justifyContent:'center',marginTop:12}} onClick={onClose}>
+        Close
+      </button>
+    </div>
+  );
+
+  if (isMobile) return createPortal(
+    <div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
+      <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.45)'}}/>
+      <div style={{position:'relative',background:'var(--surface)',borderRadius:'20px 20px 0 0',maxHeight:'85vh',overflowY:'auto',boxShadow:'0 -8px 40px rgba(0,0,0,.28)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:36,height:4,background:'var(--line)',borderRadius:2,margin:'12px auto 0'}}/>
+        <div style={{fontWeight:900,fontSize:18,padding:'16px 20px 0'}}>Invite Friends</div>
+        {content}
+      </div>
+    </div>,
+    document.body
+  );
+
+  return createPortal(
+    <div style={{position:'fixed',inset:0,zIndex:9999,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
+      <div style={{background:'var(--surface)',borderRadius:18,width:440,maxWidth:'calc(100vw - 32px)',boxShadow:'0 16px 48px rgba(0,0,0,.2)',position:'relative'}} onClick={e=>e.stopPropagation()}>
+        <button style={{position:'absolute',top:14,right:14,border:'none',background:'none',cursor:'pointer',color:'var(--muted)'}} onClick={onClose}><X size={18}/></button>
+        {content}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function SparkLine({data=[], color='var(--gain)', height=50}) {
   if (data.length < 2) return null;
   const max=Math.max(...data,1), min=Math.min(...data,0), range=max-min||1;
