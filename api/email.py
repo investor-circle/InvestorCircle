@@ -138,12 +138,89 @@ def tpl_signup_welcome(data):
     }
 
 
+def tpl_claim_submitted(data):
+    creator_name  = data.get("creator_name", "Creator")
+    profile_name  = data.get("profile_name", "")
+    username      = data.get("username", "")
+    return {
+        "subject": "Profile claim submitted — pending review",
+        "html": layout(f"""
+            <h2 style="margin:0 0 12px;">Claim submitted! ⏳</h2>
+            <p>Hi <strong>{creator_name}</strong>, thanks for claiming your myInvestorCircle profile.</p>
+            <p>Your claim for <strong>@{username}</strong> ({profile_name}) has been sent to the team for review.
+            We'll get back to you within 24 hours.</p>
+            <p>Once approved, your profile will be fully public and your existing recommendations will
+            be linked to your account.</p>
+            <p style="margin:24px 0;">{btn('Go to myInvestorCircle →', APP_URL)}</p>
+            <div style="margin-top:24px;padding:14px 16px;background:#f8f7fc;border:1px solid #e0ddf5;border-radius:10px;font-size:13px;color:#555;line-height:1.6;">
+              <strong>Not expecting this email?</strong> If you didn't submit a claim, please
+              reply immediately so we can revoke it.
+            </div>"""),
+    }
+
+
+def tpl_claim_admin_notify(data):
+    creator_name  = data.get("creator_name", "Someone")
+    claimer_email = data.get("claimer_email", "")
+    profile_name  = data.get("profile_name", "")
+    username      = data.get("username", "")
+    admin_url     = f"{APP_URL}/#/admin/creators"
+    return {
+        "subject": f"New profile claim: @{username} — action required",
+        "html": layout(f"""
+            <h2 style="margin:0 0 12px;">New claim request 🔔</h2>
+            <p><strong>{creator_name}</strong> (<a href="mailto:{claimer_email}">{claimer_email}</a>)
+            has submitted a claim for the profile <strong>@{username}</strong> ({profile_name}).</p>
+            <p style="margin:24px 0;">{btn('Review in Admin Panel →', admin_url)}</p>
+            <p style="font-size:13px;color:#888;">Go to Admin → Creators → Pending approvals.</p>"""),
+    }
+
+
+def tpl_claim_approved(data):
+    creator_name = data.get("creator_name", "Creator")
+    username     = data.get("username", "")
+    profile_url  = f"{APP_URL}/#/investor/{username}"
+    return {
+        "subject": f"Your profile @{username} is live! 🎉",
+        "html": layout(f"""
+            <h2 style="margin:0 0 12px;">You're live! 🎉</h2>
+            <p>Hi <strong>{creator_name}</strong>,</p>
+            <p>Your claim for <strong>@{username}</strong> has been approved.
+            Your profile is now public and all your recommendations are live.</p>
+            <p style="margin:24px 0;">{btn('View your profile →', profile_url)}</p>
+            <p style="font-size:13px;color:#888;">
+              Share your profile link with your audience:<br/>
+              <a href="{profile_url}">{profile_url}</a>
+            </p>"""),
+    }
+
+
+def tpl_claim_rejected(data):
+    creator_name = data.get("creator_name", "Creator")
+    admin_note   = data.get("admin_note", "")
+    return {
+        "subject": "Profile claim update — action may be needed",
+        "html": layout(f"""
+            <h2 style="margin:0 0 12px;">Claim update</h2>
+            <p>Hi <strong>{creator_name}</strong>,</p>
+            <p>Your profile claim could not be approved at this time.
+            {"<br/><strong>Admin note:</strong> " + admin_note if admin_note else ""}
+            </p>
+            <p>Please contact us at <a href="mailto:hello@myinvestorcircle.com">hello@myinvestorcircle.com</a>
+            if you have questions or if you believe this is an error.</p>"""),
+    }
+
+
 TEMPLATES = {
     "signup_welcome":       tpl_signup_welcome,
     "invite":               tpl_invite,
     "welcome_referred":     tpl_welcome_referred,
     "referral_converted":   tpl_referral_converted,
     "connection_accepted":  tpl_connection_accepted,
+    "claim_submitted":      tpl_claim_submitted,
+    "claim_admin_notify":   tpl_claim_admin_notify,
+    "claim_approved":       tpl_claim_approved,
+    "claim_rejected":       tpl_claim_rejected,
 }
 
 
