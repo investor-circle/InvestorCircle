@@ -8731,7 +8731,280 @@ function CreateCreatorModal({ onClose, onCreated }) {
     </div>, document.body);
 }
 
-/* ─── AdminCreators ──────────────────────────────────────────────────────────── */
+/* ─── AdminRecoSeedModal ─────────────────────────────────────────────────────── *
+ * Allows an admin to manually seed one or many historical recommendations on    *
+ * behalf of an unclaimed creator profile. Contextual fields (type, sector,      *
+ * conviction, date, currency) are retained after each "Add to queue" click so   *
+ * a batch of similar recos can be entered quickly. Only required fields          *
+ * (ticker, asset name, reco price) clear between entries.                       *
+ * ─────────────────────────────────────────────────────────────────────────────── */
+function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone }) {
+  // ── Form state ─────────────────────────────────────────────────────────────
+  const [ticker,      setTicker]      = useState('');
+  const [assetName,   setAssetName]   = useState('');
+  const [assetClass,  setAssetClass]  = useState('Equity');
+  const [exchange,    setExchange]    = useState('NSE');
+  const [recoType,    setRecoType]    = useState('Buy');
+  const [recoPrice,   setRecoPrice]   = useState('');
+  const [targetPrice, setTargetPrice] = useState('');
+  const [stopLoss,    setStopLoss]    = useState('');
+  const [horizon,     setHorizon]     = useState('12m');
+  const [thesis,      setThesis]      = useState('');
+  const [sector,      setSector]      = useState('');
+  const [conviction,  setConviction]  = useState('Medium');
+  const [currency,    setCurrency]    = useState('INR');
+  const [recoDate,    setRecoDate]    = useState(new Date().toISOString().split('T')[0]);
+
+  // ── Queue and status ───────────────────────────────────────────────────────
+  const [queue,   setQueue]   = useState([]);
+  const [busy,    setBusy]    = useState(false);
+  const [err,     setErr]     = useState('');
+  const [inserted,setInserted]= useState(0); // count of successfully inserted recos
+
+  const currSym = { INR:'₹', USD:'$', GBP:'£', EUR:'€' };
+
+  // ── Add current form values to the pending queue ───────────────────────────
+  const addToQueue = () => {
+    setErr('');
+    if (!ticker.trim())    { setErr('Ticker is required.'); return; }
+    if (!assetName.trim()) { setErr('Asset name is required.'); return; }
+    if (!recoPrice || isNaN(+recoPrice) || +recoPrice <= 0) { setErr('Enter a valid reco price.'); return; }
+
+    const entry = {
+      _key:       Date.now() + Math.random(),
+      ticker:     ticker.trim().toUpperCase(),
+      assetName:  assetName.trim(),
+      assetClass, exchange, recoType,
+      recoPrice:  parseFloat(recoPrice),
+      targetPrice:targetPrice ? parseFloat(targetPrice) : null,
+      stopLoss:   stopLoss    ? parseFloat(stopLoss)    : null,
+      horizon, thesis: thesis.trim() || null,
+      sector: sector.trim() || null, conviction,
+      currency, recoDate,
+    };
+    setQueue(q => [...q, entry]);
+    // Clear entry-specific fields; retain contextual ones for faster batching
+    setTicker(''); setAssetName(''); setRecoPrice('');
+    setTargetPrice(''); setStopLoss(''); setThesis('');
+  };
+
+  // ── Remove one item from queue ─────────────────────────────────────────────
+  const removeFromQueue = key => setQueue(q => q.filter(r => r._key !== key));
+
+  // ── Submit all queued recos ────────────────────────────────────────────────
+  const submitAll = async () => {
+    if (!queue.length) { setErr('Add at least one recommendation to the queue.'); return; }
+    setBusy(true); setErr('');
+    let count = 0;
+    try {
+      for (const r of queue) {
+        // created_at set explicitly so historical dates are honoured
+        const ts = new Date(r.recoDate + 'T12:00:00').toISOString();
+        await sql`
+          INSERT INTO ic_recommendations (
+            recommender_id, asset_name, ticker, asset_class, exchange,
+            recommendation_type, reco_price, target_price, stop_loss,
+            horizon, thesis, sector, conviction, is_public, currency, created_at
+          ) VALUES (
+            ${creatorId},       ${r.assetName},   ${r.ticker},     ${r.assetClass}, ${r.exchange},
+            ${r.recoType},      ${r.recoPrice},   ${r.targetPrice}, ${r.stopLoss},
+            ${r.horizon},       ${r.thesis},       ${r.sector},     ${r.conviction},
+            true,               ${r.currency},     ${ts}
+          )
+        `;
+        count++;
+      }
+      setQueue([]);
+      setInserted(n => n + count);
+      if (onDone) onDone(count);
+    } catch(e) { setErr(`Insert failed after ${count} recos: ${e?.message || e}`); }
+    setBusy(false);
+  };
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const fmtDate = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'2-digit' });
+  const inpStyle = { width:'100%', marginTop:4, boxSizing:'border-box' };
+  const lbl = txt => <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',display:'block'}}>{txt}</label>;
+
+  const horizonOptions = ['1m','3m','6m','12m','2y','>2y','Short-term','Long-term'];
+  const convictionOpts = ['Low','Medium','High','Very High'];
+  const assetClasses   = ['Equity','MF','ETF','Debt','Commodity','Crypto','Other'];
+  const exchanges      = ['NSE','BSE','NYSE','NASDAQ','MCX','Other'];
+  const recoTypes      = ['Buy','Sell','Watch','Hold'];
+  const currencies     = ['INR','USD','GBP','EUR'];
+
+  return createPortal(
+    <div style={{position:'fixed',inset:0,zIndex:9999,background:'rgba(0,0,0,.55)',display:'flex',alignItems:'flex-start',justifyContent:'center',overflow:'auto',padding:'24px 16px'}}>
+      <div style={{background:'var(--surface)',borderRadius:18,width:'100%',maxWidth:700,boxShadow:'0 16px 48px rgba(0,0,0,.22)',position:'relative',marginBottom:24}} onClick={e=>e.stopPropagation()}>
+
+        {/* ── Header ── */}
+        <div style={{display:'flex',alignItems:'center',gap:14,padding:'20px 24px',borderBottom:'1px solid var(--line)'}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:16}}>Seed recommendations</div>
+            <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>
+              <span style={{fontWeight:700,color:'var(--ink)'}}>{creatorName}</span>
+              <span style={{marginLeft:6,color:'var(--accent)'}}>@{username}</span>
+            </div>
+          </div>
+          <button style={{marginLeft:'auto',border:'none',background:'none',cursor:'pointer',color:'var(--muted)'}} onClick={onClose}><X size={18}/></button>
+        </div>
+
+        <div style={{padding:'20px 24px'}}>
+
+          {/* ── Success banner ── */}
+          {inserted > 0 && (
+            <div style={{display:'flex',alignItems:'center',gap:10,background:'var(--gain-soft)',border:'1px solid var(--gain)',borderRadius:10,padding:'10px 14px',marginBottom:16,color:'var(--gain)',fontWeight:700,fontSize:13}}>
+              <Check size={16}/> {inserted} recommendation{inserted!==1?'s':''} seeded successfully.
+              <span style={{fontWeight:400,color:'var(--muted)',marginLeft:4,fontSize:12}}>Add more below or close when done.</span>
+            </div>
+          )}
+
+          {/* ── Form ── */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+
+            <div>
+              {lbl('Reco date *')}
+              <input type="date" className="inp" value={recoDate} onChange={e=>setRecoDate(e.target.value)} style={inpStyle}/>
+            </div>
+            <div>
+              {lbl('Currency')}
+              <select className="inp" value={currency} onChange={e=>setCurrency(e.target.value)} style={inpStyle}>
+                {currencies.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div>
+              {lbl('Ticker * (e.g. SHILPAMED)')}
+              <input className="inp" value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase().replace(/\s/g,''))} placeholder="SHILPAMED" style={inpStyle}/>
+            </div>
+            <div style={{gridColumn:'span 1'}}>
+              {lbl('Asset class')}
+              <select className="inp" value={assetClass} onChange={e=>setAssetClass(e.target.value)} style={inpStyle}>
+                {assetClasses.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div style={{gridColumn:'1 / -1'}}>
+              {lbl('Asset / company name *')}
+              <input className="inp" value={assetName} onChange={e=>setAssetName(e.target.value)} placeholder="Shilpa Medicare Ltd" style={inpStyle}/>
+            </div>
+
+            <div>
+              {lbl('Exchange')}
+              <select className="inp" value={exchange} onChange={e=>setExchange(e.target.value)} style={inpStyle}>
+                {exchanges.map(x=><option key={x}>{x}</option>)}
+              </select>
+            </div>
+            <div>
+              {lbl('Reco type')}
+              <select className="inp" value={recoType} onChange={e=>setRecoType(e.target.value)} style={inpStyle}>
+                {recoTypes.map(t=><option key={t}>{t}</option>)}
+              </select>
+            </div>
+
+            <div>
+              {lbl(`Reco price * (${currSym[currency]||currency})`)}
+              <input type="number" min="0" step="0.01" className="inp" value={recoPrice} onChange={e=>setRecoPrice(e.target.value)} placeholder="600" style={inpStyle}/>
+            </div>
+            <div>
+              {lbl('Conviction')}
+              <select className="inp" value={conviction} onChange={e=>setConviction(e.target.value)} style={inpStyle}>
+                {convictionOpts.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div>
+              {lbl(`Target price (${currSym[currency]||currency}) — optional`)}
+              <input type="number" min="0" step="0.01" className="inp" value={targetPrice} onChange={e=>setTargetPrice(e.target.value)} placeholder="1200" style={inpStyle}/>
+            </div>
+            <div>
+              {lbl(`Stop loss (${currSym[currency]||currency}) — optional`)}
+              <input type="number" min="0" step="0.01" className="inp" value={stopLoss} onChange={e=>setStopLoss(e.target.value)} placeholder="500" style={inpStyle}/>
+            </div>
+
+            <div>
+              {lbl('Horizon')}
+              <select className="inp" value={horizon} onChange={e=>setHorizon(e.target.value)} style={inpStyle}>
+                {horizonOptions.map(h=><option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+            <div>
+              {lbl('Sector — optional')}
+              <input className="inp" value={sector} onChange={e=>setSector(e.target.value)} placeholder="Pharma" style={inpStyle}/>
+            </div>
+
+            <div style={{gridColumn:'1 / -1'}}>
+              {lbl('Thesis / rationale — optional')}
+              <textarea className="inp" value={thesis} onChange={e=>setThesis(e.target.value)} placeholder="Brief rationale for the recommendation…" rows={3} style={{...inpStyle,resize:'vertical'}}/>
+            </div>
+          </div>
+
+          {err && <div className="note warn" style={{fontSize:12,marginBottom:12}}>{err}</div>}
+
+          <button className="btn btn-pri" style={{width:'100%',justifyContent:'center',marginBottom:20}} onClick={addToQueue}>
+            <Plus size={15}/> Add to queue {queue.length > 0 && `(${queue.length} queued)`}
+          </button>
+
+          {/* ── Queue table ── */}
+          {queue.length > 0 && (
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:12,fontWeight:700,color:'var(--muted)',marginBottom:8,display:'flex',justifyContent:'space-between'}}>
+                <span>QUEUED — READY TO INSERT ({queue.length})</span>
+                <button style={{border:'none',background:'none',fontSize:11,cursor:'pointer',color:'var(--loss)'}} onClick={()=>setQueue([])}>Clear all</button>
+              </div>
+              <div style={{border:'1px solid var(--line)',borderRadius:10,overflow:'hidden'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{background:'var(--surface-2)',textAlign:'left'}}>
+                      {['Date','Ticker','Type','Price','Target','Stop','[×]'].map((h,i)=>(
+                        <th key={h} style={{padding:'7px 10px',fontWeight:700,color:'var(--muted)',borderBottom:'1px solid var(--line)',whiteSpace:'nowrap',textAlign:i>=3?'right':'left'}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {queue.map((r,i)=>(
+                      <tr key={r._key} style={{borderBottom:i<queue.length-1?'1px solid var(--line)':'none'}}>
+                        <td style={{padding:'7px 10px',whiteSpace:'nowrap'}}>{fmtDate(r.recoDate)}</td>
+                        <td style={{padding:'7px 10px',fontWeight:700}}>{r.ticker}</td>
+                        <td style={{padding:'7px 10px',color:r.recoType==='Buy'?'var(--gain)':r.recoType==='Sell'?'var(--loss)':'var(--muted)'}}>{r.recoType}</td>
+                        <td style={{padding:'7px 10px',textAlign:'right'}}>{currSym[r.currency]||''}{r.recoPrice.toLocaleString('en-IN')}</td>
+                        <td style={{padding:'7px 10px',textAlign:'right',color:'var(--muted)'}}>{r.targetPrice?`${currSym[r.currency]||''}${r.targetPrice.toLocaleString('en-IN')}`:'—'}</td>
+                        <td style={{padding:'7px 10px',textAlign:'right',color:'var(--muted)'}}>{r.stopLoss?`${currSym[r.currency]||''}${r.stopLoss.toLocaleString('en-IN')}`:'—'}</td>
+                        <td style={{padding:'7px 10px',textAlign:'right'}}>
+                          <button onClick={()=>removeFromQueue(r._key)} style={{border:'none',background:'none',cursor:'pointer',color:'var(--loss)',padding:2}}><X size={13}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Submit all ── */}
+          <div style={{display:'flex',gap:10,alignItems:'center'}}>
+            <button
+              className="btn btn-pri"
+              style={{flex:1,justifyContent:'center',opacity:queue.length?1:.4,background:queue.length?'var(--gain)':'',borderColor:queue.length?'var(--gain)':''}}
+              onClick={submitAll}
+              disabled={busy || !queue.length}
+            >
+              {busy ? `Inserting ${queue.length}…` : <><Check size={15}/> Insert {queue.length || 'all'} recommendation{queue.length!==1?'s':''}</>}
+            </button>
+            <button className="btn btn-ghost" onClick={onClose}>Done</button>
+          </div>
+
+          <div style={{fontSize:11,color:'var(--muted)',marginTop:12,lineHeight:1.55}}>
+            All seeded recommendations are set to <strong>public</strong> so they appear on the creator's Track Record page. Ticker, asset name, and reco price are required. Contextual fields (type, conviction, date, sector, currency) are retained between additions for faster batching.
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+
 function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
   const [unclaimed,    setUnclaimed]    = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -8739,6 +9012,7 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
   const [copiedId,     setCopiedId]     = useState(null);
   const [reviewNote,   setReviewNote]   = useState('');
   const [reviewingId,  setReviewingId]  = useState(null);
+  const [seedingCreator, setSeedingCreator] = useState(null); // { id, name, username }
 
   const load = async () => {
     setLoading(true);
@@ -8852,6 +9126,13 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
       </div>
 
       {showCreate && <CreateCreatorModal onClose={()=>setShowCreate(false)} onCreated={()=>{ setShowCreate(false); load(); }}/>}
+      {seedingCreator && <AdminRecoSeedModal
+        creatorId={seedingCreator.id}
+        creatorName={seedingCreator.name}
+        username={seedingCreator.username}
+        onClose={()=>setSeedingCreator(null)}
+        onDone={()=>{ /* silent success — banner shown inside modal */ }}
+      />}
 
       {/* ── Pending claim approvals ── */}
       {claimRequests.length > 0 && (
@@ -8906,6 +9187,14 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
                     {copiedId===p.id ? <><Check size={12}/> Copied</> : <><Copy size={12}/> Claim link</>}
                   </button>
                 )}
+                <button
+                  className="btn btn-pri btn-sm"
+                  onClick={()=>setSeedingCreator({ id:p.id, name:p.full_name, username:p.username })}
+                  title="Seed recommendations for this creator"
+                  style={{fontSize:11}}
+                >
+                  <Plus size={12}/> Seed recos
+                </button>
                 <button className="btn btn-ghost btn-sm" onClick={()=>window.open(`/#/investor/${p.username}`,'_blank')} title="View profile"><Globe size={12}/> View</button>
                 <button className="btn btn-ghost btn-sm" onClick={()=>deleteProfile(p.id)} style={{color:'var(--loss)'}} title="Delete"><Trash2 size={12}/></button>
               </div>
