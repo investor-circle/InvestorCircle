@@ -938,6 +938,7 @@ export default function App() {
             JOIN user_profiles up ON up.id = ir.recommender_id
             WHERE ir.is_public = true
               AND ir.recommender_id != ${user.uid}
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             ORDER BY ir.created_at DESC
             LIMIT 100`;
           setPublicFeedRecos(pubRows.map(r => ({
@@ -4257,11 +4258,11 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     try {
 
     // ── ClaimBanner — shown for unclaimed profiles ──────────────────────────
-    const visitorToken = localStorage.getItem('mic_claim_token');
     const isUnclaimed  = claimInfo?.is_unclaimed === true;
     const claimStatus  = claimInfo?.claim_status;
     if (isUnclaimed) {
       const isClaimer = claimStatus === 'pending_approval';
+      const hasToken  = !!localStorage.getItem('mic_claim_token');
       return (
         <div>
           {/* Unclaimed / pending banner */}
@@ -4270,7 +4271,9 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
             <div style={{flex:1}}>
               {isClaimer
                 ? <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>Claim pending admin approval</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>Your claim for @{username} is under review. You'll receive an email once approved.</div></>
-                : <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>This profile is unclaimed</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>This profile was created by the myInvestorCircle team. If you're {data?.profile?.full_name||username}, claim it using your personal invite link.</div></>
+                : hasToken
+                  ? <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>This is your unclaimed profile</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>You have a claim link for this profile. To claim it, <strong>sign out first</strong> then open your claim link again.</div></>
+                  : <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>This profile is unclaimed</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>This profile was created by the myInvestorCircle team. If you're {data?.profile?.full_name||username}, claim it using your personal invite link.</div></>
               }
             </div>
           </div>
@@ -9065,9 +9068,18 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
         await sql`UPDATE notifications        SET from_user_id = ${newId}  WHERE from_user_id = ${oldId}`;
         await sql`UPDATE portfolio_holdings   SET owner_id = ${newId}      WHERE owner_id = ${oldId}`;
 
-        // Transfer username + profile details to creator's real account.
-        // COALESCE: preserve the creator's own username if they set one after login;
-        // otherwise assign the unclaimed profile's username.
+        // ── Step A: Free the username by nulling it on the unclaimed profile first.
+        // This MUST happen before we set it on the creator's profile because
+        // user_profiles.username has a UNIQUE index — setting it on the creator
+        // while the unclaimed profile still holds it causes a constraint violation.
+        await sql`
+          UPDATE user_profiles SET
+            username = NULL, claim_status = 'claimed', is_unclaimed = FALSE, claim_token = NULL
+          WHERE id = ${oldId}
+        `;
+
+        // ── Step B: Transfer username + copy profile details to creator's real account.
+        // COALESCE: respect any username the creator may have set themselves after logging in.
         await sql`
           UPDATE user_profiles SET
             username            = COALESCE(user_profiles.username, ${u.username}),
@@ -9081,13 +9093,6 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
                                    THEN ${u.sebi_approval_status||'not_applied'}
                                    ELSE user_profiles.sebi_approval_status END
           WHERE id = ${newId}
-        `;
-
-        // Nullify unclaimed profile's username so it doesn't conflict, mark as claimed
-        await sql`
-          UPDATE user_profiles SET
-            username = NULL, claim_status = 'claimed', is_unclaimed = FALSE, claim_token = NULL
-          WHERE id = ${oldId}
         `;
 
         // Mark claim request as approved
@@ -9261,15 +9266,21 @@ function ClaimProfilePage({ profile, token, onBack }) {
           updated_at = NOW()
       `;
 
-      // ── 3. Link claimer to unclaimed profile ──
-      await sql`
+      // ── 3. Link claimer to unclaimed profile.
+      // RETURNING id ensures we know the UPDATE matched — if 0 rows returned,
+      // someone else already claimed this profile (race condition).
+      const linkResult = await sql`
         UPDATE user_profiles SET
           claimed_by_uid = ${uid},
           claim_status   = 'pending_approval',
           claimed_at     = NOW(),
           claim_token    = NULL
         WHERE claim_token = ${token} AND claim_status = 'unclaimed'
+        RETURNING id
       `;
+      if (!linkResult || !linkResult.length) {
+        throw Object.assign(new Error('This profile has already been claimed. Please contact admin@myinvestorcircle.com.'), { code: 'already_claimed' });
+      }
 
       // ── 4. Record the claim request ──
       await sql`
