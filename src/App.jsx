@@ -998,6 +998,7 @@ export default function App() {
             recoId={pubRecoId}
             viewerUser={user}
             viewerConnections={connections}
+            viewerIsAdmin={ME?.is_admin === true}
             mode="standalone"
             onBack={()=>{ window.location.hash=""; }}
             onRequestConnect={async(targetId)=>{
@@ -1412,6 +1413,7 @@ export default function App() {
                       username={ME.username}
                       viewerUser={user}
                       viewerConnections={connections}
+                      viewerIsAdmin={ME?.is_admin === true}
                       mode="embedded"
                       isOwnProfile
                       patchProfile={patchProfile}
@@ -4118,7 +4120,7 @@ class ProfileErrorBoundary extends React.Component {
   }
 }
 
-function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
+function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, viewerIsAdmin=false, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
   const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -4260,40 +4262,46 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     // ── ClaimBanner — shown for unclaimed profiles ──────────────────────────
     const isUnclaimed  = claimInfo?.is_unclaimed === true;
     const claimStatus  = claimInfo?.claim_status;
+
     if (isUnclaimed) {
       const isClaimer = claimStatus === 'pending_approval';
       const hasToken  = !!localStorage.getItem('mic_claim_token');
-      return (
-        <div>
-          {/* Unclaimed / pending banner */}
-          <div style={{background: isClaimer ? 'rgba(109,93,245,.08)' : 'rgba(251,191,36,.08)', border:`1px solid ${isClaimer?'rgba(109,93,245,.35)':'rgba(251,191,36,.5)'}`, borderRadius:14, padding:'14px 18px', marginBottom:20, display:'flex', alignItems:'flex-start', gap:12}}>
-            <div style={{fontSize:20, flexShrink:0}}>{isClaimer ? '⏳' : '👤'}</div>
-            <div style={{flex:1}}>
-              {isClaimer
-                ? <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>Claim pending admin approval</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>Your claim for @{username} is under review. You'll receive an email once approved.</div></>
-                : hasToken
-                  ? <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>This is your unclaimed profile</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>You have a claim link for this profile. To claim it, <strong>sign out first</strong> then open your claim link again.</div></>
-                  : <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>This profile is unclaimed</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>This profile was created by the myInvestorCircle team. If you're {data?.profile?.full_name||username}, claim it using your personal invite link.</div></>
-              }
-            </div>
-          </div>
-          {/* Readonly profile preview for unclaimed */}
-          <div className="card" style={{padding:'20px 24px',marginBottom:20}}>
-            <div style={{display:'flex',alignItems:'center',gap:14}}>
-              <div className="av" style={{width:56,height:56,fontSize:20,flexShrink:0,background:'var(--grad)'}}>{initialsOf(data?.profile?.full_name||username)}</div>
-              <div>
-                <div style={{fontWeight:800,fontSize:20}}>{data?.profile?.full_name}</div>
-                <div style={{fontSize:13,color:'var(--muted)'}}>@{username}</div>
+
+      // ── ADMIN: bypass restricted view — show full profile with preview banner ──
+      // Admin needs to see all seeded recommendations before sharing the claim link.
+      // A sticky banner at the top makes the admin context explicit.
+      if (viewerIsAdmin) {
+        // fall through to full profile render below — banner injected in profile JSX
+      } else {
+        // ── Non-admin: restricted "unclaimed" page ────────────────────────────
+        return (
+          <div>
+            <div style={{background: isClaimer ? 'rgba(109,93,245,.08)' : 'rgba(251,191,36,.08)', border:`1px solid ${isClaimer?'rgba(109,93,245,.35)':'rgba(251,191,36,.5)'}`, borderRadius:14, padding:'14px 18px', marginBottom:20, display:'flex', alignItems:'flex-start', gap:12}}>
+              <div style={{fontSize:20, flexShrink:0}}>{isClaimer ? '⏳' : '👤'}</div>
+              <div style={{flex:1}}>
+                {isClaimer
+                  ? <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>Claim pending admin approval</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>Your claim for @{username} is under review. You'll receive an email once approved.</div></>
+                  : hasToken
+                    ? <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>This is your unclaimed profile</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>You have a claim link for this profile. To claim it, <strong>sign out first</strong> then open your claim link again.</div></>
+                    : <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>This profile is unclaimed</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>This profile was created by the myInvestorCircle team. If you're {data?.profile?.full_name||username}, claim it using your personal invite link.</div></>
+                }
               </div>
             </div>
-            {data?.profile?.bio && <div style={{fontSize:13,marginTop:14,color:'var(--ink)',lineHeight:1.6,paddingTop:14,borderTop:'1px solid var(--line)'}}>{data.profile.bio}</div>}
+            <div className="card" style={{padding:'20px 24px',marginBottom:20}}>
+              <div style={{display:'flex',alignItems:'center',gap:14}}>
+                <div className="av" style={{width:56,height:56,fontSize:20,flexShrink:0,background:'var(--grad)'}}>{initialsOf(data?.profile?.full_name||username)}</div>
+                <div>
+                  <div style={{fontWeight:800,fontSize:20}}>{data?.profile?.full_name}</div>
+                  <div style={{fontSize:13,color:'var(--muted)'}}>@{username}</div>
+                </div>
+              </div>
+              {data?.profile?.bio && <div style={{fontSize:13,marginTop:14,color:'var(--ink)',lineHeight:1.6,paddingTop:14,borderTop:'1px solid var(--line)'}}>{data.profile.bio}</div>}
+            </div>
+            <div style={{fontSize:12,color:'var(--muted)',textAlign:'center'}}>The full track record and recommendations will be visible once the profile is claimed and approved.</div>
           </div>
-          <div style={{fontSize:12,color:'var(--muted)',textAlign:'center'}}>The full track record and recommendations will be visible once the profile is claimed and approved.</div>
-        </div>
-      );
+        );
+      }
     }
-
-    
     // Spread-merge ({ ...defaults, ...(data.x||{}) }) fails because DB null values
     // overwrite the defaults; ?? correctly treats null/undefined as "use default".
     const d_p = data.profile  || {};
@@ -4365,8 +4373,71 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     const showConnected=!isOwnProfile&&viewerUser&&connected;
     const showJoinBtn=!isOwnProfile&&!viewerUser;
 
+    // Claim link (only exists while profile is unclaimed and not yet claimed)
+    const adminClaimLink = claimInfo?.claim_token
+      ? `${window.location.origin}${window.location.pathname}?claim_token=${claimInfo.claim_token}`
+      : null;
+    const [adminLinkCopied, setAdminLinkCopied] = useState(false);
+    const copyAdminLink = () => {
+      if (!adminClaimLink) return;
+      navigator.clipboard.writeText(adminClaimLink)
+        .then(()=>{ setAdminLinkCopied(true); setTimeout(()=>setAdminLinkCopied(false),2000); })
+        .catch(()=>{});
+    };
+
     return (
       <>
+        {/* ── Admin-only preview banner for unclaimed profiles ── */}
+        {isUnclaimed && viewerIsAdmin && (
+          <div style={{
+            background:'rgba(251,146,60,.08)',
+            border:'1.5px solid rgba(251,146,60,.45)',
+            borderRadius:14, padding:'14px 18px', marginBottom:20,
+          }}>
+            <div style={{display:'flex',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
+              <div style={{flex:1,minWidth:200}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span style={{fontSize:13,fontWeight:800,color:'#ea580c'}}>
+                    🔧 Admin preview
+                  </span>
+                  <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:20,
+                    background: claimStatus==='pending_approval'?'rgba(109,93,245,.15)':'rgba(251,191,36,.15)',
+                    color:      claimStatus==='pending_approval'?'var(--accent)':'#92400e',
+                  }}>
+                    {claimStatus==='pending_approval' ? '⏳ Claim pending approval' : '👤 Unclaimed'}
+                  </span>
+                </div>
+                <div style={{fontSize:12,color:'#92400e',lineHeight:1.55}}>
+                  This view is <strong>only visible to admins</strong>. The public sees a restricted version without recommendations. Review all seeded content below before sharing the claim link.
+                </div>
+              </div>
+              <div style={{display:'flex',gap:8,flexShrink:0,flexWrap:'wrap',alignItems:'center'}}>
+                {adminClaimLink ? (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={copyAdminLink}
+                    style={{fontSize:11,borderColor:'rgba(251,146,60,.4)',color:'#ea580c'}}
+                  >
+                    {adminLinkCopied ? <><Check size={12}/> Copied!</> : <><Copy size={12}/> Copy claim link</>}
+                  </button>
+                ) : (
+                  <span style={{fontSize:11,color:'var(--muted)',fontStyle:'italic'}}>
+                    Claim link used / pending
+                  </span>
+                )}
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={()=>{ window.location.hash=''; setTimeout(()=>{ window.location.hash=''; },50); }}
+                  style={{fontSize:11,borderColor:'rgba(251,146,60,.4)',color:'#ea580c'}}
+                  title="Go to Admin → Creators to manage this profile"
+                >
+                  <Database size={12}/> Admin panel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── IDENTITY CARD ── */}
         <div style={{background:'#0f1117',borderRadius:18,overflow:'hidden',marginBottom:16,border:'1px solid rgba(255,255,255,.07)',boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
 
