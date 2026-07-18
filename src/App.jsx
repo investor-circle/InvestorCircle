@@ -4152,7 +4152,8 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
   const [regOptions,       setRegOptions]       = useState([]);
   const [sebiVerifyMsg,    setSebiVerifyMsg]    = useState('');
 
-  const [claimInfo,   setClaimInfo]   = useState(null); // { is_unclaimed, claim_status, claim_token }
+  const [claimInfo,       setClaimInfo]       = useState(null); // { is_unclaimed, claim_status, claim_token }
+  const [adminLinkCopied, setAdminLinkCopied] = useState(false);
 
   useEffect(()=>{
     setLoading(true); setNotFound(false); setData(null); setClaimInfo(null);
@@ -4373,11 +4374,11 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
     const showConnected=!isOwnProfile&&viewerUser&&connected;
     const showJoinBtn=!isOwnProfile&&!viewerUser;
 
-    // Claim link (only exists while profile is unclaimed and not yet claimed)
+    // Admin preview helpers — computed inside renderContent from component-level claimInfo state.
+    // adminLinkCopied state lives at component level (above) to comply with React rules of hooks.
     const adminClaimLink = claimInfo?.claim_token
       ? `${window.location.origin}${window.location.pathname}?claim_token=${claimInfo.claim_token}`
       : null;
-    const [adminLinkCopied, setAdminLinkCopied] = useState(false);
     const copyAdminLink = () => {
       if (!adminClaimLink) return;
       navigator.clipboard.writeText(adminClaimLink)
