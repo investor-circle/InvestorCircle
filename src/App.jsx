@@ -4120,7 +4120,7 @@ class ProfileErrorBoundary extends React.Component {
   }
 }
 
-function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, viewerIsAdmin=false, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
+function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, viewerIsAdmin: viewerIsAdminProp=false, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
   const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -4154,6 +4154,9 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
 
   const [claimInfo,       setClaimInfo]       = useState(null); // { is_unclaimed, claim_status, claim_token }
   const [adminLinkCopied, setAdminLinkCopied] = useState(false);
+  // Fetch viewer's admin status independently — avoids race condition where ME
+  // (loaded from Neon after Firebase auth) isn't available yet when this page renders.
+  const [isViewerAdmin,   setIsViewerAdmin]   = useState(false);
 
   useEffect(()=>{
     setLoading(true); setNotFound(false); setData(null); setClaimInfo(null);
@@ -4164,7 +4167,12 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
     // Separately fetch claim meta so public profile works without modifying db.js
     if (sql) sql`SELECT is_unclaimed, claim_status, claim_token FROM user_profiles WHERE username=${username} LIMIT 1`
       .then(rows=>{ if(rows[0]) setClaimInfo(rows[0]); }).catch(()=>{});
-  },[username]);
+
+  // Fetch viewer's own admin flag directly — don't wait for ME in App.jsx parent
+  // (ME loads async from Neon after Firebase auth; this page may render before it's ready)
+    if (sql && viewerUser?.uid) sql`SELECT is_admin FROM user_profiles WHERE id=${viewerUser.uid} LIMIT 1`
+      .then(rows=>{ if(rows[0]?.is_admin) setIsViewerAdmin(true); }).catch(()=>{});
+  },[username, viewerUser?.uid]);
 
   useEffect(()=>{
     if(recoId&&data&&expandedRef.current)
@@ -4271,7 +4279,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
       // ── ADMIN: bypass restricted view — show full profile with preview banner ──
       // Admin needs to see all seeded recommendations before sharing the claim link.
       // A sticky banner at the top makes the admin context explicit.
-      if (viewerIsAdmin) {
+      if (isViewerAdmin) {
         // fall through to full profile render below — banner injected in profile JSX
       } else {
         // ── Non-admin: restricted "unclaimed" page ────────────────────────────
@@ -4389,7 +4397,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
     return (
       <>
         {/* ── Admin-only preview banner for unclaimed profiles ── */}
-        {isUnclaimed && viewerIsAdmin && (
+        {isUnclaimed && isViewerAdmin && (
           <div style={{
             background:'rgba(251,146,60,.08)',
             border:'1.5px solid rgba(251,146,60,.45)',
