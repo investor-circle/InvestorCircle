@@ -8735,73 +8735,97 @@ function CreateCreatorModal({ onClose, onCreated }) {
 }
 
 /* ─── AdminRecoSeedModal ─────────────────────────────────────────────────────── *
- * Allows an admin to manually seed one or many historical recommendations on    *
- * behalf of an unclaimed creator profile. Contextual fields (type, sector,      *
- * conviction, date, currency) are retained after each "Add to queue" click so   *
- * a batch of similar recos can be entered quickly. Only required fields          *
- * (ticker, asset name, reco price) clear between entries.                       *
+ * Mirrors MakeRecoModal exactly — same InstrumentSearch, same HORIZONS constant, *
+ * same conviction/sector dropdowns, same is_public toggle — but adds:            *
+ *   · Historical reco date  (unique to seeding)                                  *
+ *   · Manual reco price     (no live fetch for past dates)                       *
+ *   · Batch queue           (seed multiple recos before committing)              *
  * ─────────────────────────────────────────────────────────────────────────────── */
 function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone }) {
-  // ── Form state ─────────────────────────────────────────────────────────────
-  const [ticker,      setTicker]      = useState('');
-  const [assetName,   setAssetName]   = useState('');
-  const [assetClass,  setAssetClass]  = useState('Equity');
-  const [exchange,    setExchange]    = useState('NSE');
-  const [recoType,    setRecoType]    = useState('Buy');
-  const [recoPrice,   setRecoPrice]   = useState('');
-  const [targetPrice, setTargetPrice] = useState('');
-  const [stopLoss,    setStopLoss]    = useState('');
-  const [horizon,     setHorizon]     = useState('12m');
-  const [thesis,      setThesis]      = useState('');
-  const [sector,      setSector]      = useState('');
-  const [conviction,  setConviction]  = useState('Medium');
-  const [currency,    setCurrency]    = useState('INR');
-  const [recoDate,    setRecoDate]    = useState(new Date().toISOString().split('T')[0]);
+  // Instrument (mirrors MakeRecoModal pattern exactly)
+  const [selectedInstr, setSelectedInstr] = useState(null);
+  const [ticker,       setTicker]       = useState('');
+  const [assetName,    setAssetName]    = useState('');
+  const [cls,          setCls]          = useState('Equity');
+  const [currency,     setCurrency]     = useState('INR');
+  const [sector,       setSector]       = useState('');
+  const [exchange,     setExchange]     = useState('NSE');
 
-  // ── Queue and status ───────────────────────────────────────────────────────
+  // Reco fields — same defaults as MakeRecoModal
+  const [recoDate,     setRecoDate]     = useState(new Date().toISOString().split('T')[0]);
+  const [recType,      setRecType]      = useState('Buy');
+  const [recoPrice,    setRecoPrice]    = useState('');
+  const [targetPrice,  setTargetPrice]  = useState('');
+  const [stopLoss,     setStopLoss]     = useState('');
+  const [horizon,      setHorizon]      = useState('12m');
+  const [thesis,       setThesis]       = useState('');
+  const [conviction,   setConviction]   = useState('');
+  const [isPublic,     setIsPublic]     = useState(true);
+
+  // Queue + status
   const [queue,   setQueue]   = useState([]);
   const [busy,    setBusy]    = useState(false);
   const [err,     setErr]     = useState('');
-  const [inserted,setInserted]= useState(0); // count of successfully inserted recos
+  const [inserted,setInserted]= useState(0);
 
-  const currSym = { INR:'₹', USD:'$', GBP:'£', EUR:'€' };
+  const CURRENCY_SYMBOL = { INR:'₹', USD:'$', GBP:'£', EUR:'€' };
+  const ASSET_CLASSES   = ['Equity','MF','ETF','Debt','Commodity','Crypto','Other'];
+  const SECTORS = [
+    '— Select sector —',
+    'Banking & Finance','Technology','Pharmaceuticals','Energy','FMCG','Automobiles',
+    'Defence','Capital Goods','Real Estate','Chemicals','Telecom','Metals & Mining',
+    'PSU','Healthcare','Infrastructure','Media','Retail','Others',
+  ];
 
-  // ── Add current form values to the pending queue ───────────────────────────
+  // Mirror MakeRecoModal's onInstrSelect exactly
+  const onInstrSelect = (inst) => {
+    if (!inst) { setSelectedInstr(null); return; }
+    setSelectedInstr(inst);
+    setTicker(inst.symbol);
+    setAssetName(inst.name);
+    setCls(inst.assetClass || 'Equity');
+    setCurrency(inst.currency || 'INR');
+    setSector(inst.sector || '');
+    setExchange(inst.exchange || 'NSE');
+  };
+
   const addToQueue = () => {
     setErr('');
-    if (!ticker.trim())    { setErr('Ticker is required.'); return; }
-    if (!assetName.trim()) { setErr('Asset name is required.'); return; }
-    if (!recoPrice || isNaN(+recoPrice) || +recoPrice <= 0) { setErr('Enter a valid reco price.'); return; }
-
-    const entry = {
+    const t = (ticker.trim() || selectedInstr?.symbol || '').toUpperCase();
+    const n =  assetName.trim() || selectedInstr?.name || '';
+    if (!t)  { setErr('Ticker / symbol is required.'); return; }
+    if (!n)  { setErr('Asset / company name is required.'); return; }
+    if (!recoPrice || isNaN(+recoPrice) || +recoPrice <= 0) {
+      setErr('Enter a valid reco price.'); return;
+    }
+    setQueue(q => [...q, {
       _key:       Date.now() + Math.random(),
-      ticker:     ticker.trim().toUpperCase(),
-      assetName:  assetName.trim(),
-      assetClass, exchange, recoType,
+      ticker: t,  assetName: n,
+      assetClass: cls,
+      exchange:   selectedInstr?.exchange || exchange,
+      recType,
       recoPrice:  parseFloat(recoPrice),
       targetPrice:targetPrice ? parseFloat(targetPrice) : null,
       stopLoss:   stopLoss    ? parseFloat(stopLoss)    : null,
-      horizon, thesis: thesis.trim() || null,
-      sector: sector.trim() || null, conviction,
-      currency, recoDate,
-    };
-    setQueue(q => [...q, entry]);
-    // Clear entry-specific fields; retain contextual ones for faster batching
-    setTicker(''); setAssetName(''); setRecoPrice('');
-    setTargetPrice(''); setStopLoss(''); setThesis('');
+      horizon,    thesis: thesis.trim() || null,
+      sector:     (sector && sector !== '— Select sector —') ? sector : null,
+      conviction: conviction || null,
+      currency,   recoDate,  isPublic,
+    }]);
+    // Clear entry-specific fields; retain contextual ones (date, type, horizon, sector, conviction, currency)
+    setSelectedInstr(null);
+    setTicker('');   setAssetName('');
+    setRecoPrice(''); setTargetPrice(''); setStopLoss(''); setThesis('');
   };
 
-  // ── Remove one item from queue ─────────────────────────────────────────────
   const removeFromQueue = key => setQueue(q => q.filter(r => r._key !== key));
 
-  // ── Submit all queued recos ────────────────────────────────────────────────
   const submitAll = async () => {
-    if (!queue.length) { setErr('Add at least one recommendation to the queue.'); return; }
+    if (!queue.length) { setErr('Add at least one recommendation first.'); return; }
     setBusy(true); setErr('');
     let count = 0;
     try {
       for (const r of queue) {
-        // created_at set explicitly so historical dates are honoured
         const ts = new Date(r.recoDate + 'T12:00:00').toISOString();
         await sql`
           INSERT INTO ic_recommendations (
@@ -8809,10 +8833,10 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
             recommendation_type, reco_price, target_price, stop_loss,
             horizon, thesis, sector, conviction, is_public, currency, created_at
           ) VALUES (
-            ${creatorId},       ${r.assetName},   ${r.ticker},     ${r.assetClass}, ${r.exchange},
-            ${r.recoType},      ${r.recoPrice},   ${r.targetPrice}, ${r.stopLoss},
-            ${r.horizon},       ${r.thesis},       ${r.sector},     ${r.conviction},
-            true,               ${r.currency},     ${ts}
+            ${creatorId},    ${r.assetName},  ${r.ticker},    ${r.assetClass}, ${r.exchange},
+            ${r.recType},    ${r.recoPrice},  ${r.targetPrice}, ${r.stopLoss},
+            ${r.horizon},    ${r.thesis},      ${r.sector},    ${r.conviction},
+            ${r.isPublic},   ${r.currency},    ${ts}
           )
         `;
         count++;
@@ -8824,134 +8848,198 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
     setBusy(false);
   };
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const fmtDate = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'2-digit' });
-  const inpStyle = { width:'100%', marginTop:4, boxSizing:'border-box' };
-  const lbl = txt => <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',display:'block'}}>{txt}</label>;
-
-  const horizonOptions = ['1m','3m','6m','12m','2y','>2y','Short-term','Long-term'];
-  const convictionOpts = ['Low','Medium','High','Very High'];
-  const assetClasses   = ['Equity','MF','ETF','Debt','Commodity','Crypto','Other'];
-  const exchanges      = ['NSE','BSE','NYSE','NASDAQ','MCX','Other'];
-  const recoTypes      = ['Buy','Sell','Watch','Hold'];
-  const currencies     = ['INR','USD','GBP','EUR'];
+  const fmtQueueDate = iso =>
+    new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'2-digit' });
 
   return createPortal(
-    <div style={{position:'fixed',inset:0,zIndex:9999,background:'rgba(0,0,0,.55)',display:'flex',alignItems:'flex-start',justifyContent:'center',overflow:'auto',padding:'24px 16px'}}>
-      <div style={{background:'var(--surface)',borderRadius:18,width:'100%',maxWidth:700,boxShadow:'0 16px 48px rgba(0,0,0,.22)',position:'relative',marginBottom:24}} onClick={e=>e.stopPropagation()}>
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:560,maxHeight:'calc(100vh - 40px)',display:'flex',flexDirection:'column'}}>
 
         {/* ── Header ── */}
-        <div style={{display:'flex',alignItems:'center',gap:14,padding:'20px 24px',borderBottom:'1px solid var(--line)'}}>
-          <div>
-            <div style={{fontWeight:800,fontSize:16}}>Seed recommendations</div>
-            <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>
-              <span style={{fontWeight:700,color:'var(--ink)'}}>{creatorName}</span>
-              <span style={{marginLeft:6,color:'var(--accent)'}}>@{username}</span>
-            </div>
-          </div>
-          <button style={{marginLeft:'auto',border:'none',background:'none',cursor:'pointer',color:'var(--muted)'}} onClick={onClose}><X size={18}/></button>
+        <div className="modal-head">
+          <h3><Database size={17} style={{verticalAlign:-3,color:'var(--accent)',marginRight:6}}/>
+            Seed recommendations
+            <span style={{fontSize:12,fontWeight:400,color:'var(--muted)',marginLeft:8}}>
+              for <strong style={{color:'var(--ink)'}}>{creatorName}</strong> @{username}
+            </span>
+          </h3>
+          <button className="icon-btn" onClick={onClose}><X size={20}/></button>
         </div>
 
-        <div style={{padding:'20px 24px'}}>
+        {/* ── Body (scrollable) ── */}
+        <div className="modal-body" style={{overflowY:'auto',flex:1}}>
 
-          {/* ── Success banner ── */}
+          {/* Success banner */}
           {inserted > 0 && (
-            <div style={{display:'flex',alignItems:'center',gap:10,background:'var(--gain-soft)',border:'1px solid var(--gain)',borderRadius:10,padding:'10px 14px',marginBottom:16,color:'var(--gain)',fontWeight:700,fontSize:13}}>
-              <Check size={16}/> {inserted} recommendation{inserted!==1?'s':''} seeded successfully.
-              <span style={{fontWeight:400,color:'var(--muted)',marginLeft:4,fontSize:12}}>Add more below or close when done.</span>
+            <div style={{display:'flex',alignItems:'center',gap:8,background:'var(--gain-soft)',border:'1px solid var(--gain)',borderRadius:10,padding:'10px 14px',marginBottom:14,color:'var(--gain)',fontWeight:700,fontSize:13}}>
+              <Check size={15}/> {inserted} recommendation{inserted!==1?'s':''} seeded.
+              <span style={{fontWeight:400,color:'var(--muted)',marginLeft:4,fontSize:12}}>Add more or close when done.</span>
             </div>
           )}
 
-          {/* ── Form ── */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+          {/* Historical date (unique to seeding) */}
+          <div className="field">
+            <label style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span>Recommendation date <span style={{color:'var(--loss)'}}>*</span></span>
+              <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)'}}>Historical — set the original date</span>
+            </label>
+            <input type="date" value={recoDate} onChange={e=>setRecoDate(e.target.value)} style={{width:'100%',boxSizing:'border-box'}}/>
+          </div>
 
-            <div>
-              {lbl('Reco date *')}
-              <input type="date" className="inp" value={recoDate} onChange={e=>setRecoDate(e.target.value)} style={inpStyle}/>
-            </div>
-            <div>
-              {lbl('Currency')}
-              <select className="inp" value={currency} onChange={e=>setCurrency(e.target.value)} style={inpStyle}>
-                {currencies.map(c=><option key={c}>{c}</option>)}
-              </select>
-            </div>
-
-            <div>
-              {lbl('Ticker * (e.g. SHILPAMED)')}
-              <input className="inp" value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase().replace(/\s/g,''))} placeholder="SHILPAMED" style={inpStyle}/>
-            </div>
-            <div style={{gridColumn:'span 1'}}>
-              {lbl('Asset class')}
-              <select className="inp" value={assetClass} onChange={e=>setAssetClass(e.target.value)} style={inpStyle}>
-                {assetClasses.map(c=><option key={c}>{c}</option>)}
-              </select>
-            </div>
-
-            <div style={{gridColumn:'1 / -1'}}>
-              {lbl('Asset / company name *')}
-              <input className="inp" value={assetName} onChange={e=>setAssetName(e.target.value)} placeholder="Shilpa Medicare Ltd" style={inpStyle}/>
-            </div>
-
-            <div>
-              {lbl('Exchange')}
-              <select className="inp" value={exchange} onChange={e=>setExchange(e.target.value)} style={inpStyle}>
-                {exchanges.map(x=><option key={x}>{x}</option>)}
-              </select>
-            </div>
-            <div>
-              {lbl('Reco type')}
-              <select className="inp" value={recoType} onChange={e=>setRecoType(e.target.value)} style={inpStyle}>
-                {recoTypes.map(t=><option key={t}>{t}</option>)}
-              </select>
-            </div>
-
-            <div>
-              {lbl(`Reco price * (${currSym[currency]||currency})`)}
-              <input type="number" min="0" step="0.01" className="inp" value={recoPrice} onChange={e=>setRecoPrice(e.target.value)} placeholder="600" style={inpStyle}/>
-            </div>
-            <div>
-              {lbl('Conviction')}
-              <select className="inp" value={conviction} onChange={e=>setConviction(e.target.value)} style={inpStyle}>
-                {convictionOpts.map(c=><option key={c}>{c}</option>)}
-              </select>
-            </div>
-
-            <div>
-              {lbl(`Target price (${currSym[currency]||currency}) — optional`)}
-              <input type="number" min="0" step="0.01" className="inp" value={targetPrice} onChange={e=>setTargetPrice(e.target.value)} placeholder="1200" style={inpStyle}/>
-            </div>
-            <div>
-              {lbl(`Stop loss (${currSym[currency]||currency}) — optional`)}
-              <input type="number" min="0" step="0.01" className="inp" value={stopLoss} onChange={e=>setStopLoss(e.target.value)} placeholder="500" style={inpStyle}/>
-            </div>
-
-            <div>
-              {lbl('Horizon')}
-              <select className="inp" value={horizon} onChange={e=>setHorizon(e.target.value)} style={inpStyle}>
-                {horizonOptions.map(h=><option key={h} value={h}>{h}</option>)}
-              </select>
-            </div>
-            <div>
-              {lbl('Sector — optional')}
-              <input className="inp" value={sector} onChange={e=>setSector(e.target.value)} placeholder="Pharma" style={inpStyle}/>
-            </div>
-
-            <div style={{gridColumn:'1 / -1'}}>
-              {lbl('Thesis / rationale — optional')}
-              <textarea className="inp" value={thesis} onChange={e=>setThesis(e.target.value)} placeholder="Brief rationale for the recommendation…" rows={3} style={{...inpStyle,resize:'vertical'}}/>
+          {/* Reco type — Buy / Sell (same as regular modal) */}
+          <div className="field"><label>Recommendation type</label>
+            <div style={{display:'flex',gap:8}}>
+              {['Buy','Sell'].map(t=>(
+                <button key={t} onClick={()=>setRecType(t)}
+                  style={{flex:1,padding:'10px 0',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',border:'1.5px solid',
+                    background: recType===t ? (t==='Buy'?'var(--gain-soft)':'var(--loss-soft)') : 'var(--surface)',
+                    color:      recType===t ? (t==='Buy'?'var(--gain)':'var(--loss)')           : 'var(--muted)',
+                    borderColor:recType===t ? (t==='Buy'?'var(--gain)':'var(--loss)')           : 'var(--line)',
+                  }}>{t}</button>
+              ))}
             </div>
           </div>
 
-          {err && <div className="note warn" style={{fontSize:12,marginBottom:12}}>{err}</div>}
+          {/* Instrument search — same component as regular modal */}
+          <div className="field">
+            <label>Search instrument <span className="muted small">(type symbol or company name)</span></label>
+            <InstrumentSearch onSelect={onInstrSelect} placeholder="e.g. SHILPAMED or Shilpa Medicare…"/>
+          </div>
 
-          <button className="btn btn-pri" style={{width:'100%',justifyContent:'center',marginBottom:20}} onClick={addToQueue}>
-            <Plus size={15}/> Add to queue {queue.length > 0 && `(${queue.length} queued)`}
+          {/* Manual fallback — exact same pattern as regular modal */}
+          <details style={{marginBottom:14}}>
+            <summary style={{fontSize:12,fontWeight:600,color:'var(--muted)',cursor:'pointer',userSelect:'none',marginBottom:8}}>
+              Not in the list? Enter manually
+            </summary>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',columnGap:14,paddingTop:8}}>
+              <div className="field">
+                <label>Ticker / Symbol</label>
+                <input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase().replace(/\s/g,''))} placeholder="e.g. CDSL"/>
+              </div>
+              <div className="field">
+                <label>Asset name</label>
+                <input value={assetName} onChange={e=>setAssetName(e.target.value)} placeholder="e.g. CDSL Ltd"/>
+              </div>
+            </div>
+          </details>
+
+          {/* Selected instrument summary chip */}
+          {selectedInstr && (
+            <div style={{display:'flex',gap:8,marginBottom:14,padding:'10px 12px',background:'var(--accent-soft)',borderRadius:10,alignItems:'center'}}>
+              <Check size={15} color="var(--accent-ink)"/>
+              <span style={{fontSize:13,fontWeight:600,color:'var(--accent-ink)'}}>{selectedInstr.symbol} — {selectedInstr.name}</span>
+              <span className="chip mini" style={{marginLeft:'auto'}}>{selectedInstr.exchange}</span>
+              <span className="chip mini">{selectedInstr.assetClass}</span>
+              <span className="chip mini">{CURRENCY_SYMBOL[selectedInstr.currency]||selectedInstr.currency} {selectedInstr.currency}</span>
+            </div>
+          )}
+
+          {/* Asset class */}
+          <div className="field"><label>Asset class</label>
+            <select value={cls} onChange={e=>setCls(e.target.value)}>
+              {ASSET_CLASSES.map(c=><option key={c}>{c}</option>)}
+            </select>
+          </div>
+
+          {/* Sector + Conviction row — exact same layout as regular modal */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',columnGap:14}}>
+            <div className="field">
+              <label style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span>Sector</span>
+                {selectedInstr?.sector
+                  ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)'}}>From security master</span>
+                  : <span className="muted small">{selectedInstr ? 'Not in master — select below' : 'Optional'}</span>}
+              </label>
+              {selectedInstr?.sector
+                ? <div style={{padding:'11px 13px',border:'1px solid var(--line)',borderRadius:11,background:'var(--surface-2)',fontSize:14,color:'var(--ink-soft)',display:'flex',alignItems:'center',gap:8}}>
+                    <Lock size={13} color="var(--muted)"/>{selectedInstr.sector}
+                  </div>
+                : <select value={sector} onChange={e=>setSector(e.target.value)}>
+                    {SECTORS.map(s=><option key={s}>{s}</option>)}
+                  </select>}
+            </div>
+            <div className="field">
+              <label>Conviction <span className="muted small">(optional)</span></label>
+              <select value={conviction} onChange={e=>setConviction(e.target.value)}>
+                <option value="">— Not specified —</option>
+                <option>Low</option><option>Medium</option><option>High</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Currency + Reco price + Target + Stop loss + Horizon */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',columnGap:14,rowGap:0}}>
+
+            {/* Currency — locked from master exactly like regular modal */}
+            <div className="field">
+              <label style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span>Currency</span>
+                {selectedInstr && <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)'}}>Master</span>}
+              </label>
+              {selectedInstr
+                ? <div style={{padding:'11px 13px',border:'1px solid var(--line)',borderRadius:11,background:'var(--surface-2)',fontSize:14,color:'var(--ink-soft)',display:'flex',alignItems:'center',gap:8}}>
+                    <Lock size={13} color="var(--muted)"/>{CURRENCY_SYMBOL[currency]||currency} {currency}
+                  </div>
+                : <select value={currency} onChange={e=>setCurrency(e.target.value)}>
+                    {['INR','USD','GBP','EUR'].map(c=><option key={c}>{c}</option>)}
+                  </select>}
+            </div>
+
+            {/* Reco price — MANUAL for historical seeding (no auto-fetch) */}
+            <div className="field" style={{gridColumn:'span 2'}}>
+              <label style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span>Reco price ({CURRENCY_SYMBOL[currency]||currency}) <span style={{color:'var(--loss)'}}>*</span></span>
+                <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--amber-soft)',color:'var(--amber)'}}>Enter manually — historical</span>
+              </label>
+              <input type="number" min="0" step="0.01" value={recoPrice}
+                onChange={e=>setRecoPrice(e.target.value)}
+                placeholder={`${CURRENCY_SYMBOL[currency]||''}0.00`}/>
+            </div>
+
+            <div className="field"><label>Target price <span className="muted small">(opt.)</span></label>
+              <input type="number" min="0" step="0.01" value={targetPrice} onChange={e=>setTargetPrice(e.target.value)} placeholder="0"/>
+            </div>
+            <div className="field"><label>Stop loss <span className="muted small">(opt.)</span></label>
+              <input type="number" min="0" step="0.01" value={stopLoss} onChange={e=>setStopLoss(e.target.value)} placeholder="0"/>
+            </div>
+
+            {/* Horizon — uses exact same HORIZONS constant as the regular modal */}
+            <div className="field"><label>Horizon</label>
+              <select value={horizon} onChange={e=>setHorizon(e.target.value)}>
+                {HORIZONS.map(h=><option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Thesis */}
+          <div className="field"><label>Thesis / rationale <span className="muted small">(optional)</span></label>
+            <textarea rows={3} value={thesis} onChange={e=>setThesis(e.target.value)} placeholder="Why should they look at this?"/>
+          </div>
+
+          {/* is_public toggle — same as regular modal, ticked by default */}
+          <label style={{display:'flex',alignItems:'flex-start',gap:10,fontSize:13,fontWeight:600,cursor:'pointer',padding:'12px 0 0',borderTop:'1px solid var(--line)',marginTop:8}}>
+            <input type="checkbox" checked={isPublic} onChange={e=>setIsPublic(e.target.checked)} style={{width:16,height:16,accentColor:'var(--accent)',marginTop:1,flexShrink:0}}/>
+            <div>
+              Make this recommendation public
+              <div style={{fontWeight:400,color:'var(--muted)',fontSize:12,marginTop:2}}>
+                Visible on the creator's public profile page and track record. Leave ticked for seeded historical data.
+              </div>
+            </div>
+          </label>
+
+          {/* Error */}
+          {err && <div className="note warn" style={{fontSize:12,marginTop:12}}>{err}</div>}
+
+          {/* Add to queue */}
+          <button className="btn btn-pri" style={{width:'100%',justifyContent:'center',marginTop:14}}
+            onClick={addToQueue}>
+            <Plus size={15}/> Add to queue{queue.length > 0 && ` (${queue.length} queued)`}
           </button>
 
           {/* ── Queue table ── */}
           {queue.length > 0 && (
-            <div style={{marginBottom:16}}>
-              <div style={{fontSize:12,fontWeight:700,color:'var(--muted)',marginBottom:8,display:'flex',justifyContent:'space-between'}}>
+            <div style={{marginTop:16}}>
+              <div style={{fontSize:12,fontWeight:700,color:'var(--muted)',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <span>QUEUED — READY TO INSERT ({queue.length})</span>
                 <button style={{border:'none',background:'none',fontSize:11,cursor:'pointer',color:'var(--loss)'}} onClick={()=>setQueue([])}>Clear all</button>
               </div>
@@ -8967,12 +9055,12 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
                   <tbody>
                     {queue.map((r,i)=>(
                       <tr key={r._key} style={{borderBottom:i<queue.length-1?'1px solid var(--line)':'none'}}>
-                        <td style={{padding:'7px 10px',whiteSpace:'nowrap'}}>{fmtDate(r.recoDate)}</td>
+                        <td style={{padding:'7px 10px',whiteSpace:'nowrap'}}>{fmtQueueDate(r.recoDate)}</td>
                         <td style={{padding:'7px 10px',fontWeight:700}}>{r.ticker}</td>
-                        <td style={{padding:'7px 10px',color:r.recoType==='Buy'?'var(--gain)':r.recoType==='Sell'?'var(--loss)':'var(--muted)'}}>{r.recoType}</td>
-                        <td style={{padding:'7px 10px',textAlign:'right'}}>{currSym[r.currency]||''}{r.recoPrice.toLocaleString('en-IN')}</td>
-                        <td style={{padding:'7px 10px',textAlign:'right',color:'var(--muted)'}}>{r.targetPrice?`${currSym[r.currency]||''}${r.targetPrice.toLocaleString('en-IN')}`:'—'}</td>
-                        <td style={{padding:'7px 10px',textAlign:'right',color:'var(--muted)'}}>{r.stopLoss?`${currSym[r.currency]||''}${r.stopLoss.toLocaleString('en-IN')}`:'—'}</td>
+                        <td style={{padding:'7px 10px',color:r.recType==='Buy'?'var(--gain)':'var(--loss)'}}>{r.recType}</td>
+                        <td style={{padding:'7px 10px',textAlign:'right'}}>{CURRENCY_SYMBOL[r.currency]||''}{r.recoPrice.toLocaleString('en-IN')}</td>
+                        <td style={{padding:'7px 10px',textAlign:'right',color:'var(--muted)'}}>{r.targetPrice?`${CURRENCY_SYMBOL[r.currency]||''}${r.targetPrice.toLocaleString('en-IN')}`:'—'}</td>
+                        <td style={{padding:'7px 10px',textAlign:'right',color:'var(--muted)'}}>{r.stopLoss?`${CURRENCY_SYMBOL[r.currency]||''}${r.stopLoss.toLocaleString('en-IN')}`:'—'}</td>
                         <td style={{padding:'7px 10px',textAlign:'right'}}>
                           <button onClick={()=>removeFromQueue(r._key)} style={{border:'none',background:'none',cursor:'pointer',color:'var(--loss)',padding:2}}><X size={13}/></button>
                         </td>
@@ -8983,22 +9071,23 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
               </div>
             </div>
           )}
+        </div>
 
-          {/* ── Submit all ── */}
-          <div style={{display:'flex',gap:10,alignItems:'center'}}>
+        {/* ── Footer with batch submit ── */}
+        <div className="modal-foot">
+          <span className="muted small">
+            All recos seeded as {isPublic ? 'public ✓' : 'private'} · {queue.length} in queue
+          </span>
+          <div style={{display:'flex',gap:10}}>
+            <button className="btn btn-ghost" onClick={onClose}>Done</button>
             <button
               className="btn btn-pri"
-              style={{flex:1,justifyContent:'center',opacity:queue.length?1:.4,background:queue.length?'var(--gain)':'',borderColor:queue.length?'var(--gain)':''}}
+              style={{background:queue.length?'var(--gain)':'',borderColor:queue.length?'var(--gain)':'',opacity:queue.length?1:.45}}
               onClick={submitAll}
               disabled={busy || !queue.length}
             >
-              {busy ? `Inserting ${queue.length}…` : <><Check size={15}/> Insert {queue.length || 'all'} recommendation{queue.length!==1?'s':''}</>}
+              {busy ? `Inserting ${queue.length}…` : <><Check size={15}/> Insert {queue.length} reco{queue.length!==1?'s':''}</>}
             </button>
-            <button className="btn btn-ghost" onClick={onClose}>Done</button>
-          </div>
-
-          <div style={{fontSize:11,color:'var(--muted)',marginTop:12,lineHeight:1.55}}>
-            All seeded recommendations are set to <strong>public</strong> so they appear on the creator's Track Record page. Ticker, asset name, and reco price are required. Contextual fields (type, conviction, date, sector, currency) are retained between additions for faster batching.
           </div>
         </div>
       </div>
