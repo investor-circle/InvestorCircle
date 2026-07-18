@@ -9177,6 +9177,7 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
   const [reviewNote,   setReviewNote]   = useState('');
   const [reviewingId,  setReviewingId]  = useState(null);
   const [seedingCreator, setSeedingCreator] = useState(null); // { id, name, username }
+  const [recoCounts,   setRecoCounts]   = useState({}); // { [profileId]: count }
 
   const load = async () => {
     setLoading(true);
@@ -9187,6 +9188,20 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
         WHERE is_unclaimed = true
         ORDER BY created_at DESC`;
       setUnclaimed(rows);
+
+      // Fetch reco counts for each unclaimed profile in one query
+      if (rows.length) {
+        const ids = rows.map(r => r.id);
+        // Neon supports IN (unnest(array)) pattern for variable-length lists
+        const counts = await sql`
+          SELECT recommender_id, COUNT(*)::int AS n
+          FROM ic_recommendations
+          WHERE recommender_id = ANY(${ids})
+          GROUP BY recommender_id`;
+        const countMap = {};
+        counts.forEach(c => { countMap[c.recommender_id] = c.n; });
+        setRecoCounts(countMap);
+      }
     } catch(e) { console.warn('AdminCreators load:', e?.message); }
     setLoading(false);
   };
@@ -9297,7 +9312,7 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
         creatorName={seedingCreator.name}
         username={seedingCreator.username}
         onClose={()=>setSeedingCreator(null)}
-        onDone={()=>{ /* silent success — banner shown inside modal */ }}
+        onDone={()=>{ load(); /* refresh counts after seeding */ }}
       />}
 
       {/* ── Pending claim approvals ── */}
@@ -9345,7 +9360,17 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
               <div style={{flex:1,minWidth:160}}>
                 <div style={{fontWeight:700,fontSize:14}}>{p.full_name}</div>
                 <div style={{fontSize:12,color:'var(--muted)'}}>@{p.username} · {p.claim_status==='pending_approval'?<span style={{color:'var(--accent)',fontWeight:600}}>Claim pending review</span>:p.claim_status==='unclaimed'?<span style={{color:'var(--muted)'}}>Awaiting claim</span>:<span>{p.claim_status}</span>}</div>
-                <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Created {new Date(p.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</div>
+                <div style={{display:'flex',gap:8,marginTop:4,alignItems:'center'}}>
+                  <div style={{fontSize:11,color:'var(--muted)'}}>Created {new Date(p.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</div>
+                  <span style={{
+                    fontSize:11,fontWeight:700,padding:'1px 8px',borderRadius:10,
+                    background: (recoCounts[p.id]||0) > 0 ? 'var(--gain-soft)' : 'var(--surface-2)',
+                    color:      (recoCounts[p.id]||0) > 0 ? 'var(--gain)'      : 'var(--muted)',
+                    border:     `1px solid ${(recoCounts[p.id]||0) > 0 ? 'var(--gain)' : 'var(--line)'}`,
+                  }}>
+                    {(recoCounts[p.id]||0) === 0 ? '0 recos seeded' : `${recoCounts[p.id]} reco${recoCounts[p.id]===1?'':'s'} seeded`}
+                  </span>
+                </div>
               </div>
               <div style={{display:'flex',gap:6,flexWrap:'wrap',flexShrink:0}}>
                 {p.claim_token && (
