@@ -21,8 +21,8 @@ import {
 import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 import { useAuth } from "./AuthContext";
 import { sql } from "./supabaseClient";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { secondaryAuth } from "./firebase";
+import { createUserWithEmailAndPassword, updateProfile as fbUpdateProfile } from "firebase/auth";
+import { secondaryAuth, auth as primaryAuth } from "./firebase";
 import LoginPage from "./LoginPage";
 import {
   getMyConnections, sendConnectionRequest, acceptConnection, rejectConnection, removeConnection,
@@ -703,18 +703,51 @@ export default function App() {
   };
 
   // ── Capture referral code from URL on first load ─────────────────────────────
-  // Stores ?ref=username in localStorage so it survives the Firebase signup flow,
-  // then removes the ref param from the URL to keep it clean.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get('ref');
-    if (ref) {
-      localStorage.setItem('mic_ref', ref.toLowerCase().trim());
-      // Clean the URL — remove ?ref= without triggering a page reload
+    const ct  = params.get('claim_token');
+    if (ref) localStorage.setItem('mic_ref', ref.toLowerCase().trim());
+    if (ct)  localStorage.setItem('mic_claim_token', ct);
+    if (ref || ct) {
       const clean = window.location.pathname + window.location.hash;
       window.history.replaceState({}, '', clean);
     }
   }, []);
+
+  // ── Claim state: token + profile for unclaimed-creator claim flow ─────────────
+  const [claimToken,    setClaimToken]    = useState(() => localStorage.getItem('mic_claim_token') || null);
+  const [claimProfile,  setClaimProfile]  = useState(null);
+  const [claimRequests, setClaimRequests] = useState([]);
+
+  // Resolve claimToken → profile from DB
+  useEffect(() => {
+    if (!claimToken || !sql) return;
+    sql`SELECT id, full_name, first_name, last_name, username, bio,
+               registration_status, sebi_approval_status, claim_status
+        FROM user_profiles
+        WHERE claim_token = ${claimToken} AND claim_status = 'unclaimed'
+        LIMIT 1`
+      .then(rows => {
+        if (rows[0]) setClaimProfile(rows[0]);
+        else { localStorage.removeItem('mic_claim_token'); setClaimToken(null); }
+      })
+      .catch(() => {});
+  }, [claimToken]);
+
+  // ── Admin: load pending claim requests ───────────────────────────────────────
+  const loadClaimRequests = async () => {
+    if (!sql) return;
+    try {
+      const rows = await sql`
+        SELECT cr.*, up.full_name AS profile_name, up.username AS profile_username
+        FROM claim_requests cr
+        LEFT JOIN user_profiles up ON cr.profile_id = up.id
+        WHERE cr.status = 'pending'
+        ORDER BY cr.created_at DESC`;
+      setClaimRequests(rows);
+    } catch(e) { console.warn('loadClaimRequests:', e?.message); }
+  };
 
   // ── Process referral after a new user signs up ───────────────────────────────
   // Called once from the login effect when we detect a stored referral code.
@@ -788,6 +821,7 @@ export default function App() {
               OR first_name  ILIKE ${'%'+q+'%'}
               OR last_name   ILIKE ${'%'+q+'%'})
             AND id != ${ME?.id||'none'}
+            AND (is_unclaimed IS NULL OR is_unclaimed = FALSE)
           ORDER BY
             CASE WHEN LOWER(username)  = LOWER(${q})         THEN 0
                  WHEN LOWER(username)  LIKE LOWER(${q})||'%' THEN 1
@@ -825,6 +859,8 @@ export default function App() {
         setSharing(shr);
         // Process any stored referral code (fires only when localStorage has one)
         processReferral(user.uid);
+        // Load pending creator claim requests (admin feature — silently no-ops for non-admins)
+        loadClaimRequests();
         // Load tracked recommendation IDs
         try {
           const tr = await sql`SELECT reco_id FROM recommendation_tracking WHERE user_id=${user.uid}`;
@@ -985,6 +1021,15 @@ export default function App() {
       <div style={{color:"#8a8daa",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15}}>Loading…</div>
     </div>
   );
+  // ── Creator claim flow: show claim page before login ─────────────────────────
+  if (!user && claimToken && claimProfile) {
+    return <ClaimProfilePage
+      profile={claimProfile}
+      token={claimToken}
+      onBack={() => { setClaimToken(null); setClaimProfile(null); localStorage.removeItem('mic_claim_token'); }}
+    />;
+  }
+
   if (!user) return <LoginPage />;
 
 
@@ -1013,6 +1058,7 @@ export default function App() {
     { id:"contact",     label:"Contact Us",          icon:MessageSquare },
   ] : [
     { id:"users",       label:"Users",             icon:UserCog },
+    { id:"creators",    label:"Creators",           icon:UserPlus },
     { id:"groups",      label:"Groups",            icon:Layers },
     { id:"instruments", label:"Instruments",        icon:Database },
     { id:"sebi",        label:"SEBI Approvals",    icon:Shield },
@@ -1391,6 +1437,7 @@ export default function App() {
                   </div>
             )}
             {!isInv && page==="users"       && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={()=>{}}/>}
+            {!isInv && page==="creators"    && <AdminCreators ME={ME} claimRequests={claimRequests} onClaimAction={loadClaimRequests}/>}
             {!isInv && page==="groups"      && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
             {!isInv && page==="instruments" && <AdminInstruments/>}
             {!isInv && page==="sebi"        && <AdminSebi/>}
@@ -4102,12 +4149,17 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
   const [regOptions,       setRegOptions]       = useState([]);
   const [sebiVerifyMsg,    setSebiVerifyMsg]    = useState('');
 
+  const [claimInfo,   setClaimInfo]   = useState(null); // { is_unclaimed, claim_status, claim_token }
+
   useEffect(()=>{
-    setLoading(true); setNotFound(false); setData(null);
+    setLoading(true); setNotFound(false); setData(null); setClaimInfo(null);
     dbGetPublicProfile(username).then(d=>{
       if(!d) setNotFound(true); else setData(d);
       setLoading(false);
     }).catch(()=>{ setNotFound(true); setLoading(false); });
+    // Separately fetch claim meta so public profile works without modifying db.js
+    if (sql) sql`SELECT is_unclaimed, claim_status, claim_token FROM user_profiles WHERE username=${username} LIMIT 1`
+      .then(rows=>{ if(rows[0]) setClaimInfo(rows[0]); }).catch(()=>{});
   },[username]);
 
   useEffect(()=>{
@@ -4204,7 +4256,41 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, mo
     if(!data) return null;
     try {
 
-    // Nullish-coalescing defaults (??) — handles null AND undefined from DB.
+    // ── ClaimBanner — shown for unclaimed profiles ──────────────────────────
+    const visitorToken = localStorage.getItem('mic_claim_token');
+    const isUnclaimed  = claimInfo?.is_unclaimed === true;
+    const claimStatus  = claimInfo?.claim_status;
+    if (isUnclaimed) {
+      const isClaimer = claimStatus === 'pending_approval';
+      return (
+        <div>
+          {/* Unclaimed / pending banner */}
+          <div style={{background: isClaimer ? 'rgba(109,93,245,.08)' : 'rgba(251,191,36,.08)', border:`1px solid ${isClaimer?'rgba(109,93,245,.35)':'rgba(251,191,36,.5)'}`, borderRadius:14, padding:'14px 18px', marginBottom:20, display:'flex', alignItems:'flex-start', gap:12}}>
+            <div style={{fontSize:20, flexShrink:0}}>{isClaimer ? '⏳' : '👤'}</div>
+            <div style={{flex:1}}>
+              {isClaimer
+                ? <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>Claim pending admin approval</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>Your claim for @{username} is under review. You'll receive an email once approved.</div></>
+                : <><div style={{fontWeight:700,fontSize:14,marginBottom:3}}>This profile is unclaimed</div><div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5}}>This profile was created by the myInvestorCircle team. If you're {data?.profile?.full_name||username}, claim it using your personal invite link.</div></>
+              }
+            </div>
+          </div>
+          {/* Readonly profile preview for unclaimed */}
+          <div className="card" style={{padding:'20px 24px',marginBottom:20}}>
+            <div style={{display:'flex',alignItems:'center',gap:14}}>
+              <div className="av" style={{width:56,height:56,fontSize:20,flexShrink:0,background:'var(--grad)'}}>{initialsOf(data?.profile?.full_name||username)}</div>
+              <div>
+                <div style={{fontWeight:800,fontSize:20}}>{data?.profile?.full_name}</div>
+                <div style={{fontSize:13,color:'var(--muted)'}}>@{username}</div>
+              </div>
+            </div>
+            {data?.profile?.bio && <div style={{fontSize:13,marginTop:14,color:'var(--ink)',lineHeight:1.6,paddingTop:14,borderTop:'1px solid var(--line)'}}>{data.profile.bio}</div>}
+          </div>
+          <div style={{fontSize:12,color:'var(--muted)',textAlign:'center'}}>The full track record and recommendations will be visible once the profile is claimed and approved.</div>
+        </div>
+      );
+    }
+
+    
     // Spread-merge ({ ...defaults, ...(data.x||{}) }) fails because DB null values
     // overwrite the defaults; ?? correctly treats null/undefined as "use default".
     const d_p = data.profile  || {};
@@ -8358,6 +8444,7 @@ function PeopleSearch({ me, connections=[], onConnect }) {
               OR first_name  ILIKE ${'%'+q+'%'}
               OR last_name   ILIKE ${'%'+q+'%'})
             AND id != ${me?.id||'none'}
+            AND (is_unclaimed IS NULL OR is_unclaimed = FALSE)
           ORDER BY
             CASE WHEN LOWER(username)  = LOWER(${q})         THEN 0
                  WHEN LOWER(username)  LIKE LOWER(${q})||'%' THEN 1
@@ -8532,6 +8619,493 @@ function InviteModal({ username, referralCount=0, onClose }) {
       </div>
     </div>,
     document.body
+  );
+}
+
+/* ─── CreateCreatorModal ─────────────────────────────────────────────────────── */
+function CreateCreatorModal({ onClose, onCreated }) {
+  const [firstName,   setFirstName]   = useState('');
+  const [lastName,    setLastName]    = useState('');
+  const [username,    setUsername]    = useState('');
+  const [bio,         setBio]         = useState('');
+  const [regStatus,   setRegStatus]   = useState('self_directed');
+  const [busy,        setBusy]        = useState(false);
+  const [err,         setErr]         = useState('');
+  const [created,     setCreated]     = useState(null); // { claimLink, profileId, username }
+  const isMobile = useIsMobile();
+
+  const handle = async () => {
+    setErr('');
+    if (!firstName.trim()) { setErr('First name is required'); return; }
+    if (!username.trim())  { setErr('Username is required'); return; }
+    setBusy(true);
+    try {
+      const token      = crypto.randomUUID().replace(/-/g,'');
+      const profileId  = `unc_${token.slice(0,16)}`;
+      const fullName   = `${firstName.trim()} ${lastName.trim()}`.trim();
+      const uname      = username.trim().toLowerCase();
+      const placeholder= `creator-${uname}@myinvestorcircle.com`;
+
+      // Check username uniqueness
+      const existing = await sql`SELECT id FROM user_profiles WHERE username=${uname} LIMIT 1`;
+      if (existing.length) { setErr('Username already taken. Choose another.'); setBusy(false); return; }
+
+      await sql`
+        INSERT INTO user_profiles (
+          id, email, full_name, first_name, last_name, username, bio,
+          registration_status, is_admin,
+          is_unclaimed, claim_token, claim_status
+        ) VALUES (
+          ${profileId}, ${placeholder}, ${fullName},
+          ${firstName.trim()}, ${lastName.trim()||''}, ${uname}, ${bio.trim()||null},
+          ${regStatus}, false,
+          true, ${token}, 'unclaimed'
+        )
+      `;
+
+      const claimLink = `${window.location.origin}${window.location.pathname}?claim_token=${token}`;
+      setCreated({ claimLink, profileId, username: uname, fullName });
+      if (onCreated) onCreated();
+    } catch(e) { setErr(e?.message || 'Failed to create profile'); }
+    setBusy(false);
+  };
+
+  const copy = () => navigator.clipboard.writeText(created.claimLink).catch(()=>{});
+
+  const content = created ? (
+    <div>
+      <div className="note" style={{background:'var(--gain-soft)',border:'1px solid var(--gain)',color:'var(--gain)',fontWeight:700,marginBottom:16,display:'flex',gap:8,alignItems:'center'}}>
+        <Check size={16}/> Profile created for <strong>{created.fullName}</strong>
+      </div>
+      <div style={{fontSize:13,fontWeight:700,marginBottom:6,color:'var(--ink)'}}>Claim link — share this with the creator:</div>
+      <div style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:9,padding:'9px 12px',fontSize:11,color:'var(--muted)',wordBreak:'break-all',lineHeight:1.5,marginBottom:10}}>{created.claimLink}</div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        <button className="btn btn-pri" style={{justifyContent:'center'}} onClick={copy}><Copy size={14}/> Copy Claim Link</button>
+        <a href={`https://wa.me/?text=${encodeURIComponent(`Hi! I've set up your investor profile on myInvestorCircle. Claim it here:\n${created.claimLink}`)}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft" style={{justifyContent:'center',textDecoration:'none'}}><span style={{fontSize:16,lineHeight:1}}>💬</span> Share on WhatsApp</a>
+        <button className="btn btn-ghost" onClick={onClose} style={{justifyContent:'center'}}>Done</button>
+      </div>
+      <div style={{fontSize:11,color:'var(--muted)',marginTop:12,lineHeight:1.5}}>
+        The creator will see their profile preview and be prompted to sign up and claim it. You'll get a notification once they submit — then you can approve to make the profile public.
+      </div>
+    </div>
+  ) : (
+    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>First name *</label><input className="inp" value={firstName} onChange={e=>setFirstName(e.target.value)} placeholder="Varun" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
+        <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Last name</label><input className="inp" value={lastName} onChange={e=>setLastName(e.target.value)} placeholder="Rawat" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
+      </div>
+      <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Username * (used in profile URL)</label><input className="inp" value={username} onChange={e=>setUsername(e.target.value.replace(/[^a-z0-9_]/gi,'').toLowerCase())} placeholder="varunrawat" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/><div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>Profile will be at /#/investor/{username||'username'}</div></div>
+      <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Bio (optional)</label><textarea className="inp" value={bio} onChange={e=>setBio(e.target.value)} placeholder="Brief description of the creator's investment style…" rows={3} style={{width:'100%',marginTop:4,resize:'vertical',boxSizing:'border-box'}}/></div>
+      <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Registration type</label>
+        <select className="inp" value={regStatus} onChange={e=>setRegStatus(e.target.value)} style={{width:'100%',marginTop:4}}>
+          <option value="self_directed">Self-directed / Non-SEBI</option>
+          <option value="sebi_ra">SEBI Registered Analyst</option>
+          <option value="sebi_ria">SEBI Registered Investment Advisor</option>
+        </select>
+      </div>
+      {err && <div className="note warn" style={{fontSize:12}}>{err}</div>}
+      <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}}>
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+        <button className="btn btn-pri btn-sm" onClick={handle} disabled={busy}>{busy ? 'Creating…' : 'Create profile'}</button>
+      </div>
+    </div>
+  );
+
+  if (isMobile) return createPortal(
+    <div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
+      <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.45)'}}/>
+      <div style={{position:'relative',background:'var(--surface)',borderRadius:'20px 20px 0 0',padding:'20px',maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:36,height:4,background:'var(--line)',borderRadius:2,margin:'0 auto 16px'}}/>
+        <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>Create creator profile</div>
+        {content}
+      </div>
+    </div>, document.body);
+
+  return createPortal(
+    <div style={{position:'fixed',inset:0,zIndex:9999,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
+      <div style={{background:'var(--surface)',borderRadius:18,width:480,maxWidth:'calc(100vw - 32px)',boxShadow:'0 16px 48px rgba(0,0,0,.2)',position:'relative',padding:'28px'}} onClick={e=>e.stopPropagation()}>
+        <button style={{position:'absolute',top:14,right:14,border:'none',background:'none',cursor:'pointer',color:'var(--muted)'}} onClick={onClose}><X size={18}/></button>
+        <div style={{fontWeight:800,fontSize:18,marginBottom:20}}>Create creator profile</div>
+        {content}
+      </div>
+    </div>, document.body);
+}
+
+/* ─── AdminCreators ──────────────────────────────────────────────────────────── */
+function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
+  const [unclaimed,    setUnclaimed]    = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [showCreate,   setShowCreate]   = useState(false);
+  const [copiedId,     setCopiedId]     = useState(null);
+  const [reviewNote,   setReviewNote]   = useState('');
+  const [reviewingId,  setReviewingId]  = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const rows = await sql`
+        SELECT id, full_name, username, claim_token, claim_status, claimed_by_uid, claimed_at, created_at, bio
+        FROM user_profiles
+        WHERE is_unclaimed = true
+        ORDER BY created_at DESC`;
+      setUnclaimed(rows);
+    } catch(e) { console.warn('AdminCreators load:', e?.message); }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const copyLink = (token, id) => {
+    const link = `${window.location.origin}${window.location.pathname}?claim_token=${token}`;
+    navigator.clipboard.writeText(link).then(()=>{ setCopiedId(id); setTimeout(()=>setCopiedId(null),2000); }).catch(()=>{});
+  };
+
+  const deleteProfile = async (id) => {
+    if (!window.confirm('Delete this unclaimed profile and all its seeded data? This cannot be undone.')) return;
+    try {
+      await sql`DELETE FROM ic_recommendations WHERE recommender_id = ${id}`;
+      await sql`DELETE FROM user_profiles WHERE id = ${id} AND is_unclaimed = true`;
+      load();
+    } catch(e) { alert('Delete failed: ' + (e?.message||e)); }
+  };
+
+  const approveOrReject = async (reqId, action) => {
+    const req = claimRequests.find(r=>r.id===reqId);
+    if (!req) return;
+    setReviewingId(reqId);
+    try {
+      if (action === 'approve') {
+        const oldId = req.profile_id;
+        const newId = req.claimer_uid;
+        // Fetch unclaimed profile fields to copy over
+        const unc = await sql`SELECT * FROM user_profiles WHERE id=${oldId} LIMIT 1`;
+        if (!unc[0]) throw new Error('Unclaimed profile not found');
+        const u = unc[0];
+
+        // Atomic migration — update all FK tables then the PK row
+        await sql`UPDATE ic_recommendations  SET recommender_id = ${newId} WHERE recommender_id = ${oldId}`;
+        await sql`UPDATE connections          SET requester_id = ${newId}  WHERE requester_id = ${oldId}`;
+        await sql`UPDATE connections          SET addressee_id = ${newId}  WHERE addressee_id = ${oldId}`;
+        await sql`UPDATE group_members        SET user_id = ${newId}       WHERE user_id = ${oldId}`;
+        await sql`UPDATE notifications        SET user_id = ${newId}       WHERE user_id = ${oldId}`;
+        await sql`UPDATE notifications        SET from_user_id = ${newId}  WHERE from_user_id = ${oldId}`;
+        await sql`UPDATE portfolio_holdings   SET owner_id = ${newId}      WHERE owner_id = ${oldId}`;
+
+        // Transfer username + profile details to creator's real account.
+        // COALESCE: preserve the creator's own username if they set one after login;
+        // otherwise assign the unclaimed profile's username.
+        await sql`
+          UPDATE user_profiles SET
+            username            = COALESCE(user_profiles.username, ${u.username}),
+            bio                 = COALESCE(NULLIF(user_profiles.bio,''), ${u.bio||null}),
+            registration_status = CASE WHEN user_profiles.registration_status IS NULL
+                                       OR user_profiles.registration_status = 'self_directed'
+                                  THEN ${u.registration_status||'self_directed'}
+                                  ELSE user_profiles.registration_status END,
+            sebi_approval_status = CASE WHEN user_profiles.sebi_approval_status IS NULL
+                                        OR user_profiles.sebi_approval_status = 'not_applied'
+                                   THEN ${u.sebi_approval_status||'not_applied'}
+                                   ELSE user_profiles.sebi_approval_status END
+          WHERE id = ${newId}
+        `;
+
+        // Nullify unclaimed profile's username so it doesn't conflict, mark as claimed
+        await sql`
+          UPDATE user_profiles SET
+            username = NULL, claim_status = 'claimed', is_unclaimed = FALSE, claim_token = NULL
+          WHERE id = ${oldId}
+        `;
+
+        // Mark claim request as approved
+        await sql`UPDATE claim_requests SET status='approved', reviewed_at=NOW(), reviewed_by=${ME?.id||''}, admin_note=${reviewNote||null} WHERE id=${reqId}`;
+
+        // Send approval email (fire and forget)
+        const emailApi = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
+        fetch(emailApi, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'claim_approved',to_email:req.claimer_email,creator_name:req.claimer_full_name,username:req.profile_username})}).catch(()=>{});
+
+      } else {
+        // Reject: clear claim fields + regenerate token so admin can re-share a fresh link
+        await sql`UPDATE user_profiles SET
+          claim_status='unclaimed', claimed_by_uid=NULL, claimed_at=NULL,
+          claim_token=${crypto.randomUUID().replace(/-/g,'')}
+          WHERE id=${req.profile_id}`;
+        await sql`UPDATE claim_requests SET status='rejected', reviewed_at=NOW(), reviewed_by=${ME?.id||''}, admin_note=${reviewNote||null} WHERE id=${reqId}`;
+        const emailApi = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
+        fetch(emailApi, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'claim_rejected',to_email:req.claimer_email,creator_name:req.claimer_full_name,admin_note:reviewNote||''})}).catch(()=>{});
+      }
+      setReviewNote('');
+      if (onClaimAction) onClaimAction();
+      load();
+    } catch(e) { alert('Action failed: ' + (e?.message||e)); }
+    setReviewingId(null);
+  };
+
+  return (
+    <div>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Admin</div>
+          <div className="page-title">Creator Onboarding</div>
+          <div className="page-sub">Create unclaimed profiles, seed data, and approve creator claims</div>
+        </div>
+        <button className="btn btn-pri" onClick={()=>setShowCreate(true)}><UserPlus size={15}/> Create Profile</button>
+      </div>
+
+      {showCreate && <CreateCreatorModal onClose={()=>setShowCreate(false)} onCreated={()=>{ setShowCreate(false); load(); }}/>}
+
+      {/* ── Pending claim approvals ── */}
+      {claimRequests.length > 0 && (
+        <div className="card" style={{marginBottom:24}}>
+          <div className="card-head" style={{background:'rgba(109,93,245,.06)',color:'var(--accent)',fontWeight:800,fontSize:14,display:'flex',alignItems:'center',gap:8}}>
+            <Bell size={15}/> Pending claim approvals ({claimRequests.length})
+          </div>
+          <div className="card-body" style={{padding:0}}>
+            {claimRequests.map((req,i)=>(
+              <div key={req.id} style={{padding:'14px 18px',borderBottom:i<claimRequests.length-1?'1px solid var(--line)':'none'}}>
+                <div style={{display:'flex',flexWrap:'wrap',gap:12,alignItems:'flex-start',marginBottom:10}}>
+                  <div style={{flex:1,minWidth:200}}>
+                    <div style={{fontWeight:700,fontSize:14}}>{req.claimer_full_name || req.claimer_email}</div>
+                    <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>wants to claim <strong>@{req.profile_username}</strong> · {req.claimer_email}</div>
+                    <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Submitted {new Date(req.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</div>
+                  </div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>window.open(`/#/investor/${req.profile_username}`,'_blank')} title="View profile"><Globe size={13}/> View</button>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                  <input className="inp" placeholder="Admin note (optional)…" value={reviewNote} onChange={e=>setReviewNote(e.target.value)} style={{flex:1,minWidth:160,fontSize:12}}/>
+                  <button className="btn btn-pri btn-sm" onClick={()=>approveOrReject(req.id,'approve')} disabled={reviewingId===req.id} style={{background:'var(--gain)',borderColor:'var(--gain)'}}><Check size={13}/> Approve</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>approveOrReject(req.id,'reject')} disabled={reviewingId===req.id} style={{color:'var(--loss)'}}><X size={13}/> Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Unclaimed profiles list ── */}
+      <div className="card">
+        <div className="card-head" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontWeight:800,fontSize:14}}>Unclaimed profiles ({unclaimed.length})</span>
+          <button className="btn btn-ghost btn-sm" onClick={load}><RefreshCw size={13}/> Refresh</button>
+        </div>
+        <div className="card-body" style={{padding:0}}>
+          {loading ? <div style={{padding:24,textAlign:'center',color:'var(--muted)'}}>Loading…</div>
+          : unclaimed.length === 0 ? <div style={{padding:24,textAlign:'center',color:'var(--muted)',fontSize:13}}>No unclaimed profiles yet. Click "Create Profile" to start.</div>
+          : unclaimed.map((p,i)=>(
+            <div key={p.id} style={{padding:'13px 18px',borderBottom:i<unclaimed.length-1?'1px solid var(--line)':'none',display:'flex',gap:12,alignItems:'flex-start',flexWrap:'wrap'}}>
+              <div className="av" style={{width:36,height:36,fontSize:13,flexShrink:0,background:'var(--grad)'}}>{initialsOf(p.full_name||'?')}</div>
+              <div style={{flex:1,minWidth:160}}>
+                <div style={{fontWeight:700,fontSize:14}}>{p.full_name}</div>
+                <div style={{fontSize:12,color:'var(--muted)'}}>@{p.username} · {p.claim_status==='pending_approval'?<span style={{color:'var(--accent)',fontWeight:600}}>Claim pending review</span>:p.claim_status==='unclaimed'?<span style={{color:'var(--muted)'}}>Awaiting claim</span>:<span>{p.claim_status}</span>}</div>
+                <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Created {new Date(p.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</div>
+              </div>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap',flexShrink:0}}>
+                {p.claim_token && (
+                  <button className="btn btn-ghost btn-sm" onClick={()=>copyLink(p.claim_token,p.id)} title="Copy claim link">
+                    {copiedId===p.id ? <><Check size={12}/> Copied</> : <><Copy size={12}/> Claim link</>}
+                  </button>
+                )}
+                <button className="btn btn-ghost btn-sm" onClick={()=>window.open(`/#/investor/${p.username}`,'_blank')} title="View profile"><Globe size={12}/> View</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>deleteProfile(p.id)} style={{color:'var(--loss)'}} title="Delete"><Trash2 size={12}/></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="note" style={{marginTop:20,fontSize:12,color:'var(--muted)'}}>
+        <strong>Workflow:</strong> 1. Create profile → 2. Seed recommendations via <strong>Seed Data</strong> tab (use the creator's username) → 3. Share claim link → 4. Creator signs up → 5. Approve claim here.
+      </div>
+    </div>
+  );
+}
+
+/* ─── ClaimProfilePage ───────────────────────────────────────────────────────── */
+function ClaimProfilePage({ profile, token, onBack }) {
+  const [step,            setStep]            = useState('preview'); // 'preview' | 'form' | 'success'
+  const [firstName,       setFirstName]       = useState(profile.first_name || '');
+  const [lastName,        setLastName]        = useState(profile.last_name  || '');
+  const [bio,             setBio]             = useState(profile.bio        || '');
+  const [email,           setEmail]           = useState('');
+  const [password,        setPassword]        = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPass,        setShowPass]        = useState(false);
+  const [consentTerms,    setConsentTerms]    = useState(false);
+  const [consentData,     setConsentData]     = useState(false);
+  const [consentSebi,     setConsentSebi]     = useState(false);
+  const [busy,            setBusy]            = useState(false);
+  const [err,             setErr]             = useState('');
+
+  const regLabel = {
+    'sebi_ra': 'SEBI Registered Analyst',
+    'sebi_ria': 'SEBI Registered Investment Advisor',
+    'self_directed': 'Self-directed investor',
+  }[profile.registration_status||'self_directed'] || 'Investor';
+
+  const handleClaim = async () => {
+    setErr('');
+    if (!firstName.trim()) { setErr('First name is required.'); return; }
+    if (!email.trim() || !email.includes('@')) { setErr('Enter a valid email address.'); return; }
+    if (!password || password.length < 8) { setErr('Password must be at least 8 characters.'); return; }
+    if (password !== confirmPassword) { setErr('Passwords do not match.'); return; }
+    if (!consentTerms || !consentData) { setErr('Please accept all required terms to proceed.'); return; }
+    setBusy(true);
+    try {
+      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+
+      // ── 1. Create Firebase account ── (triggers onAuthStateChanged in AuthContext)
+      const cred = await createUserWithEmailAndPassword(primaryAuth, email.trim(), password);
+      const uid = cred.user.uid;
+
+      // ── 2. Write creator's real profile with UNCONDITIONAL first_name override ──
+      // AuthContext's onAuthStateChanged may fire concurrently using email-prefix
+      // as first_name. Using ON CONFLICT DO UPDATE with EXCLUDED (not COALESCE)
+      // ensures our correctly-entered name wins regardless of which INSERT runs first.
+      await sql`
+        INSERT INTO user_profiles (id, email, full_name, first_name, last_name, username, bio, registration_status, is_admin)
+        VALUES (${uid}, ${email.trim()}, ${fullName}, ${firstName.trim()}, ${lastName.trim()||''}, NULL, ${bio.trim()||null}, ${profile.registration_status||'self_directed'}, false)
+        ON CONFLICT (id) DO UPDATE SET
+          full_name  = EXCLUDED.full_name,
+          first_name = EXCLUDED.first_name,
+          last_name  = EXCLUDED.last_name,
+          updated_at = NOW()
+      `;
+
+      // ── 3. Link claimer to unclaimed profile ──
+      await sql`
+        UPDATE user_profiles SET
+          claimed_by_uid = ${uid},
+          claim_status   = 'pending_approval',
+          claimed_at     = NOW(),
+          claim_token    = NULL
+        WHERE claim_token = ${token} AND claim_status = 'unclaimed'
+      `;
+
+      // ── 4. Record the claim request ──
+      await sql`
+        INSERT INTO claim_requests (profile_id, profile_username, profile_full_name, claimer_uid, claimer_email, claimer_full_name, status)
+        SELECT id, username, full_name, ${uid}, ${email.trim()}, ${fullName}, 'pending'
+        FROM user_profiles
+        WHERE claimed_by_uid = ${uid} AND claim_status = 'pending_approval'
+        LIMIT 1
+      `;
+
+      // ── 5. Set Firebase displayName ── (triggers second onAuthStateChanged;
+      //    by now DB has correct data so AuthContext's CASE preserves it)
+      await fbUpdateProfile(cred.user, { displayName: fullName }).catch(()=>{});
+
+      // Fire emails
+      const emailApi = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
+      fetch(emailApi, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'claim_submitted',to_email:email.trim(),creator_name:fullName,profile_name:profile.full_name,username:profile.username})}).catch(()=>{});
+      fetch(emailApi, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'claim_admin_notify',to_email:'admin@myinvestorcircle.com',creator_name:fullName,claimer_email:email.trim(),profile_name:profile.full_name,username:profile.username})}).catch(()=>{});
+
+      localStorage.removeItem('mic_claim_token');
+      setStep('success');
+    } catch(e) {
+      const code = e.code || '';
+      if (code === 'auth/email-already-in-use') setErr('This email is already registered. If this is your account, contact admin@myinvestorcircle.com.');
+      else if (code === 'auth/invalid-email') setErr('Please enter a valid email address.');
+      else if (code === 'auth/weak-password') setErr('Password must be at least 8 characters.');
+      else setErr(e.message || 'Something went wrong. Please try again.');
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',padding:'24px 16px 48px'}}>
+      <div style={{width:'100%',maxWidth:480}}>
+
+        {/* Back link */}
+        <button className="btn btn-ghost btn-sm" style={{marginBottom:20,color:'var(--muted)'}} onClick={onBack}>
+          <ArrowLeft size={14}/> Back
+        </button>
+
+        {step === 'success' ? (
+          <div className="card" style={{padding:'36px 28px',textAlign:'center'}}>
+            <div style={{width:56,height:56,borderRadius:'50%',background:'var(--gain-soft)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}>
+              <Check size={26} color="var(--gain)"/>
+            </div>
+            <div style={{fontWeight:800,fontSize:20,marginBottom:8}}>Claim submitted!</div>
+            <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.6,marginBottom:24}}>
+              Your claim for <strong>@{profile.username}</strong> is now with the myInvestorCircle team for review. You'll receive an email once it's approved — usually within 24 hours.
+            </div>
+            <div className="note" style={{fontSize:12,textAlign:'left'}}>
+              While your claim is pending, you're already logged in. The profile and all its recommendations will become fully public and linked to your account once approved.
+            </div>
+          </div>
+        ) : step === 'preview' ? (
+          <>
+            <div className="card" style={{marginBottom:16,padding:'20px 24px'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:12}}>Profile to claim</div>
+              <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:12}}>
+                <div className="av" style={{width:52,height:52,fontSize:18,flexShrink:0,background:'var(--grad)'}}>{initialsOf(profile.full_name||'?')}</div>
+                <div>
+                  <div style={{fontWeight:800,fontSize:18}}>{profile.full_name}</div>
+                  <div style={{fontSize:13,color:'var(--muted)'}}>@{profile.username}</div>
+                  <div style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{regLabel}</div>
+                </div>
+              </div>
+              {profile.bio && <div style={{fontSize:13,color:'var(--ink)',lineHeight:1.6,marginBottom:12,paddingTop:12,borderTop:'1px solid var(--line)'}}>{profile.bio}</div>}
+              <div className="note" style={{fontSize:12,background:'rgba(109,93,245,.06)',borderColor:'rgba(109,93,245,.3)',color:'var(--ink)'}}>
+                <Info size={13} style={{flexShrink:0,marginTop:1}}/><span>This profile was created for you by the myInvestorCircle team. Claim it to take ownership, update your details, and make it public.</span>
+              </div>
+            </div>
+            <button className="btn btn-pri" style={{width:'100%',justifyContent:'center',padding:'13px',fontSize:15}} onClick={()=>setStep('form')}>
+              <UserPlus size={16}/> Claim this profile
+            </button>
+          </>
+        ) : (
+          <div className="card" style={{padding:'24px'}}>
+            <div style={{fontWeight:800,fontSize:17,marginBottom:4}}>Claim @{profile.username}</div>
+            <div style={{fontSize:13,color:'var(--muted)',marginBottom:20}}>Create your account to take ownership of this profile.</div>
+
+            <div style={{display:'flex',flexDirection:'column',gap:14}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>First name *</label><input className="inp" value={firstName} onChange={e=>setFirstName(e.target.value)} style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
+                <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Last name</label><input className="inp" value={lastName} onChange={e=>setLastName(e.target.value)} style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
+              </div>
+              <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Bio (optional — you can update later)</label><textarea className="inp" value={bio} onChange={e=>setBio(e.target.value)} rows={3} style={{width:'100%',marginTop:4,resize:'vertical',boxSizing:'border-box'}}/></div>
+              <div style={{borderTop:'1px solid var(--line)',paddingTop:14}}>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--muted)',marginBottom:10}}>Your account credentials</div>
+                <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                  <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Your email address *</label><input className="inp" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="your@email.com" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
+                  <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Password * (min 8 characters)</label>
+                    <div style={{position:'relative'}}>
+                      <input className="inp" type={showPass?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Create a password" style={{width:'100%',marginTop:4,boxSizing:'border-box',paddingRight:36}}/>
+                      <button onClick={()=>setShowPass(v=>!v)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',border:'none',background:'none',cursor:'pointer',color:'var(--muted)',padding:0}}>
+                        {showPass ? <EyeOff size={14}/> : <Eye size={14}/>}
+                      </button>
+                    </div>
+                  </div>
+                  <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Confirm password *</label><input className="inp" type={showPass?'text':'password'} value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="Repeat your password" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
+                </div>
+              </div>
+              <div style={{borderTop:'1px solid var(--line)',paddingTop:14,display:'flex',flexDirection:'column',gap:10}}>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--muted)',marginBottom:2}}>Consent & agreements</div>
+                {[
+                  [consentTerms, setConsentTerms, 'I agree to the Terms of Service and Privacy Policy. *'],
+                  [consentData,  setConsentData,  'I consent to myInvestorCircle storing and displaying my investment recommendations. *'],
+                  [consentSebi,  setConsentSebi,  'I confirm all recommendations I post comply with applicable SEBI regulations (if registered) or are for educational purposes only (if non-SEBI).'],
+                ].map(([val,set,label],i)=>(
+                  <label key={i} style={{display:'flex',gap:10,alignItems:'flex-start',cursor:'pointer',fontSize:13,lineHeight:1.5}}>
+                    <input type="checkbox" checked={val} onChange={e=>set(e.target.checked)} style={{marginTop:3,flexShrink:0}}/>
+                    <span style={{color:'var(--ink)'}}>{label}</span>
+                  </label>
+                ))}
+              </div>
+              {err && <div className="note warn" style={{fontSize:12}}>{err}</div>}
+              <div style={{display:'flex',gap:8,flexDirection:'column'}}>
+                <button className="btn btn-pri" onClick={handleClaim} disabled={busy} style={{justifyContent:'center',padding:'12px',fontSize:14}}>
+                  {busy ? 'Submitting claim…' : 'Submit claim'}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setStep('preview')} style={{justifyContent:'center'}}>← Back to profile preview</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
