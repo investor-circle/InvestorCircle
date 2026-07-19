@@ -8841,6 +8841,10 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
   const [thesis,       setThesis]       = useState('');
   const [conviction,   setConviction]   = useState('');
   const [isPublic,     setIsPublic]     = useState(true);
+  // Closed-position fields — for historical recos where the horizon already expired
+  const [exitSignal,   setExitSignal]   = useState(false);
+  const [exitDate,     setExitDate]     = useState('');
+  const [exitPrice,    setExitPrice]    = useState('');
 
   // Queue + status
   const [queue,   setQueue]   = useState([]);
@@ -8878,6 +8882,10 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
     if (!recoPrice || isNaN(+recoPrice) || +recoPrice <= 0) {
       setErr('Enter a valid reco price.'); return;
     }
+    if (exitSignal) {
+      if (!exitDate) { setErr('Exit date is required for closed positions.'); return; }
+      if (!exitPrice || isNaN(+exitPrice) || +exitPrice <= 0) { setErr('Exit / close price is required for closed positions.'); return; }
+    }
     setQueue(q => [...q, {
       _key:       Date.now() + Math.random(),
       ticker: t,  assetName: n,
@@ -8891,11 +8899,15 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
       sector:     (sector && sector !== '— Select sector —') ? sector : null,
       conviction: conviction || null,
       currency,   recoDate,  isPublic,
+      exitSignal,
+      exitDate:   exitSignal ? exitDate : null,
+      exitPrice:  exitSignal ? parseFloat(exitPrice) : null,
     }]);
-    // Clear entry-specific fields; retain contextual ones (date, type, horizon, sector, conviction, currency)
+    // Clear entry-specific fields; retain contextual ones (date, type, horizon, sector, conviction, currency, exitSignal)
     setSelectedInstr(null);
     setTicker('');   setAssetName('');
     setRecoPrice(''); setTargetPrice(''); setStopLoss(''); setThesis('');
+    setExitDate(''); setExitPrice('');
   };
 
   const removeFromQueue = key => setQueue(q => q.filter(r => r._key !== key));
@@ -8907,16 +8919,19 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
     try {
       for (const r of queue) {
         const ts = new Date(r.recoDate + 'T12:00:00').toISOString();
+        const exitTs = r.exitDate ? new Date(r.exitDate + 'T12:00:00').toISOString() : null;
         await sql`
           INSERT INTO ic_recommendations (
             recommender_id, asset_name, ticker, asset_class, exchange,
             recommendation_type, reco_price, target_price, stop_loss,
-            horizon, thesis, sector, conviction, is_public, currency, created_at
+            horizon, thesis, sector, conviction, is_public, currency, created_at,
+            exit_signal, exit_date, current_price
           ) VALUES (
             ${creatorId},    ${r.assetName},  ${r.ticker},    ${r.assetClass}, ${r.exchange},
             ${r.recType},    ${r.recoPrice},  ${r.targetPrice}, ${r.stopLoss},
             ${r.horizon},    ${r.thesis},      ${r.sector},    ${r.conviction},
-            ${r.isPublic},   ${r.currency},    ${ts}
+            ${r.isPublic},   ${r.currency},    ${ts},
+            ${r.exitSignal || false}, ${exitTs}, ${r.exitSignal ? r.exitPrice : null}
           )
         `;
         count++;
@@ -9107,6 +9122,37 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
             </div>
           </label>
 
+          {/* Closed position toggle — for historical recos where the horizon has already expired */}
+          <label style={{display:'flex',alignItems:'flex-start',gap:10,fontSize:13,fontWeight:600,cursor:'pointer',padding:'12px 0 0',borderTop:'1px solid var(--line)',marginTop:4}}>
+            <input type="checkbox" checked={exitSignal} onChange={e=>{ setExitSignal(e.target.checked); if(!e.target.checked){setExitDate('');setExitPrice('');} }} style={{width:16,height:16,accentColor:'var(--loss)',marginTop:1,flexShrink:0}}/>
+            <div>
+              This position is already closed
+              <div style={{fontWeight:400,color:'var(--muted)',fontSize:12,marginTop:2}}>
+                For historical recos where the horizon has already expired. The exit price is used to calculate actual returns in the ICI score — without it, return stays at 0 permanently.
+              </div>
+            </div>
+          </label>
+
+          {/* Exit date + exit price — shown only when position is closed */}
+          {exitSignal && (
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',columnGap:14,marginTop:2,padding:'12px',background:'var(--surface-2)',borderRadius:10,border:'1px solid var(--line)'}}>
+              <div className="field">
+                <label>Exit / close date <span style={{color:'var(--loss)'}}>*</span></label>
+                <input type="date" value={exitDate} onChange={e=>setExitDate(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}/>
+              </div>
+              <div className="field">
+                <label>Exit / close price ({CURRENCY_SYMBOL[currency]||currency}) <span style={{color:'var(--loss)'}}>*</span></label>
+                <input type="number" min="0" step="0.01" value={exitPrice}
+                  onChange={e=>setExitPrice(e.target.value)}
+                  placeholder="0.00"/>
+              </div>
+              <div style={{gridColumn:'1 / -1',fontSize:11,color:'var(--muted)',marginTop:4}}>
+                Return = (exit price − reco price) ÷ reco price × 100. This feeds directly into Hit rate and Median return in the ICI score.
+              </div>
+            </div>
+          )}
+
           {/* Error */}
           {err && <div className="note warn" style={{fontSize:12,marginTop:12}}>{err}</div>}
 
@@ -9136,7 +9182,7 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
                     {queue.map((r,i)=>(
                       <tr key={r._key} style={{borderBottom:i<queue.length-1?'1px solid var(--line)':'none'}}>
                         <td style={{padding:'7px 10px',whiteSpace:'nowrap'}}>{fmtQueueDate(r.recoDate)}</td>
-                        <td style={{padding:'7px 10px',fontWeight:700}}>{r.ticker}</td>
+                        <td style={{padding:'7px 10px',fontWeight:700}}>{r.ticker}{r.exitSignal && <span style={{marginLeft:5,fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:'var(--loss-soft)',color:'var(--loss)'}}>Closed</span>}</td>
                         <td style={{padding:'7px 10px',color:r.recType==='Buy'?'var(--gain)':'var(--loss)'}}>{r.recType}</td>
                         <td style={{padding:'7px 10px',textAlign:'right'}}>{CURRENCY_SYMBOL[r.currency]||''}{r.recoPrice.toLocaleString('en-IN')}</td>
                         <td style={{padding:'7px 10px',textAlign:'right',color:'var(--muted)'}}>{r.targetPrice?`${CURRENCY_SYMBOL[r.currency]||''}${r.targetPrice.toLocaleString('en-IN')}`:'—'}</td>
