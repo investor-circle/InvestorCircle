@@ -9944,7 +9944,8 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
                r.recommender_id as "from", r.conviction, r.created_at,
                up.full_name, up.username
         FROM ic_recommendations r
-        LEFT JOIN user_profiles up ON r.recommender_id = up.id`
+        LEFT JOIN user_profiles up ON r.recommender_id = up.id
+        WHERE (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)`
       .then(rows=>{
         const map={};
         rows.forEach(r=>{
@@ -10109,7 +10110,36 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
                 <button className="btn btn-ghost" onClick={()=>setShowManage(true)}><Upload size={14}/> Upload CAS PDF</button>
               </div>
             </div>
-          ):(
+          ):( isMobile ? (
+            /* ── Mobile: asset card list (keeps scroll, search, filters at top) ── */
+            <div style={{display:'flex',flexDirection:'column',gap:10,padding:'14px 16px'}}>
+              {filteredHoldings.map(h=>(
+                <div key={h.id} onClick={()=>setSelectedTicker(prev=>prev===h.sym?null:h.sym)}
+                  style={{background:'var(--surface)',border:`1px solid ${selectedTicker===h.sym?'var(--accent)':'var(--line)'}`,borderRadius:12,padding:'13px 15px',cursor:'pointer',transition:'border-color .15s'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{fontWeight:800,fontSize:15,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.sym}</div>
+                      <div style={{fontSize:11,color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0,marginLeft:10}}>
+                      <div style={{fontWeight:700,fontSize:14}}>₹{h.value.toLocaleString('en-IN')}</div>
+                      <div style={{fontSize:11,color:h.gain>=0?'var(--gain)':'var(--loss)',fontWeight:600}}>{h.gain>=0?'+':''}{h.gain.toFixed(1)}%</div>
+                    </div>
+                  </div>
+                  {h.community.total>0&&(<div style={{marginBottom:6}}><div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>Community</div><ConsensusBar cons={h.community} width={'100%'} mini/></div>)}
+                  {h.circle.total>0&&(<div style={{marginBottom:6}}><div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>My circle</div><ConsensusBar cons={h.circle} width={'100%'} mini/></div>)}
+                  {h.community.total===0&&h.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No recommendations yet</div>)}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,paddingTop:8,borderTop:'1px solid var(--line)'}}>
+                    <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={e=>{e.stopPropagation();onOpenSecurity(h.sym,h.name);}}><ChevronRight size={13}/> Security Intel</button>
+                    <button style={{border:'none',background:'none',cursor:'pointer',color:'var(--loss)',opacity:.5,padding:4}}
+                      onClick={e=>{e.stopPropagation();setHoldings(p=>p.filter(x=>x.id!==h.id));deleteHolding(h.id);}}
+                      onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.5}><Trash2 size={14}/></button>
+                  </div>
+                </div>
+              ))}
+              {filteredHoldings.length===0&&(<div style={{padding:'32px 16px',textAlign:'center',color:'var(--muted)',fontSize:13}}>No holdings match the current filter.</div>)}
+            </div>
+          ) : (
             <div style={{overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse'}}>
                 <thead>
@@ -10173,7 +10203,7 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
                 </tbody>
               </table>
             </div>
-          )}
+          ) /* end isMobile ternary */ )}
         </div>
 
         {selected&&(
@@ -10446,6 +10476,7 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
         FROM ic_recommendations r
         LEFT JOIN user_profiles up ON r.recommender_id = up.id
         WHERE r.is_public = true
+          AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
         ORDER BY r.created_at DESC`
       .then(rows=>{ setRecos(rows); setLoading(false); })
       .catch(e=>{ console.warn('Market Intel SQL error:',e?.message||e); setLoading(false); });
@@ -10540,6 +10571,36 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
 
       <div style={{display:'grid',gridTemplateColumns:selData&&!isMobile?'1fr 340px':'1fr',gap:16,alignItems:'start'}}>
         <div className="card">
+          {isMobile ? (
+            /* ── Mobile: asset card list ── */
+            <div style={{display:'flex',flexDirection:'column',gap:0}}>
+              {allTickers.slice(0,30).map(t=>(
+                <div key={t.ticker} onClick={()=>setSelectedTicker(prev=>prev===t.ticker?null:t.ticker)}
+                  style={{padding:'13px 16px',borderBottom:'1px solid var(--line)',cursor:'pointer',background:selectedTicker===t.ticker?'var(--accent-soft)':'transparent',transition:'background .12s'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{fontWeight:800,fontSize:14}}>{t.ticker}</div>
+                      <div style={{fontSize:11,color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>
+                      {t.sector&&<div style={{fontSize:10,color:'var(--muted)'}}>{t.sector}</div>}
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0,marginLeft:10}}>
+                      <span style={{fontSize:12,color:t.community.bullPct>=55?'var(--gain)':t.community.bearPct>=55?'var(--loss)':'var(--muted)',fontWeight:700}}>
+                        {t.community.bullPct>=55?'↑ Bullish':t.community.bearPct>=55?'↓ Bearish':'→ Neutral'}
+                      </span>
+                      <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{t.filteredRecos.length} investor{t.filteredRecos.length!==1?'s':''}</div>
+                    </div>
+                  </div>
+                  {t.community.total>0&&(<div style={{marginBottom:4}}><ConsensusBar cons={t.community} width={'100%'} mini/></div>)}
+                  <div style={{display:'flex',justifyContent:'flex-end',marginTop:6}}>
+                    <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={e=>{e.stopPropagation();onOpenSecurity(t.ticker,t.name);}}>
+                      <ChevronRight size={13}/> Security Intel
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {allTickers.length===0&&(<div style={{padding:'32px 16px',textAlign:'center',color:'var(--muted)',fontSize:13}}>No stocks match current filters.</div>)}
+            </div>
+          ) : (
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
               <thead>
@@ -10637,6 +10698,7 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
               </tbody>
             </table>
           </div>
+          ) /* end isMobile ternary */}
         </div>
 
         {selData&&(
@@ -10673,6 +10735,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
         FROM ic_recommendations r
         LEFT JOIN user_profiles up ON r.recommender_id = up.id
         WHERE r.ticker = ${ticker}
+          AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
         ORDER BY r.created_at DESC`
       .then(rows=>{ setRecos(rows); setLoading(false); })
       .catch(()=>setLoading(false));
@@ -10687,7 +10750,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
         <Activity size={36} style={{color:'var(--muted)',marginBottom:14,opacity:.4}}/>
         <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>Select a security to explore</div>
         <div style={{fontSize:14,color:'var(--muted)',marginBottom:20}}>Click any stock in Portfolio Intelligence or Market Intelligence to open its detailed view here.</div>
-        <button className="btn btn-pri" onClick={()=>onOpenSecurity&&null}>Go to Market Intelligence</button>
+        <button className="btn btn-pri" onClick={()=>onOpenSecurity&&onOpenSecurity()}>Go to Market Intelligence</button>
       </div>
     </>
   );
@@ -10741,6 +10804,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
       setAiLoading(false);
     }, 800);
   };
+  const investorMap = {};  // keyed by recommender uid — populated below
   recos.forEach(r=>{
     if (!investorMap[r.from]) investorMap[r.from] = {...r};
   });
