@@ -10113,7 +10113,7 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
           ):( isMobile ? (
             /* ── Mobile: asset card list (keeps scroll, search, filters at top) ── */
             <div style={{display:'flex',flexDirection:'column',gap:10,padding:'14px 16px'}}>
-              {filteredHoldings.map(h=>(
+              {filtered.map(h=>(
                 <div key={h.id} onClick={()=>setSelectedTicker(prev=>prev===h.sym?null:h.sym)}
                   style={{background:'var(--surface)',border:`1px solid ${selectedTicker===h.sym?'var(--accent)':'var(--line)'}`,borderRadius:12,padding:'13px 15px',cursor:'pointer',transition:'border-color .15s'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
@@ -10137,7 +10137,7 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
                   </div>
                 </div>
               ))}
-              {filteredHoldings.length===0&&(<div style={{padding:'32px 16px',textAlign:'center',color:'var(--muted)',fontSize:13}}>No holdings match the current filter.</div>)}
+              {filtered.length===0&&(<div style={{padding:'32px 16px',textAlign:'center',color:'var(--muted)',fontSize:13}}>No holdings match the current filter.</div>)}
             </div>
           ) : (
             <div style={{overflowX:'auto'}}>
@@ -10590,7 +10590,19 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                       <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{t.filteredRecos.length} investor{t.filteredRecos.length!==1?'s':''}</div>
                     </div>
                   </div>
-                  {t.community.total>0&&(<div style={{marginBottom:4}}><ConsensusBar cons={t.community} width={'100%'} mini/></div>)}
+                  {t.community.total>0&&(
+                    <div style={{marginBottom:4}}>
+                      <div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>Community</div>
+                      <ConsensusBar cons={t.community} width={'100%'} mini/>
+                    </div>
+                  )}
+                  {t.circle.total>0&&(
+                    <div style={{marginBottom:4}}>
+                      <div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>My circle</div>
+                      <ConsensusBar cons={t.circle} width={'100%'} mini/>
+                    </div>
+                  )}
+                  {t.community.total===0&&t.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No recommendations yet</div>)}
                   <div style={{display:'flex',justifyContent:'flex-end',marginTop:6}}>
                     <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={e=>{e.stopPropagation();onOpenSecurity(t.ticker,t.name);}}>
                       <ChevronRight size={13}/> Security Intel
