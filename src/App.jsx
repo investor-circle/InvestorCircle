@@ -10753,6 +10753,29 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
       .catch(()=>setLoading(false));
   },[ticker]);
 
+
+  // stats useMemo hoisted above early return to comply with React Rules of Hooks.
+  // (hooks must be called in the same order on every render; early returns violate this)
+  const stats = useMemo(()=>{
+    if (!recos.length) return null;
+    const byMonth = {};
+    // Neon returns timestamp columns as Date objects — must stringify before .slice()
+    const toIso = v => v instanceof Date ? v.toISOString() : String(v||'');
+    recos.forEach(r=>{
+      const mo = toIso(r.created_at).slice(0,7);
+      if (!mo) return;
+      if (!byMonth[mo]) byMonth[mo]={mo,buy:0,sell:0};
+      if (r.recommendation_type==='Buy') byMonth[mo].buy++; else byMonth[mo].sell++;
+    });
+    const months = Object.values(byMonth).sort((a,b)=>a.mo.localeCompare(b.mo));
+    const convMap = {};
+    recos.forEach(r=>{ if(r.conviction) convMap[r.conviction]=(convMap[r.conviction]||0)+1; });
+    const firstDate = recos[recos.length-1]?.created_at;
+    const activeR  = recos;
+    const exitedR  = [];  // status column not in schema
+    return { months, convMap, firstDate, total:recos.length, active:activeR.length, exited:exitedR.length };
+  },[recos]);
+
   if (!ticker) return (
     <>
       <div className="page-head">
@@ -10801,26 +10824,6 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
   const circle       = computeConsensus(circleRecos);
 
   // Stats computation
-  const stats = useMemo(()=>{
-    if (!recos.length) return null;
-    const byMonth = {};
-    // Neon returns timestamp columns as Date objects — must stringify before .slice()
-    const toIso = v => v instanceof Date ? v.toISOString() : String(v||'');
-    recos.forEach(r=>{
-      const mo = toIso(r.created_at).slice(0,7);
-      if (!mo) return;
-      if (!byMonth[mo]) byMonth[mo]={mo,buy:0,sell:0};
-      if (r.recommendation_type==='Buy') byMonth[mo].buy++; else byMonth[mo].sell++;
-    });
-    const months = Object.values(byMonth).sort((a,b)=>a.mo.localeCompare(b.mo));
-    const convMap = {};
-    recos.forEach(r=>{ if(r.conviction) convMap[r.conviction]=(convMap[r.conviction]||0)+1; });
-    const firstDate = recos[recos.length-1]?.created_at;
-    const activeR  = recos;
-    const exitedR  = [];  // status column not in schema
-    return { months, convMap, firstDate, total:recos.length, active:activeR.length, exited:exitedR.length };
-  },[recos]);
-
   // AI summary — deterministic analysis from recommendation data
   const buildAiSummary = () => {
     if (aiSummary || aiLoading || !recos.length) return;
