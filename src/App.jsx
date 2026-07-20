@@ -10756,13 +10756,40 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
   if (!ticker) return (
     <>
       <div className="page-head">
-        <div><div className="eyebrow">Intelligence</div><div className="page-title">Security Intelligence</div></div>
+        <div>
+          <div className="eyebrow">Intelligence</div>
+          <div className="page-title">Security Intelligence</div>
+        </div>
       </div>
-      <div style={{padding:'64px 24px',textAlign:'center'}}>
-        <Activity size={36} style={{color:'var(--muted)',marginBottom:14,opacity:.4}}/>
-        <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>Select a security to explore</div>
-        <div style={{fontSize:14,color:'var(--muted)',marginBottom:20}}>Click any stock in Portfolio Intelligence or Market Intelligence to open its detailed view here.</div>
-        <button className="btn btn-pri" onClick={()=>onOpenSecurity&&onOpenSecurity()}>Go to Market Intelligence</button>
+
+      {/* ── Discovery landing ── */}
+      <div style={{maxWidth:540,margin:'0 auto',padding:'40px 16px 0'}}>
+        {/* Search box — large and prominent */}
+        <div style={{background:'var(--surface)',border:'2px solid var(--accent)',borderRadius:16,padding:'4px 8px 4px 16px',display:'flex',alignItems:'center',gap:10,marginBottom:24,boxShadow:'0 4px 24px rgba(109,93,245,.12)'}}>
+          <Search size={20} color="var(--accent)" style={{flexShrink:0}}/>
+          <div style={{flex:1}}>
+            <InstrumentSearch
+              onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
+              placeholder="Search any stock or ETF — e.g. RELIANCE, HDFC Bank…"
+            />
+          </div>
+        </div>
+
+        {/* Instructional copy */}
+        <div style={{textAlign:'center',padding:'0 8px'}}>
+          <div style={{fontSize:15,fontWeight:700,marginBottom:10,color:'var(--ink)'}}>Discover any security's community intelligence</div>
+          <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.7}}>
+            Type any stock name or ticker above to instantly explore community consensus,
+            investor conviction trends, and who on myInvestorCircle is tracking it —
+            and whether they're bullish or bearish.
+          </div>
+          <div style={{fontSize:12,color:'var(--muted)',marginTop:16,padding:'10px 14px',background:'var(--surface-2)',borderRadius:10,lineHeight:1.6}}>
+            💡 You can also arrive here by clicking the <strong>ChevronRight →</strong> or
+            <strong> Full Page</strong> button on any security in
+            <strong> Portfolio Intelligence</strong> or <strong>Market Intelligence</strong>.
+            Once a security is open, use the search bar above to switch to any other asset.
+          </div>
+        </div>
       </div>
     </>
   );
@@ -10840,7 +10867,21 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
         {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
       </div>
 
-      {/* Consensus header */}
+      {/* ── Switch-security search — compact bar for navigating to another asset ── */}
+      <div style={{
+        display:'flex', alignItems:'center', gap:10,
+        background:'var(--surface-2)', border:'1px solid var(--line)',
+        borderRadius:12, padding:'4px 8px 4px 12px', marginBottom:20,
+        maxWidth: isMobile ? '100%' : 420,
+      }}>
+        <Search size={14} color="var(--muted)" style={{flexShrink:0}}/>
+        <div style={{flex:1,fontSize:13}}>
+          <InstrumentSearch
+            onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
+            placeholder={`Switch security — type any stock or ETF…`}
+          />
+        </div>
+      </div>
       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12,marginBottom:20}}>
         {[['Community Consensus',community,'All Investors on MIC'],['My Circle Consensus',circle,`${circleIds.length} connections`]].map(([label,cons,sub])=>(
           <div key={label} className="card" style={{padding:'20px 22px'}}>
