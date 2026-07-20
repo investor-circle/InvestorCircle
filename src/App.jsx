@@ -10734,8 +10734,56 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
   const [tab, setTab]         = useState('consensus'); // consensus | timeline | investors | stats | ai
   const [aiSummary, setAiSummary] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [investorIcis, setInvestorIcis] = useState({}); // uid → {score,band}
 
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
+
+  // Fetch real ICI scores for all investors when recos loads
+  useEffect(()=>{
+    if (!recos.length || !sql) return;
+    const uids = [...new Set(recos.map(r=>r.from).filter(Boolean))];
+    if (!uids.length) return;
+    sql`
+      SELECT
+        r.recommender_id                                               AS uid,
+        COUNT(*)::int                                                  AS total,
+        EXTRACT(EPOCH FROM (NOW()-MIN(r.created_at)))/(365.25*86400)   AS years_history,
+        COUNT(*) FILTER (WHERE r.exit_signal=true)::int                AS closed,
+        COUNT(*) FILTER (
+          WHERE r.exit_signal=true AND r.current_price > r.reco_price
+            AND r.reco_price > 0
+        )::int                                                         AS wins,
+        COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY
+          CASE WHEN r.exit_signal=true AND r.reco_price > 0
+               THEN (r.current_price - r.reco_price) / r.reco_price * 100
+          END
+        ), 0)                                                          AS median_ret,
+        COALESCE(STDDEV(
+          CASE WHEN r.exit_signal=true AND r.reco_price > 0
+               THEN (r.current_price - r.reco_price) / r.reco_price * 100
+          END
+        ), 0)                                                          AS ret_stddev
+      FROM ic_recommendations r
+      WHERE r.recommender_id = ANY(${uids})
+      GROUP BY r.recommender_id`
+      .then(rows=>{
+        const scores = {};
+        rows.forEach(row=>{
+          const hitPct  = row.closed > 0 ? (row.wins / row.closed * 100) : 0;
+          const riskAdj = Number(row.ret_stddev) > 0 ? Math.max(Number(row.median_ret) / Number(row.ret_stddev), 0) : 0;
+          scores[row.uid] = computeIci({
+            years_history:        Number(row.years_history) || 0,
+            total:                row.total,
+            hit_rate_pct:         hitPct,
+            median_return:        Number(row.median_ret)  || 0,
+            risk_adjusted_return: riskAdj,
+            deleted_count:        0,
+          });
+        });
+        setInvestorIcis(scores);
+      })
+      .catch(()=>{});
+  },[recos]);
 
   useEffect(()=>{
     if (!ticker||!sql) return;
@@ -10909,9 +10957,28 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
       </div>
 
       {/* Tabs */}
-      <div className="seg" style={{marginBottom:16}}>
-        {[['consensus','Consensus'],['timeline','Rec. History'],['investors','Investors'],['stats','Statistics'],['ai','AI Summary']].map(([v,l])=>(
-          <button key={v} className={tab===v?'active':''} onClick={()=>{ setTab(v); if(v==='ai') buildAiSummary(); }}>{l}</button>
+      {/* ── Tabs — prominent pill bar with icons ── */}
+      <div style={{display:'flex',gap:6,marginBottom:20,overflowX:'auto',padding:'2px 0',WebkitOverflowScrolling:'touch'}}>
+        {[
+          ['consensus', 'Consensus',    <Activity size={14}/> ],
+          ['timeline',  'Rec. History', <Clock size={14}/>    ],
+          ['investors', 'Investors',    <Users size={14}/>    ],
+          ['stats',     'Statistics',   <BarChart2 size={14}/>],
+          ['ai',        'AI Summary',   <Sparkles size={14}/>],
+        ].map(([v,l,icon])=>(
+          <button key={v}
+            onClick={()=>{ setTab(v); if(v==='ai') buildAiSummary(); }}
+            style={{
+              display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap',
+              padding:'8px 14px', borderRadius:10, border:'none', cursor:'pointer',
+              fontSize:13, fontWeight:tab===v?700:500,
+              background: tab===v ? 'var(--accent)' : 'var(--surface-2)',
+              color:       tab===v ? '#fff'          : 'var(--muted)',
+              boxShadow:   tab===v ? '0 2px 8px rgba(109,93,245,.3)' : 'none',
+              transition:'background .15s,color .15s,box-shadow .15s',
+              flexShrink: 0,
+            }}
+          >{icon}{l}</button>
         ))}
       </div>
 
@@ -11015,59 +11082,80 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
       {/* Tab: Investors */}
       {tab==='investors'&&(
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
-          {inCircle.length>0&&(
-            <div className="card">
-              <div className="card-head"><Users size={15}/> In My Circle ({inCircle.length})</div>
-              <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10,padding:'12px 16px'}}>
-                {inCircle.map(r=>(
-                  <div key={r.from} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
-                    <div className="av" style={{width:38,height:38,fontSize:13,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontWeight:700,fontSize:14}}>{r.full_name||r.username||'Anonymous'}</div>
-                      {r.username&&<div style={{fontSize:12,color:'var(--muted)'}}>@{r.username}</div>}
-                    </div>
-                    <div style={{textAlign:'center',flexShrink:0}}>
-                      <div style={{fontSize:18,fontWeight:900,color:'var(--accent-ink)'}}>{'—'}</div>
-                      <div style={{fontSize:10,color:'var(--muted)'}}>ICI Score</div>
-                    </div>
-                    <ConvBadge level={r.conviction}/>
-                    <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,
-                      background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
-                      color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)',flexShrink:0}}>
-                      {r.recommendation_type==='Buy'?'BUY':'SELL'}
-                    </span>
-                  </div>
-                ))}
+          {[['In My Circle', inCircle, true], ['Community', notCircle, false]].map(([label, list, isCircle])=>(
+            list.length > 0 && (
+              <div key={label} className="card">
+                <div className="card-head">
+                  {isCircle ? <Users size={15}/> : <Globe size={15}/>} {label} ({list.length})
+                </div>
+                <div className="card-body" style={{display:'flex',flexDirection:'column',gap:0,padding:0}}>
+                  {list.map((r,i)=>{
+                    const ici = investorIcis[r.from];
+                    const iciScore = ici?.score;
+                    const iciBand  = ici?.band;
+                    const bandColor = iciBand==='Strong'?'var(--gain)':iciBand==='Good'?'var(--accent)':iciBand==='Building'?'#f59e0b':'var(--muted)';
+                    const profileUrl = r.username ? `/#/investor/${r.username}` : null;
+                    return (
+                      <div key={r.from} style={{
+                        display:'flex', alignItems:'center', gap:12, padding:'12px 18px',
+                        borderBottom: i < list.length-1 ? '1px solid var(--line)' : 'none',
+                      }}>
+                        {/* Avatar */}
+                        <div className="av" style={{width:40,height:40,fontSize:14,flexShrink:0,background:'var(--grad)',cursor:profileUrl?'pointer':'default'}}
+                          onClick={()=>profileUrl&&(window.location.hash=profileUrl)}>
+                          {initialsOf(r.full_name||r.username||'?')}
+                        </div>
+
+                        {/* Name + handle */}
+                        <div style={{flex:1,minWidth:0}}>
+                          <div
+                            style={{fontWeight:700,fontSize:14,cursor:profileUrl?'pointer':'default',
+                              color:profileUrl?'var(--accent-ink)':'var(--ink)',
+                              textDecoration:profileUrl?'underline':'none',textDecorationColor:'rgba(109,93,245,.3)'}}
+                            onClick={()=>profileUrl&&(window.location.hash=profileUrl)}
+                            title={profileUrl?`View ${r.full_name||r.username}'s profile`:undefined}
+                          >
+                            {r.full_name||r.username||'Anonymous'}
+                          </div>
+                          {r.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{r.username}</div>}
+                        </div>
+
+                        {/* ICI Score */}
+                        <div style={{textAlign:'center',flexShrink:0,minWidth:44}}>
+                          {iciScore !== undefined ? (
+                            <>
+                              <div style={{fontSize:18,fontWeight:900,color:bandColor,lineHeight:1}}>{iciScore}</div>
+                              <div style={{fontSize:9,color:bandColor,fontWeight:700,marginTop:2}}>{iciBand}</div>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{fontSize:18,fontWeight:900,color:'var(--muted)',lineHeight:1}}>—</div>
+                              <div style={{fontSize:9,color:'var(--muted)',marginTop:2}}>ICI</div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Conviction + direction */}
+                        <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
+                          <ConvBadge level={r.conviction}/>
+                          <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,whiteSpace:'nowrap',
+                            background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
+                            color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>
+                            {r.recommendation_type==='Buy'?'BUY':'SELL'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )
+          ))}
+          {investors.length===0&&!loading&&(
+            <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>
+              No investor recommendations for {ticker} yet.
+            </div></div>
           )}
-          {notCircle.length>0&&(
-            <div className="card">
-              <div className="card-head"><Globe size={15}/> Community ({notCircle.length})</div>
-              <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10,padding:'12px 16px'}}>
-                {notCircle.map(r=>(
-                  <div key={r.from} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
-                    <div className="av" style={{width:38,height:38,fontSize:13,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontWeight:700,fontSize:14}}>{r.full_name||r.username||'Anonymous'}</div>
-                      {r.username&&<div style={{fontSize:12,color:'var(--muted)'}}>@{r.username}</div>}
-                    </div>
-                    <div style={{textAlign:'center',flexShrink:0}}>
-                      <div style={{fontSize:18,fontWeight:900,color:'var(--accent-ink)'}}>{'—'}</div>
-                      <div style={{fontSize:10,color:'var(--muted)'}}>ICI</div>
-                    </div>
-                    <ConvBadge level={r.conviction}/>
-                    <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,
-                      background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
-                      color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)',flexShrink:0}}>
-                      {r.recommendation_type==='Buy'?'BUY':'SELL'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {investors.length===0&&!loading&&<div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>No investor recommendations for {ticker} yet.</div></div>}
         </div>
       )}
 
