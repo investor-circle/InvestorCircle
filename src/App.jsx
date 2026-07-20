@@ -10777,8 +10777,10 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
   const stats = useMemo(()=>{
     if (!recos.length) return null;
     const byMonth = {};
+    // Neon returns timestamp columns as Date objects — must stringify before .slice()
+    const toIso = v => v instanceof Date ? v.toISOString() : String(v||'');
     recos.forEach(r=>{
-      const mo = (r.created_at||'').slice(0,7);
+      const mo = toIso(r.created_at).slice(0,7);
       if (!mo) return;
       if (!byMonth[mo]) byMonth[mo]={mo,buy:0,sell:0};
       if (r.recommendation_type==='Buy') byMonth[mo].buy++; else byMonth[mo].sell++;
