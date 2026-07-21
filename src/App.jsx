@@ -4128,7 +4128,7 @@ class ProfileErrorBoundary extends React.Component {
   }
 }
 
-function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, viewerIsAdmin: viewerIsAdminProp=false, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
+function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, viewerIsAdmin=false, viewerForClaim=false, onClaimClick=null, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
   const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -4287,8 +4287,8 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
       // ── ADMIN: bypass restricted view — show full profile with preview banner ──
       // Admin needs to see all seeded recommendations before sharing the claim link.
       // A sticky banner at the top makes the admin context explicit.
-      if (isViewerAdmin) {
-        // fall through to full profile render below — banner injected in profile JSX
+      if (isViewerAdmin || viewerForClaim) {
+        // fall through to full profile render below — respective banner injected there
       } else {
         // ── Non-admin: restricted "unclaimed" page ────────────────────────────
         return (
@@ -4404,6 +4404,37 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
 
     return (
       <>
+        {/* ── Claim invitation banner — for creator visiting via claim link ── */}
+        {isUnclaimed && viewerForClaim && (
+          <div style={{
+            background:'linear-gradient(135deg,#6d5df5 0%,#a855f7 100%)',
+            borderRadius:14, padding:'18px 20px', marginBottom:20,
+          }}>
+            <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+              <div style={{flex:1,minWidth:200}}>
+                <div style={{fontWeight:800,fontSize:16,color:'#fff',marginBottom:4}}>
+                  🎉 Your investor profile is ready to claim
+                </div>
+                <div style={{fontSize:13,color:'rgba(255,255,255,.8)',lineHeight:1.5}}>
+                  This is exactly how your profile will look once claimed.
+                  All seeded recommendations are already linked — claim it to go live.
+                </div>
+              </div>
+              <button
+                onClick={onClaimClick}
+                style={{
+                  background:'#fff', color:'#6d5df5', fontWeight:800,
+                  fontSize:13, padding:'10px 22px', borderRadius:10,
+                  border:'none', cursor:'pointer', flexShrink:0,
+                  boxShadow:'0 4px 12px rgba(0,0,0,.2)', whiteSpace:'nowrap',
+                }}
+              >
+                <UserPlus size={14} style={{verticalAlign:-2,marginRight:7}}/>Claim this profile
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── Admin-only preview banner for unclaimed profiles ── */}
         {isUnclaimed && isViewerAdmin && (
           <div style={{
@@ -4948,7 +4979,8 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
 }
 
 /* ── ProfileEditModal — standalone overlay triggered from the top-nav dropdown ── */
-function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) {
+function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
+                           claimMode=false, claimToken=null, unclaimedProfile=null, onClaimSuccess=null }) {
   const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
   const [firstName,    setFirstName]    = useState(profile?.first_name || '');
   const [lastName,     setLastName]     = useState(profile?.last_name  || '');
@@ -4969,10 +5001,20 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
   const [saving,       setSaving]       = useState(false);
   const [err,          setErr]          = useState('');
   // Username setting — only relevant when username not yet set
-  const [unInput,  setUnInput]  = useState('');
+  const [unInput,  setUnInput]  = useState(claimMode ? (unclaimedProfile?.username || '') : '');
   const [unStatus, setUnStatus] = useState('idle'); // idle|checking|available|taken|invalid
   const [unSaving, setUnSaving] = useState(false);
-  const [unSaved,  setUnSaved]  = useState(!!username);  // true once set (or already set)
+  const [unSaved,  setUnSaved]  = useState(!!username && !claimMode);
+
+  // ── Claim-mode only state ─────────────────────────────────────────────────
+  const [claimEmail,    setClaimEmail]    = useState('');
+  const [claimPass,     setClaimPass]     = useState('');
+  const [claimPass2,    setClaimPass2]    = useState('');
+  const [showClaimPass, setShowClaimPass] = useState(false);
+  const [consentTerms,  setConsentTerms]  = useState(false);
+  const [consentData,   setConsentData]   = useState(false);
+  const [consentSebi,   setConsentSebi]   = useState(false);
+  const [claimBusy,     setClaimBusy]     = useState(false);
 
   useEffect(() => {
     if (!sql) return;
@@ -4982,10 +5024,15 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
       .then(rows => { if (rows[0]) setSebiMsg(rows[0].value); }).catch(() => {});
   }, []);
 
-  // Debounced username availability check
+  // Debounced username availability check.
+  // In claim mode, the unclaimed profile's username is already reserved for this creator —
+  // skip the DB round-trip and mark it available instantly.
   useEffect(() => {
     if (!unInput) { setUnStatus('idle'); return; }
     if (!USERNAME_RE.test(unInput)) { setUnStatus('invalid'); return; }
+    if (claimMode && unInput === unclaimedProfile?.username) {
+      setUnStatus('available'); return; // reserved for this creator via token
+    }
     setUnStatus('checking');
     const t = setTimeout(async () => {
       const ok = await dbCheckUsername(unInput, userId);
@@ -5006,6 +5053,67 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
   };
 
   const isSebi = ['sebi_ra', 'sebi_ria'].includes(regStatus);
+
+  // ── Claim submission (claimMode only) ────────────────────────────────────
+  const handleClaim = async () => {
+    setErr('');
+    const fn = firstName.trim(), ln = lastName.trim();
+    if (!fn)                                   { setErr('First name is required.'); return; }
+    if (unStatus !== 'available')              { setErr('Please set a valid, available username.'); return; }
+    if (!claimEmail.trim()||!claimEmail.includes('@')) { setErr('Enter a valid email address.'); return; }
+    if (!claimPass||claimPass.length<8)        { setErr('Password must be at least 8 characters.'); return; }
+    if (claimPass!==claimPass2)                { setErr('Passwords do not match.'); return; }
+    if (!consentTerms||!consentData)           { setErr('Please accept all required terms.'); return; }
+    setClaimBusy(true);
+    try {
+      const fullName = [fn,ln].filter(Boolean).join(' ');
+      const cred = await createUserWithEmailAndPassword(primaryAuth, claimEmail.trim(), claimPass);
+      const uid  = cred.user.uid;
+
+      // Write creator's real profile (unconditional first_name to beat AuthContext race)
+      await sql`
+        INSERT INTO user_profiles (id,email,full_name,first_name,last_name,username,bio,registration_status,is_admin)
+        VALUES (${uid},${claimEmail.trim()},${fullName},${fn},${ln||''},${unInput},${bio.trim()||null},${regStatus},false)
+        ON CONFLICT (id) DO UPDATE SET
+          full_name=EXCLUDED.full_name, first_name=EXCLUDED.first_name,
+          last_name=EXCLUDED.last_name, username=EXCLUDED.username, updated_at=NOW()`;
+
+      // Link claimer → unclaimed profile (RETURNING prevents double-claim)
+      const link = await sql`
+        UPDATE user_profiles SET
+          claimed_by_uid=${uid}, claim_status='pending_approval',
+          claimed_at=NOW(), claim_token=NULL
+        WHERE claim_token=${claimToken} AND claim_status='unclaimed' RETURNING id`;
+      if (!link?.length) throw new Error('This profile has already been claimed. Contact admin@myinvestorcircle.com.');
+
+      await sql`
+        INSERT INTO claim_requests (profile_id,profile_username,profile_full_name,claimer_uid,claimer_email,claimer_full_name,status)
+        SELECT id,username,full_name,${uid},${claimEmail.trim()},${fullName},'pending'
+        FROM user_profiles WHERE claimed_by_uid=${uid} AND claim_status='pending_approval' LIMIT 1`;
+
+      await fbUpdateProfile(cred.user,{displayName:fullName}).catch(()=>{});
+
+      const api=(import.meta.env.VITE_CAS_API_URL||'https://investor-circle.vercel.app')+'/api/email';
+      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        type:'claim_submitted',to_email:claimEmail.trim(),creator_name:fullName,
+        profile_name:unclaimedProfile?.full_name,username:unInput,
+      })}).catch(()=>{});
+      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        type:'claim_admin_notify',to_email:'admin@myinvestorcircle.com',creator_name:fullName,
+        claimer_email:claimEmail.trim(),profile_name:unclaimedProfile?.full_name,username:unInput,
+      })}).catch(()=>{});
+
+      localStorage.removeItem('mic_claim_token');
+      onClaimSuccess?.();
+    } catch(e) {
+      const c=e.code||'';
+      if(c==='auth/email-already-in-use') setErr('This email is already registered. Contact admin@myinvestorcircle.com.');
+      else if(c==='auth/invalid-email')   setErr('Enter a valid email address.');
+      else if(c==='auth/weak-password')   setErr('Password must be at least 8 characters.');
+      else setErr(e.message||'Something went wrong. Please try again.');
+    }
+    setClaimBusy(false);
+  };
 
   const save = async () => {
     if (!sql || !userId) return;
@@ -5057,7 +5165,7 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
         <div style={{padding:'20px 24px 16px',borderBottom:'1px solid rgba(255,255,255,.08)',
             display:'flex',alignItems:'center',justifyContent:'space-between',
             position:'sticky',top:0,background:'#16182a',zIndex:1,borderRadius:'20px 20px 0 0'}}>
-          <div style={{fontSize:17,fontWeight:800,color:'#fff'}}>Edit Profile</div>
+          <div style={{fontSize:17,fontWeight:800,color:'#fff'}}>{claimMode?'Claim your profile':'Edit Profile'}</div>
           <button onClick={onClose} style={{background:'rgba(255,255,255,.08)',border:'none',
               color:'rgba(255,255,255,.7)',cursor:'pointer',width:32,height:32,borderRadius:8,
               display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -5067,10 +5175,53 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
 
         <div style={{padding:'24px'}}>
 
+          {/* ── Claim-mode only: account credentials ─────────────────── */}
+          {claimMode && (<>
+            <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>
+              Username
+            </div>
+            <div style={{marginBottom:20}}>
+              <input value={unInput} onChange={e=>setUnInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''))}
+                placeholder="Choose a username" style={{...darkInput,borderColor:
+                  unStatus==='available'?'#4ade80':unStatus==='taken'||unStatus==='invalid'?'#f87171':'rgba(255,255,255,.12)'}}/>
+              <div style={{marginTop:6,fontSize:11,color:
+                unStatus==='available'?'#4ade80':unStatus==='taken'||unStatus==='invalid'?'#f87171':'rgba(255,255,255,.4)'}}>
+                {unStatus==='checking'?'Checking…':unStatus==='available'?`✓ @${unInput} is available`
+                 :unStatus==='taken'?'Username already taken — try another'
+                 :unStatus==='invalid'?'5–20 lowercase letters, numbers or _'
+                 :`Your profile will be at /#/investor/${unInput||'username'}`}
+              </div>
+            </div>
+
+            <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>
+              Account credentials
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:20}}>
+              <input type="email" value={claimEmail} onChange={e=>setClaimEmail(e.target.value)}
+                placeholder="Your real email address" style={darkInput}/>
+              <div style={{position:'relative'}}>
+                <input type={showClaimPass?'text':'password'} value={claimPass} onChange={e=>setClaimPass(e.target.value)}
+                  placeholder="Create a password (min. 8 characters)"
+                  style={{...darkInput,paddingRight:38}}/>
+                <button onClick={()=>setShowClaimPass(v=>!v)}
+                  style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,.5)',padding:0}}>
+                  {showClaimPass?<EyeOff size={14}/>:<Eye size={14}/>}
+                </button>
+              </div>
+              <input type={showClaimPass?'text':'password'} value={claimPass2} onChange={e=>setClaimPass2(e.target.value)}
+                placeholder="Confirm password" style={darkInput}/>
+            </div>
+
+            <div style={{height:1,background:'rgba(255,255,255,.08)',marginBottom:20}}/>
+            <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:12}}>
+              Profile details
+            </div>
+          </>)}
+
           {/* Avatar colour */}
-          <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
-              textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Avatar colour</div>
-          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:22}}>
+          {!claimMode && <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
+              textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Avatar colour</div>}
+          {!claimMode && <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:22}}>
             {['#6d5df5','#cf52d8','#15924e','#0ea5b7','#d97706','#e11d48','#2563eb','#64748b'].map(c=>(
               <div key={c} onClick={()=>setAvatarColor(c)} style={{width:32,height:32,borderRadius:9,
                   background:c,cursor:'pointer',boxSizing:'border-box',transition:'.1s',
@@ -5082,7 +5233,7 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
                 display:'flex',alignItems:'center',justifyContent:'center',
                 border:!avatarColor?'2px solid #fff':'2px solid transparent',
                 fontSize:9,color:'#fff',fontWeight:800}}>AUTO</div>
-          </div>
+          </div>}
 
           {/* Name */}
           <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
@@ -5092,8 +5243,8 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
             <input value={lastName}  onChange={e=>setLastName(e.target.value)}  placeholder="Last name"  style={darkInput}/>
           </div>
 
-          {/* Username — settable if not yet set, locked once chosen */}
-          <div style={{marginBottom:20}}>
+          {/* Username — shown in non-claim mode only; claim mode has its own above */}
+          {!claimMode && <div style={{marginBottom:20}}>
             <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
                 textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Username</div>
             {(username || unSaved) ? (
@@ -5132,10 +5283,10 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
                 </div>
               </>
             )}
-          </div>
+          </div>}  {/* end !claimMode username block */}
 
-          {/* Read-only email */}
-          <div style={{marginBottom:20}}>
+          {/* Read-only email — hidden in claim mode (creator enters their own email above) */}
+          {!claimMode && <div style={{marginBottom:20}}>
             <div style={{fontSize:11,color:'rgba(255,255,255,.35)',marginBottom:6,
                 display:'flex',alignItems:'center',gap:4,fontWeight:600}}>
               <Lock size={10}/> Email <span style={{fontWeight:400,fontSize:10}}>(cannot be changed)</span>
@@ -5144,7 +5295,7 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
                 borderRadius:9,padding:'10px 13px',fontSize:13,color:'rgba(255,255,255,.4)',fontFamily:'inherit'}}>
               {profile?.email || <span style={{opacity:.4,fontStyle:'italic'}}>not set</span>}
             </div>
-          </div>
+          </div>}  {/* end !claimMode email block */}
 
           {/* Bio */}
           <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
@@ -5225,14 +5376,36 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose }) 
           {/* Footer */}
           <div style={{display:'flex',gap:10,justifyContent:'flex-end',
               borderTop:'1px solid rgba(255,255,255,.07)',paddingTop:16}}>
+
+            {/* Claim-mode: consent checkboxes above the submit button */}
+            {claimMode && (
+              <div style={{marginBottom:16,display:'flex',flexDirection:'column',gap:10}}>
+                {[
+                  [consentTerms,setConsentTerms,'I agree to the Terms of Service and Privacy Policy *'],
+                  [consentData, setConsentData, 'I consent to myInvestorCircle storing and publicly displaying my investment recommendations *'],
+                  [consentSebi, setConsentSebi, 'My recommendations comply with SEBI regulations (if registered) or are for educational purposes only'],
+                ].map(([val,set,label],i)=>(
+                  <label key={i} style={{display:'flex',gap:10,alignItems:'flex-start',cursor:'pointer',fontSize:12,color:'rgba(255,255,255,.7)',lineHeight:1.5}}>
+                    <input type="checkbox" checked={val} onChange={e=>set(e.target.checked)} style={{marginTop:3,flexShrink:0,accentColor:'#a78bfa'}}/>
+                    {label}
+                  </label>
+                ))}
+              </div>
+            )}
+
             <button onClick={onClose} style={{padding:'10px 20px',borderRadius:10,fontWeight:700,
                 fontSize:14,cursor:'pointer',background:'rgba(255,255,255,.08)',
                 border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontFamily:'var(--font)'}}>
               Cancel
             </button>
-            <button className="btn btn-pri" disabled={saving} onClick={save}
+            <button className="btn btn-pri"
+              disabled={claimMode ? claimBusy : saving}
+              onClick={claimMode ? handleClaim : save}
               style={{padding:'10px 24px',fontSize:14}}>
-              {saving?<><Loader size={14} className="spin"/> Saving…</>:<><Check size={14}/> Save changes</>}
+              {claimMode
+                ? (claimBusy ? <><Loader size={14} className="spin"/> Claiming…</> : <><UserPlus size={14}/> Claim @{unInput||'profile'}</>)
+                : (saving    ? <><Loader size={14} className="spin"/> Saving…</>   : <><Check size={14}/> Save changes</>)
+              }
             </button>
           </div>
         </div>
@@ -9465,294 +9638,66 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
 
 /* ─── ClaimProfilePage ───────────────────────────────────────────────────────── */
 function ClaimProfilePage({ profile, token, onBack }) {
-  // ── Preview state ─────────────────────────────────────────────────────────
-  const [step,         setStep]       = useState('preview'); // 'preview' | 'form' | 'success'
-  const [previewRecos, setPreviewRecos]= useState([]);
-  const [previewLoad,  setPreviewLoad] = useState(true);
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  const [claimDone,      setClaimDone]      = useState(false);
 
-  // Fetch this creator's seeded recommendations for the preview
-  useEffect(()=>{
-    if (!sql) return;
-    sql`SELECT ticker, asset_name, recommendation_type, reco_price, sector, created_at
-        FROM ic_recommendations
-        WHERE recommender_id = ${profile.id}
-        ORDER BY created_at DESC LIMIT 5`
-      .then(rows=>{ setPreviewRecos(rows); setPreviewLoad(false); })
-      .catch(()=>setPreviewLoad(false));
-  }, []);
-
-  // ── Form state (pre-filled from unclaimed profile) ───────────────────────
-  const [firstName,       setFirstName]       = useState(profile.first_name || '');
-  const [lastName,        setLastName]        = useState(profile.last_name  || '');
-  const [bio,             setBio]             = useState(profile.bio        || '');
-  const [email,           setEmail]           = useState('');
-  const [password,        setPassword]        = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPass,        setShowPass]        = useState(false);
-  const [consentTerms,    setConsentTerms]    = useState(false);
-  const [consentData,     setConsentData]     = useState(false);
-  const [consentSebi,     setConsentSebi]     = useState(false);
-  const [busy,            setBusy]            = useState(false);
-  const [err,             setErr]             = useState('');
-
-  const regLabel = {
-    sebi_ra:'SEBI Registered Analyst', sebi_ria:'SEBI Registered Investment Advisor',
-    self_directed:'Self-directed investor',
-  }[profile.registration_status||'self_directed'] || 'Investor';
-
-  // ── Claim submission ──────────────────────────────────────────────────────
-  const handleClaim = async () => {
-    setErr('');
-    if (!firstName.trim())                          { setErr('First name is required.'); return; }
-    if (!email.trim()||!email.includes('@'))        { setErr('Enter a valid email address.'); return; }
-    if (!password||password.length<8)              { setErr('Password must be at least 8 characters.'); return; }
-    if (password!==confirmPassword)                { setErr('Passwords do not match.'); return; }
-    if (!consentTerms||!consentData)               { setErr('Please accept all required terms to proceed.'); return; }
-    setBusy(true);
-    try {
-      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
-      const cred     = await createUserWithEmailAndPassword(primaryAuth, email.trim(), password);
-      const uid      = cred.user.uid;
-
-      // Write creator's real profile immediately with unconditional override
-      await sql`
-        INSERT INTO user_profiles (id,email,full_name,first_name,last_name,username,bio,registration_status,is_admin)
-        VALUES (${uid},${email.trim()},${fullName},${firstName.trim()},${lastName.trim()||''},NULL,${bio.trim()||null},${profile.registration_status||'self_directed'},false)
-        ON CONFLICT (id) DO UPDATE SET
-          full_name=EXCLUDED.full_name, first_name=EXCLUDED.first_name,
-          last_name=EXCLUDED.last_name, updated_at=NOW()`;
-
-      // Link claimer to unclaimed profile (RETURNING ensures no double-claim)
-      const linkRes = await sql`
-        UPDATE user_profiles SET
-          claimed_by_uid=${uid}, claim_status='pending_approval',
-          claimed_at=NOW(), claim_token=NULL
-        WHERE claim_token=${token} AND claim_status='unclaimed' RETURNING id`;
-
-      if (!linkRes?.length) throw Object.assign(
-        new Error('This profile has already been claimed. Contact admin@myinvestorcircle.com.'),
-        {code:'already_claimed'}
-      );
-
-      // Insert claim request for admin review
-      await sql`
-        INSERT INTO claim_requests (profile_id,profile_username,profile_full_name,claimer_uid,claimer_email,claimer_full_name,status)
-        SELECT id,username,full_name,${uid},${email.trim()},${fullName},'pending'
-        FROM user_profiles WHERE claimed_by_uid=${uid} AND claim_status='pending_approval' LIMIT 1`;
-
-      await fbUpdateProfile(cred.user,{displayName:fullName}).catch(()=>{});
-
-      const api=(import.meta.env.VITE_CAS_API_URL||'https://investor-circle.vercel.app')+'/api/email';
-      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({type:'claim_submitted',to_email:email.trim(),creator_name:fullName,profile_name:profile.full_name,username:profile.username})
-      }).catch(()=>{});
-      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({type:'claim_admin_notify',to_email:'admin@myinvestorcircle.com',creator_name:fullName,claimer_email:email.trim(),profile_name:profile.full_name,username:profile.username})
-      }).catch(()=>{});
-
-      localStorage.removeItem('mic_claim_token');
-      setStep('success');
-    } catch(e) {
-      const c=e.code||'';
-      if (c==='already_claimed')           setErr(e.message);
-      else if (c==='auth/email-already-in-use') setErr('This email is already registered. Contact admin@myinvestorcircle.com.');
-      else if (c==='auth/invalid-email')        setErr('Enter a valid email address.');
-      else if (c==='auth/weak-password')        setErr('Password must be at least 8 characters.');
-      else                                      setErr(e.message||'Something went wrong. Please try again.');
-    }
-    setBusy(false);
-  };
-
-  // ── Shared top bar ────────────────────────────────────────────────────────
-  const TopBar = ({right}) => (
-    <div style={{background:'var(--side)',padding:'12px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
-      <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <div style={{width:32,height:32,borderRadius:10,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:12,color:'#fff',letterSpacing:'.02em'}}>mic</div>
-        <div>
-          <div style={{fontWeight:700,fontSize:14,color:'#fff'}}>myInvestorCircle</div>
-          <div style={{fontSize:10,color:'rgba(255,255,255,.5)'}}>SOCIAL INVESTING</div>
+  // ── Success state (shown until Firebase auth re-render takes over) ────────
+  if (claimDone) return (
+    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div className="card" style={{maxWidth:460,width:'100%',padding:'36px 28px',textAlign:'center'}}>
+        <div style={{width:60,height:60,borderRadius:'50%',background:'var(--gain-soft)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}>
+          <Check size={28} color="var(--gain)"/>
         </div>
-      </div>
-      {right}
-    </div>
-  );
-
-  // ── Success state ─────────────────────────────────────────────────────────
-  if (step==='success') return (
-    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',flexDirection:'column'}}>
-      <TopBar right={null}/>
-      <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'24px 16px'}}>
-        <div className="card" style={{maxWidth:460,width:'100%',padding:'36px 28px',textAlign:'center'}}>
-          <div style={{width:60,height:60,borderRadius:'50%',background:'var(--gain-soft)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}>
-            <Check size={28} color="var(--gain)"/>
-          </div>
-          <div style={{fontWeight:800,fontSize:22,marginBottom:8}}>Claim submitted 🎉</div>
-          <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.65,marginBottom:20}}>
-            Your claim for <strong>@{profile.username}</strong> is with the myInvestorCircle team for review.
-            You'll get a confirmation email once it's approved — usually within 24 hours.
-          </div>
-          <div className="note" style={{fontSize:12,textAlign:'left'}}>
-            You're already logged in. Your profile and all its recommendations will become publicly
-            visible once the admin approves your claim.
-          </div>
+        <div style={{fontWeight:800,fontSize:22,marginBottom:8}}>Claim submitted! 🎉</div>
+        <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.65,marginBottom:20}}>
+          Your claim for <strong>@{profile.username}</strong> is with our team for review.
+          You'll receive a confirmation email once approved — usually within 24 hours.
+        </div>
+        <div className="note" style={{fontSize:12,textAlign:'left'}}>
+          You're now logged in. Your profile and all its recommendations will go live
+          once the admin approves your claim.
         </div>
       </div>
     </div>
   );
 
-  // ── Form step — sign-up to claim ──────────────────────────────────────────
-  if (step==='form') return (
-    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',flexDirection:'column'}}>
-      <TopBar right={
-        <button className="btn btn-ghost btn-sm" style={{color:'rgba(255,255,255,.7)',borderColor:'rgba(255,255,255,.25)'}}
-          onClick={()=>setStep('preview')}>
-          <ArrowLeft size={14}/> Back to profile
-        </button>
-      }/>
-
-      <div style={{maxWidth:480,margin:'24px auto',padding:'0 16px',width:'100%'}}>
-        <div className="card" style={{padding:'24px'}}>
-          <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>Claim @{profile.username}</div>
-          <div style={{fontSize:13,color:'var(--muted)',marginBottom:20}}>Create your account to take ownership of this profile. All seeded recommendations will be linked to you.</div>
-
-          <div style={{display:'flex',flexDirection:'column',gap:14}}>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-              <div className="field"><label>First name <span style={{color:'var(--loss)'}}>*</span></label>
-                <input value={firstName} onChange={e=>setFirstName(e.target.value)}/></div>
-              <div className="field"><label>Last name</label>
-                <input value={lastName} onChange={e=>setLastName(e.target.value)}/></div>
-            </div>
-            <div className="field"><label>Bio <span className="muted small">(optional — update later)</span></label>
-              <textarea rows={3} value={bio} onChange={e=>setBio(e.target.value)}/></div>
-
-            <div style={{borderTop:'1px solid var(--line)',paddingTop:14}}>
-              <div style={{fontSize:12,fontWeight:700,color:'var(--muted)',marginBottom:10}}>Your login credentials</div>
-              <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                <div className="field"><label>Email <span style={{color:'var(--loss)'}}>*</span></label>
-                  <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="your@email.com"/></div>
-                <div className="field"><label>Password <span className="muted small">(min. 8 characters)</span> <span style={{color:'var(--loss)'}}>*</span></label>
-                  <div style={{position:'relative'}}>
-                    <input type={showPass?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Create a password" style={{paddingRight:36}}/>
-                    <button onClick={()=>setShowPass(v=>!v)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',border:'none',background:'none',cursor:'pointer',color:'var(--muted)',padding:0}}>
-                      {showPass?<EyeOff size={14}/>:<Eye size={14}/>}
-                    </button>
-                  </div>
-                </div>
-                <div className="field"><label>Confirm password <span style={{color:'var(--loss)'}}>*</span></label>
-                  <input type={showPass?'text':'password'} value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="Repeat password"/></div>
-              </div>
-            </div>
-
-            <div style={{borderTop:'1px solid var(--line)',paddingTop:14,display:'flex',flexDirection:'column',gap:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:'var(--muted)',marginBottom:2}}>Consent & agreements</div>
-              {[
-                [consentTerms,setConsentTerms,'I agree to the Terms of Service and Privacy Policy *'],
-                [consentData, setConsentData, 'I consent to myInvestorCircle storing and publicly displaying my investment recommendations *'],
-                [consentSebi, setConsentSebi, 'My recommendations comply with applicable SEBI regulations (if registered) or are for educational purposes only'],
-              ].map(([val,set,label],i)=>(
-                <label key={i} style={{display:'flex',gap:10,alignItems:'flex-start',cursor:'pointer',fontSize:13,lineHeight:1.5}}>
-                  <input type="checkbox" checked={val} onChange={e=>set(e.target.checked)} style={{marginTop:3,flexShrink:0}}/>
-                  <span>{label}</span>
-                </label>
-              ))}
-            </div>
-
-            {err&&<div className="note warn" style={{fontSize:12}}>{err}</div>}
-            <button className="btn btn-pri" onClick={handleClaim} disabled={busy}
-              style={{justifyContent:'center',padding:'12px',fontSize:14}}>
-              {busy?'Submitting claim…':<><UserPlus size={15}/> Claim @{profile.username}</>}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  // ── Preview step — show profile + seeded recos, then invite to claim ──────
   return (
-    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',flexDirection:'column'}}>
-      <TopBar right={
-        <button className="btn btn-ghost btn-sm" style={{color:'rgba(255,255,255,.7)',borderColor:'rgba(255,255,255,.25)'}} onClick={onBack}>← Back</button>
-      }/>
+    <>
+      {/* Full public profile page — same UI the creator will see once live */}
+      <PublicProfilePage
+        username={profile.username}
+        viewerUser={null}
+        viewerConnections={[]}
+        viewerIsAdmin={false}
+        viewerForClaim={true}
+        onClaimClick={()=>setShowClaimModal(true)}
+        mode="standalone"
+        onBack={onBack}
+        onRequestConnect={()=>{}}
+      />
 
-      {/* Gradient invitation banner */}
-      <div style={{background:'linear-gradient(135deg,#6d5df5 0%,#a855f7 100%)',padding:'28px 20px',textAlign:'center',flexShrink:0}}>
-        <div style={{fontSize:11,fontWeight:700,letterSpacing:'.08em',color:'rgba(255,255,255,.65)',marginBottom:6}}>INVITATION</div>
-        <div style={{fontWeight:800,fontSize:21,color:'#fff',marginBottom:8}}>Your investor profile is ready 🎉</div>
-        <div style={{fontSize:13,color:'rgba(255,255,255,.8)',lineHeight:1.55,marginBottom:20,maxWidth:400,margin:'0 auto 20px'}}>
-          myInvestorCircle created a profile for you based on your track record.
-          Claim it to make it yours, update your details, and share your investment insights.
-        </div>
-        <button
-          style={{background:'#fff',color:'var(--accent)',fontWeight:800,fontSize:14,
-            padding:'12px 28px',borderRadius:12,border:'none',cursor:'pointer',
-            boxShadow:'0 4px 16px rgba(0,0,0,.2)',display:'inline-flex',alignItems:'center',gap:8}}
-          onClick={()=>setStep('form')}>
-          <UserPlus size={15}/> Claim this profile →
-        </button>
-      </div>
-
-      {/* Profile content */}
-      <div style={{maxWidth:560,margin:'0 auto',padding:'20px 16px',width:'100%'}}>
-
-        {/* Profile card */}
-        <div className="card" style={{padding:'20px 22px',marginBottom:14}}>
-          <div style={{display:'flex',alignItems:'center',gap:14,marginBottom: profile.bio ? 14 : 0}}>
-            <div className="av" style={{width:54,height:54,fontSize:19,flexShrink:0,background:'var(--grad)'}}>{initialsOf(profile.full_name||'?')}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:800,fontSize:19}}>{profile.full_name}</div>
-              <div style={{fontSize:13,color:'var(--muted)',marginTop:2}}>@{profile.username}</div>
-              <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{regLabel}</div>
-            </div>
-          </div>
-          {profile.bio&&<div style={{fontSize:13,color:'var(--ink)',lineHeight:1.65,paddingTop:14,borderTop:'1px solid var(--line)'}}>{profile.bio}</div>}
-        </div>
-
-        {/* Seeded recommendations preview */}
-        {previewLoad ? (
-          <div style={{textAlign:'center',padding:'20px',color:'var(--muted)',fontSize:13}}>
-            <Loader size={16} className="spin" style={{marginRight:8}}/>Loading seeded recommendations…
-          </div>
-        ) : previewRecos.length>0 ? (
-          <div className="card" style={{marginBottom:14}}>
-            <div className="card-head" style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.05em'}}>
-              SEEDED RECOMMENDATIONS WAITING FOR YOU
-            </div>
-            <div className="card-body" style={{padding:0}}>
-              {previewRecos.map((r,i)=>(
-                <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'11px 16px',
-                  borderBottom:i<previewRecos.length-1?'1px solid var(--line)':'none'}}>
-                  <div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
-                    fontWeight:800,fontSize:12,
-                    background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
-                    color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>
-                    {r.recommendation_type==='Buy'?'BUY':'SELL'}
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.ticker}</div>
-                    <div style={{fontSize:11,color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.asset_name}{r.sector?` · ${r.sector}`:''}</div>
-                  </div>
-                  {r.reco_price&&<div style={{fontSize:12,fontWeight:600,color:'var(--muted)',flexShrink:0}}>₹{Number(r.reco_price).toLocaleString('en-IN')}</div>}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {/* Bottom CTA */}
-        <div style={{paddingBottom:32}}>
-          <button className="btn btn-pri"
-            style={{width:'100%',justifyContent:'center',padding:'13px',fontSize:14}}
-            onClick={()=>setStep('form')}>
-            <UserPlus size={15}/> Claim this profile
-          </button>
-          <div style={{fontSize:12,color:'var(--muted)',textAlign:'center',marginTop:10,lineHeight:1.55}}>
-            After claiming, your profile goes to admin review before going public.
-            You'll receive an email once approved.
-          </div>
-        </div>
-      </div>
-    </div>
+      {/* Claim modal — same EditProfile modal extended with credentials + consent */}
+      {showClaimModal && (
+        <ProfileEditModal
+          profile={{
+            first_name:           profile.first_name,
+            last_name:            profile.last_name,
+            bio:                  profile.bio,
+            registration_status:  profile.registration_status,
+            avatar_color:         '',
+            email:                '',
+          }}
+          userId={null}
+          username={null}
+          patchProfile={null}
+          claimMode={true}
+          claimToken={token}
+          unclaimedProfile={profile}
+          onClaimSuccess={()=>{ setShowClaimModal(false); setClaimDone(true); }}
+          onClose={()=>setShowClaimModal(false)}
+        />
+      )}
+    </>
   );
 }
 
