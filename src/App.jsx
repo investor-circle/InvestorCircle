@@ -702,21 +702,29 @@ export default function App() {
     }
   };
 
-  // ── Capture referral code from URL on first load ─────────────────────────────
+  // ── Capture referral + claim tokens from URL on first load ──────────────────
+  // claim_token is read synchronously in the useState initializer below so
+  // ClaimProfilePage renders on the first paint without a LoginPage flash.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get('ref');
-    const ct  = params.get('claim_token');
+    // claim_token already read synchronously — just clean the URL
     if (ref) localStorage.setItem('mic_ref', ref.toLowerCase().trim());
-    if (ct)  localStorage.setItem('mic_claim_token', ct);
-    if (ref || ct) {
+    if (ref || params.get('claim_token')) {
       const clean = window.location.pathname + window.location.hash;
       window.history.replaceState({}, '', clean);
     }
   }, []);
 
   // ── Claim state: token + profile for unclaimed-creator claim flow ─────────────
-  const [claimToken,    setClaimToken]    = useState(() => localStorage.getItem('mic_claim_token') || null);
+  // Reads URL params synchronously so the token is available on first render —
+  // avoids the race where the useEffect fires after the initial render shows LoginPage.
+  const [claimToken, setClaimToken] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ct = params.get('claim_token');
+    if (ct) { localStorage.setItem('mic_claim_token', ct); return ct; }
+    return localStorage.getItem('mic_claim_token') || null;
+  });
   const [claimProfile,  setClaimProfile]  = useState(null);
   const [claimRequests, setClaimRequests] = useState([]);
 
@@ -9457,7 +9465,23 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
 
 /* ─── ClaimProfilePage ───────────────────────────────────────────────────────── */
 function ClaimProfilePage({ profile, token, onBack }) {
-  const [step,            setStep]            = useState('preview'); // 'preview' | 'form' | 'success'
+  // ── Preview state ─────────────────────────────────────────────────────────
+  const [step,         setStep]       = useState('preview'); // 'preview' | 'form' | 'success'
+  const [previewRecos, setPreviewRecos]= useState([]);
+  const [previewLoad,  setPreviewLoad] = useState(true);
+
+  // Fetch this creator's seeded recommendations for the preview
+  useEffect(()=>{
+    if (!sql) return;
+    sql`SELECT ticker, asset_name, recommendation_type, reco_price, sector, created_at
+        FROM ic_recommendations
+        WHERE recommender_id = ${profile.id}
+        ORDER BY created_at DESC LIMIT 5`
+      .then(rows=>{ setPreviewRecos(rows); setPreviewLoad(false); })
+      .catch(()=>setPreviewLoad(false));
+  }, []);
+
+  // ── Form state (pre-filled from unclaimed profile) ───────────────────────
   const [firstName,       setFirstName]       = useState(profile.first_name || '');
   const [lastName,        setLastName]        = useState(profile.last_name  || '');
   const [bio,             setBio]             = useState(profile.bio        || '');
@@ -9472,182 +9496,266 @@ function ClaimProfilePage({ profile, token, onBack }) {
   const [err,             setErr]             = useState('');
 
   const regLabel = {
-    'sebi_ra': 'SEBI Registered Analyst',
-    'sebi_ria': 'SEBI Registered Investment Advisor',
-    'self_directed': 'Self-directed investor',
+    sebi_ra:'SEBI Registered Analyst', sebi_ria:'SEBI Registered Investment Advisor',
+    self_directed:'Self-directed investor',
   }[profile.registration_status||'self_directed'] || 'Investor';
 
+  // ── Claim submission ──────────────────────────────────────────────────────
   const handleClaim = async () => {
     setErr('');
-    if (!firstName.trim()) { setErr('First name is required.'); return; }
-    if (!email.trim() || !email.includes('@')) { setErr('Enter a valid email address.'); return; }
-    if (!password || password.length < 8) { setErr('Password must be at least 8 characters.'); return; }
-    if (password !== confirmPassword) { setErr('Passwords do not match.'); return; }
-    if (!consentTerms || !consentData) { setErr('Please accept all required terms to proceed.'); return; }
+    if (!firstName.trim())                          { setErr('First name is required.'); return; }
+    if (!email.trim()||!email.includes('@'))        { setErr('Enter a valid email address.'); return; }
+    if (!password||password.length<8)              { setErr('Password must be at least 8 characters.'); return; }
+    if (password!==confirmPassword)                { setErr('Passwords do not match.'); return; }
+    if (!consentTerms||!consentData)               { setErr('Please accept all required terms to proceed.'); return; }
     setBusy(true);
     try {
       const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+      const cred     = await createUserWithEmailAndPassword(primaryAuth, email.trim(), password);
+      const uid      = cred.user.uid;
 
-      // ── 1. Create Firebase account ── (triggers onAuthStateChanged in AuthContext)
-      const cred = await createUserWithEmailAndPassword(primaryAuth, email.trim(), password);
-      const uid = cred.user.uid;
-
-      // ── 2. Write creator's real profile with UNCONDITIONAL first_name override ──
-      // AuthContext's onAuthStateChanged may fire concurrently using email-prefix
-      // as first_name. Using ON CONFLICT DO UPDATE with EXCLUDED (not COALESCE)
-      // ensures our correctly-entered name wins regardless of which INSERT runs first.
+      // Write creator's real profile immediately with unconditional override
       await sql`
-        INSERT INTO user_profiles (id, email, full_name, first_name, last_name, username, bio, registration_status, is_admin)
-        VALUES (${uid}, ${email.trim()}, ${fullName}, ${firstName.trim()}, ${lastName.trim()||''}, NULL, ${bio.trim()||null}, ${profile.registration_status||'self_directed'}, false)
+        INSERT INTO user_profiles (id,email,full_name,first_name,last_name,username,bio,registration_status,is_admin)
+        VALUES (${uid},${email.trim()},${fullName},${firstName.trim()},${lastName.trim()||''},NULL,${bio.trim()||null},${profile.registration_status||'self_directed'},false)
         ON CONFLICT (id) DO UPDATE SET
-          full_name  = EXCLUDED.full_name,
-          first_name = EXCLUDED.first_name,
-          last_name  = EXCLUDED.last_name,
-          updated_at = NOW()
-      `;
+          full_name=EXCLUDED.full_name, first_name=EXCLUDED.first_name,
+          last_name=EXCLUDED.last_name, updated_at=NOW()`;
 
-      // ── 3. Link claimer to unclaimed profile.
-      // RETURNING id ensures we know the UPDATE matched — if 0 rows returned,
-      // someone else already claimed this profile (race condition).
-      const linkResult = await sql`
+      // Link claimer to unclaimed profile (RETURNING ensures no double-claim)
+      const linkRes = await sql`
         UPDATE user_profiles SET
-          claimed_by_uid = ${uid},
-          claim_status   = 'pending_approval',
-          claimed_at     = NOW(),
-          claim_token    = NULL
-        WHERE claim_token = ${token} AND claim_status = 'unclaimed'
-        RETURNING id
-      `;
-      if (!linkResult || !linkResult.length) {
-        throw Object.assign(new Error('This profile has already been claimed. Please contact admin@myinvestorcircle.com.'), { code: 'already_claimed' });
-      }
+          claimed_by_uid=${uid}, claim_status='pending_approval',
+          claimed_at=NOW(), claim_token=NULL
+        WHERE claim_token=${token} AND claim_status='unclaimed' RETURNING id`;
 
-      // ── 4. Record the claim request ──
+      if (!linkRes?.length) throw Object.assign(
+        new Error('This profile has already been claimed. Contact admin@myinvestorcircle.com.'),
+        {code:'already_claimed'}
+      );
+
+      // Insert claim request for admin review
       await sql`
-        INSERT INTO claim_requests (profile_id, profile_username, profile_full_name, claimer_uid, claimer_email, claimer_full_name, status)
-        SELECT id, username, full_name, ${uid}, ${email.trim()}, ${fullName}, 'pending'
-        FROM user_profiles
-        WHERE claimed_by_uid = ${uid} AND claim_status = 'pending_approval'
-        LIMIT 1
-      `;
+        INSERT INTO claim_requests (profile_id,profile_username,profile_full_name,claimer_uid,claimer_email,claimer_full_name,status)
+        SELECT id,username,full_name,${uid},${email.trim()},${fullName},'pending'
+        FROM user_profiles WHERE claimed_by_uid=${uid} AND claim_status='pending_approval' LIMIT 1`;
 
-      // ── 5. Set Firebase displayName ── (triggers second onAuthStateChanged;
-      //    by now DB has correct data so AuthContext's CASE preserves it)
-      await fbUpdateProfile(cred.user, { displayName: fullName }).catch(()=>{});
+      await fbUpdateProfile(cred.user,{displayName:fullName}).catch(()=>{});
 
-      // Fire emails
-      const emailApi = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
-      fetch(emailApi, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'claim_submitted',to_email:email.trim(),creator_name:fullName,profile_name:profile.full_name,username:profile.username})}).catch(()=>{});
-      fetch(emailApi, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'claim_admin_notify',to_email:'admin@myinvestorcircle.com',creator_name:fullName,claimer_email:email.trim(),profile_name:profile.full_name,username:profile.username})}).catch(()=>{});
+      const api=(import.meta.env.VITE_CAS_API_URL||'https://investor-circle.vercel.app')+'/api/email';
+      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({type:'claim_submitted',to_email:email.trim(),creator_name:fullName,profile_name:profile.full_name,username:profile.username})
+      }).catch(()=>{});
+      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({type:'claim_admin_notify',to_email:'admin@myinvestorcircle.com',creator_name:fullName,claimer_email:email.trim(),profile_name:profile.full_name,username:profile.username})
+      }).catch(()=>{});
 
       localStorage.removeItem('mic_claim_token');
       setStep('success');
     } catch(e) {
-      const code = e.code || '';
-      if (code === 'auth/email-already-in-use') setErr('This email is already registered. If this is your account, contact admin@myinvestorcircle.com.');
-      else if (code === 'auth/invalid-email') setErr('Please enter a valid email address.');
-      else if (code === 'auth/weak-password') setErr('Password must be at least 8 characters.');
-      else setErr(e.message || 'Something went wrong. Please try again.');
+      const c=e.code||'';
+      if (c==='already_claimed')           setErr(e.message);
+      else if (c==='auth/email-already-in-use') setErr('This email is already registered. Contact admin@myinvestorcircle.com.');
+      else if (c==='auth/invalid-email')        setErr('Enter a valid email address.');
+      else if (c==='auth/weak-password')        setErr('Password must be at least 8 characters.');
+      else                                      setErr(e.message||'Something went wrong. Please try again.');
     }
     setBusy(false);
   };
 
-  return (
-    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',padding:'24px 16px 48px'}}>
-      <div style={{width:'100%',maxWidth:480}}>
+  // ── Shared top bar ────────────────────────────────────────────────────────
+  const TopBar = ({right}) => (
+    <div style={{background:'var(--side)',padding:'12px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div style={{width:32,height:32,borderRadius:10,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:12,color:'#fff',letterSpacing:'.02em'}}>mic</div>
+        <div>
+          <div style={{fontWeight:700,fontSize:14,color:'#fff'}}>myInvestorCircle</div>
+          <div style={{fontSize:10,color:'rgba(255,255,255,.5)'}}>SOCIAL INVESTING</div>
+        </div>
+      </div>
+      {right}
+    </div>
+  );
 
-        {/* Back link */}
-        <button className="btn btn-ghost btn-sm" style={{marginBottom:20,color:'var(--muted)'}} onClick={onBack}>
-          <ArrowLeft size={14}/> Back
+  // ── Success state ─────────────────────────────────────────────────────────
+  if (step==='success') return (
+    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',flexDirection:'column'}}>
+      <TopBar right={null}/>
+      <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'24px 16px'}}>
+        <div className="card" style={{maxWidth:460,width:'100%',padding:'36px 28px',textAlign:'center'}}>
+          <div style={{width:60,height:60,borderRadius:'50%',background:'var(--gain-soft)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}>
+            <Check size={28} color="var(--gain)"/>
+          </div>
+          <div style={{fontWeight:800,fontSize:22,marginBottom:8}}>Claim submitted 🎉</div>
+          <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.65,marginBottom:20}}>
+            Your claim for <strong>@{profile.username}</strong> is with the myInvestorCircle team for review.
+            You'll get a confirmation email once it's approved — usually within 24 hours.
+          </div>
+          <div className="note" style={{fontSize:12,textAlign:'left'}}>
+            You're already logged in. Your profile and all its recommendations will become publicly
+            visible once the admin approves your claim.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Form step — sign-up to claim ──────────────────────────────────────────
+  if (step==='form') return (
+    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',flexDirection:'column'}}>
+      <TopBar right={
+        <button className="btn btn-ghost btn-sm" style={{color:'rgba(255,255,255,.7)',borderColor:'rgba(255,255,255,.25)'}}
+          onClick={()=>setStep('preview')}>
+          <ArrowLeft size={14}/> Back to profile
         </button>
+      }/>
 
-        {step === 'success' ? (
-          <div className="card" style={{padding:'36px 28px',textAlign:'center'}}>
-            <div style={{width:56,height:56,borderRadius:'50%',background:'var(--gain-soft)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}>
-              <Check size={26} color="var(--gain)"/>
-            </div>
-            <div style={{fontWeight:800,fontSize:20,marginBottom:8}}>Claim submitted!</div>
-            <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.6,marginBottom:24}}>
-              Your claim for <strong>@{profile.username}</strong> is now with the myInvestorCircle team for review. You'll receive an email once it's approved — usually within 24 hours.
-            </div>
-            <div className="note" style={{fontSize:12,textAlign:'left'}}>
-              While your claim is pending, you're already logged in. The profile and all its recommendations will become fully public and linked to your account once approved.
-            </div>
-          </div>
-        ) : step === 'preview' ? (
-          <>
-            <div className="card" style={{marginBottom:16,padding:'20px 24px'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:12}}>Profile to claim</div>
-              <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:12}}>
-                <div className="av" style={{width:52,height:52,fontSize:18,flexShrink:0,background:'var(--grad)'}}>{initialsOf(profile.full_name||'?')}</div>
-                <div>
-                  <div style={{fontWeight:800,fontSize:18}}>{profile.full_name}</div>
-                  <div style={{fontSize:13,color:'var(--muted)'}}>@{profile.username}</div>
-                  <div style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{regLabel}</div>
-                </div>
-              </div>
-              {profile.bio && <div style={{fontSize:13,color:'var(--ink)',lineHeight:1.6,marginBottom:12,paddingTop:12,borderTop:'1px solid var(--line)'}}>{profile.bio}</div>}
-              <div className="note" style={{fontSize:12,background:'rgba(109,93,245,.06)',borderColor:'rgba(109,93,245,.3)',color:'var(--ink)'}}>
-                <Info size={13} style={{flexShrink:0,marginTop:1}}/><span>This profile was created for you by the myInvestorCircle team. Claim it to take ownership, update your details, and make it public.</span>
-              </div>
-            </div>
-            <button className="btn btn-pri" style={{width:'100%',justifyContent:'center',padding:'13px',fontSize:15}} onClick={()=>setStep('form')}>
-              <UserPlus size={16}/> Claim this profile
-            </button>
-          </>
-        ) : (
-          <div className="card" style={{padding:'24px'}}>
-            <div style={{fontWeight:800,fontSize:17,marginBottom:4}}>Claim @{profile.username}</div>
-            <div style={{fontSize:13,color:'var(--muted)',marginBottom:20}}>Create your account to take ownership of this profile.</div>
+      <div style={{maxWidth:480,margin:'24px auto',padding:'0 16px',width:'100%'}}>
+        <div className="card" style={{padding:'24px'}}>
+          <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>Claim @{profile.username}</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:20}}>Create your account to take ownership of this profile. All seeded recommendations will be linked to you.</div>
 
-            <div style={{display:'flex',flexDirection:'column',gap:14}}>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>First name *</label><input className="inp" value={firstName} onChange={e=>setFirstName(e.target.value)} style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
-                <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Last name</label><input className="inp" value={lastName} onChange={e=>setLastName(e.target.value)} style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
-              </div>
-              <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Bio (optional — you can update later)</label><textarea className="inp" value={bio} onChange={e=>setBio(e.target.value)} rows={3} style={{width:'100%',marginTop:4,resize:'vertical',boxSizing:'border-box'}}/></div>
-              <div style={{borderTop:'1px solid var(--line)',paddingTop:14}}>
-                <div style={{fontSize:12,fontWeight:700,color:'var(--muted)',marginBottom:10}}>Your account credentials</div>
-                <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                  <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Your email address *</label><input className="inp" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="your@email.com" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
-                  <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Password * (min 8 characters)</label>
-                    <div style={{position:'relative'}}>
-                      <input className="inp" type={showPass?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Create a password" style={{width:'100%',marginTop:4,boxSizing:'border-box',paddingRight:36}}/>
-                      <button onClick={()=>setShowPass(v=>!v)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',border:'none',background:'none',cursor:'pointer',color:'var(--muted)',padding:0}}>
-                        {showPass ? <EyeOff size={14}/> : <Eye size={14}/>}
-                      </button>
-                    </div>
+          <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              <div className="field"><label>First name <span style={{color:'var(--loss)'}}>*</span></label>
+                <input value={firstName} onChange={e=>setFirstName(e.target.value)}/></div>
+              <div className="field"><label>Last name</label>
+                <input value={lastName} onChange={e=>setLastName(e.target.value)}/></div>
+            </div>
+            <div className="field"><label>Bio <span className="muted small">(optional — update later)</span></label>
+              <textarea rows={3} value={bio} onChange={e=>setBio(e.target.value)}/></div>
+
+            <div style={{borderTop:'1px solid var(--line)',paddingTop:14}}>
+              <div style={{fontSize:12,fontWeight:700,color:'var(--muted)',marginBottom:10}}>Your login credentials</div>
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                <div className="field"><label>Email <span style={{color:'var(--loss)'}}>*</span></label>
+                  <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="your@email.com"/></div>
+                <div className="field"><label>Password <span className="muted small">(min. 8 characters)</span> <span style={{color:'var(--loss)'}}>*</span></label>
+                  <div style={{position:'relative'}}>
+                    <input type={showPass?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Create a password" style={{paddingRight:36}}/>
+                    <button onClick={()=>setShowPass(v=>!v)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',border:'none',background:'none',cursor:'pointer',color:'var(--muted)',padding:0}}>
+                      {showPass?<EyeOff size={14}/>:<Eye size={14}/>}
+                    </button>
                   </div>
-                  <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Confirm password *</label><input className="inp" type={showPass?'text':'password'} value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="Repeat your password" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
                 </div>
-              </div>
-              <div style={{borderTop:'1px solid var(--line)',paddingTop:14,display:'flex',flexDirection:'column',gap:10}}>
-                <div style={{fontSize:12,fontWeight:700,color:'var(--muted)',marginBottom:2}}>Consent & agreements</div>
-                {[
-                  [consentTerms, setConsentTerms, 'I agree to the Terms of Service and Privacy Policy. *'],
-                  [consentData,  setConsentData,  'I consent to myInvestorCircle storing and displaying my investment recommendations. *'],
-                  [consentSebi,  setConsentSebi,  'I confirm all recommendations I post comply with applicable SEBI regulations (if registered) or are for educational purposes only (if non-SEBI).'],
-                ].map(([val,set,label],i)=>(
-                  <label key={i} style={{display:'flex',gap:10,alignItems:'flex-start',cursor:'pointer',fontSize:13,lineHeight:1.5}}>
-                    <input type="checkbox" checked={val} onChange={e=>set(e.target.checked)} style={{marginTop:3,flexShrink:0}}/>
-                    <span style={{color:'var(--ink)'}}>{label}</span>
-                  </label>
-                ))}
-              </div>
-              {err && <div className="note warn" style={{fontSize:12}}>{err}</div>}
-              <div style={{display:'flex',gap:8,flexDirection:'column'}}>
-                <button className="btn btn-pri" onClick={handleClaim} disabled={busy} style={{justifyContent:'center',padding:'12px',fontSize:14}}>
-                  {busy ? 'Submitting claim…' : 'Submit claim'}
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setStep('preview')} style={{justifyContent:'center'}}>← Back to profile preview</button>
+                <div className="field"><label>Confirm password <span style={{color:'var(--loss)'}}>*</span></label>
+                  <input type={showPass?'text':'password'} value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="Repeat password"/></div>
               </div>
             </div>
+
+            <div style={{borderTop:'1px solid var(--line)',paddingTop:14,display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--muted)',marginBottom:2}}>Consent & agreements</div>
+              {[
+                [consentTerms,setConsentTerms,'I agree to the Terms of Service and Privacy Policy *'],
+                [consentData, setConsentData, 'I consent to myInvestorCircle storing and publicly displaying my investment recommendations *'],
+                [consentSebi, setConsentSebi, 'My recommendations comply with applicable SEBI regulations (if registered) or are for educational purposes only'],
+              ].map(([val,set,label],i)=>(
+                <label key={i} style={{display:'flex',gap:10,alignItems:'flex-start',cursor:'pointer',fontSize:13,lineHeight:1.5}}>
+                  <input type="checkbox" checked={val} onChange={e=>set(e.target.checked)} style={{marginTop:3,flexShrink:0}}/>
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+
+            {err&&<div className="note warn" style={{fontSize:12}}>{err}</div>}
+            <button className="btn btn-pri" onClick={handleClaim} disabled={busy}
+              style={{justifyContent:'center',padding:'12px',fontSize:14}}>
+              {busy?'Submitting claim…':<><UserPlus size={15}/> Claim @{profile.username}</>}
+            </button>
           </div>
-        )}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Preview step — show profile + seeded recos, then invite to claim ──────
+  return (
+    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',flexDirection:'column'}}>
+      <TopBar right={
+        <button className="btn btn-ghost btn-sm" style={{color:'rgba(255,255,255,.7)',borderColor:'rgba(255,255,255,.25)'}} onClick={onBack}>← Back</button>
+      }/>
+
+      {/* Gradient invitation banner */}
+      <div style={{background:'linear-gradient(135deg,#6d5df5 0%,#a855f7 100%)',padding:'28px 20px',textAlign:'center',flexShrink:0}}>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:'.08em',color:'rgba(255,255,255,.65)',marginBottom:6}}>INVITATION</div>
+        <div style={{fontWeight:800,fontSize:21,color:'#fff',marginBottom:8}}>Your investor profile is ready 🎉</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,.8)',lineHeight:1.55,marginBottom:20,maxWidth:400,margin:'0 auto 20px'}}>
+          myInvestorCircle created a profile for you based on your track record.
+          Claim it to make it yours, update your details, and share your investment insights.
+        </div>
+        <button
+          style={{background:'#fff',color:'var(--accent)',fontWeight:800,fontSize:14,
+            padding:'12px 28px',borderRadius:12,border:'none',cursor:'pointer',
+            boxShadow:'0 4px 16px rgba(0,0,0,.2)',display:'inline-flex',alignItems:'center',gap:8}}
+          onClick={()=>setStep('form')}>
+          <UserPlus size={15}/> Claim this profile →
+        </button>
+      </div>
+
+      {/* Profile content */}
+      <div style={{maxWidth:560,margin:'0 auto',padding:'20px 16px',width:'100%'}}>
+
+        {/* Profile card */}
+        <div className="card" style={{padding:'20px 22px',marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:14,marginBottom: profile.bio ? 14 : 0}}>
+            <div className="av" style={{width:54,height:54,fontSize:19,flexShrink:0,background:'var(--grad)'}}>{initialsOf(profile.full_name||'?')}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:800,fontSize:19}}>{profile.full_name}</div>
+              <div style={{fontSize:13,color:'var(--muted)',marginTop:2}}>@{profile.username}</div>
+              <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{regLabel}</div>
+            </div>
+          </div>
+          {profile.bio&&<div style={{fontSize:13,color:'var(--ink)',lineHeight:1.65,paddingTop:14,borderTop:'1px solid var(--line)'}}>{profile.bio}</div>}
+        </div>
+
+        {/* Seeded recommendations preview */}
+        {previewLoad ? (
+          <div style={{textAlign:'center',padding:'20px',color:'var(--muted)',fontSize:13}}>
+            <Loader size={16} className="spin" style={{marginRight:8}}/>Loading seeded recommendations…
+          </div>
+        ) : previewRecos.length>0 ? (
+          <div className="card" style={{marginBottom:14}}>
+            <div className="card-head" style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.05em'}}>
+              SEEDED RECOMMENDATIONS WAITING FOR YOU
+            </div>
+            <div className="card-body" style={{padding:0}}>
+              {previewRecos.map((r,i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'11px 16px',
+                  borderBottom:i<previewRecos.length-1?'1px solid var(--line)':'none'}}>
+                  <div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+                    fontWeight:800,fontSize:12,
+                    background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
+                    color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>
+                    {r.recommendation_type==='Buy'?'BUY':'SELL'}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.ticker}</div>
+                    <div style={{fontSize:11,color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.asset_name}{r.sector?` · ${r.sector}`:''}</div>
+                  </div>
+                  {r.reco_price&&<div style={{fontSize:12,fontWeight:600,color:'var(--muted)',flexShrink:0}}>₹{Number(r.reco_price).toLocaleString('en-IN')}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Bottom CTA */}
+        <div style={{paddingBottom:32}}>
+          <button className="btn btn-pri"
+            style={{width:'100%',justifyContent:'center',padding:'13px',fontSize:14}}
+            onClick={()=>setStep('form')}>
+            <UserPlus size={15}/> Claim this profile
+          </button>
+          <div style={{fontSize:12,color:'var(--muted)',textAlign:'center',marginTop:10,lineHeight:1.55}}>
+            After claiming, your profile goes to admin review before going public.
+            You'll receive an email once approved.
+          </div>
+        </div>
       </div>
     </div>
   );
 }
+
 
 function SparkLine({data=[], color='var(--gain)', height=50}) {
   if (data.length < 2) return null;
