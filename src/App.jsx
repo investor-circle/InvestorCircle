@@ -1033,11 +1033,16 @@ export default function App() {
   );
   // ── Creator claim flow: show claim page before login ─────────────────────────
   if (!user && claimToken && claimProfile) {
-    return <ClaimProfilePage
-      profile={claimProfile}
-      token={claimToken}
-      onBack={() => { setClaimToken(null); setClaimProfile(null); localStorage.removeItem('mic_claim_token'); }}
-    />;
+    return (
+      <div className="app">
+        <style>{STYLES}</style>
+        <ClaimProfilePage
+          profile={claimProfile}
+          token={claimToken}
+          onBack={() => { setClaimToken(null); setClaimProfile(null); localStorage.removeItem('mic_claim_token'); }}
+        />
+      </div>
+    );
   }
 
   if (!user) return <LoginPage />;
@@ -4411,13 +4416,13 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
             borderRadius:14, padding:'18px 20px', marginBottom:20,
           }}>
             <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-              <div style={{flex:1,minWidth:200}}>
+              <div style={{flex:1,minWidth:180}}>
                 <div style={{fontWeight:800,fontSize:16,color:'#fff',marginBottom:4}}>
                   🎉 Your investor profile is ready to claim
                 </div>
                 <div style={{fontSize:13,color:'rgba(255,255,255,.8)',lineHeight:1.5}}>
-                  This is exactly how your profile will look once claimed.
-                  All seeded recommendations are already linked — claim it to go live.
+                  This is exactly how your profile will look once live.
+                  All seeded recommendations are linked — claim it to go live.
                 </div>
               </div>
               <button
@@ -4425,8 +4430,9 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
                 style={{
                   background:'#fff', color:'#6d5df5', fontWeight:800,
                   fontSize:13, padding:'10px 22px', borderRadius:10,
-                  border:'none', cursor:'pointer', flexShrink:0,
+                  border:'none', cursor:'pointer',
                   boxShadow:'0 4px 12px rgba(0,0,0,.2)', whiteSpace:'nowrap',
+                  width: '100%', maxWidth: 280,  // full-width on mobile, capped on desktop
                 }}
               >
                 <UserPlus size={14} style={{verticalAlign:-2,marginRight:7}}/>Claim this profile
@@ -5070,13 +5076,15 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
       const cred = await createUserWithEmailAndPassword(primaryAuth, claimEmail.trim(), claimPass);
       const uid  = cred.user.uid;
 
-      // Write creator's real profile (unconditional first_name to beat AuthContext race)
+      // Write creator's real profile (unconditional first_name to beat AuthContext race).
+      // username=NULL intentionally — unclaimed profile still holds the reserved username until
+      // admin approves. Approval transfers it via COALESCE(user_profiles.username, unclaimed.username).
       await sql`
         INSERT INTO user_profiles (id,email,full_name,first_name,last_name,username,bio,registration_status,is_admin)
-        VALUES (${uid},${claimEmail.trim()},${fullName},${fn},${ln||''},${unInput},${bio.trim()||null},${regStatus},false)
+        VALUES (${uid},${claimEmail.trim()},${fullName},${fn},${ln||''},NULL,${bio.trim()||null},${regStatus},false)
         ON CONFLICT (id) DO UPDATE SET
           full_name=EXCLUDED.full_name, first_name=EXCLUDED.first_name,
-          last_name=EXCLUDED.last_name, username=EXCLUDED.username, updated_at=NOW()`;
+          last_name=EXCLUDED.last_name, updated_at=NOW()`;
 
       // Link claimer → unclaimed profile (RETURNING prevents double-claim)
       const link = await sql`
