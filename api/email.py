@@ -145,16 +145,14 @@ def tpl_claim_submitted(data):
     return {
         "subject": "Profile claim submitted — pending review",
         "html": layout(f"""
-            <h2 style="margin:0 0 12px;">Claim submitted! ⏳</h2>
-            <p>Hi <strong>{creator_name}</strong>, thanks for claiming your myInvestorCircle profile.</p>
-            <p>Your claim for <strong>@{username}</strong> ({profile_name}) has been sent to the team for review.
-            We'll get back to you within 24 hours.</p>
-            <p>Once approved, your profile will be fully public and your existing recommendations will
-            be linked to your account.</p>
-            <p style="margin:24px 0;">{btn('Go to myInvestorCircle →', APP_URL)}</p>
+            <h2 style="margin:0 0 12px;">Your claim is with the admin ⏳</h2>
+            <p>Hi <strong>{creator_name}</strong>, your claim for <strong>@{username}</strong> has been submitted successfully.</p>
+            <p><strong>Your request is now pending admin approval.</strong> Once approved, your historical recommendations and full ICI score will appear on your Track Record page.</p>
+            <p>You will receive another email as soon as the admin approves your profile — usually within 24 hours.</p>
+            <p style="margin:24px 0;">{btn('Visit myInvestorCircle →', APP_URL)}</p>
             <div style="margin-top:24px;padding:14px 16px;background:#f8f7fc;border:1px solid #e0ddf5;border-radius:10px;font-size:13px;color:#555;line-height:1.6;">
-              <strong>Not expecting this email?</strong> If you didn't submit a claim, please
-              reply immediately so we can revoke it.
+              <strong>Not expecting this email?</strong> If you didn't submit a claim on myInvestorCircle, please
+              contact us at <a href="mailto:hello@myinvestorcircle.com" style="color:#6d5df5;">hello@myinvestorcircle.com</a> so we can revoke it.
             </div>"""),
     }
 
@@ -185,13 +183,14 @@ def tpl_claim_approved(data):
         "html": layout(f"""
             <h2 style="margin:0 0 12px;">You're live! 🎉</h2>
             <p>Hi <strong>{creator_name}</strong>,</p>
-            <p>Your claim for <strong>@{username}</strong> has been approved.
-            Your profile is now public and all your recommendations are live.</p>
-            <p style="margin:24px 0;">{btn('View your profile →', profile_url)}</p>
+            <p>Your profile <strong>@{username}</strong> has been approved by the myInvestorCircle admin. Your profile is now public.</p>
+            <p><strong>You can now see your historical recommendations and track record page.</strong> All your seeded recommendations and ICI score are live and visible to the community.</p>
+            <p style="margin:24px 0;">{btn('View your Track Record →', profile_url)}</p>
             <p style="font-size:13px;color:#888;">
-              Share your profile link with your audience:<br/>
+              Share your profile with your audience:<br/>
               <a href="{profile_url}">{profile_url}</a>
-            </p>"""),
+            </p>
+            <p style="font-size:13px;color:#888;">Questions? Reach us at <a href="mailto:hello@myinvestorcircle.com">hello@myinvestorcircle.com</a></p>"""),
     }
 
 
