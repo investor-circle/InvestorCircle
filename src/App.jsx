@@ -727,6 +727,7 @@ export default function App() {
   });
   const [claimProfile,  setClaimProfile]  = useState(null);
   const [claimRequests, setClaimRequests] = useState([]);
+  const [hasPendingClaim, setHasPendingClaim] = useState(false); // creator claimed but not yet approved
 
   // Resolve claimToken → profile from DB
   useEffect(() => {
@@ -869,6 +870,9 @@ export default function App() {
         processReferral(user.uid);
         // Load pending creator claim requests (admin feature — silently no-ops for non-admins)
         loadClaimRequests();
+        // Check if this user is a creator awaiting admin approval for their claimed profile
+        if (sql) sql`SELECT id FROM claim_requests WHERE claimer_uid=${user.uid} AND status='pending' LIMIT 1`
+          .then(rows=>setHasPendingClaim(rows.length > 0)).catch(()=>{});
         // Load tracked recommendation IDs
         try {
           const tr = await sql`SELECT reco_id FROM recommendation_tracking WHERE user_id=${user.uid}`;
@@ -1434,7 +1438,27 @@ export default function App() {
                       onBack={()=>setPage("home")}
                     />
                   </ProfileErrorBoundary>
-                : <div style={{maxWidth:520}}>
+                : hasPendingClaim
+                  ? <div style={{maxWidth:520}}>
+                      <div className="page-head"><div>
+                        <div className="eyebrow">Track Record</div>
+                        <div className="page-title">Your public profile</div>
+                      </div></div>
+                      <div className="card" style={{borderColor:'rgba(109,93,245,.3)',background:'rgba(109,93,245,.04)'}}>
+                        <div className="card-body" style={{textAlign:'center',padding:'36px 28px'}}>
+                          <div style={{fontSize:36,marginBottom:14}}>⏳</div>
+                          <div style={{fontWeight:800,fontSize:17,marginBottom:10,color:'var(--accent-ink)'}}>Awaiting admin approval</div>
+                          <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.7,marginBottom:20}}>
+                            You've claimed your profile and your request is with the myInvestorCircle team.
+                            Once approved, your full track record and ICI score — including all your historical recommendations — will appear here.
+                          </div>
+                          <div className="note" style={{fontSize:12,textAlign:'left',background:'var(--surface-2)'}}>
+                            You'll receive a confirmation email at your registered address as soon as the admin approves your profile. This usually happens within 24 hours.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  : <div style={{maxWidth:520}}>
                     <div className="page-head"><div>
                       <div className="eyebrow">Track Record</div>
                       <div className="page-title">Your public profile</div>
@@ -4629,7 +4653,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
               ...(isMobile?{flex:'0 0 100%'}:{flex:'1 1 0'}),
               display:'flex',alignItems:'center',justifyContent:'flex-end',padding:'9px 28px',
             }}>
-              <a href="#methodology" style={{fontSize:11.5,color:'#c4b5fd',textDecoration:'none',fontWeight:600,letterSpacing:'.01em'}}>Learn more about ICI methodology →</a>
+              <a href="#methodology" style={{fontSize:11.5,color:'#c4b5fd',textDecoration:'none',fontWeight:600,letterSpacing:'.01em'}}>How is the ICI Score calculated? Learn More →</a>
             </div>
           </div>
         </div>
@@ -4912,7 +4936,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
         </div>
         {/* ── Methodology ── */}
         <div id="methodology" className="card" style={{marginBottom:14}}>
-          <div className="card-head"><span style={{fontSize:13,fontWeight:700}}>⚙ How are these metrics calculated?</span><span className="muted small">Methodology v1.0</span></div>
+          <div className="card-head"><span style={{fontSize:13,fontWeight:700}}>How is the ICI Score calculated?</span><a href="#methodology" style={{fontSize:12,fontWeight:700,color:'var(--accent-ink)',textDecoration:'none'}}>Learn More →</a></div>
           <div style={{padding:'14px 20px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {[
               ['Hit Rate','Percentage of closed recommendations with a positive realized return.'],
@@ -5092,7 +5116,7 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
           claimed_by_uid=${uid}, claim_status='pending_approval',
           claimed_at=NOW(), claim_token=NULL
         WHERE claim_token=${claimToken} AND claim_status='unclaimed' RETURNING id`;
-      if (!link?.length) throw new Error('This profile has already been claimed. Contact admin@myinvestorcircle.com.');
+      if (!link?.length) throw new Error('This profile has already been claimed. Contact hello@myinvestorcircle.com.');
 
       await sql`
         INSERT INTO claim_requests (profile_id,profile_username,profile_full_name,claimer_uid,claimer_email,claimer_full_name,status)
@@ -5107,7 +5131,7 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
         profile_name:unclaimedProfile?.full_name,username:unInput,
       })}).catch(()=>{});
       fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-        type:'claim_admin_notify',to_email:'admin@myinvestorcircle.com',creator_name:fullName,
+        type:'claim_admin_notify',to_email:'hello@myinvestorcircle.com',creator_name:fullName,
         claimer_email:claimEmail.trim(),profile_name:unclaimedProfile?.full_name,username:unInput,
       })}).catch(()=>{});
 
@@ -5115,7 +5139,7 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
       onClaimSuccess?.();
     } catch(e) {
       const c=e.code||'';
-      if(c==='auth/email-already-in-use') setErr('This email is already registered. Contact admin@myinvestorcircle.com.');
+      if(c==='auth/email-already-in-use') setErr('This email is already registered. Contact hello@myinvestorcircle.com.');
       else if(c==='auth/invalid-email')   setErr('Enter a valid email address.');
       else if(c==='auth/weak-password')   setErr('Password must be at least 8 characters.');
       else setErr(e.message||'Something went wrong. Please try again.');
@@ -5387,29 +5411,36 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
 
             {/* Claim-mode: consent checkboxes above the submit button */}
             {claimMode && (
-              <div style={{marginBottom:16,display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{marginBottom:16,display:'flex',flexDirection:'column',gap:10,
+                padding:'12px 0',borderTop:'1px solid rgba(255,255,255,.08)'}}>
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.4)',letterSpacing:'.04em',marginBottom:2}}>
+                  CONSENT & AGREEMENTS
+                </div>
                 {[
                   [consentTerms,setConsentTerms,'I agree to the Terms of Service and Privacy Policy *'],
                   [consentData, setConsentData, 'I consent to myInvestorCircle storing and publicly displaying my investment recommendations *'],
                   [consentSebi, setConsentSebi, 'My recommendations comply with SEBI regulations (if registered) or are for educational purposes only'],
                 ].map(([val,set,label],i)=>(
-                  <label key={i} style={{display:'flex',gap:10,alignItems:'flex-start',cursor:'pointer',fontSize:12,color:'rgba(255,255,255,.7)',lineHeight:1.5}}>
-                    <input type="checkbox" checked={val} onChange={e=>set(e.target.checked)} style={{marginTop:3,flexShrink:0,accentColor:'#a78bfa'}}/>
-                    {label}
+                  <label key={i} style={{display:'flex',gap:12,alignItems:'flex-start',cursor:'pointer',
+                    fontSize:12,color:'rgba(255,255,255,.7)',lineHeight:1.55,padding:'0 0 0 4px'}}>
+                    <input type="checkbox" checked={val} onChange={e=>set(e.target.checked)}
+                      style={{marginTop:2,flexShrink:0,width:16,height:16,accentColor:'#a78bfa',cursor:'pointer'}}/>
+                    <span style={{flex:1}}>{label}</span>
                   </label>
                 ))}
               </div>
             )}
 
-            <button onClick={onClose} style={{padding:'10px 20px',borderRadius:10,fontWeight:700,
+            <button onClick={onClose} style={{padding:'10px 18px',borderRadius:10,fontWeight:700,
                 fontSize:14,cursor:'pointer',background:'rgba(255,255,255,.08)',
-                border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontFamily:'var(--font)'}}>
+                border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontFamily:'var(--font)',flexShrink:0}}>
               Cancel
             </button>
             <button className="btn btn-pri"
               disabled={claimMode ? claimBusy : saving}
               onClick={claimMode ? handleClaim : save}
-              style={{padding:'10px 24px',fontSize:14}}>
+              style={{padding:'10px 18px',fontSize:14,flex:1,justifyContent:'center',
+                minHeight:0,lineHeight:1.3}}>
               {claimMode
                 ? (claimBusy ? <><Loader size={14} className="spin"/> Claiming…</> : <><UserPlus size={14}/> Claim @{unInput||'profile'}</>)
                 : (saving    ? <><Loader size={14} className="spin"/> Saving…</>   : <><Check size={14}/> Save changes</>)
@@ -8154,7 +8185,7 @@ function ContactPage({ setPage }) {
     if (!saved) {
       // Graceful fallback: open mailto
       const bod = encodeURIComponent(`Name: ${name||'—'}\n\n${message}`);
-      window.open(`mailto:myinvestorcircle@gmail.com?subject=${encodeURIComponent(subject)}&body=${bod}`);
+      window.open(`mailto:hello@myinvestorcircle.com?subject=${encodeURIComponent(subject)}&body=${bod}`);
     }
     setSent(true); setSending(false);
   };
@@ -8313,9 +8344,9 @@ function ContactPage({ setPage }) {
                 </div>
                 <div>
                   <div style={{fontSize:12,color:'var(--muted)',fontWeight:600,marginBottom:3,textTransform:'uppercase',letterSpacing:'.5px'}}>Email</div>
-                  <a href="mailto:myinvestorcircle@gmail.com"
+                  <a href="mailto:hello@myinvestorcircle.com"
                     style={{fontSize:15,fontWeight:700,color:'var(--accent-ink)',textDecoration:'none'}}>
-                    myinvestorcircle@gmail.com
+                    hello@myinvestorcircle.com
                   </a>
                 </div>
               </div>
@@ -8554,7 +8585,7 @@ const PRIVACY_HTML = `
 <p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">In compliance with the <strong>Information Technology (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021</strong> and the <strong>DPDP Act, 2023</strong>, we have appointed a <strong>Grievance Officer</strong>. If you have any concerns regarding the use of your personal data or any content published on the platform, you may contact:</p>
 <div style="background:#f5f5fb;border:1px solid #e8e8ef;border-radius:12px;padding:18px 22px;margin:0 0 14px;">
   <p style="font-size:14px;font-weight:700;color:#13142b;margin:0 0 4px;">Grievance Officer — My Investor Circle</p>
-  <p style="font-size:14px;color:#565a78;margin:0 0 2px;">Email: <a href="mailto:myinvestorcircle@gmail.com" style="color:#6d5df5;">myinvestorcircle@gmail.com</a></p>
+  <p style="font-size:14px;color:#565a78;margin:0 0 2px;">Email: <a href="mailto:hello@myinvestorcircle.com" style="color:#6d5df5;">hello@myinvestorcircle.com</a></p>
   <p style="font-size:13px;color:#8d90ad;margin:0;">We will acknowledge your complaint within <strong>24 hours</strong> and endeavour to resolve it within <strong>15 days</strong> of receipt.</p>
 </div>
 <p style="font-size:13px;line-height:1.75;color:#8d90ad;margin:0 0 24px;">If your grievance is not resolved to your satisfaction, you may approach the Data Protection Board of India once it is constituted under the DPDP Act, 2023.</p>
@@ -8614,7 +8645,7 @@ const PRIVACY_HTML = `
 
 <h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">16. Contact</h3>
 <p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">For privacy-related questions or to exercise your data rights:</p>
-<p style="font-size:14px;color:#565a78;margin:0;"><strong>Email:</strong> <a href="mailto:myinvestorcircle@gmail.com" style="color:#6d5df5;">myinvestorcircle@gmail.com</a></p>
+<p style="font-size:14px;color:#565a78;margin:0;"><strong>Email:</strong> <a href="mailto:hello@myinvestorcircle.com" style="color:#6d5df5;">hello@myinvestorcircle.com</a></p>
 
 </div>
 `.trim();
@@ -9652,18 +9683,18 @@ function ClaimProfilePage({ profile, token, onBack }) {
   // ── Success state (shown until Firebase auth re-render takes over) ────────
   if (claimDone) return (
     <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
-      <div className="card" style={{maxWidth:460,width:'100%',padding:'36px 28px',textAlign:'center'}}>
-        <div style={{width:60,height:60,borderRadius:'50%',background:'var(--gain-soft)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}>
-          <Check size={28} color="var(--gain)"/>
+      <div className="card" style={{maxWidth:480,width:'100%',padding:'36px 28px',textAlign:'center'}}>
+        <div style={{fontSize:44,marginBottom:12}}>⏳</div>
+        <div style={{fontWeight:800,fontSize:21,marginBottom:8}}>Your request is sent for approval</div>
+        <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.7,marginBottom:16}}>
+          Your claim for <strong>@{profile.username}</strong> has been submitted to the myInvestorCircle admin for review.
         </div>
-        <div style={{fontWeight:800,fontSize:22,marginBottom:8}}>Claim submitted! 🎉</div>
-        <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.65,marginBottom:20}}>
-          Your claim for <strong>@{profile.username}</strong> is with our team for review.
-          You'll receive a confirmation email once approved — usually within 24 hours.
+        <div className="note" style={{fontSize:13,textAlign:'left',marginBottom:14,lineHeight:1.65}}>
+          <strong>What happens next:</strong><br/>
+          Once the admin approves your profile, you will see your historical recommendations and full ICI score on your Track Record page. You'll receive a confirmation email as soon as it's approved — usually within 24 hours.
         </div>
-        <div className="note" style={{fontSize:12,textAlign:'left'}}>
-          You're now logged in. Your profile and all its recommendations will go live
-          once the admin approves your claim.
+        <div style={{fontSize:12,color:'var(--muted)'}}>
+          You're now logged in. Visit the <strong>Track Record</strong> tab to check your approval status.
         </div>
       </div>
     </div>
