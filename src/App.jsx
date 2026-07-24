@@ -971,11 +971,19 @@ export default function App() {
           })));
         } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
       } catch(e) { console.warn("Data load failed:", e.message); }
-      // Load registered users for admin panel
+      // Load registered users for admin panel — excludes 'claimed' orphan rows (those are
+      // the original unclaimed staging profiles after admin approval; the real user profile is canonical).
       try {
-        const profiles = await sql`SELECT * FROM user_profiles ORDER BY created_at`;
+        const profiles = await sql`
+          SELECT id, full_name, email, username, is_admin, is_unclaimed, claim_status, created_at
+          FROM user_profiles
+          WHERE (claim_status IS DISTINCT FROM 'claimed')
+          ORDER BY created_at`;
         if (profiles.length) setUsers(profiles.map(p => ({
           id: p.id, name: p.full_name, email: p.email,
+          username:     p.username     || null,
+          isUnclaimedCreator: p.is_unclaimed === true,
+          claimStatus:  p.claim_status || null,
           role: p.is_admin ? "Admin" : "Investor", status: "Active", accounts: 0,
           joined: new Date(p.created_at).toLocaleDateString("en-US",{month:"short",year:"numeric"}),
         })));
@@ -7810,18 +7818,65 @@ function AdminUsers({ users, setUsers, contacts, setContacts }) {
     }
   };
   return (<>
-    <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">Users</div><div className="page-sub">{users.length} accounts · manage roles, status and access</div></div>
+    <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">Users</div>
+      <div className="page-sub">
+        {users.filter(u=>!u.isUnclaimedCreator).length} accounts
+        {users.filter(u=>u.isUnclaimedCreator).length > 0 && ` + ${users.filter(u=>u.isUnclaimedCreator).length} creator profile${users.filter(u=>u.isUnclaimedCreator).length>1?'s':''}`}
+        {' · manage roles, status and access'}
+      </div></div>
       <button className="btn btn-pri" onClick={()=>setShowAdd(true)}><Plus size={16}/> Add user</button></div>
     <div className="card"><div className="card-head"><span>All users</span>
       <div style={{ display:"flex", alignItems:"center", gap:8, background:"var(--surface-2)", borderRadius:10, padding:"7px 12px" }}>
         <Search size={15} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…" style={{border:"none",outline:"none",background:"transparent",fontSize:13}}/></div></div>
       <div className="card-body" style={{padding:"8px 10px"}}><table className="grid">
-        <thead><tr><th>User</th><th>Role</th><th>Status</th><th style={{textAlign:"center"}}>Accounts</th><th>Joined</th><th style={{textAlign:"right"}}>Actions</th></tr></thead>
-        <tbody>{filtered.map(u=>(<tr key={u.id} className="hoverable">
-          <td><div style={{fontWeight:600}}>{u.name}</div><div className="muted small">{u.email}</div></td>
+        <thead><tr>
+          <th>User</th>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th style={{textAlign:"center"}}>Accounts</th>
+          <th>Joined</th>
+          <th style={{textAlign:"right"}}>Actions</th>
+        </tr></thead>
+        <tbody>{filtered.map(u=>(<tr key={u.id} className="hoverable"
+          style={{background: u.isUnclaimedCreator ? 'rgba(251,146,60,.04)' : undefined}}>
+          <td>
+            <div style={{display:'flex',alignItems:'flex-start',gap:8}}>
+              <div>
+                <div style={{fontWeight:600}}>{u.name}</div>
+                <div className="muted small">{u.email}</div>
+                {u.isUnclaimedCreator && (
+                  <div style={{display:'flex',gap:5,marginTop:4,flexWrap:'wrap'}}>
+                    <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,
+                      background:'rgba(251,146,60,.12)',color:'#ea580c',whiteSpace:'nowrap'}}>
+                      🎯 Creator Profile
+                    </span>
+                    {u.claimStatus === 'pending_approval' && (
+                      <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,
+                        background:'rgba(109,93,245,.1)',color:'var(--accent-ink)',whiteSpace:'nowrap'}}>
+                        ⏳ Claim pending
+                      </span>
+                    )}
+                    {u.claimStatus === 'unclaimed' && (
+                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,
+                        background:'var(--surface-2)',color:'var(--muted)',whiteSpace:'nowrap'}}>
+                        Awaiting claim
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </td>
+          <td>
+            {u.username
+              ? <span style={{fontFamily:'monospace',fontSize:12,color:'var(--accent-ink)'}}>@{u.username}</span>
+              : <span className="muted small">—</span>}
+          </td>
           <td><select className="inline-select" value={u.role} onChange={e=>setRole(u.id,e.target.value)}>{["Investor","Moderator","Admin"].map(r=><option key={r}>{r}</option>)}</select></td>
           <td><span className={"pill "+sp(u.status)}>{u.status}</span></td>
-          <td style={{textAlign:"center"}}>{u.accounts}</td><td className="muted small">{u.joined}</td>
+          <td style={{textAlign:"center"}}>{u.accounts}</td>
+          <td className="muted small">{u.joined}</td>
           <td style={{textAlign:"right"}}>
             <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
               {u.status==="Active"
@@ -7832,7 +7887,7 @@ function AdminUsers({ users, setUsers, contacts, setContacts }) {
           </td>
         </tr>))}</tbody></table></div></div>
     {showAdd && <AddUserModal onClose={()=>setShowAdd(false)} onAdd={(u)=>{
-      const newUser = {...u, id:"u"+Date.now()};
+      const newUser = {...u, id:"u"+Date.now(), isUnclaimedCreator:false, claimStatus:null};
       setUsers(us=>[newUser,...us]);
       setContacts(cs=>[...cs, {
         id: u.email, name:u.name, initials:initialsOf(u.name),
@@ -7841,6 +7896,16 @@ function AdminUsers({ users, setUsers, contacts, setContacts }) {
       }]);
       setShowAdd(false);
     }}/>}
+    {users.some(u=>u.isUnclaimedCreator) && (
+      <div className="note" style={{marginTop:14,fontSize:12}}>
+        <Info size={13} style={{flexShrink:0}}/>
+        <span>
+          <strong>🎯 Creator Profile</strong> rows are admin-created staging profiles managed in the <strong>Creators</strong> tab.
+          Once a creator claims and you approve their profile, the staging row is automatically removed from this list.
+          If a claim is pending, approve it from <strong>Admin → Creators</strong>.
+        </span>
+      </div>
+    )}
   </>);
 }
 function AddUserModal({ onClose, onAdd }) {
