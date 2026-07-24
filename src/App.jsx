@@ -591,6 +591,23 @@ export default function App() {
     return () => window.removeEventListener("hashchange", h);
   }, []);
 
+  // SECURITY: whenever a profile URL is active, replace the browser history entry
+  // with the clean base URL so:
+  //  a) browser session-restore / "reopen closed tab" doesn't re-load the profile
+  //  b) the back-button takes the user to the page before this site, not back to
+  //     a specific investor profile
+  //  c) clearing the hash on logout actually works (nothing to undo)
+  // We keep pageHash in React state so the profile still renders correctly.
+  useEffect(() => {
+    if (pageHash.startsWith('#/investor/')) {
+      window.history.replaceState(
+        { _micProfileHash: pageHash },
+        '',
+        window.location.pathname + window.location.search
+      );
+    }
+  }, [pageHash]);
+
   // ── Post-login/signup: auto-send connection request if user came from a public profile ─
   useEffect(() => {
     if (!user || !sql) return;
@@ -619,6 +636,42 @@ export default function App() {
   useEffect(() => {
     setHoldings([]);
   }, [user?.uid]); // runs on every user change, including logout → login switches
+
+  // SECURITY: clear ALL user-specific state when the authenticated user changes.
+  // This prevents data from one account (connections, recos, feed, contacts, etc.)
+  // from leaking into a different account opened in the same browser tab.
+  // Also cleans up stale profile URLs on logout to prevent session-restore re-opening them.
+  useEffect(() => {
+    setConnections([]);
+    setGroups([]);
+    setRecsReceived([]);
+    setRecsMade([]);
+    setNotifications([]);
+    setSharing({});
+    setContacts([]);
+    setUsers([]);
+    setPublicFeedRecos([]);
+    setNetworkEngagementRecos([]);
+    setTracked(new Set());
+    setClaimRequests([]);
+    setHasPendingClaim(false);
+    setSecurityTicker(null);
+    setInvestorPage('home');   // always start at home when user changes
+    setAdminPage('users');
+
+    if (!user) {
+      // On logout: clear any profile hash so the next page load starts clean.
+      // Using setPageHash('') and replaceState in the cleanup rather than
+      // window.location.hash='' to avoid creating a new history entry.
+      if (pageHash.startsWith('#/investor/')) {
+        setPageHash('');
+        window.history.replaceState({}, '', window.location.pathname + window.location.search);
+      }
+      // Clear any stale auth-flow localStorage keys
+      sessionStorage.removeItem('pending_connect_username');
+      // Don't clear mic_ref or mic_claim_token — those are URL-captured and still valid
+    }
+  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
   const [assetClasses,  setAssetClasses]  = useState(DEFAULT_CLASSES);
   const [users,         setUsers]         = useState([]);
   const [configs,       setConfigs]       = useState({
@@ -1020,11 +1073,11 @@ export default function App() {
             viewerConnections={connections}
             viewerIsAdmin={ME?.is_admin === true}
             mode="standalone"
-            onBack={()=>{ window.location.hash=""; }}
+            onBack={()=>{ setPageHash(''); }}
             onRequestConnect={async(targetId)=>{
               if (!user) {
                 sessionStorage.setItem("pending_connect_username", pubUsername);
-                window.location.hash="";
+                setPageHash('');
                 return;
               }
               await sendConnectionRequest(user.uid, targetId);
