@@ -5710,15 +5710,15 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
               background:'rgba(248,113,113,.1)',borderRadius:8,border:'1px solid rgba(248,113,113,.2)'}}>{err}</div>}
 
           {/* Footer */}
-          <div style={{display:'flex',gap:10,justifyContent:'flex-end',
-              borderTop:'1px solid rgba(255,255,255,.07)',paddingTop:16}}>
+          <div style={{borderTop:'1px solid rgba(255,255,255,.07)',paddingTop:16,
+            display:'flex',flexDirection:'column',gap:14}}>
 
-            {/* Claim-mode: consent checkboxes above the submit button */}
+            {/* Claim-mode: consent checkboxes — full width above the buttons */}
             {claimMode && (
-              <div style={{marginBottom:16,display:'flex',flexDirection:'column',gap:10,
-                padding:'12px 0',borderTop:'1px solid rgba(255,255,255,.08)'}}>
-                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.4)',letterSpacing:'.04em',marginBottom:2}}>
-                  CONSENT & AGREEMENTS
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.4)',
+                  letterSpacing:'.05em',marginBottom:2}}>
+                  CONSENT &amp; AGREEMENTS
                 </div>
                 {[
                   [consentTerms,setConsentTerms,'I agree to the Terms of Service and Privacy Policy *'],
@@ -5726,7 +5726,7 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
                   [consentSebi, setConsentSebi, 'My recommendations comply with SEBI regulations (if registered) or are for educational purposes only'],
                 ].map(([val,set,label],i)=>(
                   <label key={i} style={{display:'flex',gap:12,alignItems:'flex-start',cursor:'pointer',
-                    fontSize:12,color:'rgba(255,255,255,.7)',lineHeight:1.55,padding:'0 0 0 4px'}}>
+                    fontSize:12,color:'rgba(255,255,255,.75)',lineHeight:1.6,userSelect:'none'}}>
                     <input type="checkbox" checked={val} onChange={e=>set(e.target.checked)}
                       style={{marginTop:2,flexShrink:0,width:16,height:16,accentColor:'#a78bfa',cursor:'pointer'}}/>
                     <span style={{flex:1}}>{label}</span>
@@ -5735,21 +5735,26 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
               </div>
             )}
 
-            <button onClick={onClose} style={{padding:'10px 18px',borderRadius:10,fontWeight:700,
-                fontSize:14,cursor:'pointer',background:'rgba(255,255,255,.08)',
-                border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontFamily:'var(--font)',flexShrink:0}}>
-              Cancel
-            </button>
-            <button className="btn btn-pri"
-              disabled={claimMode ? claimBusy : saving}
-              onClick={claimMode ? handleClaim : save}
-              style={{padding:'10px 18px',fontSize:14,flex:1,justifyContent:'center',
-                minHeight:0,lineHeight:1.3}}>
-              {claimMode
-                ? (claimBusy ? <><Loader size={14} className="spin"/> Claiming…</> : <><UserPlus size={14}/> Claim @{unInput||'profile'}</>)
-                : (saving    ? <><Loader size={14} className="spin"/> Saving…</>   : <><Check size={14}/> Save changes</>)
-              }
-            </button>
+            {/* Action buttons — full-width row, Claim button grows to fill */}
+            <div style={{display:'flex',gap:10,width:'100%'}}>
+              <button onClick={onClose}
+                style={{padding:'11px 20px',borderRadius:10,fontWeight:700,fontSize:14,
+                  cursor:'pointer',background:'rgba(255,255,255,.08)',
+                  border:'1px solid rgba(255,255,255,.15)',color:'#fff',
+                  fontFamily:'var(--font)',whiteSpace:'nowrap',flexShrink:0}}>
+                Cancel
+              </button>
+              <button className="btn btn-pri"
+                disabled={claimMode ? claimBusy : saving}
+                onClick={claimMode ? handleClaim : save}
+                style={{flex:1,justifyContent:'center',padding:'11px 16px',
+                  fontSize:14,minHeight:0,lineHeight:1.3}}>
+                {claimMode
+                  ? (claimBusy ? <><Loader size={14} className="spin"/> Claiming…</> : <><UserPlus size={14}/> Claim @{unInput||'profile'}</>)
+                  : (saving    ? <><Loader size={14} className="spin"/> Saving…</>   : <><Check size={14}/> Save changes</>)
+                }
+              </button>
+            </div>
           </div>
         </div>
       </div>
