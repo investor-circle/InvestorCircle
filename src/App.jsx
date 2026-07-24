@@ -99,7 +99,6 @@ const STYLES = `
 .shell{display:flex;height:100vh;overflow:hidden;}
 .sidebar{width:256px;flex-shrink:0;background:var(--side);color:#fff;display:flex;flex-direction:column;padding:18px 14px;height:100vh;overflow:hidden;box-sizing:border-box;}
 .brand{display:flex;align-items:center;gap:12px;padding:6px 8px 16px;}
-.brand .mark{width:42px;height:42px;border-radius:13px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;letter-spacing:-1px;box-shadow:0 6px 18px rgba(124,92,252,.45);}
 .brand .nm{font-weight:800;font-size:18px;letter-spacing:-.4px;line-height:1.1;}
 .brand .tag{font-size:10px;letter-spacing:1.4px;color:var(--side-dim);text-transform:uppercase;margin-top:2px;}
 .viewing{background:var(--grad);border-radius:15px;padding:13px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;box-shadow:0 8px 22px rgba(124,92,252,.4);margin-bottom:18px;transition:.15s;}
@@ -1222,7 +1221,7 @@ export default function App() {
           } : {}}
         >
           {/* Brand */}
-          <div className="brand"><div className="mark" style={{fontSize:14,letterSpacing:'-.5px'}}>mic</div>
+          <div className="brand"><img src="/mic-logo.png" alt="mic" style={{width:42,height:42,flexShrink:0}}/>
             <div><div className="nm">myInvestorCircle</div><div className="tag">Social Investing</div></div></div>
 
           <div className="side-label">{isInv?"Menu":"Admin"}</div>
@@ -5388,7 +5387,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
       <div style={{minHeight:'100vh',background:'var(--bg)',paddingBottom:48}}>
         <div style={{background:'var(--surface)',borderBottom:'1px solid var(--line)',padding:'11px 24px',display:'flex',alignItems:'center',gap:14,position:'sticky',top:0,zIndex:100}}>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <div style={{width:30,height:30,borderRadius:8,background:'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:11,color:'#fff'}}>mic</div>
+            <img src="/mic-logo.png" alt="mic" style={{width:30,height:30,flexShrink:0}}/>
             <div><div style={{fontWeight:800,fontSize:13,lineHeight:1.1}}>myInvestorCircle</div><div style={{fontSize:10,color:'var(--muted)'}}>Transparency Platform</div></div>
           </div>
           <div style={{flex:1}}/>
