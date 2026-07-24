@@ -5369,7 +5369,13 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
     }
     setUnStatus('checking');
     const t = setTimeout(async () => {
-      const ok = await dbCheckUsername(unInput, userId);
+      // In claim mode use the unclaimed profile's own id as the exclusion id.
+      // This correctly excludes only the reserved unclaimed row so the pre-filled
+      // username shows "available" but all real active usernames still show "taken".
+      // Passing null (previous behaviour) caused `id != NULL` → NULL in SQL →
+      // 0 rows returned → every username appeared "available" — the core bug.
+      const excludeId = claimMode ? (unclaimedProfile?.id || '__claim_check__') : userId;
+      const ok = await dbCheckUsername(unInput, excludeId);
       setUnStatus(ok ? 'available' : 'taken');
     }, 500);
     return () => clearTimeout(t);
@@ -5405,14 +5411,21 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
       const uid  = cred.user.uid;
 
       // Write creator's real profile (unconditional first_name to beat AuthContext race).
-      // username=NULL intentionally — unclaimed profile still holds the reserved username until
-      // admin approves. Approval transfers it via COALESCE(user_profiles.username, unclaimed.username).
+      // Username strategy:
+      //   - Same as admin-assigned → write NULL (unclaimed profile still holds it;
+      //     approval COALESCE transfers it from the unclaimed row).
+      //   - Different from admin-assigned → write it now (no UNIQUE conflict since the
+      //     unclaimed row holds a different value). Approval COALESCE keeps it, and
+      //     Step A nulls the unclaimed row which frees the original admin username.
+      const chosenUsername = (unInput && unInput !== unclaimedProfile?.username) ? unInput : null;
       await sql`
         INSERT INTO user_profiles (id,email,full_name,first_name,last_name,username,bio,registration_status,is_admin)
-        VALUES (${uid},${claimEmail.trim()},${fullName},${fn},${ln||''},NULL,${bio.trim()||null},${regStatus},false)
+        VALUES (${uid},${claimEmail.trim()},${fullName},${fn},${ln||''},${chosenUsername},${bio.trim()||null},${regStatus},false)
         ON CONFLICT (id) DO UPDATE SET
           full_name=EXCLUDED.full_name, first_name=EXCLUDED.first_name,
-          last_name=EXCLUDED.last_name, updated_at=NOW()`;
+          last_name=EXCLUDED.last_name,
+          username=COALESCE(user_profiles.username, EXCLUDED.username),
+          updated_at=NOW()`;
 
       // Link claimer → unclaimed profile (RETURNING prevents double-claim)
       const link = await sql`
