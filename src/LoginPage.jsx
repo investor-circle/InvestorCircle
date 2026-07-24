@@ -202,9 +202,9 @@ export default function LoginPage() {
             fontSize: 23, fontWeight: 800, color: "#fff",
             margin: "0 auto 15px",
             boxShadow: "0 12px 40px rgba(109,93,245,.45)",
-          }}>ic</div>
+          }}>mic</div>
           <div style={{ fontSize: 23, fontWeight: 800, color: "#fff", letterSpacing: "-.3px" }}>
-            InvestorCircle
+            myInvestorCircle
           </div>
           <div style={{ fontSize: 14, color: "#6a6d90", marginTop: 5 }}>
             Your private investing circle
@@ -278,7 +278,7 @@ export default function LoginPage() {
           {tab === "login" && (<>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#13142b", marginBottom: 4 }}>Welcome back</div>
             <div style={{ fontSize: 14, color: "#8a8daa", marginBottom: 22 }}>
-              Sign in to your InvestorCircle account.
+              Sign in to your myInvestorCircle account.
             </div>
 
             <div style={field}>
@@ -327,7 +327,7 @@ export default function LoginPage() {
           {tab === "signup" && (<>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#13142b", marginBottom: 4 }}>Create your account</div>
             <div style={{ fontSize: 14, color: "#8a8daa", marginBottom: 22 }}>
-              Join InvestorCircle and start sharing ideas with trusted contacts.
+              Join myInvestorCircle and start sharing ideas with trusted contacts.
             </div>
 
             {/* Name row */}
@@ -385,8 +385,8 @@ export default function LoginPage() {
               )}
               {/* Always-visible explanation */}
               <div style={{ fontSize: 12, color: "#8a8daa", marginTop: 5, lineHeight: 1.5 }}>
-                This creates your <strong>permanent public profile URL</strong> — e.g.{" "}
-                <span style={{ fontFamily: "monospace", fontSize: 11 }}>investorcircle.app/#/investor/<em>yourname</em></span>.
+                This creates your <strong>permanent public profile link</strong> — e.g.{" "}
+                <span style={{ fontFamily: "monospace", fontSize: 11 }}>myinvestorcircle.app/#/investor/<em>yourname</em></span>.
                 Choose wisely — it cannot be changed once set.
               </div>
             </div>
