@@ -195,14 +195,11 @@ export default function LoginPage() {
 
         {/* Brand */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{
-            width: 58, height: 58, borderRadius: 17,
-            background: "linear-gradient(135deg,#6d5df5,#cf52d8)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 23, fontWeight: 800, color: "#fff",
-            margin: "0 auto 15px",
-            boxShadow: "0 12px 40px rgba(109,93,245,.45)",
-          }}>mic</div>
+          <img
+            src="/mic-logo.png"
+            alt="myInvestorCircle"
+            style={{ width: 80, height: 80, margin: "0 auto 15px", display: "block" }}
+          />
           <div style={{ fontSize: 23, fontWeight: 800, color: "#fff", letterSpacing: "-.3px" }}>
             myInvestorCircle
           </div>
