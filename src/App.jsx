@@ -637,18 +637,33 @@ export default function App() {
     setHoldings([]);
   }, [user?.uid]); // runs on every user change, including logout → login switches
 
-  // SECURITY: clear ALL user-specific state when the authenticated user changes.
-  // This prevents data from one account (connections, recos, feed, contacts, etc.)
-  // from leaking into a different account opened in the same browser tab.
-  // Also cleans up stale profile URLs on logout to prevent session-restore re-opening them.
+  // ── Track previous UID so we skip the initial mount in the security reset ──
+  const prevUidRef = useRef(undefined);
+
+  // SECURITY: when the authenticated user actually CHANGES (different UID, or logout),
+  // clear all user-specific state to prevent data leaking between accounts in the same tab.
+  // We skip the initial mount (prevUid === undefined) because state is already empty then
+  // and we don't want to stomp on data the data-load effect is about to populate.
   useEffect(() => {
+    const currentUid = user?.uid ?? null;
+    const prevUid    = prevUidRef.current;
+    prevUidRef.current = currentUid;
+
+    // Skip initial mount — React always fires effects on first render; we only want
+    // to reset when the user identity genuinely switches mid-session.
+    if (prevUid === undefined) return;
+    // Also skip redundant fires with the same UID (React batching edge cases)
+    if (prevUid === currentUid) return;
+
+    // User changed — wipe all user-specific state.
+    // NOTE: contacts is a useMemo derived from connections, so clearing
+    // connections automatically clears contacts — no setContacts exists.
     setConnections([]);
     setGroups([]);
     setRecsReceived([]);
     setRecsMade([]);
     setNotifications([]);
     setSharing({});
-    setContacts([]);
     setUsers([]);
     setPublicFeedRecos([]);
     setNetworkEngagementRecos([]);
@@ -656,20 +671,19 @@ export default function App() {
     setClaimRequests([]);
     setHasPendingClaim(false);
     setSecurityTicker(null);
-    setInvestorPage('home');   // always start at home when user changes
+    setInvestorPage('home');   // new user always starts at home
     setAdminPage('users');
 
     if (!user) {
-      // On logout: clear any profile hash so the next page load starts clean.
-      // Using setPageHash('') and replaceState in the cleanup rather than
-      // window.location.hash='' to avoid creating a new history entry.
-      if (pageHash.startsWith('#/investor/')) {
+      // Logout: also clear the profile hash so the next page-load starts clean.
+      // We read the current hash directly (not from stale closure) to be reliable.
+      const currentHash = window.location.hash || pageHash;
+      if (currentHash.startsWith('#/investor/')) {
         setPageHash('');
         window.history.replaceState({}, '', window.location.pathname + window.location.search);
       }
-      // Clear any stale auth-flow localStorage keys
       sessionStorage.removeItem('pending_connect_username');
-      // Don't clear mic_ref or mic_claim_token — those are URL-captured and still valid
+      localStorage.removeItem('mic_claim_token');
     }
   }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
   const [assetClasses,  setAssetClasses]  = useState(DEFAULT_CLASSES);
