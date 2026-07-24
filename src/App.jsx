@@ -605,23 +605,29 @@ export default function App() {
     }
   }, [pageHash]);
 
-  // AUTO-REDIRECT: If a logged-in admin opens a profile URL that originated from
-  // external browser history / autocomplete / session-restore (i.e. NOT from an
-  // in-app navigation that already set history.state._micProfileHash), redirect
-  // them to the admin panel automatically.  Admins access creator profiles via
-  // Admin → Creators → View, which opens a fresh new tab; they shouldn't be
-  // stranded on a profile page from an old URL every time they open the site.
+  // AUTO-REDIRECT: Redirect logged-in users away from stale profile URLs.
+  //
+  // We use document.referrer to tell intentional from stale:
+  //   INTENTIONAL: admin clicked "View" in admin panel → window.open() sets
+  //                document.referrer to this hostname → profile is shown normally.
+  //   STALE/STUCK: browser session-restore, typed URL, autocomplete →
+  //                referrer is empty or external → clear pageHash, go to app.
+  //
+  // Why NOT history.state._micProfileHash: replaceState writes it on every
+  // visit, so Chrome session-restore restores it too — the check always fired
+  // true and the redirect never ran. document.referrer is set only for
+  // genuine same-site navigations and is NOT preserved across sessions.
+  const _profileCameFromThisSite = (() => {
+    try { return document.referrer.includes(window.location.hostname); }
+    catch { return false; }
+  })();
+
   useEffect(() => {
-    if (authLoading) return; // wait until auth is resolved
+    if (authLoading || !user) return;               // wait for auth; only logged-in
     if (!pageHash.startsWith('#/investor/')) return;
-    if (!userIsAdmin) return; // non-admin users viewing profiles is intentional
-    // history.state._micProfileHash is set by our replaceState above — when it's
-    // present, the user is still in the SAME session where they navigated to this
-    // profile intentionally.  When it's absent, the URL came from outside
-    // (bookmarks, browser history, session-restore) and we should redirect away.
-    if (window.history.state?._micProfileHash) return;
-    setPageHash('');
-  }, [authLoading, userIsAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (_profileCameFromThisSite) return;           // intentional navigation — allow
+    setPageHash('');                                // stale URL — go to main app
+  }, [authLoading, user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Post-login/signup: auto-send connection request if user came from a public profile ─
   useEffect(() => {
@@ -811,8 +817,20 @@ export default function App() {
   const [claimRequests, setClaimRequests] = useState([]);
   const [hasPendingClaim, setHasPendingClaim] = useState(false); // creator claimed but not yet approved
 
-  // Resolve claimToken → profile from DB
+  // Resolve claimToken → profile from DB.
+  // IMPORTANT: if a user is already logged in, wipe any leftover token immediately.
+  // Without this, a stale mic_claim_token in localStorage causes ClaimProfilePage
+  // to flash for ~300ms on every page load while Firebase auth is still resolving.
   useEffect(() => {
+    if (user) {
+      // Any logged-in user: clear stale claim token from localStorage right away.
+      if (claimToken) {
+        localStorage.removeItem('mic_claim_token');
+        setClaimToken(null);
+        setClaimProfile(null);
+      }
+      return;
+    }
     if (!claimToken || !sql) return;
     sql`SELECT id, full_name, first_name, last_name, username, bio,
                registration_status, sebi_approval_status, claim_status
@@ -824,7 +842,7 @@ export default function App() {
         else { localStorage.removeItem('mic_claim_token'); setClaimToken(null); }
       })
       .catch(() => {});
-  }, [claimToken]);
+  }, [claimToken, user?.uid]);
 
   // ── Admin: load pending claim requests ───────────────────────────────────────
   const loadClaimRequests = async () => {
@@ -1125,8 +1143,12 @@ export default function App() {
       <div style={{color:"#8a8daa",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15}}>Loading…</div>
     </div>
   );
-  // ── Creator claim flow: show claim page before login ─────────────────────────
-  if (!user && claimToken && claimProfile) {
+  // ── Creator claim flow: show claim page ONLY after auth has resolved ─────────
+  // Without !authLoading, a stale mic_claim_token shows ClaimProfilePage for
+  // ~300ms on every load while Firebase auth is still resolving (user is briefly
+  // null). Adding !authLoading ensures we only show this after we know the user
+  // is genuinely not logged in.
+  if (!authLoading && !user && claimToken && claimProfile) {
     return (
       <div className="app">
         <style>{STYLES}</style>
@@ -10166,6 +10188,15 @@ function ClaimProfilePage({ profile, token, onBack }) {
 
   return (
     <>
+      {/* Escape hatch — admins/existing users who land here via stale claim token */}
+      <div style={{background:'rgba(0,0,0,.55)',padding:'8px 16px',textAlign:'center',fontSize:12,color:'rgba(255,255,255,.55)'}}>
+        Already have an account?{' '}
+        <button onClick={onBack} style={{background:'none',border:'none',cursor:'pointer',
+          color:'#c4b5fd',textDecoration:'underline',fontSize:12,padding:0,fontFamily:'inherit'}}>
+          Sign in instead →
+        </button>
+      </div>
+
       {/* Full public profile page — same UI the creator will see once live */}
       <PublicProfilePage
         username={profile.username}
