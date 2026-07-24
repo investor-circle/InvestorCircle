@@ -1221,7 +1221,7 @@ export default function App() {
           } : {}}
         >
           {/* Brand */}
-          <div className="brand"><img src="/mic-logo.png" alt="mic" style={{width:42,height:42,flexShrink:0}}/>
+          <div className="brand"><img src="/mic-logo.png" alt="mic" style={{width:52,height:52,flexShrink:0}}/>
             <div><div className="nm">myInvestorCircle</div><div className="tag">Social Investing</div></div></div>
 
           <div className="side-label">{isInv?"Menu":"Admin"}</div>
