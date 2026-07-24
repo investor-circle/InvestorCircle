@@ -9,7 +9,7 @@ import {
   ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
   Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil, Database,
   Globe, Trophy, Copy, ExternalLink, ArrowLeft, Link, Flame, Info,
-  BarChart2, Activity, Zap, Target, Clock
+  BarChart2, Activity, Zap, Target, Clock, Image as ImageIcon
 } from "lucide-react";
 import { exportPortfolioExcel, exportPortfolioPDF } from "./exporters";
 import { parsePortfolioFile } from "./importers";
@@ -2886,7 +2886,7 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                       </div>
                       <div className="cap">Thesis from {recName(r)}{isForwarded(r)?` · forwarded by ${sharedByName(r)}`:""}</div>
                       <div style={{fontSize:13,lineHeight:1.7,color:"var(--ink-soft)",marginTop:4,marginBottom:12,maxWidth:720}}>
-                        {r.thesis || <span className="muted">No thesis shared.</span>}
+                        {r.thesis ? <ThesisRenderer thesis={r.thesis}/> : <span className="muted">No thesis shared.</span>}
                       </div>
                       <button className="btn btn-soft btn-sm" onClick={()=>setFwd(r)}><Forward size={13}/> Forward this idea</button>
                       <div style={{marginTop:18,borderTop:'1px solid var(--line)',paddingTop:14}}>
@@ -3428,7 +3428,7 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
                       {/* Thesis */}
                       <div className="cap">Your thesis</div>
                       <div style={{fontSize:13,lineHeight:1.7,color:"var(--ink-soft)",marginTop:4,marginBottom:12,maxWidth:720}}>
-                        {r.thesis && r.thesis!=="—"?r.thesis:<span className="muted">No thesis recorded.</span>}
+                        {r.thesis && r.thesis!=="—"?<ThesisRenderer thesis={r.thesis}/>:<span className="muted">No thesis recorded.</span>}
                       </div>
                       {/* Acted on list */}
                       {r.actedList.length>0&&(
@@ -3486,6 +3486,302 @@ function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAdd }) {
       <button className="btn btn-pri" disabled={!valid} onClick={save}>Add recommendation</button></div></div>
   </div></div>);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THESIS: rich-text utilities, editor, and renderer
+   ─ Storage: thesis column is either plain text (legacy) or a JSON string:
+       {"__v":"1","text":"...","images":["data:image/jpeg;base64,..."]}
+   ─ Limits: 500 chars · 2 images · 2 MB original → auto-compressed to ≤100 KB
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const THESIS_MAX_CHARS  = 500;
+const THESIS_MAX_IMAGES = 2;
+const THESIS_MAX_MB     = 2;      // original upload limit
+const THESIS_TARGET_KB  = 100;    // compressed target per image
+
+const THESIS_EMOJIS = [
+  '😊','😄','😂','🤔','💡','✅','❌','⚠️','🔥','💯',
+  '📈','📉','📊','💰','💎','🏆','🚀','⬆️','⬇️','↗️',
+  '🎯','📌','⏰','🔔','💬','👀','🙌','💪','🤝','👍',
+  '🟢','🔴','🟡','🔵','⚡','🌟','📝','🔍','💼','🏦',
+];
+
+function parseThesis(raw) {
+  if (!raw || raw === '—') return null;
+  try { const p = JSON.parse(raw); if (p.__v === '1') return p; } catch {}
+  return { __v:'0', text: String(raw), images: [] };
+}
+
+function serializeThesis({ text, images }) {
+  const t = (text || '').trim();
+  if (!t && !images?.length) return null;
+  if (!images?.length) return t;
+  return JSON.stringify({ __v:'1', text: t, images });
+}
+
+function getThesisText(raw) {
+  const p = parseThesis(raw);
+  return p?.text || '';
+}
+
+async function compressImage(file) {
+  if (file.size > THESIS_MAX_MB * 1024 * 1024)
+    throw new Error(`Image "${file.name}" exceeds ${THESIS_MAX_MB} MB. Please use a smaller file.`);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = ev => {
+      const img = new window.Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width: w, height: h } = img;
+        const maxDim = 1200;
+        if (w > maxDim || h > maxDim) {
+          if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else        { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const limit = THESIS_TARGET_KB * 1024 * 1.37;
+        let q = 0.82, data = canvas.toDataURL('image/jpeg', q);
+        while (data.length > limit && q > 0.2) { q -= 0.1; data = canvas.toDataURL('image/jpeg', q); }
+        resolve(data);
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ─── ThesisEditor ────────────────────────────────────────────────────────── */
+function ThesisEditor({ value, onChange }) {
+  const init = useMemo(() => parseThesis(value), []);  // eslint-disable-line
+  const [text,      setText]      = useState(init?.text   || '');
+  const [images,    setImages]    = useState(init?.images || []);
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [imgErr,    setImgErr]    = useState('');
+  const taRef  = useRef(null);
+  const emoRef = useRef(null);
+  const isMobile = useIsMobile();
+
+  const emit = (t, im) => onChange(serializeThesis({ text: t ?? text, images: im ?? images }));
+
+  // Close emoji picker on outside click
+  useEffect(() => {
+    if (!showEmoji) return;
+    const h = e => { if (emoRef.current && !emoRef.current.contains(e.target)) setShowEmoji(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showEmoji]);
+
+  const wrapSel = (open, close) => {
+    const ta = taRef.current; if (!ta) return;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const sel = text.slice(s, e) || 'text';
+    const next = (text.slice(0, s) + open + sel + close + text.slice(e)).slice(0, THESIS_MAX_CHARS);
+    setText(next); emit(next, undefined);
+    setTimeout(() => { ta.focus(); ta.setSelectionRange(s + open.length, s + open.length + sel.length); }, 0);
+  };
+
+  const insertLink = () => {
+    const ta = taRef.current; if (!ta) return;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const sel = text.slice(s, e);
+    const url = window.prompt('Enter URL (must start with https://):');
+    if (!url || !url.startsWith('http')) return;
+    const label = sel || 'read more';
+    const str   = `[${label}](${url})`;
+    const next  = (text.slice(0, s) + str + text.slice(e)).slice(0, THESIS_MAX_CHARS);
+    setText(next); emit(next, undefined);
+  };
+
+  const addEmoji = em => {
+    const ta = taRef.current;
+    const s  = ta?.selectionStart ?? text.length;
+    const next = (text.slice(0, s) + em + text.slice(s)).slice(0, THESIS_MAX_CHARS);
+    setText(next); emit(next, undefined);
+    setShowEmoji(false);
+    setTimeout(() => { ta?.focus(); ta?.setSelectionRange(s + em.length, s + em.length); }, 0);
+  };
+
+  const handleFiles = async files => {
+    setImgErr('');
+    const arr = Array.from(files);
+    if (images.length + arr.length > THESIS_MAX_IMAGES) {
+      setImgErr(`Maximum ${THESIS_MAX_IMAGES} images allowed.`); return;
+    }
+    try {
+      const compressed = await Promise.all(arr.slice(0, THESIS_MAX_IMAGES - images.length).map(compressImage));
+      const ni = [...images, ...compressed];
+      setImages(ni); emit(undefined, ni);
+    } catch(e) { setImgErr(e.message || 'Image processing failed.'); }
+  };
+
+  const removeImage = i => {
+    const ni = images.filter((_, j) => j !== i);
+    setImages(ni); emit(undefined, ni); setImgErr('');
+  };
+
+  const pct = text.length / THESIS_MAX_CHARS;
+  const cCol = pct > 0.9 ? 'var(--loss)' : pct > 0.75 ? 'var(--amber)' : 'var(--muted)';
+
+  const btnBase = { minWidth:28, height:28, border:'1px solid var(--line)', borderRadius:6,
+    background:'var(--surface)', cursor:'pointer', color:'var(--ink)', display:'flex',
+    alignItems:'center', justifyContent:'center', lineHeight:1, flexShrink:0 };
+
+  return (
+    <div>
+      {/* ── Toolbar ── */}
+      <div style={{display:'flex',alignItems:'center',gap:4,padding:'6px 10px',
+        background:'var(--surface-2)',borderRadius:'9px 9px 0 0',
+        borderBottom:'1px solid var(--line)',flexWrap:'wrap',rowGap:4}}>
+
+        <button onMouseDown={e=>e.preventDefault()} onClick={()=>wrapSel('**','**')}
+          title="Bold (Ctrl+B)" style={{...btnBase,fontWeight:800,fontSize:13,padding:'0 6px',minWidth:28}}>B</button>
+        <button onMouseDown={e=>e.preventDefault()} onClick={()=>wrapSel('_','_')}
+          title="Italic" style={{...btnBase,fontStyle:'italic',fontSize:13,padding:'0 6px',minWidth:28}}>I</button>
+        <button onMouseDown={e=>e.preventDefault()} onClick={insertLink}
+          title="Insert link" style={btnBase}><Link size={13}/></button>
+
+        {/* Emoji picker */}
+        <div style={{position:'relative'}} ref={emoRef}>
+          <button onMouseDown={e=>e.preventDefault()} onClick={()=>setShowEmoji(v=>!v)}
+            title="Insert emoji" style={{...btnBase,background:showEmoji?'var(--accent-soft)':'var(--surface)',fontSize:15}}>😊</button>
+          {showEmoji&&(
+            <div style={{position:'absolute',top:32,left:0,zIndex:500,background:'var(--surface)',
+              border:'1px solid var(--line)',borderRadius:10,padding:8,
+              boxShadow:'0 8px 24px rgba(0,0,0,.18)',
+              display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:1,
+              width: isMobile ? 260 : 280}}>
+              {THESIS_EMOJIS.map(em=>(
+                <button key={em} onMouseDown={e=>e.preventDefault()} onClick={()=>addEmoji(em)}
+                  style={{background:'none',border:'none',cursor:'pointer',fontSize:18,
+                    padding:3,borderRadius:4,lineHeight:1}}>{em}</button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Image upload */}
+        <label title={images.length>=THESIS_MAX_IMAGES?`Max ${THESIS_MAX_IMAGES} images`:'Add image'}
+          style={{...btnBase,cursor:images.length>=THESIS_MAX_IMAGES?'not-allowed':'pointer',
+            opacity:images.length>=THESIS_MAX_IMAGES?.45:1}}>
+          <input type="file" accept="image/*" multiple style={{display:'none'}}
+            disabled={images.length>=THESIS_MAX_IMAGES}
+            onChange={e=>{handleFiles(e.target.files);e.target.value='';}}/>
+          <ImageIcon size={13}/>
+        </label>
+
+        <div style={{marginLeft:'auto',fontSize:10,color:'var(--muted)',whiteSpace:'nowrap',lineHeight:1.3}}>
+          📷 Max {THESIS_MAX_IMAGES} images<br/>· {THESIS_MAX_MB}MB each
+        </div>
+      </div>
+
+      {/* ── Textarea ── */}
+      <textarea ref={taRef} value={text} onChange={e=>{ const v=e.target.value.slice(0,THESIS_MAX_CHARS); setText(v); emit(v,undefined); }}
+        placeholder={`Share your investment thesis… Use **bold**, _italic_, [link text](https://url) · Max ${THESIS_MAX_CHARS} chars`}
+        rows={3}
+        style={{borderRadius:'0 0 9px 9px',resize:'vertical',fontFamily:'var(--font)',fontSize:13,
+          lineHeight:1.65,padding:'10px 12px',border:'1px solid var(--line)',borderTop:'none',
+          background:'var(--surface)',color:'var(--ink)',outline:'none',width:'100%',boxSizing:'border-box'}}/>
+
+      {/* ── Footer row ── */}
+      <div style={{display:'flex',justifyContent:'flex-end',marginTop:3}}>
+        <span style={{fontSize:11,color:cCol,fontVariantNumeric:'tabular-nums'}}>{text.length}/{THESIS_MAX_CHARS}</span>
+      </div>
+
+      {/* ── Error ── */}
+      {imgErr&&<div className="note warn" style={{fontSize:12,marginTop:4}}>{imgErr}</div>}
+
+      {/* ── Image previews ── */}
+      {images.length>0&&(
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>
+          {images.map((src,i)=>(
+            <div key={i} style={{position:'relative',flexShrink:0}}>
+              <img src={src} alt="" style={{width:isMobile?'calc((100vw - 96px) / 2)':110,
+                height:isMobile?'calc((100vw - 96px) / 2)':110,objectFit:'cover',
+                borderRadius:8,border:'1px solid var(--line)',display:'block'}}/>
+              <button onClick={()=>removeImage(i)}
+                style={{position:'absolute',top:4,right:4,width:22,height:22,borderRadius:'50%',
+                  background:'rgba(0,0,0,.65)',border:'none',color:'#fff',cursor:'pointer',
+                  display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,lineHeight:1,padding:0}}>×</button>
+              <div style={{position:'absolute',bottom:4,left:4,fontSize:9,background:'rgba(0,0,0,.5)',
+                color:'#fff',borderRadius:3,padding:'1px 4px'}}>#{i+1}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── ThesisRenderer ─────────────────────────────────────────────────────── */
+function ThesisRenderer({ thesis, previewLines=3 }) {
+  const [expanded, setExpanded] = useState(false);
+  const parsed = useMemo(() => parseThesis(thesis), [thesis]);
+  if (!parsed) return null;
+  const { text, images } = parsed;
+  if (!text && !images?.length) return null;
+
+  const html = useMemo(() => {
+    if (!text) return '';
+    return text
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/_(.+?)_/g, '<em>$1</em>')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--accent-ink);text-decoration:underline;word-break:break-all">$1</a>')
+      .replace(/\n/g, '<br/>');
+  }, [text]);
+
+  const isLong = text.length > 200 || images?.length > 0;
+  const imgLabel = images?.length ? ` + ${images.length} image${images.length>1?'s':''}` : '';
+
+  const textNode = (clamp) => html ? (
+    <div style={{fontSize:13,lineHeight:1.7,color:'var(--ink-soft)',wordBreak:'break-word',
+      ...(clamp ? {overflow:'hidden',display:'-webkit-box',
+        WebkitLineClamp:previewLines,WebkitBoxOrient:'vertical'} : {})}}
+      dangerouslySetInnerHTML={{__html:html}}/>
+  ) : null;
+
+  if (!isLong) return (
+    <div>
+      {textNode(false)}
+      {images?.map((src,i)=>(
+        <img key={i} src={src} alt="" style={{maxWidth:'100%',borderRadius:8,
+          marginTop:8,display:'block',border:'1px solid var(--line)'}}/>
+      ))}
+    </div>
+  );
+
+  return (
+    <div>
+      {expanded ? (
+        <>
+          {textNode(false)}
+          {images?.map((src,i)=>(
+            <img key={i} src={src} alt="" style={{maxWidth:'100%',borderRadius:8,
+              marginTop:8,display:'block',border:'1px solid var(--line)'}}/>
+          ))}
+          <button onClick={()=>setExpanded(false)} style={{background:'none',border:'none',
+            cursor:'pointer',fontSize:12,color:'var(--accent-ink)',padding:'4px 0',fontWeight:600,marginTop:4}}>
+            Show less ↑
+          </button>
+        </>
+      ) : (
+        <>
+          {textNode(true)}
+          <button onClick={()=>setExpanded(true)} style={{background:'none',border:'none',
+            cursor:'pointer',fontSize:12,color:'var(--accent-ink)',padding:'4px 0',fontWeight:600}}>
+            Read more{imgLabel} →
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 
 function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, me, onClose, onCreate }) {
   const myId = me?.id || "me";
@@ -3695,7 +3991,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
           <select value={horizon} onChange={e=>setHorizon(e.target.value)}>{HORIZONS.map(h=><option key={h} value={h}>{h}</option>)}</select></div>
       </div>
 
-      <div className="field"><label>Your thesis</label><textarea rows={3} value={thesis} onChange={e=>setThesis(e.target.value)} placeholder="Why should they look at this?"/></div>
+      <div className="field"><label>Thesis <span className="muted small">(optional — formatting, emojis &amp; images supported)</span></label><ThesisEditor value={thesis} onChange={setThesis}/></div>
       <div className="field"><label>Send to contacts</label>
         {contacts.length===0 ? <div className="muted small">No contacts yet.</div> :
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{contacts.map(c=><span key={c.id} className={"chip"+(targets.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{targets.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}</div>}</div>
@@ -5860,9 +6156,8 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
 
         {/* ── Thesis — click to expand ── */}
         {r.thesis&&r.thesis!=='—'&&(
-          <div onClick={()=>setExpanded(v=>!v)} style={{fontSize:13.5,color:'var(--ink-soft)',lineHeight:1.65,marginBottom:10,cursor:'pointer',
-            display:expanded?'block':'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:expanded?'visible':'hidden'}}>
-            {r.thesis}
+          <div style={{marginBottom:10,cursor:'pointer'}} onClick={()=>setExpanded(v=>!v)}>
+            <ThesisRenderer thesis={r.thesis} previewLines={2}/>
           </div>
         )}
 
@@ -5938,7 +6233,7 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
           {r.thesis&&r.thesis!=='—'&&(
             <div style={{marginBottom:16}}>
               <div className="cap" style={{marginBottom:5}}>Thesis</div>
-              <div style={{fontSize:13,lineHeight:1.7,color:'var(--ink-soft)'}}>{r.thesis}</div>
+              <ThesisRenderer thesis={r.thesis} previewLines={8}/>
             </div>
           )}
           <div style={{borderTop:'1px solid var(--line)',paddingTop:14}}>
@@ -9328,7 +9623,7 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
 
           {/* Thesis */}
           <div className="field"><label>Thesis / rationale <span className="muted small">(optional)</span></label>
-            <textarea rows={3} value={thesis} onChange={e=>setThesis(e.target.value)} placeholder="Why should they look at this?"/>
+            <ThesisEditor value={thesis} onChange={setThesis}/>
           </div>
 
           {/* is_public toggle — same as regular modal, ticked by default */}
@@ -10971,11 +11266,11 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
     const activeR = recos;
     const bullR   = activeR.filter(r=>r.recommendation_type==='Buy');
     const bearR   = activeR.filter(r=>r.recommendation_type==='Sell');
-    const theses  = activeR.filter(r=>r.thesis).map(r=>r.thesis);
+    const theses  = activeR.filter(r=>r.thesis).map(r=>getThesisText(r.thesis));
     // Simulate a brief async "analysis" then show structured summary
     setTimeout(()=>{
-      const bullThemes = bullR.slice(0,3).map(r=>r.thesis||null).filter(Boolean);
-      const bearThemes = bearR.slice(0,3).map(r=>r.thesis||null).filter(Boolean);
+      const bullThemes = bullR.slice(0,3).map(r=>getThesisText(r.thesis)||null).filter(Boolean);
+      const bearThemes = bearR.slice(0,3).map(r=>getThesisText(r.thesis)||null).filter(Boolean);
       const community  = computeConsensus(activeR);
       const sentiment  = community.bullPct>=70?'strongly bullish':community.bullPct>=55?'moderately bullish':community.bearPct>=70?'strongly bearish':community.bearPct>=55?'cautious':'divided';
       setAiSummary({
