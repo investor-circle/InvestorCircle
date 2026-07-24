@@ -592,11 +592,8 @@ export default function App() {
   }, []);
 
   // SECURITY: whenever a profile URL is active, replace the browser history entry
-  // with the clean base URL so:
-  //  a) browser session-restore / "reopen closed tab" doesn't re-load the profile
-  //  b) the back-button takes the user to the page before this site, not back to
-  //     a specific investor profile
-  //  c) clearing the hash on logout actually works (nothing to undo)
+  // with the clean base URL so browser session-restore / "reopen closed tab" and
+  // the back-button don't re-load a specific investor profile.
   // We keep pageHash in React state so the profile still renders correctly.
   useEffect(() => {
     if (pageHash.startsWith('#/investor/')) {
@@ -607,6 +604,24 @@ export default function App() {
       );
     }
   }, [pageHash]);
+
+  // AUTO-REDIRECT: If a logged-in admin opens a profile URL that originated from
+  // external browser history / autocomplete / session-restore (i.e. NOT from an
+  // in-app navigation that already set history.state._micProfileHash), redirect
+  // them to the admin panel automatically.  Admins access creator profiles via
+  // Admin → Creators → View, which opens a fresh new tab; they shouldn't be
+  // stranded on a profile page from an old URL every time they open the site.
+  useEffect(() => {
+    if (authLoading) return; // wait until auth is resolved
+    if (!pageHash.startsWith('#/investor/')) return;
+    if (!userIsAdmin) return; // non-admin users viewing profiles is intentional
+    // history.state._micProfileHash is set by our replaceState above — when it's
+    // present, the user is still in the SAME session where they navigated to this
+    // profile intentionally.  When it's absent, the URL came from outside
+    // (bookmarks, browser history, session-restore) and we should redirect away.
+    if (window.history.state?._micProfileHash) return;
+    setPageHash('');
+  }, [authLoading, userIsAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Post-login/signup: auto-send connection request if user came from a public profile ─
   useEffect(() => {
@@ -4876,9 +4891,9 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
                 )}
                 <button
                   className="btn btn-ghost btn-sm"
-                  onClick={()=>{ window.location.hash=''; setTimeout(()=>{ window.location.hash=''; },50); }}
+                  onClick={onBack}
                   style={{fontSize:11,borderColor:'rgba(251,146,60,.4)',color:'#ea580c'}}
-                  title="Go to Admin → Creators to manage this profile"
+                  title="Go back to Admin panel"
                 >
                   <Database size={12}/> Admin panel
                 </button>
