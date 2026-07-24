@@ -6143,12 +6143,16 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
               {r.assetClass&&<span style={{display:'flex',alignItems:'center',gap:4}}><span className="dot" style={{background:classColor(r.assetClass),width:7,height:7}}/>{r.assetClass}</span>}
               {r.priceAt>0&&<span>Reco ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
               {r.feedSource==='public'
-                ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(99,102,241,.1)',color:'rgb(99,102,241)',border:'1px solid rgba(99,102,241,.25)',display:'flex',alignItems:'center',gap:3}}><Globe size={9}/> Platform</span>
+                ? <span title="This recommendation is publicly visible to all investors on myInvestorCircle"
+                    style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(99,102,241,.1)',color:'rgb(99,102,241)',border:'1px solid rgba(99,102,241,.25)',display:'flex',alignItems:'center',gap:3}}><Globe size={9}/> Public</span>
                 : r.isPublic
-                ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)',border:'1px solid rgba(21,146,78,.2)'}}>Public</span>
+                ? <span title="This recommendation is publicly visible to all investors"
+                    style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(99,102,241,.1)',color:'rgb(99,102,241)',border:'1px solid rgba(99,102,241,.25)',display:'flex',alignItems:'center',gap:3}}><Globe size={9}/> Public</span>
                 : r.shareType==='group'
-                  ? <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',border:'1px solid var(--accent-line)',display:'flex',alignItems:'center',gap:3}}><Layers size={10}/>{r.groupId?(groups?.find?.(g=>g.id===r.groupId)?.name||'Group'):'Group'}</span>
-                  : <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--surface-2)',color:'var(--muted)',border:'1px solid var(--line)'}}>Direct</span>}
+                  ? <span title={`Shared with the group: ${groups?.find?.(g=>g.id===r.groupId)?.name||'your group'}`}
+                      style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',border:'1px solid var(--accent-line)',display:'flex',alignItems:'center',gap:3}}><Layers size={10}/>{r.groupId?(groups?.find?.(g=>g.id===r.groupId)?.name||'Group'):'Group'}</span>
+                  : <span title="Sent directly to you by the investor — only you can see this"
+                      style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--surface-2)',color:'var(--muted)',border:'1px solid var(--line)',display:'flex',alignItems:'center',gap:3}}><Send size={9}/> Sent to you</span>}
             </div>
           </div>
 
