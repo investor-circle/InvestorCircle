@@ -194,17 +194,19 @@ export default function LoginPage() {
       <div style={{ width: "100%", maxWidth: 420, position: "relative" }}>
 
         {/* Brand */}
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28 }}>
           <img
             src="/mic-logo.png"
             alt="myInvestorCircle"
-            style={{ width: 80, height: 80, margin: "0 auto 15px", display: "block" }}
+            style={{ width: 80, height: 80, flexShrink: 0 }}
           />
-          <div style={{ fontSize: 23, fontWeight: 800, color: "#fff", letterSpacing: "-.3px" }}>
-            myInvestorCircle
-          </div>
-          <div style={{ fontSize: 14, color: "#6a6d90", marginTop: 5 }}>
-            Your private investing circle
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#fff", letterSpacing: "-.3px", lineHeight: 1.1 }}>
+              myInvestorCircle
+            </div>
+            <div style={{ fontSize: 14, color: "#6a6d90", marginTop: 6 }}>
+              Your private investing circle
+            </div>
           </div>
         </div>
 
