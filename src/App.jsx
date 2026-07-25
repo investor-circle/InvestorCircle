@@ -107,16 +107,27 @@ const STYLES = `
 .viewing .vs{font-size:10px;letter-spacing:1.3px;text-transform:uppercase;color:rgba(255,255,255,.78);}
 .viewing .role{font-size:16px;font-weight:700;line-height:1.1;}
 .side-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--side-dim);padding:4px 12px 8px;}
-.nav-item{display:flex;align-items:center;gap:13px;padding:12px 13px;border-radius:12px;font-size:14.5px;font-weight:600;color:var(--side-text);cursor:pointer;margin-bottom:3px;border:1px solid transparent;transition:.12s;}
+.side-section{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--side-dim);padding:12px 10px 5px;opacity:.75;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:11px;cursor:pointer;margin-bottom:2px;border:1px solid transparent;transition:.12s;color:var(--side-text);}
+.nav-item .nav-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.12s;}
+.nav-item .nav-txt{display:flex;flex-direction:column;min-width:0;flex:1;}
+.nav-item .nav-lbl{font-size:13.5px;font-weight:600;line-height:1.2;}
+.nav-item .nav-sub{font-size:10.5px;color:var(--side-dim);font-weight:400;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .nav-item svg{color:var(--side-dim);}
 .nav-item:hover{background:rgba(255,255,255,.045);color:#fff;}
+.nav-item:hover .nav-icon{filter:brightness(1.18);}
 .nav-item:hover svg{color:#cfd2ee;}
-.nav-item.active{background:rgba(124,92,252,.16);border-color:rgba(124,92,252,.45);color:#fff;box-shadow:0 8px 20px rgba(124,92,252,.12);}
+.nav-item.active{background:rgba(124,92,252,.16);border-color:rgba(124,92,252,.35);color:#fff;box-shadow:0 4px 14px rgba(124,92,252,.1);}
 .nav-item.active svg{color:#b6a9ff;}
-.nav-badge{margin-left:auto;background:var(--grad);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:2px 9px;}
-.side-foot{margin-top:auto;padding-top:14px;border-top:1px solid var(--side-line);}
+.nav-item.active .nav-sub{color:rgba(255,255,255,.5);}
+.nav-badge{margin-left:auto;background:var(--grad);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;flex-shrink:0;}
+.side-foot{padding-top:12px;border-top:1px solid var(--side-line);}
 .side-stat{display:flex;justify-content:space-between;padding:7px 12px;font-size:13px;color:var(--side-dim);}
 .side-stat b{color:#fff;font-weight:700;}
+.side-conn{padding:10px 0 0;border-top:1px solid var(--side-line);}
+.side-conn-row{display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:11px;cursor:pointer;transition:.12s;color:var(--side-text);}
+.side-conn-row:hover{background:rgba(255,255,255,.045);color:#fff;}
+.side-conn-badge{background:var(--grad);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;}
 
 .main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh;overflow:visible;}
 .topbar{height:64px;background:rgba(245,245,251,.8);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 26px;position:sticky;top:0;z-index:200;}
@@ -1175,18 +1186,28 @@ export default function App() {
     : (p) => { setAdminPage(p); };
   const canCreateGroups = configs.groupCreationPolicy==="all";
 
-  const nav = isInv ? [
-    { id:"home",        label:"Home",             icon:Home },
-    ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", icon:Lightbulb, badge:newRecs }] : []),
-    { id:"portfolio",    label:"Portfolio Intelligence", icon:BarChart2 },
-    { id:"market_intel", label:"Market Intelligence",    icon:TrendingUp },
-    { id:"sec_intel",    label:"Security Intelligence",  icon:Activity },
-    { id:"network",     label:"Network",           icon:Users },
-    { id:"trackrecord", label:"Track Record",       icon:Globe },
-    { id:"sharing",     label:"Sharing & Privacy", icon:Shield },
-    { id:"about",       label:"About MIC",          icon:Info },
-    { id:"contact",     label:"Contact Us",          icon:MessageSquare },
-  ] : [
+  const navSections = isInv ? [
+    { items: [
+      { id:"home",        label:"Home",            icon:Home,       iconColor:"#b6a9ff", iconBg:"rgba(124,92,252,.22)" },
+    ]},
+    { label:"DISCOVER & INSIGHTS", items: [
+      ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", sub:"Track ideas & performance", icon:Lightbulb, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)", badge:newRecs }] : []),
+      { id:"portfolio",    label:"Portfolio",       sub:"Analyse your holdings",         icon:PieChart,  iconColor:"#fb923c", iconBg:"rgba(251,146,60,.13)" },
+      { id:"market_intel", label:"Market Insights", sub:"Trends, sectors & indices",     icon:TrendingUp,iconColor:"#4ade80", iconBg:"rgba(74,222,128,.13)" },
+      { id:"sec_intel",    label:"Stock Insights",  sub:"In-depth company analysis",     icon:Shield,    iconColor:"#34d399", iconBg:"rgba(52,211,153,.13)" },
+    ]},
+    { label:"CONNECT & GROW", items: [
+      { id:"network",     label:"Network",       sub:"Connect with investors",            icon:Users,  iconColor:"#60a5fa", iconBg:"rgba(96,165,250,.13)" },
+      { id:"trackrecord", label:"Track Record",  sub:"Your public investment record",    icon:Trophy, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)" },
+    ]},
+    { label:"ACCOUNT & SETTINGS", items: [
+      { id:"sharing",  label:"Privacy & Sharing", sub:"Control your visibility",         icon:Lock,        iconColor:"#f472b6", iconBg:"rgba(244,114,182,.13)" },
+      { id:"about",    label:"About MIC",          sub:"Our mission & platform",          icon:Info,        iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
+      { id:"contact",  label:"Contact Us",         sub:"We're here to help",              icon:ExternalLink,iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
+    ]},
+  ] : null;
+
+  const nav = isInv ? [] : [
     { id:"users",       label:"Users",             icon:UserCog },
     { id:"creators",    label:"Creators",           icon:UserPlus },
     { id:"groups",      label:"Groups",            icon:Layers },
@@ -1221,24 +1242,58 @@ export default function App() {
           } : {}}
         >
           {/* Brand */}
-          <div className="brand"><img src="/mic-logo.png" alt="mic" style={{width:52,height:52,flexShrink:0}}/>
+          <div className="brand"><img src="/mic-logo.png" alt="mic" style={{width:42,height:42,flexShrink:0}}/>
             <div><div className="nm">myInvestorCircle</div><div className="tag">Social Investing</div></div></div>
 
-          <div className="side-label">{isInv?"Menu":"Admin"}</div>
+          {!isInv && <div className="side-label">Admin</div>}
 
           {/* Nav items — fill remaining space */}
           <div style={{flex:1,minHeight:0,overflowY:'auto',marginRight:-4,paddingRight:4}}>
-            {nav.map(n=>(
+            {isInv ? navSections.map((sec,si)=>(
+              <div key={si}>
+                {sec.label && <div className="side-section">{sec.label}</div>}
+                {sec.items.map(n=>(
+                  <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>{setPage(n.id);if(isMobile)setNavOpen(false);}}>
+                    <div className="nav-icon" style={{background:n.iconBg}}>
+                      <n.icon size={17} color={n.iconColor}/>
+                    </div>
+                    <div className="nav-txt">
+                      <div className="nav-lbl">{n.label}</div>
+                      {n.sub && <div className="nav-sub">{n.sub}</div>}
+                    </div>
+                    {n.badge>0 && <span className="nav-badge">{n.badge}</span>}
+                  </div>
+                ))}
+              </div>
+            )) : nav.map(n=>(
               <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>setPage(n.id)}>
                 <n.icon size={19}/> {n.label}{n.badge>0 && <span className="nav-badge">{n.badge}</span>}
               </div>
             ))}
           </div>
 
-          {/* Footer stats — always visible at bottom */}
-          <div className="side-foot">
-            {stats.map(([l,v])=><div key={l} className="side-stat"><span>{l}</span><b>{v}</b></div>)}
-          </div>
+          {/* Footer — Connections bar for investors, stats for admin */}
+          {isInv ? (
+            <div className="side-conn">
+              <div className="side-conn-row" onClick={()=>{setPage('network');if(isMobile)setNavOpen(false);}}>
+                <div className="nav-icon" style={{width:34,height:34,borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,background:"rgba(96,165,250,.13)"}}>
+                  <Users size={17} color="#60a5fa"/>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',minWidth:0,flex:1}}>
+                  <span style={{fontSize:13.5,fontWeight:600,lineHeight:1.2,color:'var(--side-text)'}}>Connections</span>
+                  <span style={{fontSize:10.5,color:'var(--side-dim)',marginTop:1}}>People in your network</span>
+                </div>
+                <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+                  {contacts.length>0 && <span className="side-conn-badge">{contacts.length}</span>}
+                  <ChevronRight size={14} color="var(--side-dim)"/>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="side-foot">
+              {stats.map(([l,v])=><div key={l} className="side-stat"><span>{l}</span><b>{v}</b></div>)}
+            </div>
+          )}
         </div>
 
         <div className="main">
