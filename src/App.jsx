@@ -1563,7 +1563,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} publicFeedRecos={publicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)}/>}
+            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)}/>}
             {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
             {isInv && page==="market_intel" && <MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
@@ -6210,7 +6210,7 @@ function RecoComments({ recoId, me }) {
 }
 
 /* ─── FeedCard — single recommendation card for the homepage ────────────────────── */
-function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked, toggleTrack, initExpanded=false }) {
+function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onReload, tracked, toggleTrack, initExpanded=false }) {
   const [expanded,  setExpanded]  = useState(initExpanded);
   const [recommenderInfo, setRecommenderInfo] = useState(null); // { username, isSebiApproved }
   const [shareAnchor, setShareAnchor] = useState(null);
@@ -6236,8 +6236,14 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, onReload, tracked,
   const canOpenProfile = !!recommenderInfo?.username;
 
   const patch=(updates)=>{
-    setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,...updates}:x));
-    if(sql&&r.deliveryId){ try{ updateDelivery(r.deliveryId,updates,me?.id); }catch(_){} }
+    if(r.feedSource==="public"&&setPublicFeedRecos){
+      setPublicFeedRecos(rs=>rs.map(x=>x.id===r.id?{...x,...updates}:x));
+    } else if(r.feedSource==="network_engagement"&&setNetworkEngagementRecos){
+      setNetworkEngagementRecos(rs=>rs.map(x=>x.id===r.id?{...x,...updates}:x));
+    } else {
+      setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,...updates}:x));
+      if(sql&&r.deliveryId){ try{ updateDelivery(r.deliveryId,updates,me?.id); }catch(_){} }
+    }
   };
 
   const react=(val)=>{
@@ -6656,7 +6662,7 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
 }
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
-function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, publicFeedRecos=[], feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite }) {
+function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
@@ -6827,7 +6833,7 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
           : (<>
               {visibleFeed.map(r=>(
                 <FeedCard key={r.id} r={r} me={me} contacts={contacts} groups={groups}
-                  setRecsReceived={setRecsReceived} tracked={tracked} toggleTrack={toggleTrack}/>
+                  setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} tracked={tracked} toggleTrack={toggleTrack}/>
               ))}
               {!globalSearch && loadedCount < feedRecs.length && (
                 <div ref={sentinelRef} style={{height:8,textAlign:'center',padding:'12px 0',color:'var(--muted)',fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
