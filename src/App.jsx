@@ -6693,10 +6693,17 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
     ];
   }, [recsReceived, publicFeedRecos]);
 
-  // Show Pulse notification dot when there's any activity — direct or public
-  const hasPulseActivity = contacts.length > 0
-    || recsReceived.some(r => !r.hidden)
-    || publicFeedRecos.length > 0;
+  // Pulse badge count: missed opportunities (untracked, risen >3%) + tracked movers (±7%)
+  // Capped at 5; badge disappears when user is already on Pulse tab.
+  const pulseCountRaw = allFeedRecos.filter(r =>
+    !r.hidden && r.priceAt > 0 && (
+      (!tracked.has(r.id) && (r.price - r.priceAt) / r.priceAt > 0.03) ||
+      (tracked.has(r.id) && Math.abs((r.price - r.priceAt) / r.priceAt) > 0.07)
+    )
+  ).length;
+  const pulseCount    = Math.min(pulseCountRaw, 5);
+  const pulseBadgeText = pulseCount >= 5 ? '5+' : pulseCount > 0 ? String(pulseCount) : null;
+  const showPulseBadge = !!pulseBadgeText && mobileFeedTab !== 'pulse';
   const [loadedCount,  setLoadedCount]  = useState(20);
   const sentinelRef = useRef(null);
 
@@ -6786,31 +6793,49 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
         </div>
         {/* Row 2 — Feed / Pulse tab switcher */}
         <div role="tablist" style={{display:'flex', gap:8, padding:'8px 16px 8px'}}>
-        {[['feed','Feed',null],['pulse','Pulse',hasPulseActivity && mobileFeedTab!=='pulse']].map(([id,label,dot])=>(
-          <button key={id} role="tab" aria-selected={mobileFeedTab===id}
-            onClick={()=>setMobileFeedTab(id)}
-            style={{
-              flex:1, height:40, border:'none', borderRadius:10,
-              fontFamily:'var(--font)', fontSize:15, fontWeight:800,
-              cursor:'pointer', transition:'.15s',
-              display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-              background: mobileFeedTab===id ? 'var(--accent)' : 'transparent',
-              color:       mobileFeedTab===id ? '#fff' : 'var(--muted)',
-            }}
-          >
-            {label}
-            {dot && <span style={{width:7,height:7,borderRadius:'50%',
-              background:mobileFeedTab===id?'rgba(255,255,255,.7)':'var(--accent)',
-              boxShadow:'0 0 6px rgba(109,93,245,.8)',flexShrink:0,
-              animation:'pulse-dot 2.2s ease-in-out infinite'}}/>}
-          </button>
-        ))}
+          {[
+            { id:'feed',  label:'Feed',  sub:'Ideas from your network' },
+            { id:'pulse', label:'Pulse', sub:'Your tracking & activity' },
+          ].map(({id, label, sub})=>{
+            const isActive = mobileFeedTab === id;
+            return (
+              <button key={id} role="tab" aria-selected={isActive}
+                onClick={()=>setMobileFeedTab(id)}
+                style={{
+                  flex:1, height:48, border:'none', borderRadius:10,
+                  fontFamily:'var(--font)', cursor:'pointer', transition:'.15s',
+                  display:'flex', flexDirection:'column',
+                  alignItems:'center', justifyContent:'center', gap:2,
+                  background: isActive ? 'var(--accent)' : 'transparent',
+                  color:      isActive ? '#fff' : 'var(--muted)',
+                  padding:0,
+                }}
+              >
+                <div style={{display:'flex', alignItems:'center', gap:5}}>
+                  <span style={{fontSize:13, fontWeight:800, lineHeight:1}}>{label}</span>
+                  {id==='pulse' && showPulseBadge && (
+                    <span style={{
+                      background: isActive ? 'rgba(255,255,255,.28)' : 'var(--grad)',
+                      color:'#fff', fontSize:10, fontWeight:800,
+                      borderRadius:999, padding:'1px 5px', lineHeight:1.4,
+                      flexShrink:0,
+                    }}>{pulseBadgeText}</span>
+                  )}
+                </div>
+                <span style={{
+                  fontSize:9, fontWeight:400, lineHeight:1,
+                  color: isActive ? 'rgba(255,255,255,.72)' : 'var(--muted)',
+                  letterSpacing:'.01em',
+                }}>{sub}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     )}
-    {/* Spacer = fixed header height (10+32+8+40+8+2 = 100px, +4 buffer = 104px).
+    {/* Spacer = fixed header height (10+32+8+48+8+2 = 108px, +4 buffer = 112px).
         Prevents the first feed card from hiding underneath the fixed header. */}
-    {isMobile && !showNewReco && <div aria-hidden="true" style={{height:104,flexShrink:0}}/>}
+    {isMobile && !showNewReco && <div aria-hidden="true" style={{height:112,flexShrink:0}}/>}
 
     {/* ── Desktop: normal in-flow header ── */}
     {!isMobile && (
