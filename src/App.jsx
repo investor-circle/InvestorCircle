@@ -3987,8 +3987,10 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
   const [thesis,      setThesis]      = useState("");
   const [targets,     setTargets]     = useState([]);
   const [isPublic,    setIsPublic]    = useState(true);
+  const [sectorOpts,  setSectorOpts]  = useState(FALLBACK_SECTORS);
 
-  // Auto-fetch price whenever instrument changes
+  // Load sector options from sector_master on mount
+  useEffect(() => { loadSectorOpts().then(setSectorOpts); }, []);
   useEffect(() => {
     if (!selectedInstr) return;
     setPriceData(null); setPriceError(""); setPriceLoading(true);
@@ -4109,7 +4111,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
               </div>
             : <select value={sector} onChange={e=>setSector(e.target.value)}>
                 <option value="">— Select sector —</option>
-                {["Banking & Finance","Technology","Pharmaceuticals","Energy","FMCG","Automobiles","Defence","Capital Goods","Real Estate","Chemicals","Telecom","Metals & Mining","PSU","Healthcare","Infrastructure","Media","Retail","Others"].map(s=><option key={s}>{s}</option>)}
+                {sectorOpts.map(s=><option key={s}>{s}</option>)}
               </select>}
         </div>
         <div className="field"><label>Conviction <span className="muted small">(optional)</span></label>
@@ -4321,6 +4323,14 @@ function SharePreview({ id, name, cfg, holdings, onClose }) {
 }
 
 /* =================================================================== PUBLIC PROFILE */
+
+// Fallback sector list — used when sector_master table is unavailable.
+// Kept in sync with the hardcoded options the sector dropdown showed historically.
+const FALLBACK_SECTORS = [
+  "Banking & Finance","Technology","Pharmaceuticals","Energy","FMCG","Automobiles",
+  "Defence","Capital Goods","Real Estate","Chemicals","Telecom","Metals & Mining",
+  "PSU","Healthcare","Infrastructure","Media","Retail","Others",
+];
 
 const SECTOR_EMOJI = {
   "Banking & Finance":"🏦","Technology":"💻","Pharmaceuticals":"💊","Energy":"⚡",
@@ -6997,6 +7007,23 @@ async function loadInstruments() {
   return _instrLoadPromise;
 }
 function clearInstrCache() { _instrCache = null; _instrLoadPromise = null; }
+
+// Sector options cache — loads once per session from sector_master table.
+// Falls back to FALLBACK_SECTORS if the table doesn't exist yet or query fails.
+let _sectorCache = null;
+async function loadSectorOpts() {
+  if (_sectorCache) return _sectorCache;
+  if (!sql) return FALLBACK_SECTORS;
+  try {
+    const rows = await sql`
+      SELECT DISTINCT sector FROM sector_master
+      WHERE is_active = TRUE AND sector IS NOT NULL AND sector <> ''
+      ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector`;
+    _sectorCache = rows.map(r => r.sector);
+    return _sectorCache.length ? _sectorCache : FALLBACK_SECTORS;
+  } catch { return FALLBACK_SECTORS; }
+}
+function clearSectorCache() { _sectorCache = null; }
 
 function InstrumentSearch({ onSelect, placeholder, initialValue }) {
   const [q, setQ] = useState(initialValue || "");
@@ -9679,12 +9706,8 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
 
   const CURRENCY_SYMBOL = { INR:'₹', USD:'$', GBP:'£', EUR:'€' };
   const ASSET_CLASSES   = ['Equity','MF','ETF','Debt','Commodity','Crypto','Other'];
-  const SECTORS = [
-    '— Select sector —',
-    'Banking & Finance','Technology','Pharmaceuticals','Energy','FMCG','Automobiles',
-    'Defence','Capital Goods','Real Estate','Chemicals','Telecom','Metals & Mining',
-    'PSU','Healthcare','Infrastructure','Media','Retail','Others',
-  ];
+  const [sectorOpts, setSectorOpts] = useState(FALLBACK_SECTORS);
+  useEffect(() => { loadSectorOpts().then(setSectorOpts); }, []);
 
   // Mirror MakeRecoModal's onInstrSelect exactly
   const onInstrSelect = (inst) => {
@@ -9875,7 +9898,8 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
                     <Lock size={13} color="var(--muted)"/>{selectedInstr.sector}
                   </div>
                 : <select value={sector} onChange={e=>setSector(e.target.value)}>
-                    {SECTORS.map(s=><option key={s}>{s}</option>)}
+                    <option value="">— Select sector —</option>
+                    {sectorOpts.map(s=><option key={s}>{s}</option>)}
                   </select>}
             </div>
             <div className="field">
