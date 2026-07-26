@@ -6254,8 +6254,14 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
     if(r.reaction==='dislike') dislikes = Math.max(0,dislikes-1);
     if(next==='like')    likes++;
     if(next==='dislike') dislikes++;
-    setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes,dislikes}:x));
-    if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
+    if(r.feedSource==='public'&&setPublicFeedRecos){
+      setPublicFeedRecos(rs=>rs.map(x=>x.id===r.id?{...x,reaction:next,likes,dislikes}:x));
+    } else if(r.feedSource==='network_engagement'&&setNetworkEngagementRecos){
+      setNetworkEngagementRecos(rs=>rs.map(x=>x.id===r.id?{...x,reaction:next,likes,dislikes}:x));
+    } else {
+      setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes,dislikes}:x));
+      if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
+    }
   };
 
   const handleShareClick=async(e)=>{
