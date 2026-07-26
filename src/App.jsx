@@ -941,6 +941,7 @@ export default function App() {
               OR last_name   ILIKE ${'%'+q+'%'})
             AND id != ${ME?.id||'none'}
             AND (is_unclaimed IS NULL OR is_unclaimed = FALSE)
+            AND (claim_status IS DISTINCT FROM 'claimed')
           ORDER BY
             CASE WHEN LOWER(username)  = LOWER(${q})         THEN 0
                  WHEN LOWER(username)  LIKE LOWER(${q})||'%' THEN 1
@@ -1061,6 +1062,7 @@ export default function App() {
             WHERE ir.is_public = true
               AND ir.recommender_id != ${user.uid}
               AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
             ORDER BY ir.created_at DESC
             LIMIT 100`;
           setPublicFeedRecos(pubRows.map(r => ({
@@ -9335,6 +9337,7 @@ function PeopleSearch({ me, connections=[], onConnect }) {
               OR last_name   ILIKE ${'%'+q+'%'})
             AND id != ${me?.id||'none'}
             AND (is_unclaimed IS NULL OR is_unclaimed = FALSE)
+            AND (claim_status IS DISTINCT FROM 'claimed')
           ORDER BY
             CASE WHEN LOWER(username)  = LOWER(${q})         THEN 0
                  WHEN LOWER(username)  LIKE LOWER(${q})||'%' THEN 1
@@ -10633,7 +10636,8 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
                up.full_name, up.username
         FROM ic_recommendations r
         LEFT JOIN user_profiles up ON r.recommender_id = up.id
-        WHERE (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)`
+        WHERE (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+          AND (up.claim_status IS DISTINCT FROM 'claimed')`
       .then(rows=>{
         const map={};
         rows.forEach(r=>{
@@ -11165,6 +11169,7 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
         LEFT JOIN user_profiles up ON r.recommender_id = up.id
         WHERE r.is_public = true
           AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+          AND (up.claim_status IS DISTINCT FROM 'claimed')
         ORDER BY r.created_at DESC`
       .then(rows=>{ setRecos(rows); setLoading(false); })
       .catch(e=>{ console.warn('Market Intel SQL error:',e?.message||e); setLoading(false); });
@@ -11484,6 +11489,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
         LEFT JOIN user_profiles up ON r.recommender_id = up.id
         WHERE r.ticker = ${ticker}
           AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+          AND (up.claim_status IS DISTINCT FROM 'claimed')
         ORDER BY r.created_at DESC`
       .then(rows=>{ setRecos(rows); setLoading(false); })
       .catch(()=>setLoading(false));
