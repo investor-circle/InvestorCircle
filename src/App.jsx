@@ -1563,7 +1563,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)}/>}
+            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity}/>}
             {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
             {isInv && page==="market_intel" && <MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
@@ -6210,7 +6210,7 @@ function RecoComments({ recoId, me }) {
 }
 
 /* ─── FeedCard — single recommendation card for the homepage ────────────────────── */
-function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onReload, tracked, toggleTrack, initExpanded=false }) {
+function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onReload, tracked, toggleTrack, onOpenSecurity, initExpanded=false }) {
   const [expanded,  setExpanded]  = useState(initExpanded);
   const [recommenderInfo, setRecommenderInfo] = useState(null); // { username, isSebiApproved }
   const [shareAnchor, setShareAnchor] = useState(null);
@@ -6318,7 +6318,17 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
                 title={canOpenProfile?`View ${cf.name}'s public profile`:''}
                 onClick={()=>canOpenProfile&&openProfile(recommenderInfo.username)}>{cf.name}</b>
               <span style={{color:'var(--muted)',fontWeight:400}}>recommended</span>
-              <b style={{color:'var(--ink)'}}>{r.assetName}</b>
+              <b
+                style={{
+                  color: r.ticker&&onOpenSecurity ? 'var(--accent-ink)' : 'var(--ink)',
+                  cursor: r.ticker&&onOpenSecurity ? 'pointer' : 'default',
+                  textDecoration: r.ticker&&onOpenSecurity ? 'underline' : 'none',
+                  textDecorationStyle: 'dotted',
+                  textUnderlineOffset: 3,
+                }}
+                title={r.ticker&&onOpenSecurity ? `View ${r.assetName} on Stock Insights` : undefined}
+                onClick={e=>{ if(r.ticker&&onOpenSecurity){ e.stopPropagation(); onOpenSecurity(r.ticker, r.assetName); } }}
+              >{r.assetName}</b>
               <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:5,
                 background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
                 {isBuy?'Buy':'Sell'}
@@ -6668,7 +6678,7 @@ function TrendingWidget({ recsReceived, tracked, contacts }) {
 }
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
-function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite }) {
+function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
@@ -6839,7 +6849,7 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
           : (<>
               {visibleFeed.map(r=>(
                 <FeedCard key={r.id} r={r} me={me} contacts={contacts} groups={groups}
-                  setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} tracked={tracked} toggleTrack={toggleTrack}/>
+                  setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} tracked={tracked} toggleTrack={toggleTrack} onOpenSecurity={onOpenSecurity}/>
               ))}
               {!globalSearch && loadedCount < feedRecs.length && (
                 <div ref={sentinelRef} style={{height:8,textAlign:'center',padding:'12px 0',color:'var(--muted)',fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
