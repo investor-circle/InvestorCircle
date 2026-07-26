@@ -1194,7 +1194,7 @@ export default function App() {
       ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", sub:"Track ideas & performance", icon:Lightbulb, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)", badge:newRecs }] : []),
       { id:"portfolio",    label:"Portfolio",       sub:"Analyse your holdings",         icon:PieChart,  iconColor:"#fb923c", iconBg:"rgba(251,146,60,.13)" },
       { id:"market_intel", label:"Market Insights", sub:"Trends, sectors & indices",     icon:TrendingUp,iconColor:"#4ade80", iconBg:"rgba(74,222,128,.13)" },
-      { id:"sec_intel",    label:"Stock Insights",  sub:"In-depth company analysis",     icon:Shield,    iconColor:"#34d399", iconBg:"rgba(52,211,153,.13)" },
+      { id:"sec_intel",    label:"Stock Insights",  sub:"Discover stock conviction",     icon:Shield,    iconColor:"#34d399", iconBg:"rgba(52,211,153,.13)" },
     ]},
     { label:"CONNECT & GROW", items: [
       { id:"network",     label:"Network",       sub:"Connect with investors",            icon:Users,  iconColor:"#60a5fa", iconBg:"rgba(96,165,250,.13)" },
@@ -10475,7 +10475,7 @@ function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,o
         )}
 
         <button className="btn btn-pri" style={{width:'100%',justifyContent:'center'}} onClick={onOpenFull}>
-          View Security Intelligence →
+          View Stock Insights →
         </button>
 
         {allRecos.length===0&&(
@@ -10846,7 +10846,7 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
                           <StrengthDot strength={h.community.strength}/>
                         </td>
                         <td style={{padding:'13px 14px',textAlign:'center'}}>
-                          <button className="iconbtn" title="Security Intelligence"
+                          <button className="iconbtn" title="Stock Insights"
                             onClick={e=>{e.stopPropagation();onOpenSecurity(h.sym,h.name);}}>
                             <ChevronRight size={16}/>
                           </button>
@@ -11327,7 +11327,7 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                               style={{color:expanded?'var(--accent-ink)':'var(--muted)'}}>
                               <ChevronDown size={15} style={{transform:expanded?'rotate(180deg)':'none',transition:'transform .2s'}}/>
                             </button>
-                            <button className="iconbtn" title="Security Intelligence" onClick={e=>{e.stopPropagation();onOpenSecurity(t.ticker,t.name);}}><ChevronRight size={16}/></button>
+                            <button className="iconbtn" title="Stock Insights" onClick={e=>{e.stopPropagation();onOpenSecurity(t.ticker,t.name);}}><ChevronRight size={16}/></button>
                           </div>
                         </td>
                       </tr>
@@ -11491,8 +11491,8 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Intelligence</div>
-          <div className="page-title">Security Intelligence</div>
+          <div className="eyebrow">Insights</div>
+          <div className="page-title">Stock Insights</div>
         </div>
       </div>
 
@@ -11571,7 +11571,7 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
     <>
       <div className="page-head" style={{alignItems:'flex-start'}}>
         <div style={{flex:1}}>
-          <div className="eyebrow">Security Intelligence</div>
+          <div className="eyebrow">Stock Insights</div>
           <div style={{display:'flex',alignItems:'baseline',gap:14,flexWrap:'wrap'}}>
             <div className="page-title">{ticker}</div>
             <div style={{fontSize:16,color:'var(--muted)',fontWeight:400}}>{name}</div>
