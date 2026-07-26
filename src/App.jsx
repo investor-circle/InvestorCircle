@@ -1243,9 +1243,14 @@ export default function App() {
             boxShadow: navOpen ? '16px 0 48px rgba(0,0,0,.55)' : 'none',
           } : {}}
         >
-          {/* Brand */}
-          <div className="brand"><img src="/mic-logo.png" alt="mic" style={{width:42,height:42,flexShrink:0}}/>
-            <div><div className="nm">myInvestorCircle</div><div className="tag">Social Investing</div></div></div>
+          {/* Brand — click to go home (investor) */}
+          <div className="brand"
+            onClick={isInv ? ()=>setPage('home') : undefined}
+            style={isInv ? {cursor:'pointer'} : {}}
+          >
+            <img src="/mic-logo.png" alt="mic" style={{width:42,height:42,flexShrink:0}}/>
+            <div><div className="nm">myInvestorCircle</div><div className="tag">Social Investing</div></div>
+          </div>
 
           {!isInv && <div className="side-label">Admin</div>}
 
@@ -1300,6 +1305,16 @@ export default function App() {
 
         <div className="main">
           <div className="topbar">
+            {/* MIC logo — mobile only, left of hamburger, click → home */}
+            {isInv && isMobile && (
+              <img
+                src="/mic-logo.png"
+                alt="myInvestorCircle"
+                onClick={()=>setPage('home')}
+                style={{width:30,height:30,flexShrink:0,cursor:'pointer'}}
+                title="Home"
+              />
+            )}
             {/* Hamburger — mobile only, opens nav drawer */}
             {isInv && (
               <button
