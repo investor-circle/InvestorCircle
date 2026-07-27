@@ -1156,6 +1156,24 @@ export default function App() {
   if (publicMatch && !authLoading) {
     const pubUsername = publicMatch[1];
     const pubRecoId   = publicMatch[2] || null;
+
+    // ── Dedicated Reco Post page ─────────────────────────────────────
+    if (pubRecoId) {
+      return (
+        <div className="app"><style>{STYLES}</style>
+          <RecoPostPage
+            username={pubUsername}
+            recoId={pubRecoId}
+            viewerUser={user}
+            ME={ME}
+            onBack={()=>setPageHash('')}
+            onNavigateProfile={()=>{ window.location.hash = `#/investor/${pubUsername}`; }}
+          />
+        </div>
+      );
+    }
+
+    // ── Full public profile page ──────────────────────────────────────
     return (
       <div className="app"><style>{STYLES}</style>
         <ProfileErrorBoundary>
@@ -4731,6 +4749,307 @@ function SharePublicPopover({ reco, username, onClose, anchorEl }) {
       {content}
     </div>,
     document.body
+  );
+}
+
+/* ─── RecoPostPage — dedicated shareable post view for a single recommendation ── */
+function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProfile }) {
+  const isMobile = useIsMobile();
+  const [data,      setData]      = useState(null);
+  const [reco,      setReco]      = useState(null);
+  const [loading,   setLoading]   = useState(true);
+  const [notFound,  setNotFound]  = useState(false);
+  const [liked,     setLiked]     = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [isTracked, setIsTracked] = useState(false);
+  const [copied,    setCopied]    = useState(false);
+
+  const recoUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${recoId}`;
+
+  // Load profile + reco
+  useEffect(() => {
+    setLoading(true); setNotFound(false); setData(null); setReco(null);
+    dbGetPublicProfile(username).then(d => {
+      if (!d) { setNotFound(true); setLoading(false); return; }
+      setData(d);
+      const found = (d.recos || []).find(r => r.id === recoId);
+      if (found) { setReco(found); setLikeCount(Number(found.likes) || 0); }
+      else setNotFound(true);
+      setLoading(false);
+    }).catch(() => { setNotFound(true); setLoading(false); });
+  }, [username, recoId]);
+
+  // Load viewer's bookmark state when logged in
+  useEffect(() => {
+    if (!viewerUser?.uid || !recoId || !sql) return;
+    sql`SELECT 1 FROM recommendation_tracking WHERE reco_id=${recoId} AND user_id=${viewerUser.uid} LIMIT 1`
+      .then(rows => { if (rows.length) setIsTracked(true); }).catch(() => {});
+  }, [viewerUser?.uid, recoId]);
+
+  const requireLogin = () => { window.location.hash = ''; };
+
+  const handleLike = () => {
+    if (!viewerUser) { requireLogin(); return; }
+    const next = !liked;
+    setLiked(next);
+    setLikeCount(c => next ? c + 1 : Math.max(0, c - 1));
+    // Ephemeral — no delivery record for standalone visitors
+  };
+
+  const handleTrack = () => {
+    if (!viewerUser) { requireLogin(); return; }
+    const next = !isTracked;
+    setIsTracked(next);
+    if (sql && viewerUser.uid) {
+      if (next) sql`INSERT INTO recommendation_tracking (reco_id,user_id) VALUES (${recoId},${viewerUser.uid}) ON CONFLICT DO NOTHING`.catch(() => {});
+      else sql`DELETE FROM recommendation_tracking WHERE reco_id=${recoId} AND user_id=${viewerUser.uid}`.catch(() => {});
+    }
+  };
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(recoUrl)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2200); })
+      .catch(() => {});
+  };
+
+  const profile  = data?.profile;
+  const ici      = data?.ici;
+  const retPct   = Number(reco?.return_pct || 0);
+  const retPos   = retPct >= 0;
+  const fullName = profile ? (profile.first_name ? `${profile.first_name} ${profile.last_name||''}`.trim() : profile.full_name) : username;
+
+  // me object for RecoComments — needs id + name
+  const commentMe = viewerUser ? {
+    id:        viewerUser.uid,
+    name:      ME?.name || viewerUser.displayName || 'Anonymous',
+    firstName: ME?.firstName || '',
+    lastName:  ME?.lastName  || '',
+  } : null;
+
+  return (
+    <div style={{minHeight:'100vh', background:'var(--bg)', paddingBottom:56}}>
+
+      {/* ── Topbar ── */}
+      <div style={{background:'var(--surface)', borderBottom:'1px solid var(--line)',
+                   padding:'11px 20px', display:'flex', alignItems:'center', gap:12,
+                   position:'sticky', top:0, zIndex:100}}>
+        <img src="/mic-logo.png" alt="mic" style={{width:30, height:30, flexShrink:0}}/>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:800, fontSize:13, lineHeight:1.1}}>myInvestorCircle</div>
+          <div style={{fontSize:10, color:'var(--muted)'}}>Transparency Platform</div>
+        </div>
+        {viewerUser
+          ? <button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
+          : <a href={window.location.pathname}
+               style={{fontSize:13, fontWeight:700, color:'var(--accent)', textDecoration:'none'}}>
+              Sign in →
+            </a>}
+      </div>
+
+      <div style={{maxWidth:640, margin:'0 auto', padding: isMobile ? '16px 12px' : '24px 16px'}}>
+
+        {/* Loading */}
+        {loading && (
+          <div style={{textAlign:'center', padding:'72px 0', color:'var(--muted)'}}>
+            <Loader size={28} className="spin" style={{marginBottom:14}}/>
+            <div>Loading recommendation…</div>
+          </div>
+        )}
+
+        {/* Not found */}
+        {notFound && !loading && (
+          <div style={{textAlign:'center', padding:'72px 0'}}>
+            <div style={{fontSize:36, marginBottom:14}}>🔒</div>
+            <div style={{fontWeight:700, fontSize:17, marginBottom:8}}>Recommendation not found</div>
+            <div style={{fontSize:14, color:'var(--muted)', marginBottom:24}}>
+              This recommendation may be private or no longer available.
+            </div>
+            <button className="btn btn-pri" onClick={onNavigateProfile}>
+              View @{username}'s profile
+            </button>
+          </div>
+        )}
+
+        {reco && profile && !loading && (<>
+
+          {/* ── Creator panel ── */}
+          <div style={{background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
+                       padding:'16px 18px', marginBottom:14,
+                       display:'flex', alignItems:'center', gap:14}}>
+            <div className="av" style={{width:50, height:50, fontSize:17, flexShrink:0,
+                                        background:profile.avatar_color||'var(--grad)'}}>
+              {initialsOf(fullName)}
+            </div>
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{fontWeight:800, fontSize:16, lineHeight:1.2,
+                           overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                {fullName}
+              </div>
+              {profile.username &&
+                <div style={{fontSize:12, color:'var(--muted)'}}>@{profile.username}</div>}
+              {ici && (
+                <div style={{marginTop:5}}>
+                  <span style={{fontSize:11, fontWeight:700, padding:'2px 9px', borderRadius:999,
+                    background: ici.score>=70 ? 'rgba(74,222,128,.15)'
+                              : ici.score>=50 ? 'rgba(124,92,252,.15)'
+                              : 'rgba(251,191,36,.15)',
+                    color:      ici.score>=70 ? '#22863a'
+                              : ici.score>=50 ? '#6d4fc7'
+                              : '#b07a00'}}>
+                    ICI {Math.round(ici.score)} · {ici.band}
+                  </span>
+                </div>
+              )}
+            </div>
+            <button className="btn btn-soft btn-sm" onClick={onNavigateProfile}
+                    style={{flexShrink:0, display:'flex', alignItems:'center', gap:4}}>
+              {isMobile ? 'Profile' : 'Track Record'} <ChevronRight size={13}/>
+            </button>
+          </div>
+
+          {/* ── Reco card ── */}
+          <div style={{background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
+                       padding:'20px', marginBottom:14}}>
+            {/* Header row */}
+            <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between',
+                         marginBottom:16, gap:12, flexWrap:'wrap'}}>
+              <div>
+                <div style={{display:'flex', alignItems:'center', gap:7, marginBottom:6, flexWrap:'wrap'}}>
+                  <TypeBadge t={reco.recommendation_type}/>
+                  <StatusBadge2 status={reco.status}/>
+                  {reco.conviction && <ConvBadge level={reco.conviction}/>}
+                </div>
+                <div style={{fontWeight:900, fontSize:24, lineHeight:1.1, letterSpacing:'-.5px'}}>
+                  {reco.ticker}
+                </div>
+                <div style={{fontSize:14, color:'var(--muted)', marginTop:3}}>{reco.asset_name}</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:26, fontWeight:900, color:retPos?'var(--gain)':'var(--loss)',
+                             letterSpacing:'-.5px'}}>
+                  {retPos?'+':''}{retPct.toFixed(1)}%
+                </div>
+                <div style={{fontSize:11, color:'var(--muted)', marginTop:1}}>Total return</div>
+              </div>
+            </div>
+
+            {/* Price grid */}
+            <div style={{display:'grid',
+                         gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)',
+                         gap:10, marginBottom:14}}>
+              {[
+                ['Entry price',   reco.reco_price    ? `₹${Number(reco.reco_price).toLocaleString('en-IN')}`    : '—'],
+                ['Current price', reco.current_price ? `₹${Number(reco.current_price).toLocaleString('en-IN')}` : '—'],
+                ['Target',        reco.target_price  ? `₹${Number(reco.target_price).toLocaleString('en-IN')}`  : '—'],
+                ['Stop loss',     reco.stop_loss     ? `₹${Number(reco.stop_loss).toLocaleString('en-IN')}`     : '—'],
+                ['Horizon',       reco.horizon || '—'],
+                ['Duration',      reco.holding_days  ? `${reco.holding_days}d` : '—'],
+              ].map(([label, val]) => (
+                <div key={label} style={{background:'var(--surface-2)', borderRadius:10, padding:'10px 12px'}}>
+                  <div style={{fontSize:10, fontWeight:700, color:'var(--muted)', textTransform:'uppercase',
+                               letterSpacing:.5, marginBottom:3}}>{label}</div>
+                  <div style={{fontWeight:700, fontSize:14, fontFamily:"'JetBrains Mono',monospace"}}>{val}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Tags row */}
+            <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom: reco.thesis ? 14 : 0}}>
+              {reco.sector && (
+                <span style={{fontSize:12, background:'var(--surface-2)', padding:'4px 10px',
+                              borderRadius:20, color:'var(--muted)'}}>
+                  {SECTOR_EMOJI[reco.sector]} {reco.sector}
+                </span>
+              )}
+              {reco.created_at && (
+                <span style={{fontSize:12, color:'var(--muted)', display:'flex', alignItems:'center', gap:4}}>
+                  Posted {new Date(reco.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}
+                </span>
+              )}
+            </div>
+
+            {/* Thesis */}
+            {reco.thesis && reco.thesis !== '—' && (
+              <div style={{background:'var(--surface-2)', borderRadius:12, padding:'14px 16px'}}>
+                <div style={{fontSize:10.5, fontWeight:700, color:'var(--muted)', textTransform:'uppercase',
+                             letterSpacing:.5, marginBottom:6}}>Investment Thesis</div>
+                <div style={{fontSize:14, lineHeight:1.75, color:'var(--ink-soft)'}}>{reco.thesis}</div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Interaction bar ── */}
+          <div style={{background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
+                       padding:'12px 18px', marginBottom:14,
+                       display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+            <button onClick={handleLike} style={{display:'flex', alignItems:'center', gap:6,
+              padding:'8px 14px', borderRadius:10, border:'1px solid var(--line)',
+              background: liked ? 'rgba(124,92,252,.1)' : 'transparent',
+              color: liked ? 'var(--accent)' : 'var(--muted)',
+              cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600, transition:'.15s'}}>
+              <ThumbsUp size={15}/>{likeCount > 0 ? ` ${likeCount}` : ''} Like
+            </button>
+            <button onClick={handleTrack} style={{display:'flex', alignItems:'center', gap:6,
+              padding:'8px 14px', borderRadius:10, border:'1px solid var(--line)',
+              background: isTracked ? 'rgba(124,92,252,.1)' : 'transparent',
+              color: isTracked ? 'var(--accent)' : 'var(--muted)',
+              cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600, transition:'.15s'}}>
+              <Bookmark size={15}/> {isTracked ? 'Saved' : 'Save'}
+            </button>
+            <div style={{flex:1}}/>
+            <button onClick={copyLink} style={{display:'flex', alignItems:'center', gap:6,
+              padding:'8px 14px', borderRadius:10, border:'1px solid var(--line)',
+              background:'transparent', color:'var(--muted)',
+              cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600}}>
+              {copied ? <><Check size={15}/> Copied!</> : <><Share2 size={15}/> Share</>}
+            </button>
+          </div>
+
+          {/* ── Sign-in nudge (non-members) ── */}
+          {!viewerUser && (
+            <div style={{background:'rgba(109,93,245,.07)', border:'1px solid rgba(109,93,245,.25)',
+                         borderRadius:16, padding:'16px 20px', marginBottom:14,
+                         display:'flex', alignItems:'center', gap:14, flexWrap:'wrap'}}>
+              <div style={{flex:1, minWidth:200}}>
+                <div style={{fontWeight:700, fontSize:14, marginBottom:3}}>
+                  Join to like, comment and save
+                </div>
+                <div style={{fontSize:13, color:'var(--muted)'}}>
+                  myInvestorCircle is where investors share and track high-conviction ideas.
+                </div>
+              </div>
+              <a href={window.location.pathname}
+                 style={{flexShrink:0, padding:'10px 20px', borderRadius:10,
+                         background:'var(--accent)', color:'#fff',
+                         fontWeight:700, fontSize:13, textDecoration:'none'}}>
+                Sign in →
+              </a>
+            </div>
+          )}
+
+          {/* ── Comments ── */}
+          <div style={{background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
+                       padding:'20px', marginBottom:14}}>
+            <div style={{fontWeight:700, fontSize:15, marginBottom:16}}>Comments</div>
+            <RecoComments recoId={recoId} me={commentMe}/>
+            {!viewerUser && (
+              <div style={{textAlign:'center', marginTop:12, fontSize:13, color:'var(--muted)'}}>
+                <a href={window.location.pathname} style={{color:'var(--accent)', fontWeight:700}}>
+                  Sign in
+                </a>{' '}to leave a comment
+              </div>
+            )}
+          </div>
+
+          {/* ── Disclaimer ── */}
+          <div style={{fontSize:11, color:'var(--muted)', lineHeight:1.7,
+                       textAlign:'center', padding:'0 8px'}}>
+            Publicly shared investment opinion. Not SEBI registered advice.
+            Past performance does not indicate future results.
+          </div>
+        </>)}
+      </div>
+    </div>
   );
 }
 
