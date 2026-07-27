@@ -1752,13 +1752,21 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
   const isMobile = useIsMobile();
   const unread = notifications.filter(n => !n.is_read);
   const TYPE_LABEL = {
-    connection_request:  "wants to connect with you",
-    connection_accepted: "accepted your connection request",
-    connection_rejected: "declined your connection request",
-    group_added:         "added you to a group",
-    group_member_exit:   "left your group",
-    recommendation:      "shared a recommendation with you",
-    exit_signal:         "issued an exit signal",
+    connection_request:      "wants to connect with you",
+    connection_accepted:     "accepted your connection request",
+    connection_rejected:     "declined your connection request",
+    group_added:             "added you to a group",
+    group_member_exit:       "left your group",
+    recommendation:          "shared a recommendation with you",
+    exit_signal:             "issued an exit signal",
+    contact_recommendation:  "posted a new recommendation",
+    contact_comment:         "commented on a recommendation",
+    contact_like:            "liked your recommendation",
+  };
+  const TYPE_ICON = {
+    contact_recommendation: "💡",
+    contact_comment:        "💬",
+    contact_like:           "👍",
   };
   // On mobile: fixed to viewport (prevents overflow beyond screen edges)
   // On desktop: absolute, anchored to the bell button
@@ -1782,13 +1790,22 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
       </div>
       <div style={{overflowY:"auto",flex:1}}>
         {notifications.length===0 && <div className="empty" style={{padding:32}}>No notifications yet</div>}
-        {notifications.map(n=>(
+        {notifications.map(n=>{
+          const isEngagement = ['contact_recommendation','contact_comment','contact_like'].includes(n.type);
+          const avBg = isEngagement
+            ? n.type==='contact_like' ? '#e05252' : n.type==='contact_comment' ? '#0ea5b7' : '#22863a'
+            : '#6d5df5';
+          return (
           <div key={n.id} style={{padding:"12px 18px",borderBottom:"1px solid var(--line)",background:n.is_read?"transparent":"var(--surface-2)",display:"flex",gap:12,alignItems:"flex-start"}}>
-            <div className="av" style={{width:36,height:36,flexShrink:0,background:"#6d5df5",fontSize:13}}>{initialsOf(n.from_name||"?")}</div>
+            <div className="av" style={{width:36,height:36,flexShrink:0,background:avBg,fontSize:isEngagement?16:13}}>
+              {isEngagement ? TYPE_ICON[n.type] : initialsOf(n.from_name||"?")}
+            </div>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,lineHeight:1.5}}><b>{n.from_name||"Someone"}</b> {TYPE_LABEL[n.type]||n.type}
+              <div style={{fontSize:13,lineHeight:1.5}}>
+                <b>{n.from_name||"Someone"}</b>{" "}{TYPE_LABEL[n.type]||n.type}
                 {n.metadata?.groupName && <> — <b>{n.metadata.groupName}</b></>}
-                {n.metadata?.ticker    && <> — <b>{n.metadata.ticker}</b></>}
+                {n.metadata?.ticker    && <> — <b style={{color:'var(--accent)'}}>{n.metadata.ticker}</b></>}
+                {n.metadata?.assetName && !n.metadata?.ticker && <> — <b>{n.metadata.assetName}</b></>}
               </div>
               <div className="muted small">{fmtDate(n.created_at)}</div>
               {/* Action buttons for connection requests */}
@@ -1806,7 +1823,8 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
               <button className="icon-btn" title="Mark read" onClick={()=>onRead(n)}><Check size={14}/></button>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -4091,7 +4109,21 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
     };
     const recipients = targets.map(id=>({ type:groups.some(g=>g.id===id)?"group":"user", id }));
     if (sql && me?.id) {
-      try { await dbCreateReco(recoData, me.id, recipients); await onCreate?.reload?.(); }
+      try {
+        await dbCreateReco(recoData, me.id, recipients);
+        // Notify all contacts about new public recommendation (fan-out)
+        if (isPublic && contacts?.length > 0) {
+          const meta = JSON.stringify({ ticker: recoData.ticker, assetName: recoData.assetName });
+          await Promise.all(
+            contacts.map(c =>
+              sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
+                  VALUES (${c.id}, 'contact_recommendation', ${me.id}, ${meta})`
+                .catch(() => {})
+            )
+          );
+        }
+        await onCreate?.reload?.();
+      }
       catch(e) { console.error("create reco:", e); }
     }
     onCreate({ id:"m"+Date.now(), ...recoData, date:TODAY, recipients:targets, actedList:[], likes:[], dislikes:[], exit:false, exitDate:null });
@@ -6240,6 +6272,16 @@ function RecoComments({ recoId, me }) {
       await sql`INSERT INTO recommendation_comments (reco_id,user_id,user_name,comment) VALUES (${recoId},${me.id},${name},${text.trim()})`;
       setComments(prev=>[...prev,{id:Date.now(),user_id:me.id,user_name:name,comment:text.trim(),created_at:new Date().toISOString()}]);
       setText('');
+      // Notify the recommendation owner (if not the commenter)
+      sql`SELECT recommender_id, ticker, asset_name FROM ic_recommendations WHERE id = ${recoId} LIMIT 1`
+        .then(rows => {
+          if (rows[0]?.recommender_id && rows[0].recommender_id !== me.id) {
+            const meta = JSON.stringify({ ticker: rows[0].ticker, assetName: rows[0].asset_name, recoId });
+            sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
+                VALUES (${rows[0].recommender_id}, 'contact_comment', ${me.id}, ${meta})`
+              .catch(() => {});
+          }
+        }).catch(() => {});
     }catch(e){ console.warn('Comment failed:',e); }
     setSubmitting(false);
   };
@@ -6334,6 +6376,19 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
     } else {
       setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes,dislikes}:x));
       if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
+    }
+    // Notify reco owner when liked (not on un-like). Query recommender_id to avoid
+    // field-name inconsistency across feedSource types (from vs from_id).
+    if(next==='like' && r.id && sql){
+      sql`SELECT recommender_id FROM ic_recommendations WHERE id=${r.id} LIMIT 1`
+        .then(rows=>{
+          if(rows[0]?.recommender_id && rows[0].recommender_id!==me.id){
+            const meta=JSON.stringify({ticker:r.ticker,assetName:r.assetName,recoId:r.id});
+            sql`INSERT INTO notifications (user_id,type,from_user_id,metadata)
+                VALUES (${rows[0].recommender_id},'contact_like',${me.id},${meta})`
+              .catch(()=>{});
+          }
+        }).catch(()=>{});
     }
   };
 
