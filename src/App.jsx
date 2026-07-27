@@ -1504,6 +1504,33 @@ export default function App() {
                     setNotifications(ns => ns.map(x => ({...x,is_read:true})));
                   }}
                   onClose={()=>setNotifOpen(false)}
+                  onNavigate={async (n) => {
+                    // Mark as read
+                    if (!n.is_read) {
+                      await markNotifRead(n.id, ME.id).catch(()=>{});
+                      setNotifications(ns => ns.map(x => x.id===n.id ? {...x,is_read:true} : x));
+                    }
+                    setNotifOpen(false);
+                    // Navigate to reco post page
+                    const recoTypes = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation'];
+                    if (recoTypes.includes(n.type)) {
+                      const recoId   = n.metadata?.recoId;
+                      const username = n.metadata?.recommenderUsername;
+                      if (recoId && username) {
+                        window.location.hash = `#/investor/${username}/reco/${recoId}`;
+                      } else if (username) {
+                        window.location.hash = `#/investor/${username}`;
+                      }
+                      return;
+                    }
+                    // Navigate to connection's public profile
+                    if (['connection_accepted','connection_rejected'].includes(n.type) && n.from_user_id && sql) {
+                      sql`SELECT username FROM user_profiles WHERE id=${n.from_user_id} AND username IS NOT NULL LIMIT 1`
+                        .then(rows => {
+                          if (rows[0]?.username) window.location.hash = `#/investor/${rows[0].username}`;
+                        }).catch(()=>{});
+                    }
+                  }}
                 />}
               </div>
               <div ref={profileRef} style={{position:"relative"}}>
@@ -1794,7 +1821,7 @@ function RecoBreakdown({ stats, onPnl, pnlLabel }) {
 }
 
 /* ── Notification Panel ─────────────────────────────────────────────────────── */
-function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, onReadAll, onClose }) {
+function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, onReadAll, onClose, onNavigate }) {
   const isMobile = useIsMobile();
   const unread = notifications.filter(n => !n.is_read);
   const TYPE_LABEL = {
@@ -1819,20 +1846,43 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
     network_comment:        "💬",
   };
 
-  // Build the display text for a notification — handles consolidated like names
+  // Build the display text — friendly, natural language for all notification types
   const notifText = (n) => {
-    if (n.type === 'contact_like' && n.metadata?.likeCount > 1) {
-      const names   = n.metadata.likerNames || [];
-      const count   = n.metadata.likeCount;
-      const ticker  = n.metadata.ticker ? ` — ${n.metadata.ticker}` : '';
-      if (count === 2 && names.length >= 2)
-        return <>{' '}<b>{names[0]}</b> and <b>{names[1]}</b> liked your recommendation{ticker}</>;
-      return <>{' '}<b>{names[0] || n.from_name || 'Someone'}</b> and <b>{count - 1} others</b> liked your recommendation{ticker}</>;
+    const ticker = n.metadata?.ticker
+      ? <b style={{color:'var(--accent)'}}>{n.metadata.ticker}</b>
+      : null;
+    const byLine = n.metadata?.recommenderName
+      ? <> by <b>{n.metadata.recommenderName}</b></>
+      : null;
+
+    // Consolidated likes: "Rahul and 2 others liked your INFY recommendation"
+    if (n.type === 'contact_like') {
+      const names  = n.metadata?.likerNames || [n.from_name || 'Someone'];
+      const count  = n.metadata?.likeCount  || 1;
+      const who = count === 1
+        ? <b>{names[0]}</b>
+        : count === 2 && names.length >= 2
+        ? <><b>{names[0]}</b> and <b>{names[1]}</b></>
+        : <><b>{names[0]}</b> and <b>{count - 1} others</b></>;
+      return <>{who} liked your {ticker ? <>{ticker} </> : ''}recommendation</>;
     }
+
+    // Network: "Ankur Gupta liked INDSWFTLAB by Abhijheet"
+    if (n.type === 'network_like')
+      return <><b>{n.from_name||'Someone'}</b> liked {ticker}{byLine}</>;
+    if (n.type === 'network_comment')
+      return <><b>{n.from_name||'Someone'}</b> commented on {ticker||'a recommendation'}{byLine}</>;
+
+    // Other engagement types
+    if (n.type === 'contact_comment')
+      return <><b>{n.from_name||'Someone'}</b> commented on your {ticker ? <>{ticker} </> : ''}recommendation</>;
+    if (n.type === 'contact_recommendation')
+      return <><b>{n.from_name||'Someone'}</b> posted a new recommendation{ticker ? <> — {ticker}</> : ''}</>;
+
+    // Connection + generic types
     const label = TYPE_LABEL[n.type] || n.type;
-    const ticker = n.metadata?.ticker ? <> — <b style={{color:'var(--accent)'}}>{n.metadata.ticker}</b></> : null;
-    const group  = n.metadata?.groupName ? <> — <b>{n.metadata.groupName}</b></> : null;
-    return <>{' '}<b>{n.from_name || 'Someone'}</b> {label}{ticker}{group}</>;
+    const group = n.metadata?.groupName ? <> — <b>{n.metadata.groupName}</b></> : null;
+    return <><b>{n.from_name||'Someone'}</b> {label}{ticker ? <> — {ticker}</> : ''}{group}</>;
   };
   // On mobile: fixed to viewport (prevents overflow beyond screen edges)
   // On desktop: absolute, anchored to the bell button
@@ -1863,8 +1913,21 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
             : (n.type==='contact_comment'||n.type==='network_comment') ? '#0ea5b7'
             : '#22863a'
             : '#6d5df5';
+          // Is this notification navigable?
+          const isNavReco = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation'].includes(n.type);
+          const isNavConn = ['connection_accepted','connection_rejected'].includes(n.type);
+          const isClickable = onNavigate && (isNavReco || isNavConn);
           return (
-          <div key={n.id} style={{padding:"12px 18px",borderBottom:"1px solid var(--line)",background:n.is_read?"transparent":"var(--surface-2)",display:"flex",gap:12,alignItems:"flex-start"}}>
+          <div key={n.id}
+            onClick={isClickable ? () => onNavigate(n) : undefined}
+            style={{padding:"12px 18px",borderBottom:"1px solid var(--line)",
+                    background:n.is_read?"transparent":"var(--surface-2)",
+                    display:"flex",gap:12,alignItems:"flex-start",
+                    cursor:isClickable?'pointer':'default',
+                    transition:'background .1s'}}
+            onMouseEnter={isClickable?e=>{e.currentTarget.style.background='var(--surface-2)'}:undefined}
+            onMouseLeave={isClickable?e=>{e.currentTarget.style.background=n.is_read?'transparent':'var(--surface-2)'}:undefined}
+          >
             <div className="av" style={{width:36,height:36,flexShrink:0,background:avBg,fontSize:isEngagement?16:13}}>
               {isEngagement ? TYPE_ICON[n.type] : initialsOf(n.from_name||"?")}
             </div>
@@ -4190,7 +4253,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
         // Fan-out for public recos: in-app notifications + emails to all contacts
         if (isPublic && contacts?.length > 0) {
           // In-app notifications (existing)
-          const meta = JSON.stringify({ ticker: recoData.ticker, assetName: recoData.assetName });
+          const meta = JSON.stringify({ ticker: recoData.ticker, assetName: recoData.assetName, recommenderUsername: me.username || '' });
           await Promise.all(
             contacts.map(c =>
               sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
@@ -6756,7 +6819,7 @@ function RecoComments({ recoId, me }) {
           if (recommender_id === me.id) return; // no self-notifications
 
           // In-app notification to owner
-          const meta = JSON.stringify({ ticker, assetName: asset_name, recoId });
+          const meta = JSON.stringify({ ticker, assetName: asset_name, recoId, recommenderUsername: ownerUsername || '' });
           sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
               VALUES (${recommender_id}, 'contact_comment', ${me.id}, ${meta})`.catch(() => {});
 
@@ -6783,7 +6846,7 @@ function RecoComments({ recoId, me }) {
                   SELECT requester_id AS user_id FROM connections WHERE addressee_id=${me.id} AND status='accepted'
                 ) AS conn_ids WHERE user_id != ${recommender_id}`
               .then(connRows => {
-                const netMeta = JSON.stringify({ ticker, assetName: asset_name, recoId, commenterName: name });
+                const netMeta = JSON.stringify({ ticker, assetName: asset_name, recoId, commenterName: name, recommenderUsername: ownerUsername || '' });
                 connRows.forEach(c => {
                   sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
                       VALUES (${c.user_id}, 'network_comment', ${me.id}, ${netMeta})`.catch(() => {});
@@ -6886,9 +6949,14 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
     }
     // Notify reco owner (consolidated LinkedIn-style) + fan-out to liker's network
     if(next==='like' && r.id && sql){
-      sql`SELECT recommender_id FROM ic_recommendations WHERE id=${r.id} LIMIT 1`
+      sql`SELECT ir.recommender_id, up.username AS recommender_username, up.full_name AS recommender_name
+          FROM ic_recommendations ir
+          JOIN user_profiles up ON up.id=ir.recommender_id
+          WHERE ir.id=${r.id} LIMIT 1`
         .then(rows=>{
-          const ownerId = rows[0]?.recommender_id;
+          const ownerId        = rows[0]?.recommender_id;
+          const ownerUsername  = rows[0]?.recommender_username || '';
+          const ownerName      = rows[0]?.recommender_name     || r.byName || '';
           if(!ownerId || ownerId===me.id) return;
 
           // ── Consolidated like notification (check-then-upsert) ──────────────
@@ -6898,7 +6966,6 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
             .then(existing=>{
               const lName = me.name || 'Someone';
               if(existing[0]){
-                // Merge into existing notification
                 const prev = typeof existing[0].metadata==='string'
                   ? JSON.parse(existing[0].metadata)
                   : (existing[0].metadata||{});
@@ -6907,8 +6974,11 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
                 sql`UPDATE notifications SET metadata=${newMeta},from_user_id=${me.id},created_at=NOW()
                     WHERE id=${existing[0].id}`.catch(()=>{});
               } else {
-                // First like — new notification
-                const meta=JSON.stringify({ticker:r.ticker,assetName:r.assetName,recoId:r.id,likerNames:[lName],likeCount:1});
+                const meta=JSON.stringify({
+                  ticker:r.ticker, assetName:r.assetName, recoId:r.id,
+                  likerNames:[lName], likeCount:1,
+                  recommenderUsername:ownerUsername, recommenderName:ownerName,
+                });
                 sql`INSERT INTO notifications (user_id,type,from_user_id,metadata)
                     VALUES (${ownerId},'contact_like',${me.id},${meta})`.catch(()=>{});
               }
@@ -6921,7 +6991,10 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
                 SELECT requester_id AS user_id FROM connections WHERE addressee_id=${me.id} AND status='accepted'
               ) AS conn_ids WHERE user_id != ${ownerId}`
             .then(connRows=>{
-              const netMeta=JSON.stringify({ticker:r.ticker,assetName:r.assetName,recoId:r.id});
+              const netMeta=JSON.stringify({
+                ticker:r.ticker, assetName:r.assetName, recoId:r.id,
+                recommenderName:ownerName, recommenderUsername:ownerUsername,
+              });
               connRows.forEach(c=>{
                 sql`INSERT INTO notifications (user_id,type,from_user_id,metadata)
                     VALUES (${c.user_id},'network_like',${me.id},${netMeta})`.catch(()=>{});
