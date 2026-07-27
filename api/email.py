@@ -17,12 +17,14 @@ Supported email types (pass as JSON body):
 """
 
 import os
+import sys
 import json
 import resend
 from http.server import BaseHTTPRequestHandler
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL     = os.environ.get("FROM_EMAIL", "hello@myinvestorcircle.com")
+REPLY_TO       = FROM_EMAIL   # replies go back to the hello@ inbox
 APP_URL        = "https://myinvestorcircle.com"
 BRAND_COLOR    = "#6d5df5"
 
@@ -244,28 +246,33 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             if not resend.api_key:
+                print("[email] ERROR: RESEND_API_KEY env var is not set", file=sys.stderr)
                 self._respond(500, {"error": "RESEND_API_KEY not configured"})
                 return
 
-            tpl = TEMPLATES[email_type](body)
-            resend.Emails.send({
-                "from":    FROM_EMAIL,
-                "to":      [to_email],
-                "subject": tpl["subject"],
-                "html":    tpl["html"],
+            tpl    = TEMPLATES[email_type](body)
+            result = resend.Emails.send({
+                "from":     FROM_EMAIL,
+                "to":       [to_email],
+                "reply_to": REPLY_TO,
+                "subject":  tpl["subject"],
+                "html":     tpl["html"],
             })
-
-            self._respond(200, {"ok": True})
+            print(f"[email] OK type={email_type} to={to_email} id={getattr(result,'id',result)}", file=sys.stderr)
+            self._respond(200, {"ok": True, "id": getattr(result, "id", None)})
 
         except Exception as e:
+            print(f"[email] EXCEPTION type={email_type} to={to_email} err={e}", file=sys.stderr)
             self._respond(500, {"error": str(e)})
 
     def _respond(self, status, data):
+        body = json.dumps(data).encode()
         self.send_response(status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type",   "application/json")
+        self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        self.wfile.write(body)
 
     def do_OPTIONS(self):
         self.send_response(204)
