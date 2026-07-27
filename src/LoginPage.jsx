@@ -133,7 +133,7 @@ export default function LoginPage() {
       await updateProfile(cred.user, { displayName: fullName });
 
       // Send welcome / security-confirmation email (fire-and-forget).
-      sendEmail('signup_welcome', { to_email:signupEmail.trim(), first_name:firstName.trim(), full_name:fullName });
+      sendEmail('signup_welcome', { to_email: signupEmail.trim(), first_name: firstName.trim(), full_name: fullName });
 
       // Auth state change fires → AuthContext logs user in → App.jsx referral processing runs
     } catch (e) {
@@ -180,7 +180,7 @@ export default function LoginPage() {
       minHeight: "100vh", background: "#0a0b18",
       display: "flex", alignItems: "center", justifyContent: "center",
       fontFamily: "'Plus Jakarta Sans',-apple-system,system-ui,sans-serif",
-      padding: 24, position: "relative", overflow: "hidden",
+      padding: "16px 24px", position: "relative", overflowY: "auto",
     }}>
       {/* Ambient glow */}
       <div style={{
@@ -192,20 +192,17 @@ export default function LoginPage() {
       <div style={{ width: "100%", maxWidth: 420, position: "relative" }}>
 
         {/* Brand */}
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{
-            width: 58, height: 58, borderRadius: 17,
-            background: "linear-gradient(135deg,#6d5df5,#cf52d8)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 23, fontWeight: 800, color: "#fff",
-            margin: "0 auto 15px",
-            boxShadow: "0 12px 40px rgba(109,93,245,.45)",
-          }}>mic</div>
-          <div style={{ fontSize: 23, fontWeight: 800, color: "#fff", letterSpacing: "-.3px" }}>
-            myInvestorCircle
-          </div>
-          <div style={{ fontSize: 14, color: "#6a6d90", marginTop: 5 }}>
-            Your private investing circle
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 13 }}>
+            <img src="/mic-logo.png" alt="myInvestorCircle" style={{ width: 52, height: 52, flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: "-.3px", lineHeight: 1.1 }}>
+                myInvestorCircle
+              </div>
+              <div style={{ fontSize: 13, color: "#6a6d90", marginTop: 3 }}>
+                Your private investing circle
+              </div>
+            </div>
           </div>
         </div>
 
