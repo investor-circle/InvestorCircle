@@ -6,7 +6,7 @@ import {
   UserCog, Layers, Wallet, ArrowUpRight, ArrowDownRight, MessageSquare,
   Bookmark, ChevronRight, ChevronDown, ChevronsUpDown, Sparkles, ArrowUpDown,
   List, Table as TableIcon, Mail, UserPlus, Calendar, Crown,
-  ThumbsUp, ThumbsDown, Trash2, LogOut, AlertTriangle, Filter,
+  ThumbsUp, Trash2, LogOut, AlertTriangle, Filter,
   Download, Upload, CreditCard, Share2, Forward, FileSpreadsheet, FileText, Loader, RefreshCw, Pencil, Database,
   Globe, Trophy, Copy, ExternalLink, ArrowLeft, Link, Flame, Info,
   BarChart2, Activity, Zap, Target, Clock, Image as ImageIcon
@@ -264,7 +264,6 @@ tr.hiddenrow > td{opacity:.55;}
 .iconbtn{width:30px;height:30px;border-radius:9px;border:1px solid var(--line-2);background:var(--surface);color:var(--ink-soft);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;}
 .iconbtn:hover{background:var(--surface-2);}
 .iconbtn.on-like{background:var(--gain-soft);color:var(--gain);border-color:transparent;}
-.iconbtn.on-dislike{background:var(--loss-soft);color:var(--loss);border-color:transparent;}
 .iconbtn.on-exit{background:var(--loss-soft);color:var(--loss);border-color:transparent;}
 .iconbtn.danger:hover{background:var(--loss-soft);color:var(--loss);border-color:transparent;}
 .actions{display:flex;gap:6px;align-items:center;justify-content:flex-end;}
@@ -1060,12 +1059,12 @@ export default function App() {
                        ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
                        ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                        up.full_name as by_name, up.id as from_id,
-                       0 as likes, 0 as dislikes
+                       0 as likes
                 FROM recommendation_deliveries rd
                 JOIN ic_recommendations ir ON ir.id = rd.recommendation_id
                 JOIN user_profiles up ON up.id = ir.recommender_id
                 WHERE rd.recipient_id = ANY(${activeConns})
-                  AND (rd.reaction IN ('like','dislike')
+                  AND (rd.reaction = 'like'
                     OR EXISTS (SELECT 1 FROM recommendation_comments rc
                                WHERE rc.reco_id=ir.id AND rc.user_id=ANY(${activeConns})))
                   AND ir.id NOT IN (
@@ -2925,14 +2924,10 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
   const onInvestClick=(r)=>{ if(r.invested) unInvest(r); else setInvesting(r); };
   const react=(r,val)=>{
     const next=r.reaction===val?'none':val;
-    // Optimistically update local state (counts + reaction) without touching DB aggregates
-    let likes=(r.likes||0), dislikes=(r.dislikes||0);
-    if(r.reaction==='like')    likes    = Math.max(0, likes-1);
-    if(r.reaction==='dislike') dislikes = Math.max(0, dislikes-1);
-    if(next==='like')    likes++;
-    if(next==='dislike') dislikes++;
-    setRecs(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes,dislikes}:x));
-    // Persist reaction to DB — use null (not 'none') to avoid constraint violations
+    let likes=(r.likes||0);
+    if(r.reaction==='like') likes = Math.max(0, likes-1);
+    if(next==='like')       likes++;
+    setRecs(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes}:x));
     if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},myId).catch(console.warn);
   };
   const toggleHide=(r)=>patch(r,{isHidden:!r.hidden,hidden:!r.hidden});
@@ -3112,8 +3107,6 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                       <div style={{display:"flex",alignItems:"center",gap:4}}>
                         <button className={"iconbtn"+(r.reaction==="like"?" on-like":"")} title="Like" onClick={()=>react(r,"like")}><ThumbsUp size={13}/></button>
                         <span className="muted small tnum" style={{fontSize:11}}>{r.likes}</span>
-                        <button className={"iconbtn"+(r.reaction==="dislike"?" on-dislike":"")} title="Dislike" onClick={()=>react(r,"dislike")}><ThumbsDown size={13}/></button>
-                        <span className="muted small tnum" style={{fontSize:11}}>{r.dislikes}</span>
                       </div>
                     </td>
                     {/* Actions */}
@@ -3646,7 +3639,7 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
                 <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
                 <th>Status</th>
                 <SortTh label="Horizon" k="horizon" sort={sort} setSort={setSort}/>
-                <th title="Likes · Dislikes from recipients">React</th>
+                <th title="Likes from recipients">Likes</th>
                 <th style={{textAlign:"right"}}>Actions</th>
               </tr></thead>
               <tbody>{rows.map(r=>{
@@ -3674,13 +3667,11 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
                     <td style={{textAlign:"right",fontWeight:700}} className={"tnum nowrap "+(itm?"pos":"neg")}>{fmtPct(ret(r))}</td>
                     <td><Money itm={itm}/></td>
                     <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
-                    {/* Reactions — likes.length / dislikes.length are arrays from getMyMadeRecos */}
+                    {/* Likes from recipients */}
                     <td>
                       <div style={{display:"flex",alignItems:"center",gap:5}}>
                         <ThumbsUp size={13} color="var(--gain)"/>
                         <span style={{fontSize:12,fontWeight:700,color:"var(--gain)",minWidth:14}}>{r.likes?.length||0}</span>
-                        <ThumbsDown size={13} color="var(--loss)" style={{marginLeft:2}}/>
-                        <span style={{fontSize:12,fontWeight:700,color:"var(--loss)",minWidth:14}}>{r.dislikes?.length||0}</span>
                       </div>
                     </td>
                     <td>
@@ -3716,7 +3707,6 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
                         <div><div className="cap">Reactions</div>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
                             <ThumbsUp size={13} color="var(--gain)"/><b>{r.likes.length}</b>
-                            <ThumbsDown size={13} color="var(--loss)" style={{marginLeft:6}}/><b>{r.dislikes.length}</b>
                           </div>
                         </div>
                       </div>
@@ -3753,7 +3743,7 @@ function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAdd }) {
   const save=()=>onAdd({ id:"r"+Date.now(), from:null, byName:f.by.trim(), assetName:f.assetName.trim(), ticker:(f.ticker||"—").toUpperCase(), assetClass:f.assetClass, date:f.date||TODAY,
     priceAt:+f.recoPrice, price:+f.curPrice, targetPrice:f.targetPrice?+f.targetPrice:null, horizon:f.horizon||null, targetDate:calcTargetDate(f.date||TODAY,f.horizon),
     invested:f.invested, investedPrice:f.invested?(+f.investedPrice):null, recoActed:f.invested?1:0, shareType:f.shareType, groupId:f.shareType==="group"?f.groupId:null,
-    reaction:"none", likes:0, dislikes:0, exitSignal:false, exitDate:null, hidden:false, thesis:f.thesis.trim()||null });
+    reaction:"none", likes:0, exitSignal:false, exitDate:null, hidden:false, thesis:f.thesis.trim()||null });
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-head"><h3><Plus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add a recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">
@@ -4174,7 +4164,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
       }
       catch(e) { console.error("create reco:", e); }
     }
-    onCreate({ id:"m"+Date.now(), ...recoData, date:TODAY, recipients:targets, actedList:[], likes:[], dislikes:[], exit:false, exitDate:null });
+    onCreate({ id:"m"+Date.now(), ...recoData, date:TODAY, recipients:targets, actedList:[], likes:[], exit:false, exitDate:null });
   };
 
   const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && (priceData?.price > 0 || !!priceError);
@@ -4755,14 +4745,17 @@ function SharePublicPopover({ reco, username, onClose, anchorEl }) {
 /* ─── RecoPostPage — dedicated shareable post view for a single recommendation ── */
 function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProfile }) {
   const isMobile = useIsMobile();
-  const [data,      setData]      = useState(null);
-  const [reco,      setReco]      = useState(null);
-  const [loading,   setLoading]   = useState(true);
-  const [notFound,  setNotFound]  = useState(false);
-  const [liked,     setLiked]     = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
-  const [isTracked, setIsTracked] = useState(false);
-  const [copied,    setCopied]    = useState(false);
+  const [data,         setData]         = useState(null);
+  const [reco,         setReco]         = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [notFound,     setNotFound]     = useState(false);
+  const [liked,        setLiked]        = useState(false);
+  const [likeCount,    setLikeCount]    = useState(0);
+  const [commentCount, setCommentCount] = useState(0);
+  const [isTracked,    setIsTracked]    = useState(false);
+  const [invested,     setInvested]     = useState(false);
+  const [investedPrice,setInvestedPrice]= useState(null);
+  const [copied,       setCopied]       = useState(false);
 
   const recoUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${recoId}`;
 
@@ -4773,18 +4766,34 @@ function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProf
       if (!d) { setNotFound(true); setLoading(false); return; }
       setData(d);
       const found = (d.recos || []).find(r => r.id === recoId);
-      if (found) { setReco(found); setLikeCount(Number(found.likes) || 0); }
+      if (found) { setReco(found); }
       else setNotFound(true);
       setLoading(false);
     }).catch(() => { setNotFound(true); setLoading(false); });
   }, [username, recoId]);
 
-  // Load viewer's bookmark state when logged in
+  // Load like count, comment count, and viewer's state when recoId is known
   useEffect(() => {
-    if (!viewerUser?.uid || !recoId || !sql) return;
-    sql`SELECT 1 FROM recommendation_tracking WHERE reco_id=${recoId} AND user_id=${viewerUser.uid} LIMIT 1`
-      .then(rows => { if (rows.length) setIsTracked(true); }).catch(() => {});
-  }, [viewerUser?.uid, recoId]);
+    if (!recoId || !sql) return;
+    // Like count from recommendation_reactions table
+    sql`SELECT COUNT(*) AS cnt FROM recommendation_reactions WHERE reco_id=${recoId}`
+      .then(rows => setLikeCount(Number(rows[0]?.cnt) || 0)).catch(() => {});
+    // Comment count
+    sql`SELECT COUNT(*) AS cnt FROM recommendation_comments WHERE reco_id=${recoId}`
+      .then(rows => setCommentCount(Number(rows[0]?.cnt) || 0)).catch(() => {});
+    if (!viewerUser?.uid) return;
+    // Viewer's own like
+    sql`SELECT reaction FROM recommendation_reactions WHERE reco_id=${recoId} AND user_id=${viewerUser.uid} LIMIT 1`
+      .then(rows => { if (rows[0]?.reaction === 'like') setLiked(true); }).catch(() => {});
+    // Bookmark
+    sql`SELECT is_invested, invested_price FROM recommendation_tracking WHERE reco_id=${recoId} AND user_id=${viewerUser.uid} LIMIT 1`
+      .then(rows => {
+        if (rows.length) {
+          setIsTracked(true);
+          if (rows[0].is_invested) { setInvested(true); setInvestedPrice(rows[0].invested_price); }
+        }
+      }).catch(() => {});
+  }, [recoId, viewerUser?.uid]);
 
   const requireLogin = () => { window.location.hash = ''; };
 
@@ -4793,7 +4802,15 @@ function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProf
     const next = !liked;
     setLiked(next);
     setLikeCount(c => next ? c + 1 : Math.max(0, c - 1));
-    // Ephemeral — no delivery record for standalone visitors
+    if (sql && viewerUser.uid) {
+      if (next) {
+        sql`INSERT INTO recommendation_reactions (reco_id,user_id,reaction)
+            VALUES (${recoId},${viewerUser.uid},'like')
+            ON CONFLICT (reco_id,user_id) DO UPDATE SET reaction='like'`.catch(() => {});
+      } else {
+        sql`DELETE FROM recommendation_reactions WHERE reco_id=${recoId} AND user_id=${viewerUser.uid}`.catch(() => {});
+      }
+    }
   };
 
   const handleTrack = () => {
@@ -4804,6 +4821,21 @@ function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProf
       if (next) sql`INSERT INTO recommendation_tracking (reco_id,user_id) VALUES (${recoId},${viewerUser.uid}) ON CONFLICT DO NOTHING`.catch(() => {});
       else sql`DELETE FROM recommendation_tracking WHERE reco_id=${recoId} AND user_id=${viewerUser.uid}`.catch(() => {});
     }
+  };
+
+  const handleInvest = (price) => {
+    if (!viewerUser || !sql) return;
+    setInvested(true); setInvestedPrice(price); setIsTracked(true);
+    sql`INSERT INTO recommendation_tracking (reco_id,user_id,is_invested,invested_price,invested_at)
+        VALUES (${recoId},${viewerUser.uid},true,${price},now())
+        ON CONFLICT (reco_id,user_id) DO UPDATE SET is_invested=true,invested_price=${price},invested_at=now()`.catch(() => {});
+  };
+
+  const handleUnInvest = () => {
+    if (!viewerUser || !sql) return;
+    setInvested(false); setInvestedPrice(null);
+    sql`UPDATE recommendation_tracking SET is_invested=false,invested_price=null,invested_at=null
+        WHERE reco_id=${recoId} AND user_id=${viewerUser.uid}`.catch(() => {});
   };
 
   const copyLink = () => {
@@ -4978,31 +5010,60 @@ function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProf
             )}
           </div>
 
-          {/* ── Interaction bar ── */}
+          {/* ── Interaction bar: Like · Comment · Engagement · Share · Bookmark · Invested ── */}
           <div style={{background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
-                       padding:'12px 18px', marginBottom:14,
-                       display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-            <button onClick={handleLike} style={{display:'flex', alignItems:'center', gap:6,
-              padding:'8px 14px', borderRadius:10, border:'1px solid var(--line)',
-              background: liked ? 'rgba(124,92,252,.1)' : 'transparent',
-              color: liked ? 'var(--accent)' : 'var(--muted)',
+                       padding:'12px 16px', marginBottom:14,
+                       display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+            {/* Like */}
+            <button onClick={handleLike} style={{display:'flex', alignItems:'center', gap:5,
+              padding:'7px 12px', borderRadius:10, border:'1px solid var(--line)',
+              background: liked ? 'var(--accent-soft)' : 'transparent',
+              color: liked ? 'var(--accent-ink)' : 'var(--muted)',
               cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600, transition:'.15s'}}>
-              <ThumbsUp size={15}/>{likeCount > 0 ? ` ${likeCount}` : ''} Like
+              <ThumbsUp size={14}/>{likeCount > 0 ? ` ${likeCount}` : ''}
             </button>
-            <button onClick={handleTrack} style={{display:'flex', alignItems:'center', gap:6,
-              padding:'8px 14px', borderRadius:10, border:'1px solid var(--line)',
-              background: isTracked ? 'rgba(124,92,252,.1)' : 'transparent',
-              color: isTracked ? 'var(--accent)' : 'var(--muted)',
-              cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600, transition:'.15s'}}>
-              <Bookmark size={15}/> {isTracked ? 'Saved' : 'Save'}
-            </button>
-            <div style={{flex:1}}/>
-            <button onClick={copyLink} style={{display:'flex', alignItems:'center', gap:6,
-              padding:'8px 14px', borderRadius:10, border:'1px solid var(--line)',
+            {/* Comment */}
+            <button onClick={()=>document.getElementById('rpp-comments')?.scrollIntoView({behavior:'smooth'})}
+              style={{display:'flex', alignItems:'center', gap:5,
+              padding:'7px 12px', borderRadius:10, border:'1px solid var(--line)',
               background:'transparent', color:'var(--muted)',
               cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600}}>
-              {copied ? <><Check size={15}/> Copied!</> : <><Share2 size={15}/> Share</>}
+              <MessageSquare size={14}/>{commentCount > 0 ? ` ${commentCount}` : ''}
             </button>
+            {/* Engagement */}
+            {(likeCount + commentCount) > 0 && (
+              <span style={{fontSize:12, color:'var(--muted)', display:'flex', alignItems:'center', gap:3,
+                            padding:'7px 10px', borderRadius:10, border:'1px solid var(--line)'}}>
+                ✦ {likeCount + commentCount}
+              </span>
+            )}
+            <div style={{flex:1}}/>
+            {/* Share */}
+            <button onClick={copyLink} style={{display:'flex', alignItems:'center', gap:5,
+              padding:'7px 12px', borderRadius:10, border:'1px solid var(--line)',
+              background:'transparent', color:'var(--muted)',
+              cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600}}>
+              {copied ? <><Check size={14}/></> : <><Share2 size={14}/></>}
+            </button>
+            {/* Bookmark */}
+            <button onClick={viewerUser ? handleTrack : requireLogin}
+              style={{display:'flex', alignItems:'center', gap:5,
+              padding:'7px 12px', borderRadius:10, border:'1px solid var(--line)',
+              background: isTracked ? 'var(--accent-soft)' : 'transparent',
+              color: isTracked ? 'var(--accent-ink)' : 'var(--muted)',
+              cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600, transition:'.15s'}}>
+              <Bookmark size={14}/>
+            </button>
+            {/* Mark Invested */}
+            {viewerUser && reco && (
+              <InvestedToggle
+                invested={invested}
+                investedPrice={investedPrice}
+                reco={{id:recoId, price:reco.current_price, ticker:reco.ticker, assetName:reco.asset_name, priceAt:reco.reco_price}}
+                onMark={handleInvest}
+                onUnmark={handleUnInvest}
+              />
+            )}
           </div>
 
           {/* ── Sign-in nudge (non-members) ── */}
@@ -5028,7 +5089,7 @@ function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProf
           )}
 
           {/* ── Comments ── */}
-          <div style={{background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
+          <div id="rpp-comments" style={{background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
                        padding:'20px', marginBottom:14}}>
             <div style={{fontWeight:700, fontSize:15, marginBottom:16}}>Comments</div>
             <RecoComments recoId={recoId} me={commentMe}/>
@@ -6696,7 +6757,7 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
   const retPct = (r.priceAt&&r.priceAt!==0) ? (r.price-r.priceAt)/r.priceAt : 0;
   const itm = retPct >= 0;
   const isTracked = tracked?.has(r.id);
-  const interactionCount = (r.likes||0)+(r.dislikes||0)+(r.invested?1:0)+(isTracked?1:0);
+  const interactionCount = (r.likes||0)+(r.invested?1:0)+(isTracked?1:0);
   const canOpenProfile = !!recommenderInfo?.username;
 
   const patch=(updates)=>{
@@ -6713,21 +6774,18 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
   const react=(val)=>{
     if(!me?.id) return;
     const next=r.reaction===val?'none':val;
-    let likes=(r.likes||0), dislikes=(r.dislikes||0);
-    if(r.reaction==='like')    likes    = Math.max(0,likes-1);
-    if(r.reaction==='dislike') dislikes = Math.max(0,dislikes-1);
-    if(next==='like')    likes++;
-    if(next==='dislike') dislikes++;
+    let likes=(r.likes||0);
+    if(r.reaction==='like') likes = Math.max(0,likes-1);
+    if(next==='like')       likes++;
     if(r.feedSource==='public'&&setPublicFeedRecos){
-      setPublicFeedRecos(rs=>rs.map(x=>x.id===r.id?{...x,reaction:next,likes,dislikes}:x));
+      setPublicFeedRecos(rs=>rs.map(x=>x.id===r.id?{...x,reaction:next,likes}:x));
     } else if(r.feedSource==='network_engagement'&&setNetworkEngagementRecos){
-      setNetworkEngagementRecos(rs=>rs.map(x=>x.id===r.id?{...x,reaction:next,likes,dislikes}:x));
+      setNetworkEngagementRecos(rs=>rs.map(x=>x.id===r.id?{...x,reaction:next,likes}:x));
     } else {
-      setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes,dislikes}:x));
+      setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes}:x));
       if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
     }
-    // Notify reco owner when liked (not on un-like). Query recommender_id to avoid
-    // field-name inconsistency across feedSource types (from vs from_id).
+    // Notify reco owner when liked
     if(next==='like' && r.id && sql){
       sql`SELECT recommender_id FROM ic_recommendations WHERE id=${r.id} LIMIT 1`
         .then(rows=>{
@@ -6858,25 +6916,29 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
           </div>
         )}
 
-        {/* ── Interaction bar ── */}
+        {/* ── Interaction bar — Like · Comment · Engagement · Share · Bookmark · Invested ── */}
         <div style={{display:'flex',alignItems:'center',gap:5,paddingTop:10,borderTop:'1px solid var(--line)'}}>
+          {/* Like */}
           <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={e=>{e.stopPropagation();react('like');}} style={{width:32,height:32}}><ThumbsUp size={14}/></button>
           <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.likes||0}</span>
-          <button className={"iconbtn"+(r.reaction==='dislike'?' on-dislike':'')} title="Dislike" onClick={e=>{e.stopPropagation();react('dislike');}} style={{width:32,height:32}}><ThumbsDown size={14}/></button>
-          <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.dislikes||0}</span>
+          {/* Comment */}
           <button className="iconbtn" title="Comment" onClick={()=>setExpanded(v=>!v)} style={{width:32,height:32}}><MessageSquare size={14}/></button>
+          {/* Engagement */}
+          {interactionCount>0&&<span style={{fontSize:11,color:'var(--muted)',display:'flex',alignItems:'center',gap:2}}>✦ {interactionCount}</span>}
+          {/* Share */}
           <div style={{position:'relative'}}>
             <button className="iconbtn" title="Share" onClick={e=>{e.stopPropagation();handleShareClick(e);}} style={{width:32,height:32}}><Share2 size={14}/></button>
             {showShare&&<ReceivedSharePopover reco={r} fromUsername={shareUsername} anchorEl={shareAnchor}
               onForward={()=>setShowShare(false)}
               onClose={()=>{ setShowShare(false); setShareAnchor(null); }}/>}
           </div>
+          {/* Bookmark */}
           <button className={"iconbtn"+(isTracked?' on-like':'')} title={isTracked?'Remove from tracked':'Track'}
             onClick={()=>toggleTrack?.(r.id)}
             style={isTracked?{width:32,height:32,background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{width:32,height:32}}>
             <Bookmark size={14}/>
           </button>
-          {interactionCount>0&&<span style={{fontSize:11,color:'var(--muted)',marginLeft:2}}>✦ {interactionCount}</span>}
+          {/* Mark Invested */}
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
             <InvestedToggle
               invested={r.invested} investedPrice={r.investedPrice||r.invested_price}
@@ -6947,7 +7009,7 @@ function scoreFeedRec(r, tracked, cfg) {
 
   // Engagement boost
   if (cfg.rank_engagement) {
-    score += (r.likes || 0) * 6 + (r.dislikes || 0) * 2;
+    score += (r.likes || 0) * 6;
   }
 
   // Price movement boost (|return| > 5% adds up to 40 pts)
@@ -7121,7 +7183,7 @@ function MissedOppsWidget({ recsReceived, tracked, contacts }) {
 function TrendingWidget({ recsReceived, tracked, contacts }) {
   const [modal, setModal] = useState(null);
   const trending = [...recsReceived].filter(r=>!r.hidden)
-    .map(r=>({...r, score:(r.likes||0)+(r.dislikes||0)+(tracked.has(r.id)?2:0)}))
+    .map(r=>({...r, score:(r.likes||0)+(tracked.has(r.id)?2:0)}))
     .filter(r=>r.score>0)
     .sort((a,b)=>b.score-a.score)
     .slice(0,3);
