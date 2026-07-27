@@ -52,6 +52,16 @@ const _CAS_API = import.meta.env.VITE_CAS_API_URL
 
 const _CAS_CONFIGURED = !!import.meta.env.VITE_CAS_API_URL;
 
+/* ── Transactional email helper (calls Vercel /api/email via Resend) ─── */
+const EMAIL_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
+/** Fire-and-forget email. Never throws — email failure must never break any user flow. */
+const sendEmail = (type, payload) =>
+  fetch(EMAIL_API, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ type, ...payload }),
+  }).catch(() => {});
+
 async function parseCasPdf(file, password = '') {
   const form = new FormData();
   form.append('file', file, file.name || 'cas.pdf');
@@ -876,7 +886,7 @@ export default function App() {
     try {
       // Look up the referrer by their username
       const refs = await sql`
-        SELECT id, full_name FROM user_profiles
+        SELECT id, full_name, email, username FROM user_profiles
         WHERE LOWER(username) = ${refUsername.toLowerCase()} AND id != ${newUserId}
         LIMIT 1`;
       if (!refs.length) { localStorage.removeItem('mic_ref'); return; }
@@ -901,6 +911,21 @@ export default function App() {
         INSERT INTO notifications (user_id, type, from_user_id)
         VALUES (${referrer.id}, 'connection_accepted', ${newUserId})
       `.catch(() => {}); // non-fatal
+
+      // Send referral emails (fire and forget)
+      const newUserEmail = user?.email || '';
+      const newUserName  = user?.displayName || 'New member';
+      sendEmail('welcome_referred', {
+        to_email:          newUserEmail,
+        referrer_name:     referrer.full_name,
+        referrer_username: referrer.username || '',
+      });
+      if (referrer.email) {
+        sendEmail('referral_converted', {
+          to_email:      referrer.email,
+          new_user_name: newUserName,
+        });
+      }
 
       // Refresh connection list so the new user immediately sees the referrer in their circle
       const conns = await getMyConnections(newUserId);
@@ -1412,7 +1437,14 @@ export default function App() {
                   notifications={notifications}
                   myId={ME.id}
                   onAccept={async (n) => {
-                    await acceptConnection(n.reference_id, ME.id);
+                    const [, reqInfo] = await Promise.all([
+                      acceptConnection(n.reference_id, ME.id),
+                      sql`SELECT email, username FROM user_profiles WHERE id = ${n.from_user_id} LIMIT 1`
+                        .then(r => r[0]).catch(() => null),
+                    ]);
+                    if (reqInfo?.email) {
+                      sendEmail('connection_accepted', { to_email:reqInfo.email, their_name:ME.name, their_username:ME.username });
+                    }
                     await markNotifRead(n.id, ME.id);
                     const [conns, notifs] = await Promise.all([getMyConnections(ME.id), getMyNotifications(ME.id)]);
                     setConnections(conns); setNotifications(notifs);
@@ -1848,7 +1880,14 @@ function ContactsSection({ connections, setConnections, groups, sharing, setShar
 
   const doAccept = async (c) => {
     setBusy(b=>({...b,[c.connection_id]:true}));
-    await acceptConnection(c.connection_id, myId);
+    const [, reqInfo] = await Promise.all([
+      acceptConnection(c.connection_id, myId),
+      sql`SELECT email FROM user_profiles WHERE id = ${c.user_id} LIMIT 1`
+        .then(r => r[0]).catch(() => null),
+    ]);
+    if (reqInfo?.email) {
+      sendEmail('connection_accepted', { to_email:reqInfo.email, their_name:me?.name||'', their_username:me?.username||'' });
+    }
     setConnections(await getMyConnections(myId));
     setBusy(b=>({...b,[c.connection_id]:false}));
   };
@@ -1975,7 +2014,14 @@ function ContactsSection({ connections, setConnections, groups, sharing, setShar
           const conns = await getMyConnections(myId);
           setConnections(conns);
         }}
-        onInvite={(email)=>setPendingInvites(p=>p.some(x=>x.email===email)?p:[...p,{email,date:TODAY}])}/>}
+        onInvite={(email)=>{
+          setPendingInvites(p=>p.some(x=>x.email===email)?p:[...p,{email,date:TODAY}]);
+          sendEmail('invite', {
+            to_email:    email,
+            from_name:   me?.name || 'A fellow investor',
+            invite_link: `https://myinvestorcircle.com/?ref=${me?.username||''}`,
+          });
+        }}/>}
     {openContact && <PortfolioModal contact={openContact} onClose={()=>setOpenContact(null)}/>}
   </>);
 }
@@ -5634,15 +5680,8 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
 
       await fbUpdateProfile(cred.user,{displayName:fullName}).catch(()=>{});
 
-      const api=(import.meta.env.VITE_CAS_API_URL||'https://investor-circle.vercel.app')+'/api/email';
-      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-        type:'claim_submitted',to_email:claimEmail.trim(),creator_name:fullName,
-        profile_name:unclaimedProfile?.full_name,username:unInput,
-      })}).catch(()=>{});
-      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-        type:'claim_admin_notify',to_email:'hello@myinvestorcircle.com',creator_name:fullName,
-        claimer_email:claimEmail.trim(),profile_name:unclaimedProfile?.full_name,username:unInput,
-      })}).catch(()=>{});
+      sendEmail('claim_submitted',   { to_email:claimEmail.trim(), creator_name:fullName, profile_name:unclaimedProfile?.full_name, username:unInput });
+      sendEmail('claim_admin_notify', { to_email:'hello@myinvestorcircle.com', creator_name:fullName, claimer_email:claimEmail.trim(), profile_name:unclaimedProfile?.full_name, username:unInput });
 
       localStorage.removeItem('mic_claim_token');
       onClaimSuccess?.();
@@ -10197,9 +10236,7 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
         // Mark claim request as approved
         await sql`UPDATE claim_requests SET status='approved', reviewed_at=NOW(), reviewed_by=${ME?.id||''}, admin_note=${reviewNote||null} WHERE id=${reqId}`;
 
-        // Send approval email (fire and forget)
-        const emailApi = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
-        fetch(emailApi, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'claim_approved',to_email:req.claimer_email,creator_name:req.claimer_full_name,username:req.profile_username})}).catch(()=>{});
+        sendEmail('claim_approved', { to_email:req.claimer_email, creator_name:req.claimer_full_name, username:req.profile_username });
 
       } else {
         // Reject: clear claim fields + regenerate token so admin can re-share a fresh link
@@ -10208,8 +10245,7 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
           claim_token=${crypto.randomUUID().replace(/-/g,'')}
           WHERE id=${req.profile_id}`;
         await sql`UPDATE claim_requests SET status='rejected', reviewed_at=NOW(), reviewed_by=${ME?.id||''}, admin_note=${reviewNote||null} WHERE id=${reqId}`;
-        const emailApi = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
-        fetch(emailApi, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'claim_rejected',to_email:req.claimer_email,creator_name:req.claimer_full_name,admin_note:reviewNote||''})}).catch(()=>{});
+        sendEmail('claim_rejected', { to_email:req.claimer_email, creator_name:req.claimer_full_name, admin_note:reviewNote||'' });
       }
       setReviewNote('');
       if (onClaimAction) onClaimAction();
