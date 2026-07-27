@@ -1181,15 +1181,23 @@ export default function App() {
                 setPageHash('');
                 return;
               }
+              console.log('[profile-connect] triggered, targetId:', targetId, 'pubUsername:', pubUsername);
               await sendConnectionRequest(user.uid, targetId);
-              sql`SELECT email FROM user_profiles WHERE id=${targetId} LIMIT 1`
+              // Query by username (from URL) — more reliable than querying by id
+              sql`SELECT email FROM user_profiles
+                  WHERE LOWER(username)=${pubUsername.toLowerCase()} LIMIT 1`
                 .then(rows => {
-                  if (rows[0]?.email) sendEmail('connection_request', {
-                    to_email:      rows[0].email,
-                    from_name:     ME?.name || user.displayName || 'Someone',
-                    from_username: ME?.username || '',
-                  });
-                }).catch(() => {});
+                  console.log('[profile-connect] email query rows:', rows);
+                  if (rows[0]?.email) {
+                    sendEmail('connection_request', {
+                      to_email:      rows[0].email,
+                      from_name:     ME?.name || user.displayName || 'Someone',
+                      from_username: ME?.username || '',
+                    });
+                  } else {
+                    console.warn('[profile-connect] no email found for username:', pubUsername);
+                  }
+                }).catch(e => console.error('[profile-connect] email query error:', e));
               const c = await getMyConnections(user.uid);
               setConnections(c);
             }}
