@@ -99,24 +99,6 @@ def tpl_referral_converted(data):
     }
 
 
-def tpl_connection_request(data):
-    from_name     = data.get("from_name", "Someone")
-    from_username = data.get("from_username", "")
-    profile_url   = f"{APP_URL}/#/investor/{from_username}" if from_username else APP_URL
-    return {
-        "subject": f"{from_name} wants to connect with you on myInvestorCircle 🤝",
-        "html": layout(f"""
-            <h2 style="margin:0 0 12px;">New connection request 🤝</h2>
-            <p><strong>{from_name}</strong> has sent you a connection request on myInvestorCircle.</p>
-            <p>Once you accept, you'll be able to see each other's recommendations in your feed.</p>
-            <p style="margin:24px 0;">{btn('Open the app to accept →', APP_URL)}</p>
-            <p style="font-size:13px;color:#888;">
-              Tap the 🔔 notification bell in the app to accept or decline.
-              {"You can also <a href='" + profile_url + "' style='color:" + BRAND_COLOR + ";'>view their profile</a> before deciding." if from_username else ""}
-            </p>"""),
-    }
-
-
 def tpl_connection_accepted(data):
     their_name = data.get("their_name", "Someone")
     their_username = data.get("their_username", "")
@@ -128,6 +110,57 @@ def tpl_connection_accepted(data):
             <p><strong>{their_name}</strong> accepted your connection request on myInvestorCircle.</p>
             <p>You can now see each other's public recommendations in your feed.</p>
             <p style="margin:24px 0;">{btn('View their profile →', profile_url)}</p>"""),
+    }
+
+
+def tpl_contact_recommendation(data):
+    from_name     = data.get("from_name",     "Someone in your circle")
+    from_username = data.get("from_username", "")
+    ticker        = data.get("ticker",        "")
+    asset_name    = data.get("asset_name",    "")
+    reco_type     = data.get("reco_type",     "Buy")
+    entry_price   = data.get("entry_price",   "")
+    conviction    = data.get("conviction",    "")
+    reco_url      = data.get("reco_url",      APP_URL)
+
+    profile_url   = f"{APP_URL}/#/investor/{from_username}" if from_username else APP_URL
+
+    # Build meta row only from non-empty fields
+    meta_parts = []
+    if entry_price: meta_parts.append(f"<span>Entry: <strong>{entry_price}</strong></span>")
+    if conviction:  meta_parts.append(f"<span>Conviction: <strong>{conviction}</strong></span>")
+    meta_html = (
+        f'<div style="display:flex;gap:20px;flex-wrap:wrap;margin:12px 0 20px;font-size:13px;color:#555;">'
+        + "".join(meta_parts)
+        + "</div>"
+    ) if meta_parts else ""
+
+    type_color = "#22863a" if reco_type.lower() == "buy" else "#c0392b"
+
+    return {
+        "subject": f"{from_name} just posted a {reco_type} recommendation — {ticker}",
+        "html": layout(f"""
+            <h2 style="margin:0 0 4px;">New recommendation in your circle 💡</h2>
+            <p style="color:#888;margin:0 0 20px;font-size:13px;">
+              <a href="{profile_url}" style="color:{BRAND_COLOR};font-weight:700;text-decoration:none;">{from_name}</a>
+              just shared a new idea on myInvestorCircle.
+            </p>
+
+            <div style="background:#f8f8fc;border:1px solid #e8e8f2;border-radius:12px;padding:18px 20px;margin-bottom:20px;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                <span style="background:{type_color};color:#fff;font-size:11px;font-weight:700;
+                             padding:3px 9px;border-radius:5px;letter-spacing:.04em;">{reco_type.upper()}</span>
+                <span style="font-size:20px;font-weight:900;letter-spacing:-.5px;">{ticker}</span>
+              </div>
+              {f'<div style="font-size:14px;color:#555;margin-bottom:4px;">{asset_name}</div>' if asset_name else ""}
+              {meta_html}
+              {btn("View full recommendation →", reco_url)}
+            </div>
+
+            <p style="font-size:13px;color:#888;line-height:1.6;">
+              You're receiving this because {from_name} is in your myInvestorCircle network.
+              <a href="{profile_url}" style="color:{BRAND_COLOR};">View their full track record →</a>
+            </p>"""),
     }
 
 
@@ -231,16 +264,17 @@ def tpl_claim_rejected(data):
 
 
 TEMPLATES = {
-    "signup_welcome":       tpl_signup_welcome,
-    "invite":               tpl_invite,
-    "welcome_referred":     tpl_welcome_referred,
-    "referral_converted":   tpl_referral_converted,
-    "connection_request":   tpl_connection_request,
-    "connection_accepted":  tpl_connection_accepted,
-    "claim_submitted":      tpl_claim_submitted,
-    "claim_admin_notify":   tpl_claim_admin_notify,
-    "claim_approved":       tpl_claim_approved,
-    "claim_rejected":       tpl_claim_rejected,
+    "signup_welcome":           tpl_signup_welcome,
+    "invite":                   tpl_invite,
+    "welcome_referred":         tpl_welcome_referred,
+    "referral_converted":       tpl_referral_converted,
+    "connection_request":       tpl_connection_request,
+    "connection_accepted":      tpl_connection_accepted,
+    "contact_recommendation":   tpl_contact_recommendation,
+    "claim_submitted":          tpl_claim_submitted,
+    "claim_admin_notify":       tpl_claim_admin_notify,
+    "claim_approved":           tpl_claim_approved,
+    "claim_rejected":           tpl_claim_rejected,
 }
 
 
