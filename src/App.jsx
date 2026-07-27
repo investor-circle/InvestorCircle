@@ -942,6 +942,14 @@ export default function App() {
     if (!user) return;
     try {
       await sendConnectionRequest(user.uid, targetId);
+      sql`SELECT email FROM user_profiles WHERE id=${targetId} LIMIT 1`
+        .then(rows => {
+          if (rows[0]?.email) sendEmail('connection_request', {
+            to_email:      rows[0].email,
+            from_name:     ME?.name || user.displayName || 'Someone',
+            from_username: ME?.username || '',
+          });
+        }).catch(() => {});
       const conns = await getMyConnections(user.uid);
       setConnections(conns);
     } catch(e) { console.warn('handlePeopleConnect:', e?.message||e); }
@@ -1167,6 +1175,14 @@ export default function App() {
                 return;
               }
               await sendConnectionRequest(user.uid, targetId);
+              sql`SELECT email FROM user_profiles WHERE id=${targetId} LIMIT 1`
+                .then(rows => {
+                  if (rows[0]?.email) sendEmail('connection_request', {
+                    to_email:      rows[0].email,
+                    from_name:     ME?.name || user.displayName || 'Someone',
+                    from_username: ME?.username || '',
+                  });
+                }).catch(() => {});
               const c = await getMyConnections(user.uid);
               setConnections(c);
             }}
@@ -2038,6 +2054,11 @@ function ContactsSection({ connections, setConnections, groups, sharing, setShar
         onAddExisting={async(uid,info)=>{
           const res = await sendConnectionRequest(myId, uid);
           if (res.error==="already_exists") return;
+          if (info?.email) sendEmail('connection_request', {
+            to_email:      info.email,
+            from_name:     me?.name || 'Someone',
+            from_username: me?.username || '',
+          });
           const conns = await getMyConnections(myId);
           setConnections(conns);
         }}
