@@ -580,6 +580,10 @@ export default function App() {
   const [adminPage,    setAdminPage]    = useState("users");
   const [recoInit,     setRecoInit]     = useState(null);
 
+  // View-mode for dual-role users. Starts false so admin users default to investor
+  // view. Toggled explicitly via the "Switch role" buttons in the profile dropdown.
+  const [viewAsAdmin, setViewAsAdmin] = useState(false);
+
   // ── App-level state ─────────────────────────────────────────────────────────
   const [connections,   setConnections]   = useState([]); // all connections (all statuses)
   const [groups,        setGroups]        = useState([]); // shared groups from ic_groups
@@ -625,18 +629,15 @@ export default function App() {
     }
   }, [pageHash]);
 
-  // AUTO-REDIRECT: Redirect logged-in users away from stale profile URLs.
+  // AUTO-REDIRECT: Redirect users in ADMIN VIEW away from stale profile URLs.
   //
-  // We use document.referrer to tell intentional from stale:
-  //   INTENTIONAL: admin clicked "View" in admin panel → window.open() sets
-  //                document.referrer to this hostname → profile is shown normally.
-  //   STALE/STUCK: browser session-restore, typed URL, autocomplete →
-  //                referrer is empty or external → clear pageHash, go to app.
+  // Investor-view users (including dual-role users defaulting to investor view)
+  // must NEVER be redirected — reco share links and profile links must work for them
+  // exactly as they do for regular investors.
   //
-  // Why NOT history.state._micProfileHash: replaceState writes it on every
-  // visit, so Chrome session-restore restores it too — the check always fired
-  // true and the redirect never ran. document.referrer is set only for
-  // genuine same-site navigations and is NOT preserved across sessions.
+  // Only admin-view users are redirected away from profile hashes that came from
+  // an external source (e.g., browser session-restore, autocomplete), since those
+  // are genuinely stale and they should land on the admin panel instead.
   const _profileCameFromThisSite = (() => {
     try { return document.referrer.includes(window.location.hostname); }
     catch { return false; }
@@ -645,9 +646,10 @@ export default function App() {
   useEffect(() => {
     if (authLoading || !user) return;               // wait for auth; only logged-in
     if (!pageHash.startsWith('#/investor/')) return;
-    if (_profileCameFromThisSite) return;           // intentional navigation — allow
-    setPageHash('');                                // stale URL — go to main app
-  }, [authLoading, user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (_profileCameFromThisSite) return;           // intentional same-site nav — allow
+    if (!userIsAdmin || !viewAsAdmin) return;        // investor-view users — always allow
+    setPageHash('');                                // admin-view + stale URL → go to admin panel
+  }, [authLoading, user?.uid, userIsAdmin, viewAsAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Post-login/signup: auto-send connection request if user came from a public profile ─
   useEffect(() => {
@@ -1201,9 +1203,10 @@ export default function App() {
   if (!user) return <LoginPage />;
 
 
-  // Non-admin users are ALWAYS investors, regardless of role state.
-  // Admin users can toggle between "investor" and "admin" views via the sidebar button.
-  const isInv = !userIsAdmin || role === "investor";
+  // Non-admin users are ALWAYS investors.
+  // Admin users are in investor view by default (viewAsAdmin starts false),
+  // and must explicitly switch to admin view via the profile dropdown.
+  const isInv = !userIsAdmin || !viewAsAdmin;
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
   // page + setPage — setPage also closes the mobile nav drawer for investors
   const openSecurity = (ticker, name) => { setSecurityTicker({ ticker, name }); setPage('sec_intel'); };
@@ -1503,7 +1506,13 @@ export default function App() {
                         <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>Switch role</div>
                         {["investor","admin"].map(r=>(
                           <button key={r}
-                            onMouseDown={e=>{ e.preventDefault(); e.stopPropagation(); setRole(r); setProfileOpen(false); }}
+                            onMouseDown={e=>{
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setViewAsAdmin(r==='admin');
+                              setRole(r);            // keep AuthContext in sync
+                              setProfileOpen(false);
+                            }}
                             style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:10,border:"none",cursor:"pointer",marginBottom:4,fontFamily:"var(--font)",fontSize:13,fontWeight:600,textAlign:"left",
                               background: (r==="investor"&&isInv)||(r==="admin"&&!isInv) ? "var(--accent-soft)" : "transparent",
                               color:      (r==="investor"&&isInv)||(r==="admin"&&!isInv) ? "var(--accent-ink)" : "var(--ink)",
