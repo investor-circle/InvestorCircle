@@ -5,6 +5,15 @@ import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { auth } from "./firebase";
 import { sql } from "./supabaseClient";
 
+/* ── Transactional email helper ─── */
+const EMAIL_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
+const sendEmail = (type, payload) =>
+  fetch(EMAIL_API, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ type, ...payload }),
+  }).catch(() => {});
+
 /* Translate Firebase error codes into plain-English messages */
 function friendlyError(code, isSignup = false) {
   switch (code) {
@@ -123,19 +132,8 @@ export default function LoginPage() {
       // which will read back the DB (now already containing the correct names).
       await updateProfile(cred.user, { displayName: fullName });
 
-      // Send welcome / security-confirmation email.
-      // Fire-and-forget — email failure must never break the signup flow.
-      const emailApi = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
-      fetch(emailApi, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type:       'signup_welcome',
-          to_email:   signupEmail.trim(),
-          first_name: firstName.trim(),
-          full_name:  fullName,
-        }),
-      }).catch(() => {}); // intentionally not awaited — non-fatal
+      // Send welcome / security-confirmation email (fire-and-forget).
+      sendEmail('signup_welcome', { to_email:signupEmail.trim(), first_name:firstName.trim(), full_name:fullName });
 
       // Auth state change fires → AuthContext logs user in → App.jsx referral processing runs
     } catch (e) {
@@ -194,19 +192,20 @@ export default function LoginPage() {
       <div style={{ width: "100%", maxWidth: 420, position: "relative" }}>
 
         {/* Brand */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28 }}>
-          <img
-            src="/mic-logo.png"
-            alt="myInvestorCircle"
-            style={{ width: 80, height: 80, flexShrink: 0 }}
-          />
-          <div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: "#fff", letterSpacing: "-.3px", lineHeight: 1.1 }}>
-              myInvestorCircle
-            </div>
-            <div style={{ fontSize: 14, color: "#6a6d90", marginTop: 6 }}>
-              Your private investing circle
-            </div>
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{
+            width: 58, height: 58, borderRadius: 17,
+            background: "linear-gradient(135deg,#6d5df5,#cf52d8)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 23, fontWeight: 800, color: "#fff",
+            margin: "0 auto 15px",
+            boxShadow: "0 12px 40px rgba(109,93,245,.45)",
+          }}>mic</div>
+          <div style={{ fontSize: 23, fontWeight: 800, color: "#fff", letterSpacing: "-.3px" }}>
+            myInvestorCircle
+          </div>
+          <div style={{ fontSize: 14, color: "#6a6d90", marginTop: 5 }}>
+            Your private investing circle
           </div>
         </div>
 
