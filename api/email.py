@@ -113,6 +113,27 @@ def tpl_connection_accepted(data):
     }
 
 
+def tpl_reco_comment(data):
+    commenter_name = data.get("commenter_name", "Someone")
+    ticker         = data.get("ticker",         "")
+    asset_name     = data.get("asset_name",     "")
+    comment        = data.get("comment",        "")
+    reco_url       = data.get("reco_url",       APP_URL)
+    return {
+        "subject": f"{commenter_name} commented on your {ticker} recommendation",
+        "html": layout(f"""
+            <h2 style="margin:0 0 12px;">New comment on your recommendation 💬</h2>
+            <p><strong>{commenter_name}</strong> just commented on your
+            <strong>{ticker}{(" — " + asset_name) if asset_name else ""}</strong> recommendation:</p>
+            <div style="background:#f8f8fc;border-left:3px solid {BRAND_COLOR};border-radius:0 10px 10px 0;
+                        padding:14px 18px;margin:14px 0 20px;font-size:14px;
+                        color:#333;line-height:1.7;font-style:italic;">
+              "{comment}"
+            </div>
+            <p style="margin:0 0 24px;">{btn('View & reply →', reco_url)}</p>"""),
+    }
+
+
 def tpl_contact_recommendation(data):
     from_name     = data.get("from_name",     "Someone in your circle")
     from_username = data.get("from_username", "")
@@ -270,6 +291,7 @@ TEMPLATES = {
     "referral_converted":       tpl_referral_converted,
     "connection_request":       tpl_connection_request,
     "connection_accepted":      tpl_connection_accepted,
+    "reco_comment":             tpl_reco_comment,
     "contact_recommendation":   tpl_contact_recommendation,
     "claim_submitted":          tpl_claim_submitted,
     "claim_admin_notify":       tpl_claim_admin_notify,
