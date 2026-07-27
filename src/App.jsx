@@ -4149,8 +4149,9 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
     if (sql && me?.id) {
       try {
         await dbCreateReco(recoData, me.id, recipients);
-        // Notify all contacts about new public recommendation (fan-out)
+        // Fan-out for public recos: in-app notifications + emails to all contacts
         if (isPublic && contacts?.length > 0) {
+          // In-app notifications (existing)
           const meta = JSON.stringify({ ticker: recoData.ticker, assetName: recoData.assetName });
           await Promise.all(
             contacts.map(c =>
@@ -4159,6 +4160,29 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
                 .catch(() => {})
             )
           );
+          // Email notifications — query reco ID first for a direct link
+          sql`SELECT id FROM ic_recommendations WHERE recommender_id=${me.id} ORDER BY created_at DESC LIMIT 1`
+            .then(rows => {
+              const recoId  = rows[0]?.id;
+              const recoUrl = recoId && me.username
+                ? `https://myinvestorcircle.com/#/investor/${me.username}/reco/${recoId}`
+                : `https://myinvestorcircle.com/#/investor/${me.username || ''}`;
+              contacts.forEach(c => {
+                if (c.email) sendEmail('contact_recommendation', {
+                  to_email:      c.email,
+                  from_name:     me.name     || 'Someone in your circle',
+                  from_username: me.username || '',
+                  ticker:        recoData.ticker,
+                  asset_name:    recoData.assetName,
+                  reco_type:     recoData.recType || 'Buy',
+                  entry_price:   recoData.recoPrice
+                    ? `₹${Number(recoData.recoPrice).toLocaleString('en-IN')}`
+                    : '',
+                  conviction:    recoData.conviction || '',
+                  reco_url:      recoUrl,
+                });
+              });
+            }).catch(() => {});
         }
         await onCreate?.reload?.();
       }
