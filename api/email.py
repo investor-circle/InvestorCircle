@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL     = os.environ.get("FROM_EMAIL", "hello@myinvestorcircle.com")
-REPLY_TO       = FROM_EMAIL   # replies land back in the hello@ inbox
+REPLY_TO       = FROM_EMAIL
 APP_URL        = "https://myinvestorcircle.com"
 BRAND_COLOR    = "#6d5df5"
 
@@ -99,7 +99,25 @@ def tpl_referral_converted(data):
     }
 
 
-def tpl_connection_accepted(data):
+def tpl_connection_request(data):
+    from_name     = data.get("from_name", "Someone")
+    from_username = data.get("from_username", "")
+    profile_url   = f"{APP_URL}/#/investor/{from_username}" if from_username else APP_URL
+    return {
+        "subject": f"{from_name} wants to connect with you on myInvestorCircle 🤝",
+        "html": layout(f"""
+            <h2 style="margin:0 0 12px;">New connection request 🤝</h2>
+            <p><strong>{from_name}</strong> has sent you a connection request on myInvestorCircle.</p>
+            <p>Once you accept, you'll be able to see each other's recommendations in your feed.</p>
+            <p style="margin:24px 0;">{btn('Accept in the app →', APP_URL)}</p>
+            <p style="font-size:13px;color:#888;">
+              Open the app and look for the 🔔 notification bell to accept or decline.
+              {"You can also <a href='" + profile_url + "' style='color:" + BRAND_COLOR + ";'>view their profile</a> first." if from_username else ""}
+            </p>"""),
+    }
+
+
+
     their_name = data.get("their_name", "Someone")
     their_username = data.get("their_username", "")
     profile_url = f"{APP_URL}/#/investor/{their_username}" if their_username else APP_URL
@@ -217,6 +235,7 @@ TEMPLATES = {
     "invite":               tpl_invite,
     "welcome_referred":     tpl_welcome_referred,
     "referral_converted":   tpl_referral_converted,
+    "connection_request":   tpl_connection_request,
     "connection_accepted":  tpl_connection_accepted,
     "claim_submitted":      tpl_claim_submitted,
     "claim_admin_notify":   tpl_claim_admin_notify,
@@ -242,10 +261,10 @@ class handler(BaseHTTPRequestHandler):
                 return self._respond(400, {"error": "to_email is required"})
 
             if email_type not in TEMPLATES:
-                return self._respond(400, {"error": f"Unknown email type: '{email_type}'"})
+                return self._respond(400, {"error": f"Unknown type: {email_type}"})
 
             if not resend.api_key:
-                print("[email] ERROR: RESEND_API_KEY env var is not set in Vercel", file=sys.stderr)
+                print("[email] ERROR: RESEND_API_KEY not set", file=sys.stderr)
                 return self._respond(500, {"error": "RESEND_API_KEY not configured"})
 
             tpl    = TEMPLATES[email_type](body)
@@ -282,4 +301,4 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def log_message(self, *args):
-        pass  # suppress default BaseHTTPRequestHandler access logs
+        pass
