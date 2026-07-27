@@ -1059,7 +1059,8 @@ export default function App() {
                        ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
                        ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                        up.full_name as by_name, up.id as from_id,
-                       0 as likes
+                       0 as likes,
+                       (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
                 FROM recommendation_deliveries rd
                 JOIN ic_recommendations ir ON ir.id = rd.recommendation_id
                 JOIN user_profiles up ON up.id = ir.recommender_id
@@ -1076,6 +1077,7 @@ export default function App() {
                 ...r, assetName:r.asset_name, priceAt:r.reco_price, price:r.current_price,
                 byName:r.by_name, from:r.from_id, feedSource:'network_engagement',
                 reaction:'none', hidden:false, invested:false, deliveryId:null,
+                commentCount: r.comment_count || 0,
               })));
             }
           } catch(_) {}
@@ -1089,7 +1091,8 @@ export default function App() {
                    ir.recommendation_type, ir.reco_price, ir.current_price,
                    ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
                    ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
-                   up.full_name as by_name, up.id as from_id, up.username as from_username
+                   up.full_name as by_name, up.id as from_id, up.username as from_username,
+                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
             FROM ic_recommendations ir
             JOIN user_profiles up ON up.id = ir.recommender_id
             WHERE ir.is_public = true
@@ -1113,6 +1116,7 @@ export default function App() {
             invested:     false,
             deliveryId:   null,
             isPublic:     true,
+            commentCount: r.comment_count || 0,
           })));
         } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
       } catch(e) { console.warn("Data load failed:", e.message); }
@@ -1802,13 +1806,33 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
     recommendation:          "shared a recommendation with you",
     exit_signal:             "issued an exit signal",
     contact_recommendation:  "posted a new recommendation",
-    contact_comment:         "commented on a recommendation",
+    contact_comment:         "commented on your recommendation",
     contact_like:            "liked your recommendation",
+    network_like:            "liked a recommendation",
+    network_comment:         "commented on a recommendation",
   };
   const TYPE_ICON = {
     contact_recommendation: "💡",
     contact_comment:        "💬",
     contact_like:           "👍",
+    network_like:           "👍",
+    network_comment:        "💬",
+  };
+
+  // Build the display text for a notification — handles consolidated like names
+  const notifText = (n) => {
+    if (n.type === 'contact_like' && n.metadata?.likeCount > 1) {
+      const names   = n.metadata.likerNames || [];
+      const count   = n.metadata.likeCount;
+      const ticker  = n.metadata.ticker ? ` — ${n.metadata.ticker}` : '';
+      if (count === 2 && names.length >= 2)
+        return <>{' '}<b>{names[0]}</b> and <b>{names[1]}</b> liked your recommendation{ticker}</>;
+      return <>{' '}<b>{names[0] || n.from_name || 'Someone'}</b> and <b>{count - 1} others</b> liked your recommendation{ticker}</>;
+    }
+    const label = TYPE_LABEL[n.type] || n.type;
+    const ticker = n.metadata?.ticker ? <> — <b style={{color:'var(--accent)'}}>{n.metadata.ticker}</b></> : null;
+    const group  = n.metadata?.groupName ? <> — <b>{n.metadata.groupName}</b></> : null;
+    return <>{' '}<b>{n.from_name || 'Someone'}</b> {label}{ticker}{group}</>;
   };
   // On mobile: fixed to viewport (prevents overflow beyond screen edges)
   // On desktop: absolute, anchored to the bell button
@@ -1833,9 +1857,11 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
       <div style={{overflowY:"auto",flex:1}}>
         {notifications.length===0 && <div className="empty" style={{padding:32}}>No notifications yet</div>}
         {notifications.map(n=>{
-          const isEngagement = ['contact_recommendation','contact_comment','contact_like'].includes(n.type);
+          const isEngagement = ['contact_recommendation','contact_comment','contact_like','network_like','network_comment'].includes(n.type);
           const avBg = isEngagement
-            ? n.type==='contact_like' ? '#e05252' : n.type==='contact_comment' ? '#0ea5b7' : '#22863a'
+            ? (n.type==='contact_like'||n.type==='network_like') ? '#e05252'
+            : (n.type==='contact_comment'||n.type==='network_comment') ? '#0ea5b7'
+            : '#22863a'
             : '#6d5df5';
           return (
           <div key={n.id} style={{padding:"12px 18px",borderBottom:"1px solid var(--line)",background:n.is_read?"transparent":"var(--surface-2)",display:"flex",gap:12,alignItems:"flex-start"}}>
@@ -1844,10 +1870,7 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
             </div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,lineHeight:1.5}}>
-                <b>{n.from_name||"Someone"}</b>{" "}{TYPE_LABEL[n.type]||n.type}
-                {n.metadata?.groupName && <> — <b>{n.metadata.groupName}</b></>}
-                {n.metadata?.ticker    && <> — <b style={{color:'var(--accent)'}}>{n.metadata.ticker}</b></>}
-                {n.metadata?.assetName && !n.metadata?.ticker && <> — <b>{n.metadata.assetName}</b></>}
+                {notifText(n)}
               </div>
               <div className="muted small">{fmtDate(n.created_at)}</div>
               {/* Action buttons for connection requests */}
@@ -6706,14 +6729,51 @@ function RecoComments({ recoId, me }) {
       await sql`INSERT INTO recommendation_comments (reco_id,user_id,user_name,comment) VALUES (${recoId},${me.id},${name},${text.trim()})`;
       setComments(prev=>[...prev,{id:Date.now(),user_id:me.id,user_name:name,comment:text.trim(),created_at:new Date().toISOString()}]);
       setText('');
-      // Notify the recommendation owner (if not the commenter)
-      sql`SELECT recommender_id, ticker, asset_name FROM ic_recommendations WHERE id = ${recoId} LIMIT 1`
+      // Notify reco owner + email them + fan-out to commenter's network
+      sql`SELECT ir.recommender_id, ir.ticker, ir.asset_name,
+                 up.email, up.username
+          FROM ic_recommendations ir
+          JOIN user_profiles up ON up.id = ir.recommender_id
+          WHERE ir.id = ${recoId} LIMIT 1`
         .then(rows => {
-          if (rows[0]?.recommender_id && rows[0].recommender_id !== me.id) {
-            const meta = JSON.stringify({ ticker: rows[0].ticker, assetName: rows[0].asset_name, recoId });
-            sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
-                VALUES (${rows[0].recommender_id}, 'contact_comment', ${me.id}, ${meta})`
-              .catch(() => {});
+          if (!rows[0]) return;
+          const { recommender_id, ticker, asset_name, email: ownerEmail, username: ownerUsername } = rows[0];
+          if (recommender_id === me.id) return; // no self-notifications
+
+          // In-app notification to owner
+          const meta = JSON.stringify({ ticker, assetName: asset_name, recoId });
+          sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
+              VALUES (${recommender_id}, 'contact_comment', ${me.id}, ${meta})`.catch(() => {});
+
+          // Email to owner
+          if (ownerEmail) {
+            const recoUrl = ownerUsername
+              ? `https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${recoId}`
+              : `https://myinvestorcircle.com`;
+            sendEmail('reco_comment', {
+              to_email:       ownerEmail,
+              commenter_name: name,
+              ticker,
+              asset_name,
+              comment:        text.trim(),
+              reco_url:       recoUrl,
+            });
+          }
+
+          // Network fan-out — notify commenter's connections about the comment
+          if (sql && me.id) {
+            sql`SELECT user_id FROM (
+                  SELECT addressee_id AS user_id FROM connections WHERE requester_id=${me.id} AND status='accepted'
+                  UNION
+                  SELECT requester_id AS user_id FROM connections WHERE addressee_id=${me.id} AND status='accepted'
+                ) AS conn_ids WHERE user_id != ${recommender_id}`
+              .then(connRows => {
+                const netMeta = JSON.stringify({ ticker, assetName: asset_name, recoId, commenterName: name });
+                connRows.forEach(c => {
+                  sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
+                      VALUES (${c.user_id}, 'network_comment', ${me.id}, ${netMeta})`.catch(() => {});
+                });
+              }).catch(() => {});
           }
         }).catch(() => {});
     }catch(e){ console.warn('Comment failed:',e); }
@@ -6809,16 +6869,49 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
       setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes}:x));
       if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
     }
-    // Notify reco owner when liked
+    // Notify reco owner (consolidated LinkedIn-style) + fan-out to liker's network
     if(next==='like' && r.id && sql){
       sql`SELECT recommender_id FROM ic_recommendations WHERE id=${r.id} LIMIT 1`
         .then(rows=>{
-          if(rows[0]?.recommender_id && rows[0].recommender_id!==me.id){
-            const meta=JSON.stringify({ticker:r.ticker,assetName:r.assetName,recoId:r.id});
-            sql`INSERT INTO notifications (user_id,type,from_user_id,metadata)
-                VALUES (${rows[0].recommender_id},'contact_like',${me.id},${meta})`
-              .catch(()=>{});
-          }
+          const ownerId = rows[0]?.recommender_id;
+          if(!ownerId || ownerId===me.id) return;
+
+          // ── Consolidated like notification (check-then-upsert) ──────────────
+          sql`SELECT id, metadata FROM notifications
+              WHERE user_id=${ownerId} AND type='contact_like'
+              AND metadata->>'recoId'=${r.id} AND is_read=false LIMIT 1`
+            .then(existing=>{
+              const lName = me.name || 'Someone';
+              if(existing[0]){
+                // Merge into existing notification
+                const prev = typeof existing[0].metadata==='string'
+                  ? JSON.parse(existing[0].metadata)
+                  : (existing[0].metadata||{});
+                const likerNames=[...new Set([...(prev.likerNames||[]),lName])];
+                const newMeta=JSON.stringify({...prev,likerNames,likeCount:likerNames.length});
+                sql`UPDATE notifications SET metadata=${newMeta},from_user_id=${me.id},created_at=NOW()
+                    WHERE id=${existing[0].id}`.catch(()=>{});
+              } else {
+                // First like — new notification
+                const meta=JSON.stringify({ticker:r.ticker,assetName:r.assetName,recoId:r.id,likerNames:[lName],likeCount:1});
+                sql`INSERT INTO notifications (user_id,type,from_user_id,metadata)
+                    VALUES (${ownerId},'contact_like',${me.id},${meta})`.catch(()=>{});
+              }
+            }).catch(()=>{});
+
+          // ── Network fan-out: notify liker's connections ─────────────────────
+          sql`SELECT user_id FROM (
+                SELECT addressee_id AS user_id FROM connections WHERE requester_id=${me.id} AND status='accepted'
+                UNION
+                SELECT requester_id AS user_id FROM connections WHERE addressee_id=${me.id} AND status='accepted'
+              ) AS conn_ids WHERE user_id != ${ownerId}`
+            .then(connRows=>{
+              const netMeta=JSON.stringify({ticker:r.ticker,assetName:r.assetName,recoId:r.id});
+              connRows.forEach(c=>{
+                sql`INSERT INTO notifications (user_id,type,from_user_id,metadata)
+                    VALUES (${c.user_id},'network_like',${me.id},${netMeta})`.catch(()=>{});
+              });
+            }).catch(()=>{});
         }).catch(()=>{});
     }
   };
@@ -6947,6 +7040,7 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
           <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.likes||0}</span>
           {/* Comment */}
           <button className="iconbtn" title="Comment" onClick={()=>setExpanded(v=>!v)} style={{width:32,height:32}}><MessageSquare size={14}/></button>
+          {(r.commentCount||0)>0 && <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.commentCount}</span>}
           {/* Engagement */}
           {interactionCount>0&&<span style={{fontSize:11,color:'var(--muted)',display:'flex',alignItems:'center',gap:2}}>✦ {interactionCount}</span>}
           {/* Share */}
