@@ -7013,15 +7013,20 @@ function clearInstrCache() { _instrCache = null; _instrLoadPromise = null; }
 let _sectorCache = null;
 async function loadSectorOpts() {
   if (_sectorCache) return _sectorCache;
-  if (!sql) return FALLBACK_SECTORS;
+  if (!sql) { console.warn('loadSectorOpts: sql not ready'); return FALLBACK_SECTORS; }
   try {
     const rows = await sql`
       SELECT DISTINCT sector FROM sector_master
-      WHERE is_active = TRUE AND sector IS NOT NULL AND sector <> ''
+      WHERE sector IS NOT NULL AND TRIM(sector) <> ''
       ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector`;
-    _sectorCache = rows.map(r => r.sector);
-    return _sectorCache.length ? _sectorCache : FALLBACK_SECTORS;
-  } catch { return FALLBACK_SECTORS; }
+    const opts = rows.map(r => r.sector);
+    if (opts.length) { _sectorCache = opts; return opts; }
+    console.warn('loadSectorOpts: table empty or all sectors blank, using fallback');
+    return FALLBACK_SECTORS;
+  } catch(e) {
+    console.error('loadSectorOpts failed:', e?.message || e);
+    return FALLBACK_SECTORS;
+  }
 }
 function clearSectorCache() { _sectorCache = null; }
 
