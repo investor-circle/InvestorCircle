@@ -109,15 +109,15 @@ def tpl_connection_request(data):
             <h2 style="margin:0 0 12px;">New connection request 🤝</h2>
             <p><strong>{from_name}</strong> has sent you a connection request on myInvestorCircle.</p>
             <p>Once you accept, you'll be able to see each other's recommendations in your feed.</p>
-            <p style="margin:24px 0;">{btn('Accept in the app →', APP_URL)}</p>
+            <p style="margin:24px 0;">{btn('Open the app to accept →', APP_URL)}</p>
             <p style="font-size:13px;color:#888;">
-              Open the app and look for the 🔔 notification bell to accept or decline.
-              {"You can also <a href='" + profile_url + "' style='color:" + BRAND_COLOR + ";'>view their profile</a> first." if from_username else ""}
+              Tap the 🔔 notification bell in the app to accept or decline.
+              {"You can also <a href='" + profile_url + "' style='color:" + BRAND_COLOR + ";'>view their profile</a> before deciding." if from_username else ""}
             </p>"""),
     }
 
 
-
+def tpl_connection_accepted(data):
     their_name = data.get("their_name", "Someone")
     their_username = data.get("their_username", "")
     profile_url = f"{APP_URL}/#/investor/{their_username}" if their_username else APP_URL
@@ -259,10 +259,8 @@ class handler(BaseHTTPRequestHandler):
 
             if not to_email:
                 return self._respond(400, {"error": "to_email is required"})
-
             if email_type not in TEMPLATES:
                 return self._respond(400, {"error": f"Unknown type: {email_type}"})
-
             if not resend.api_key:
                 print("[email] ERROR: RESEND_API_KEY not set", file=sys.stderr)
                 return self._respond(500, {"error": "RESEND_API_KEY not configured"})
