@@ -2595,6 +2595,7 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
   const [shareAnchor,   setShareAnchor]   = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
   const [q,       setQ]       = useState(globalSearch||"");
+  const [fBy,     setFBy]     = useState("all");
   const [fHorizon,setFHorizon]= useState("all");
   const [fMoney,  setFMoney]  = useState(initMoneyFilter||"all");
   const [fInv,    setFInv]    = useState("all");
@@ -2671,8 +2672,19 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
     </div></div>
   );
 
+  // Helper — same name logic as the row display
+  const recName = r => {
+    const fn = r.first_name || '';
+    const ln = r.last_name  || '';
+    return fn && ln && fn !== ln ? `${fn} ${ln}` : (fn || r.recommender_name || 'Unknown');
+  };
+
+  // Derive unique recommender names for the person filter
+  const byOptions = [...new Set(recos.map(recName))].sort();
+
   // Filter + sort
   const filtered = recos.filter(r=>{
+    if(fBy!=="all" && recName(r)!==fBy) return false;
     if(q.trim()){ const s=q.toLowerCase(); if(!(r.asset_name+r.ticker).toLowerCase().includes(s)) return false; }
     if(fHorizon!=="all" && r.horizon!==fHorizon) return false;
     const recoRet=r.reco_price?(r.current_price-r.reco_price)/r.reco_price:0;
@@ -2711,6 +2723,9 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
         <Search size={15} color="var(--muted)"/>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search asset or ticker…"/>
       </div>
+      <select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)} title="Filter by recommender">
+        <option value="all">All people</option>{byOptions.map(b=><option key={b}>{b}</option>)}
+      </select>
       <select className="inline-select sm" value={fHorizon} onChange={e=>setFHorizon(e.target.value)} title="Filter by horizon">
         <option value="all">All horizons</option>{HORIZONS.map(h=><option key={h}>{h}</option>)}
       </select>
