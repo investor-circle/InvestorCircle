@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL     = os.environ.get("FROM_EMAIL", "hello@myinvestorcircle.com")
-REPLY_TO       = FROM_EMAIL   # replies go back to the hello@ inbox
+REPLY_TO       = FROM_EMAIL   # replies land back in the hello@ inbox
 APP_URL        = "https://myinvestorcircle.com"
 BRAND_COLOR    = "#6d5df5"
 
@@ -230,25 +230,23 @@ TEMPLATES = {
 class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
+        email_type = ""
+        to_email   = ""
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            body   = json.loads(self.rfile.read(length)) if length else {}
-
+            length     = int(self.headers.get("Content-Length", 0))
+            body       = json.loads(self.rfile.read(length)) if length else {}
             email_type = body.get("type", "")
             to_email   = body.get("to_email", "")
 
             if not to_email:
-                self._respond(400, {"error": "to_email is required"})
-                return
+                return self._respond(400, {"error": "to_email is required"})
 
             if email_type not in TEMPLATES:
-                self._respond(400, {"error": f"Unknown type: {email_type}"})
-                return
+                return self._respond(400, {"error": f"Unknown email type: '{email_type}'"})
 
             if not resend.api_key:
-                print("[email] ERROR: RESEND_API_KEY env var is not set", file=sys.stderr)
-                self._respond(500, {"error": "RESEND_API_KEY not configured"})
-                return
+                print("[email] ERROR: RESEND_API_KEY env var is not set in Vercel", file=sys.stderr)
+                return self._respond(500, {"error": "RESEND_API_KEY not configured"})
 
             tpl    = TEMPLATES[email_type](body)
             result = resend.Emails.send({
@@ -258,11 +256,11 @@ class handler(BaseHTTPRequestHandler):
                 "subject":  tpl["subject"],
                 "html":     tpl["html"],
             })
-            print(f"[email] OK type={email_type} to={to_email} id={getattr(result,'id',result)}", file=sys.stderr)
+            print(f"[email] OK  type={email_type}  to={to_email}  id={getattr(result,'id',result)}", file=sys.stderr)
             self._respond(200, {"ok": True, "id": getattr(result, "id", None)})
 
         except Exception as e:
-            print(f"[email] EXCEPTION type={email_type} to={to_email} err={e}", file=sys.stderr)
+            print(f"[email] ERR  type={email_type}  to={to_email}  err={e}", file=sys.stderr)
             self._respond(500, {"error": str(e)})
 
     def _respond(self, status, data):
@@ -270,16 +268,18 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type",   "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin",  "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin",  "*")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
     def log_message(self, *args):
-        pass  # suppress Vercel logs spam
+        pass  # suppress default BaseHTTPRequestHandler access logs
