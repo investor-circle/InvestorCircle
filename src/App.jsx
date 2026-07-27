@@ -3989,8 +3989,15 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
   const [isPublic,    setIsPublic]    = useState(true);
   const [sectorOpts,  setSectorOpts]  = useState(FALLBACK_SECTORS);
 
-  // Load sector options from sector_master on mount
-  useEffect(() => { loadSectorOpts().then(setSectorOpts); }, []);
+  // Load sector options from sector_master — same pattern as all other DB calls in this app
+  useEffect(() => {
+    if (!sql) return;
+    sql`SELECT DISTINCT sector FROM sector_master
+        WHERE sector IS NOT NULL AND sector <> ''
+        ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector`
+      .then(rows => { if (rows?.length) setSectorOpts(rows.map(r => r.sector)); })
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     if (!selectedInstr) return;
     setPriceData(null); setPriceError(""); setPriceLoading(true);
@@ -7008,27 +7015,28 @@ async function loadInstruments() {
 }
 function clearInstrCache() { _instrCache = null; _instrLoadPromise = null; }
 
-// Sector options cache — loads once per session from sector_master table.
-// Falls back to FALLBACK_SECTORS if the table doesn't exist yet or query fails.
+// Sector options cache — mirrors loadInstruments pattern exactly.
 let _sectorCache = null;
-async function loadSectorOpts() {
-  if (_sectorCache) return _sectorCache;
-  if (!sql) { console.warn('loadSectorOpts: sql not ready'); return FALLBACK_SECTORS; }
-  try {
-    const rows = await sql`
+let _sectorLoadPromise = null;
+function loadSectorOpts() {
+  if (_sectorCache)       return Promise.resolve(_sectorCache);
+  if (_sectorLoadPromise) return _sectorLoadPromise;
+  if (!sql)               return Promise.resolve(FALLBACK_SECTORS);
+  _sectorLoadPromise = sql`
       SELECT DISTINCT sector FROM sector_master
-      WHERE sector IS NOT NULL AND TRIM(sector) <> ''
-      ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector`;
-    const opts = rows.map(r => r.sector);
-    if (opts.length) { _sectorCache = opts; return opts; }
-    console.warn('loadSectorOpts: table empty or all sectors blank, using fallback');
-    return FALLBACK_SECTORS;
-  } catch(e) {
-    console.error('loadSectorOpts failed:', e?.message || e);
-    return FALLBACK_SECTORS;
-  }
+      WHERE sector IS NOT NULL AND sector <> ''
+      ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector`
+    .then(rows => {
+      _sectorCache = rows.length ? rows.map(r => r.sector) : FALLBACK_SECTORS;
+      return _sectorCache;
+    })
+    .catch(() => {
+      _sectorLoadPromise = null;   // allow retry on next open
+      return FALLBACK_SECTORS;
+    });
+  return _sectorLoadPromise;
 }
-function clearSectorCache() { _sectorCache = null; }
+function clearSectorCache() { _sectorCache = null; _sectorLoadPromise = null; }
 
 function InstrumentSearch({ onSelect, placeholder, initialValue }) {
   const [q, setQ] = useState(initialValue || "");
@@ -9712,7 +9720,14 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
   const CURRENCY_SYMBOL = { INR:'₹', USD:'$', GBP:'£', EUR:'€' };
   const ASSET_CLASSES   = ['Equity','MF','ETF','Debt','Commodity','Crypto','Other'];
   const [sectorOpts, setSectorOpts] = useState(FALLBACK_SECTORS);
-  useEffect(() => { loadSectorOpts().then(setSectorOpts); }, []);
+  useEffect(() => {
+    if (!sql) return;
+    sql`SELECT DISTINCT sector FROM sector_master
+        WHERE sector IS NOT NULL AND sector <> ''
+        ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector`
+      .then(rows => { if (rows?.length) setSectorOpts(rows.map(r => r.sector)); })
+      .catch(() => {});
+  }, []);
 
   // Mirror MakeRecoModal's onInstrSelect exactly
   const onInstrSelect = (inst) => {
