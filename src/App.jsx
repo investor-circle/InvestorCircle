@@ -54,17 +54,12 @@ const _CAS_CONFIGURED = !!import.meta.env.VITE_CAS_API_URL;
 
 /* ── Transactional email helper (calls Vercel /api/email via Resend) ─── */
 const EMAIL_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
-/** Fire-and-forget email. Logs to console for debugging. */
-const sendEmail = (type, payload) => {
-  console.log('[sendEmail] called:', type, '→', EMAIL_API, payload);
-  return fetch(EMAIL_API, {
+const sendEmail = (type, payload) =>
+  fetch(EMAIL_API, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ type, ...payload }),
-  })
-  .then(r => r.json().then(d => console.log('[sendEmail] response:', type, d)))
-  .catch(e => console.error('[sendEmail] fetch error:', type, e));
-};
+  }).catch(() => {});
 
 async function parseCasPdf(file, password = '') {
   const form = new FormData();
@@ -946,17 +941,14 @@ export default function App() {
     if (!user) return;
     try {
       await sendConnectionRequest(user.uid, targetId);
-      console.log('[connect] request sent to', targetId, '— querying email...');
       sql`SELECT email FROM user_profiles WHERE id=${targetId} LIMIT 1`
         .then(rows => {
-          console.log('[connect] email query result:', rows);
           if (rows[0]?.email) sendEmail('connection_request', {
             to_email:      rows[0].email,
             from_name:     ME?.name || user.displayName || 'Someone',
             from_username: ME?.username || '',
           });
-          else console.warn('[connect] no email found for targetId:', targetId);
-        }).catch(e => console.error('[connect] email query failed:', e));
+        }).catch(() => {});
       const conns = await getMyConnections(user.uid);
       setConnections(conns);
     } catch(e) { console.warn('handlePeopleConnect:', e?.message||e); }
@@ -1181,23 +1173,16 @@ export default function App() {
                 setPageHash('');
                 return;
               }
-              console.log('[profile-connect] triggered, targetId:', targetId, 'pubUsername:', pubUsername);
               await sendConnectionRequest(user.uid, targetId);
-              // Query by username (from URL) — more reliable than querying by id
               sql`SELECT email FROM user_profiles
                   WHERE LOWER(username)=${pubUsername.toLowerCase()} LIMIT 1`
                 .then(rows => {
-                  console.log('[profile-connect] email query rows:', rows);
-                  if (rows[0]?.email) {
-                    sendEmail('connection_request', {
-                      to_email:      rows[0].email,
-                      from_name:     ME?.name || user.displayName || 'Someone',
-                      from_username: ME?.username || '',
-                    });
-                  } else {
-                    console.warn('[profile-connect] no email found for username:', pubUsername);
-                  }
-                }).catch(e => console.error('[profile-connect] email query error:', e));
+                  if (rows[0]?.email) sendEmail('connection_request', {
+                    to_email:      rows[0].email,
+                    from_name:     ME?.name || user.displayName || 'Someone',
+                    from_username: ME?.username || '',
+                  });
+                }).catch(() => {});
               const c = await getMyConnections(user.uid);
               setConnections(c);
             }}
@@ -2069,13 +2054,11 @@ function ContactsSection({ connections, setConnections, groups, sharing, setShar
         onAddExisting={async(uid,info)=>{
           const res = await sendConnectionRequest(myId, uid);
           if (res.error==="already_exists") return;
-          console.log('[connect] onAddExisting info:', info);
           if (info?.email) sendEmail('connection_request', {
             to_email:      info.email,
             from_name:     me?.name || 'Someone',
             from_username: me?.username || '',
           });
-          else console.warn('[connect] onAddExisting: info.email missing', info);
           const conns = await getMyConnections(myId);
           setConnections(conns);
         }}
