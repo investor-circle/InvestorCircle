@@ -1060,12 +1060,10 @@ export default function App() {
                        ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                        up.full_name as by_name, up.id as from_id,
                        0 as likes,
-                       (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
-                       rr.reaction as user_reaction
+                       (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
                 FROM recommendation_deliveries rd
                 JOIN ic_recommendations ir ON ir.id = rd.recommendation_id
                 JOIN user_profiles up ON up.id = ir.recommender_id
-                LEFT JOIN recommendation_reactions rr ON rr.reco_id = ir.id AND rr.user_id = ${user.uid}
                 WHERE rd.recipient_id = ANY(${activeConns})
                   AND (rd.reaction = 'like'
                     OR EXISTS (SELECT 1 FROM recommendation_comments rc
@@ -1075,12 +1073,23 @@ export default function App() {
                   )
                 ORDER BY ir.created_at DESC
                 LIMIT 50`;
-              setNetworkEngagementRecos(engRecos.map(r=>({
+              const engMapped = engRecos.map(r=>({
                 ...r, assetName:r.asset_name, priceAt:r.reco_price, price:r.current_price,
                 byName:r.by_name, from:r.from_id, feedSource:'network_engagement',
-                reaction: r.user_reaction || 'none', hidden:false, invested:false, deliveryId:null,
+                reaction:'none', hidden:false, invested:false, deliveryId:null,
                 commentCount: r.comment_count || 0,
-              })));
+              }));
+              setNetworkEngagementRecos(engMapped);
+              // Hydrate existing reactions separately — safe if table doesn't exist yet
+              if (engMapped.length > 0) {
+                const ids = engMapped.map(r=>r.id);
+                sql`SELECT reco_id, reaction FROM recommendation_reactions WHERE user_id=${user.uid} AND reco_id=ANY(${ids})`
+                  .then(rxRows => {
+                    if (!rxRows.length) return;
+                    const rxMap = Object.fromEntries(rxRows.map(x=>[x.reco_id, x.reaction]));
+                    setNetworkEngagementRecos(rs=>rs.map(x=>rxMap[x.id]?{...x,reaction:rxMap[x.id]}:x));
+                  }).catch(()=>{});
+              }
             }
           } catch(_) {}
         }
@@ -1094,18 +1103,16 @@ export default function App() {
                    ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
                    ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                    up.full_name as by_name, up.id as from_id, up.username as from_username,
-                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
-                   rr.reaction as user_reaction
+                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
             FROM ic_recommendations ir
             JOIN user_profiles up ON up.id = ir.recommender_id
-            LEFT JOIN recommendation_reactions rr ON rr.reco_id = ir.id AND rr.user_id = ${user.uid}
             WHERE ir.is_public = true
               AND ir.recommender_id != ${user.uid}
               AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
               AND (up.claim_status IS DISTINCT FROM 'claimed')
             ORDER BY ir.created_at DESC
             LIMIT 100`;
-          setPublicFeedRecos(pubRows.map(r => ({
+          const pubMapped = pubRows.map(r => ({
             ...r,
             assetName:    r.asset_name,
             priceAt:      r.reco_price,
@@ -1115,13 +1122,24 @@ export default function App() {
             byName:       r.by_name,
             from:         r.from_id,
             feedSource:   'public',
-            reaction:     r.user_reaction || 'none',
+            reaction:     'none',
             hidden:       false,
             invested:     false,
             deliveryId:   null,
             isPublic:     true,
             commentCount: r.comment_count || 0,
-          })));
+          }));
+          setPublicFeedRecos(pubMapped);
+          // Hydrate existing reactions separately — safe if recommendation_reactions doesn't exist yet
+          if (pubMapped.length > 0) {
+            const ids = pubMapped.map(r=>r.id);
+            sql`SELECT reco_id, reaction FROM recommendation_reactions WHERE user_id=${user.uid} AND reco_id=ANY(${ids})`
+              .then(rxRows => {
+                if (!rxRows.length) return;
+                const rxMap = Object.fromEntries(rxRows.map(x=>[x.reco_id, x.reaction]));
+                setPublicFeedRecos(rs=>rs.map(x=>rxMap[x.id]?{...x,reaction:rxMap[x.id]}:x));
+              }).catch(()=>{});
+          }
         } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
       } catch(e) { console.warn("Data load failed:", e.message); }
       // Load registered users for admin panel — excludes 'claimed' orphan rows (those are
