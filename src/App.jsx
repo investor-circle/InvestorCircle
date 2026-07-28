@@ -1060,10 +1060,12 @@ export default function App() {
                        ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                        up.full_name as by_name, up.id as from_id,
                        0 as likes,
-                       (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
+                       (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
+                       rr.reaction as user_reaction
                 FROM recommendation_deliveries rd
                 JOIN ic_recommendations ir ON ir.id = rd.recommendation_id
                 JOIN user_profiles up ON up.id = ir.recommender_id
+                LEFT JOIN recommendation_reactions rr ON rr.reco_id = ir.id AND rr.user_id = ${user.uid}
                 WHERE rd.recipient_id = ANY(${activeConns})
                   AND (rd.reaction = 'like'
                     OR EXISTS (SELECT 1 FROM recommendation_comments rc
@@ -1076,7 +1078,7 @@ export default function App() {
               setNetworkEngagementRecos(engRecos.map(r=>({
                 ...r, assetName:r.asset_name, priceAt:r.reco_price, price:r.current_price,
                 byName:r.by_name, from:r.from_id, feedSource:'network_engagement',
-                reaction:'none', hidden:false, invested:false, deliveryId:null,
+                reaction: r.user_reaction || 'none', hidden:false, invested:false, deliveryId:null,
                 commentCount: r.comment_count || 0,
               })));
             }
@@ -1092,9 +1094,11 @@ export default function App() {
                    ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
                    ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                    up.full_name as by_name, up.id as from_id, up.username as from_username,
-                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
+                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
+                   rr.reaction as user_reaction
             FROM ic_recommendations ir
             JOIN user_profiles up ON up.id = ir.recommender_id
+            LEFT JOIN recommendation_reactions rr ON rr.reco_id = ir.id AND rr.user_id = ${user.uid}
             WHERE ir.is_public = true
               AND ir.recommender_id != ${user.uid}
               AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
@@ -1111,7 +1115,7 @@ export default function App() {
             byName:       r.by_name,
             from:         r.from_id,
             feedSource:   'public',
-            reaction:     'none',
+            reaction:     r.user_reaction || 'none',
             hidden:       false,
             invested:     false,
             deliveryId:   null,
@@ -6941,8 +6945,16 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
     if(next==='like')       likes++;
     if(r.feedSource==='public'&&setPublicFeedRecos){
       setPublicFeedRecos(rs=>rs.map(x=>x.id===r.id?{...x,reaction:next,likes}:x));
+      if(sql&&me?.id){
+        if(next==='like') sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction) VALUES(${r.id},${me.id},'like') ON CONFLICT(reco_id,user_id) DO UPDATE SET reaction='like'`.catch(()=>{});
+        else              sql`DELETE FROM recommendation_reactions WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(()=>{});
+      }
     } else if(r.feedSource==='network_engagement'&&setNetworkEngagementRecos){
       setNetworkEngagementRecos(rs=>rs.map(x=>x.id===r.id?{...x,reaction:next,likes}:x));
+      if(sql&&me?.id){
+        if(next==='like') sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction) VALUES(${r.id},${me.id},'like') ON CONFLICT(reco_id,user_id) DO UPDATE SET reaction='like'`.catch(()=>{});
+        else              sql`DELETE FROM recommendation_reactions WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(()=>{});
+      }
     } else {
       setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes}:x));
       if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
