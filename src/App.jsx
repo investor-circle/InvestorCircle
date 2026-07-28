@@ -7200,32 +7200,35 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
     </div>
   );
 }
-function scoreFeedRec(r, tracked, cfg) {
-  let score = 0;
-  // Source base score
+function scoreFeedRec(r, tracked, cfg, contactIds) {
+  // ── Source base (tiny — just a tiebreaker, not a dominant signal) ───────────
   const src = r.feedSource;
-  if (!src || src === 'direct') score += 100;
-  else if (src === 'group')     score += 80;
-  else if (src === 'network_engagement') score += 40;
-  else score += 20; // public
+  let score =
+    (!src || src === 'direct') ? 10 :
+    src === 'group'            ?  8 :
+    src === 'network_engagement' ? 8 :
+    5; // public
 
-  // Recency (0–50 pts, decays over 30 days)
+  // ── Connection boost: recommender is someone you follow (+15) ───────────────
+  const recommenderId = r.from || r.from_id || r.recommender_id;
+  if (contactIds && recommenderId && contactIds.has(recommenderId)) score += 15;
+
+  // ── Recency (0–100 pts, loses 3.5 pts/day, fully gone at ~29 days) ──────────
   const daysSince = (Date.now() - new Date(r.date)) / 86400000;
-  score += Math.max(0, 50 - daysSince * 1.8);
+  score += Math.max(0, 100 - daysSince * 3.5);
 
-  // Engagement boost
-  if (cfg.rank_engagement) {
-    score += (r.likes || 0) * 6;
-  }
+  // ── Engagement: always on — likes + comments surface hyped content ───────────
+  score += (r.likes        || 0) * 8;
+  score += (r.commentCount || 0) * 5;
 
-  // Price movement boost (|return| > 5% adds up to 40 pts)
+  // ── Price movement boost (|return| > 5% adds up to 40 pts) ──────────────────
   if (cfg.rank_price_movement && r.priceAt > 0) {
     const absRet = Math.abs((r.price - r.priceAt) / r.priceAt);
     if (absRet > 0.05) score += Math.min(40, absRet * 200);
   }
 
-  // Already tracked/invested → push down (untracked first)
-  if (cfg.rank_untracked_first && (tracked.has(r.id) || r.invested)) score -= 35;
+  // ── Already tracked/invested → light downrank ────────────────────────────────
+  if (cfg.rank_untracked_first && (tracked.has(r.id) || r.invested)) score -= 20;
 
   return score;
 }
@@ -7472,10 +7475,11 @@ function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceive
     }
 
     if (cfg.filter_hide_invested) items = items.filter(r=>!r.invested);
+    const contactIds = new Set((contacts||[]).map(c=>c.id));
     return items
-      .map(r=>({...r, _score: scoreFeedRec(r, tracked, cfg)}))
+      .map(r=>({...r, _score: scoreFeedRec(r, tracked, cfg, contactIds)}))
       .sort((a,b)=>b._score-a._score);
-  }, [recsReceived, networkEngagementRecos, publicFeedRecos, tracked, effectiveFeedConfig]);
+  }, [recsReceived, networkEngagementRecos, publicFeedRecos, tracked, effectiveFeedConfig, contacts]);
 
   // Search filter applied to all currently loaded items
   const visibleFeed = useMemo(() => {
