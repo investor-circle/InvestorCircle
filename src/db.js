@@ -380,9 +380,9 @@ export async function getMyReceivedRecos(userId) {
       rec_up.email        AS from_email,
       sb_up.full_name     AS shared_by_name,
       grp.name            AS via_group_name,
-      -- Aggregate totals visible to all recipients
-      (SELECT COUNT(*) FROM recommendation_deliveries d2
-       WHERE d2.recommendation_id = r.id AND d2.reaction = 'like')     AS likes,
+      -- Likes: count from recommendation_reactions (single source of truth)
+      (SELECT COUNT(*) FROM recommendation_reactions rx
+       WHERE rx.reco_id = r.id::text)                                  AS likes,
       (SELECT COUNT(*) FROM recommendation_deliveries d2
        WHERE d2.recommendation_id = r.id AND d2.is_invested = true)    AS reco_acted
     FROM recommendation_deliveries rd
@@ -393,29 +393,10 @@ export async function getMyReceivedRecos(userId) {
     WHERE rd.delivered_to_user_id = ${userId}
     ORDER BY r.created_at DESC
   `;
-
-  // Overlay reactions from recommendation_reactions (new unified table).
-  // This runs as a separate query so a failure here never breaks the main data load.
-  let rxMap = {};
-  try {
-    if (rows.length > 0) {
-      const recoIds = rows.map(r => r.id);
-      const rxRows = await sql`
-        SELECT reco_id, reaction
-        FROM recommendation_reactions
-        WHERE user_id = ${userId}
-          AND reco_id = ANY(${recoIds})
-      `;
-      rxMap = Object.fromEntries(rxRows.map(x => [x.reco_id, x.reaction]));
-    }
-  } catch (_) {
-    // If recommendation_reactions is unavailable, fall back to delivery reaction silently
-  }
-
   return rows.map(r => ({
     // Delivery-level fields (personal to this user)
     deliveryId:    r.delivery_id,
-    id:            r.id,
+    id:            r.id,          // recommendation id — used for forwarding, exit signals
     from:          r.from_uid,
     byName:        r.from_name,
     sharedBy:      r.shared_by_id,
@@ -436,13 +417,13 @@ export async function getMyReceivedRecos(userId) {
     date:         r.reco_date ? r.reco_date.toISOString?.().slice(0,10) ?? String(r.reco_date) : null,
     exitSignal:   r.exit_signal,
     exitDate:     r.exit_date,
-    // Personal interaction — prefer recommendation_reactions, fall back to delivery reaction
+    // Personal interaction
     invested:      r.is_invested,
     investedPrice: r.invested_price ? Number(r.invested_price) : null,
-    reaction:      rxMap[r.id] || r.reaction || "none",
+    reaction:      r.reaction || "none",
     hidden:        r.is_hidden,
     // Aggregates
-    likes:         Number(r.likes    || 0),
+    likes:         Number(r.likes || 0),
     recoActed:     Number(r.reco_acted || 0),
   }));
 }
@@ -527,20 +508,15 @@ export async function updateDelivery(deliveryId, patch, userId) {
     WHERE id = ${deliveryId} AND delivered_to_user_id = ${userId}
     RETURNING *
   `;
-  // Mirror reaction to recommendation_reactions (single source of truth for cross-feed reactions)
+  // Mirror reaction to recommendation_reactions — fire-and-forget, never throws
   if (patch.reaction !== undefined && row[0]) {
     const recoId = row[0].recommendation_id;
     if (patch.reaction === 'like') {
-      await sql`
-        INSERT INTO recommendation_reactions (reco_id, user_id, reaction)
-        VALUES (${recoId}, ${userId}, 'like')
-        ON CONFLICT DO NOTHING
-      `.catch(() => {});
+      sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction)
+          VALUES(${String(recoId)},${userId},'like') ON CONFLICT DO NOTHING`.catch(()=>{});
     } else {
-      await sql`
-        DELETE FROM recommendation_reactions
-        WHERE reco_id = ${recoId} AND user_id = ${userId}
-      `.catch(() => {});
+      sql`DELETE FROM recommendation_reactions
+          WHERE reco_id=${String(recoId)} AND user_id=${userId}`.catch(()=>{});
     }
   }
   return row[0];
