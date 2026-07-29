@@ -952,9 +952,12 @@ export default function App() {
   };
 
   // ── Push notification: register SW + manage subscription ───────────────────
-  const [pushPermission, setPushPermission] = useState(
-    typeof Notification !== 'undefined' ? Notification.permission : 'default'
-  );
+  const [pushPermission, setPushPermission] = useState(() => {
+    if (typeof Notification === 'undefined') return 'unsupported';
+    // User previously turned off in-app — treat as disabled even if browser still grants
+    if (localStorage.getItem('mic_push_disabled') === '1') return 'disabled';
+    return Notification.permission;
+  });
 
   // Register service worker once on mount
   useEffect(() => {
@@ -1003,26 +1006,37 @@ export default function App() {
   const requestPushPermission = async () => {
     if (!('Notification' in window)) return;
     const result = await Notification.requestPermission();
-    setPushPermission(result);
     if (result === 'granted') {
+      localStorage.removeItem('mic_push_disabled'); // clear manual disable flag
+      setPushPermission('granted');
       const reg = await navigator.serviceWorker.ready;
       await subscribePush(reg);
+    } else {
+      setPushPermission(result);
     }
   };
 
   /** Unsubscribe and remove subscription from DB. */
   const unsubscribePush = async () => {
-    if (!('serviceWorker' in navigator)) return;
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription();
-    if (sub) {
-      const { endpoint } = sub.toJSON();
-      await sub.unsubscribe();
-      if (sql && user?.uid) {
-        sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint}`.catch(() => {});
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          const { endpoint } = sub.toJSON();
+          await sub.unsubscribe();
+          if (sql && user?.uid) {
+            sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint}`.catch(() => {});
+          }
+        }
       }
+    } catch (e) {
+      console.warn('[push] unsubscribe error:', e?.message);
     }
-    setPushPermission('default');
+    // Persist the user's manual choice so it survives page refresh
+    // (browser Notification.permission stays 'granted' — we track opt-out separately)
+    localStorage.setItem('mic_push_disabled', '1');
+    setPushPermission('disabled');
   };
   const handlePeopleConnect = async (targetId) => {
     if (!user) return;
@@ -2036,7 +2050,7 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
         </div>
       </div>
       <div style={{overflowY:"auto",flex:1}}>
-        {/* ── Push permission banner — shown in-context, only once ── */}
+        {/* ── Push permission banners — shown in-context only ── */}
         {'Notification' in window && pushPermission === 'default' && onEnablePush && (
           <div style={{padding:"12px 16px",background:"rgba(109,93,245,.06)",borderBottom:"1px solid var(--line)",display:"flex",alignItems:"center",gap:10}}>
             <Bell size={16} color="var(--accent)"/>
@@ -2053,8 +2067,15 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
         {pushPermission === 'granted' && onDisablePush && (
           <div style={{padding:"8px 16px",background:"rgba(74,222,128,.06)",borderBottom:"1px solid var(--line)",display:"flex",alignItems:"center",gap:8,fontSize:12,color:"var(--muted)"}}>
             <Bell size={13} color="#22863a"/>
-            Push notifications are on
-            <button onClick={onDisablePush} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",fontSize:11,color:"var(--muted)",textDecoration:"underline"}}>Turn off</button>
+            <span>Push notifications are <b style={{color:"#22863a"}}>on</b></span>
+            <button onClick={onDisablePush} style={{marginLeft:"auto",background:"none",border:"1px solid var(--line)",borderRadius:6,cursor:"pointer",fontSize:11,color:"var(--muted)",padding:"2px 8px"}}>Turn off</button>
+          </div>
+        )}
+        {pushPermission === 'disabled' && onEnablePush && (
+          <div style={{padding:"8px 16px",background:"var(--surface-2)",borderBottom:"1px solid var(--line)",display:"flex",alignItems:"center",gap:8,fontSize:12,color:"var(--muted)"}}>
+            <Bell size={13} color="var(--muted)"/>
+            <span>Push notifications are off</span>
+            <button onClick={onEnablePush} style={{marginLeft:"auto",background:"none",border:"1px solid var(--line)",borderRadius:6,cursor:"pointer",fontSize:11,color:"var(--accent)",padding:"2px 8px"}}>Turn on</button>
           </div>
         )}
         {notifications.length===0 && <div className="empty" style={{padding:32}}>No notifications yet</div>}
