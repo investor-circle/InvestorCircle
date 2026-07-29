@@ -1010,6 +1010,17 @@ export default function App() {
         setRecsMade(made);
         setNotifications(notifs);
         setSharing(shr);
+        // Hydrate reactions from recommendation_reactions — fire-and-forget, never breaks main load
+        if (recv.length > 0 && sql) {
+          const ids = recv.map(r => String(r.id));
+          sql`SELECT reco_id, reaction FROM recommendation_reactions
+              WHERE user_id=${user.uid} AND reco_id=ANY(${ids})`
+            .then(rxRows => {
+              if (!rxRows.length) return;
+              const rxMap = Object.fromEntries(rxRows.map(x=>[x.reco_id, x.reaction]));
+              setRecsReceived(rs => rs.map(r => rxMap[String(r.id)] ? {...r, reaction: rxMap[String(r.id)]} : r));
+            }).catch(()=>{});
+        }
         // Process any stored referral code (fires only when localStorage has one)
         processReferral(user.uid);
         // Load pending creator claim requests (admin feature — silently no-ops for non-admins)
@@ -1082,12 +1093,12 @@ export default function App() {
               setNetworkEngagementRecos(engMapped);
               // Hydrate existing reactions separately — safe if table doesn't exist yet
               if (engMapped.length > 0) {
-                const ids = engMapped.map(r=>r.id);
+                const ids = engMapped.map(r=>String(r.id));
                 sql`SELECT reco_id, reaction FROM recommendation_reactions WHERE user_id=${user.uid} AND reco_id=ANY(${ids})`
                   .then(rxRows => {
                     if (!rxRows.length) return;
                     const rxMap = Object.fromEntries(rxRows.map(x=>[x.reco_id, x.reaction]));
-                    setNetworkEngagementRecos(rs=>rs.map(x=>rxMap[x.id]?{...x,reaction:rxMap[x.id]}:x));
+                    setNetworkEngagementRecos(rs=>rs.map(x=>rxMap[String(x.id)]?{...x,reaction:rxMap[String(x.id)]}:x));
                   }).catch(()=>{});
               }
             }
@@ -1103,8 +1114,7 @@ export default function App() {
                    ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
                    ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                    up.full_name as by_name, up.id as from_id, up.username as from_username,
-                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
-                   (SELECT COUNT(*) FROM recommendation_reactions rr WHERE rr.reco_id=ir.id AND rr.reaction='like')::int as likes_count
+                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
             FROM ic_recommendations ir
             JOIN user_profiles up ON up.id = ir.recommender_id
             WHERE ir.is_public = true
@@ -1128,18 +1138,18 @@ export default function App() {
             invested:     false,
             deliveryId:   null,
             isPublic:     true,
-            likes:        r.likes_count  || 0,
+            likes:        0,
             commentCount: r.comment_count || 0,
           }));
           setPublicFeedRecos(pubMapped);
           // Hydrate existing reactions separately — safe if recommendation_reactions doesn't exist yet
           if (pubMapped.length > 0) {
-            const ids = pubMapped.map(r=>r.id);
+            const ids = pubMapped.map(r=>String(r.id));
             sql`SELECT reco_id, reaction FROM recommendation_reactions WHERE user_id=${user.uid} AND reco_id=ANY(${ids})`
               .then(rxRows => {
                 if (!rxRows.length) return;
                 const rxMap = Object.fromEntries(rxRows.map(x=>[x.reco_id, x.reaction]));
-                setPublicFeedRecos(rs=>rs.map(x=>rxMap[x.id]?{...x,reaction:rxMap[x.id]}:x));
+                setPublicFeedRecos(rs=>rs.map(x=>rxMap[String(x.id)]?{...x,reaction:rxMap[String(x.id)]}:x));
               }).catch(()=>{});
           }
         } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
