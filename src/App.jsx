@@ -952,29 +952,38 @@ export default function App() {
   };
 
   // ── Push notification: register SW + manage subscription ───────────────────
-  const pushKey = `mic_push_disabled_${user?.uid || 'anon'}`;
-  const [pushPermission, setPushPermission] = useState(() => {
-    if (typeof Notification === 'undefined') return 'unsupported';
-    if (localStorage.getItem(pushKey) === '1') return 'disabled';
-    return Notification.permission;
-  });
+  // State is user-specific. We track opt-in/opt-out per UID in localStorage.
+  // Browser Notification.permission is shared for the origin — we deliberately
+  // do NOT use it as the "on" signal, because it reflects whoever previously
+  // granted it, not whether THIS user opted in.
+  const [pushPermission, setPushPermission] = useState('default');
 
-  // Register service worker once on mount
+  const getPushState = (uid) => {
+    if (typeof Notification === 'undefined' || !uid) return 'default';
+    if (localStorage.getItem(`mic_push_off_${uid}`) === '1') return 'disabled';
+    if (localStorage.getItem(`mic_push_on_${uid}`)  === '1' &&
+        Notification.permission === 'granted') return 'granted';
+    return 'default'; // this user hasn't opted in yet
+  };
+
+  // Re-evaluate permission state whenever the logged-in user changes
   useEffect(() => {
-    if (!('serviceWorker' in navigator) || !VAPID_PUBLIC_KEY) return;
+    const state = getPushState(user?.uid);
+    setPushPermission(state);
+  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Register service worker and re-subscribe if this user has previously opted in
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !VAPID_PUBLIC_KEY || !user?.uid) return;
     navigator.serviceWorker.register('/sw.js', { scope: '/' })
       .then(reg => {
-        console.log('[SW] registered, scope:', reg.scope);
-        // If already granted AND not disabled for this user, re-subscribe
-        // to ensure the current user's ID is linked to this browser's subscription
-        if (Notification.permission === 'granted' && localStorage.getItem(pushKey) !== '1') {
-          subscribePush(reg)
-            .then(() => setPushPermission('granted'))
-            .catch(() => {});
+        // Only subscribe if THIS user explicitly opted in (mic_push_on_{uid} = '1')
+        if (getPushState(user.uid) === 'granted') {
+          subscribePush(reg).catch(() => {});
         }
       })
       .catch(e => console.warn('[SW] registration failed:', e?.message));
-  }, [user?.uid]); // re-run on user change — links subscription to new user
+  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Convert VAPID public key to Uint8Array for PushManager */
   const urlBase64ToUint8Array = (base64String) => {
@@ -1007,25 +1016,28 @@ export default function App() {
 
   /** Request permission — only call this on explicit user gesture. */
   const requestPushPermission = async () => {
-    if (!('Notification' in window)) return;
+    if (!('Notification' in window) || !user?.uid) return;
     const result = await Notification.requestPermission();
     if (result === 'granted') {
-      localStorage.removeItem(pushKey);
+      // Record that THIS user explicitly opted in
+      localStorage.setItem(`mic_push_on_${user.uid}`,  '1');
+      localStorage.removeItem(`mic_push_off_${user.uid}`);
       setPushPermission('granted');
       const reg = await navigator.serviceWorker.ready;
       await subscribePush(reg);
     } else {
-      setPushPermission(result);
+      setPushPermission(result); // 'denied'
     }
   };
 
   /** Unsubscribe and remove subscription from DB. */
   const unsubscribePush = () => {
-    // Update UI immediately — never wait for async operations
-    localStorage.setItem(pushKey, '1');
+    if (!user?.uid) return;
+    // Update UI immediately
+    localStorage.setItem(`mic_push_off_${user.uid}`, '1');
+    localStorage.removeItem(`mic_push_on_${user.uid}`);
     setPushPermission('disabled');
-
-    // Best-effort async cleanup — delete from DB and browser, but UI is already updated
+    // Async cleanup — delete from DB and browser
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready
         .then(async reg => {
