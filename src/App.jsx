@@ -53,13 +53,29 @@ const _CAS_API = import.meta.env.VITE_CAS_API_URL
 const _CAS_CONFIGURED = !!import.meta.env.VITE_CAS_API_URL;
 
 /* ── Transactional email helper (calls Vercel /api/email via Resend) ─── */
-const EMAIL_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
+const EMAIL_API       = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
+const PUSH_API        = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/push';
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || '';
+
+/** Fire-and-forget email. Never throws. */
 const sendEmail = (type, payload) =>
   fetch(EMAIL_API, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ type, ...payload }),
   }).catch(() => {});
+
+/** Fire-and-forget push notification. Never throws.
+ *  PII rule: body must never contain prices, amounts, or account-specific data.
+ *  Content may appear on device lock screen. */
+const sendPush = (userId, { title, body, url = 'https://myinvestorcircle.com', tag = 'mic' }) => {
+  if (!userId || !VAPID_PUBLIC_KEY) return;
+  fetch(PUSH_API, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ userId, title, body, url, tag }),
+  }).catch(() => {});
+};
 
 async function parseCasPdf(file, password = '') {
   const form = new FormData();
@@ -935,7 +951,79 @@ export default function App() {
     } catch(e) { console.warn('processReferral:', e?.message||e); }
   };
 
-  // ── People Connect — used by PeopleSearch ────────────────────────────────────
+  // ── Push notification: register SW + manage subscription ───────────────────
+  const [pushPermission, setPushPermission] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  );
+
+  // Register service worker once on mount
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !VAPID_PUBLIC_KEY) return;
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then(reg => {
+        console.log('[SW] registered, scope:', reg.scope);
+        // If already granted, ensure we have a subscription saved
+        if (Notification.permission === 'granted') {
+          subscribePush(reg).catch(() => {});
+        }
+      })
+      .catch(e => console.warn('[SW] registration failed:', e?.message));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Convert VAPID public key to Uint8Array for PushManager */
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding  = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64   = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw      = window.atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  };
+
+  /** Subscribe to push and persist the subscription to Neon. */
+  const subscribePush = async (reg) => {
+    if (!VAPID_PUBLIC_KEY || !user?.uid || !sql) return;
+    try {
+      const existing = await reg.pushManager.getSubscription();
+      const sub = existing || await reg.pushManager.subscribe({
+        userVisibleOnly:      true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+      const { endpoint, keys: { p256dh, auth } } = sub.toJSON();
+      await sql`
+        INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth_key)
+        VALUES (${user.uid}, ${endpoint}, ${p256dh}, ${auth})
+        ON CONFLICT (endpoint) DO UPDATE SET user_id = ${user.uid}
+      `;
+      console.log('[push] subscription saved');
+    } catch (e) {
+      console.warn('[push] subscribe failed:', e?.message);
+    }
+  };
+
+  /** Request permission — only call this on explicit user gesture. */
+  const requestPushPermission = async () => {
+    if (!('Notification' in window)) return;
+    const result = await Notification.requestPermission();
+    setPushPermission(result);
+    if (result === 'granted') {
+      const reg = await navigator.serviceWorker.ready;
+      await subscribePush(reg);
+    }
+  };
+
+  /** Unsubscribe and remove subscription from DB. */
+  const unsubscribePush = async () => {
+    if (!('serviceWorker' in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      const { endpoint } = sub.toJSON();
+      await sub.unsubscribe();
+      if (sql && user?.uid) {
+        sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint}`.catch(() => {});
+      }
+    }
+    setPushPermission('default');
+  };
   const handlePeopleConnect = async (targetId) => {
     if (!user) return;
     try {
@@ -946,6 +1034,11 @@ export default function App() {
             to_email:      rows[0].email,
             from_name:     ME?.name || user.displayName || 'Someone',
             from_username: ME?.username || '',
+          });
+          sendPush(targetId, {
+            title: '🤝 New connection request',
+            body:  `${ME?.name || 'Someone'} wants to connect with you`,
+            tag:   'connection_request',
           });
         }).catch(() => {});
       const conns = await getMyConnections(user.uid);
@@ -1539,6 +1632,9 @@ export default function App() {
                     setNotifications(ns => ns.map(x => ({...x,is_read:true})));
                   }}
                   onClose={()=>setNotifOpen(false)}
+                  pushPermission={pushPermission}
+                  onEnablePush={requestPushPermission}
+                  onDisablePush={unsubscribePush}
                   onNavigate={async (n) => {
                     // Mark as read
                     if (!n.is_read) {
@@ -1856,7 +1952,7 @@ function RecoBreakdown({ stats, onPnl, pnlLabel }) {
 }
 
 /* ── Notification Panel ─────────────────────────────────────────────────────── */
-function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, onReadAll, onClose, onNavigate }) {
+function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, onReadAll, onClose, onNavigate, pushPermission, onEnablePush, onDisablePush }) {
   const isMobile = useIsMobile();
   const unread = notifications.filter(n => !n.is_read);
   const TYPE_LABEL = {
@@ -1940,6 +2036,27 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
         </div>
       </div>
       <div style={{overflowY:"auto",flex:1}}>
+        {/* ── Push permission banner — shown in-context, only once ── */}
+        {'Notification' in window && pushPermission === 'default' && onEnablePush && (
+          <div style={{padding:"12px 16px",background:"rgba(109,93,245,.06)",borderBottom:"1px solid var(--line)",display:"flex",alignItems:"center",gap:10}}>
+            <Bell size={16} color="var(--accent)"/>
+            <div style={{flex:1,fontSize:12,lineHeight:1.5}}>
+              <b style={{fontSize:13}}>Enable push notifications</b><br/>
+              <span style={{color:"var(--muted)"}}>Get notified about likes, comments and new recommendations even when the app is closed.</span>
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button className="btn btn-pri btn-sm" onClick={onEnablePush}>Enable</button>
+              <button className="btn btn-ghost btn-sm" onClick={onClose}>Later</button>
+            </div>
+          </div>
+        )}
+        {pushPermission === 'granted' && onDisablePush && (
+          <div style={{padding:"8px 16px",background:"rgba(74,222,128,.06)",borderBottom:"1px solid var(--line)",display:"flex",alignItems:"center",gap:8,fontSize:12,color:"var(--muted)"}}>
+            <Bell size={13} color="#22863a"/>
+            Push notifications are on
+            <button onClick={onDisablePush} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",fontSize:11,color:"var(--muted)",textDecoration:"underline"}}>Turn off</button>
+          </div>
+        )}
         {notifications.length===0 && <div className="empty" style={{padding:32}}>No notifications yet</div>}
         {notifications.map(n=>{
           const isEngagement = ['contact_recommendation','contact_comment','contact_like','network_like','network_comment'].includes(n.type);
@@ -4293,6 +4410,11 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
             contacts.map(c =>
               sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
                   VALUES (${c.id}, 'contact_recommendation', ${me.id}, ${meta})`
+                .then(() => sendPush(c.id, {
+                    title: '💡 New recommendation in your circle',
+                    body:  `${me.name || 'Someone'} posted a new recommendation`,
+                    tag:   'contact_recommendation',
+                  }))
                 .catch(() => {})
             )
           );
@@ -6861,7 +6983,9 @@ function RecoComments({ recoId, me }) {
           // In-app notification to owner
           const meta = JSON.stringify({ ticker, assetName: asset_name, recoId, recommenderUsername: ownerUsername || '' });
           sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
-              VALUES (${recommender_id}, 'contact_comment', ${me.id}, ${meta})`.catch(() => {});
+              VALUES (${recommender_id}, 'contact_comment', ${me.id}, ${meta})`
+              .then(()=>sendPush(recommender_id,{title:'💬 New comment on your recommendation',body:`${name} commented on your recommendation${ticker?' · '+ticker:''}`,tag:'contact_comment'}))
+              .catch(() => {});
 
           // Email to owner
           if (ownerEmail) {
@@ -7040,7 +7164,9 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
                   recommenderUsername:ownerUsername, recommenderName:ownerName,
                 });
                 sql`INSERT INTO notifications (user_id,type,from_user_id,metadata)
-                    VALUES (${ownerId},'contact_like',${me.id},${meta})`.catch(()=>{});
+                    VALUES (${ownerId},'contact_like',${me.id},${meta})`
+                  .then(()=>sendPush(ownerId,{title:'👍 Someone liked your recommendation',body:`${lName} liked your recommendation${r.ticker?' · '+r.ticker:''}`,tag:'contact_like'}))
+                  .catch(()=>{});
               }
             }).catch(()=>{});
 
