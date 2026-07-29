@@ -952,10 +952,10 @@ export default function App() {
   };
 
   // ── Push notification: register SW + manage subscription ───────────────────
+  const pushKey = `mic_push_disabled_${user?.uid || 'anon'}`;
   const [pushPermission, setPushPermission] = useState(() => {
     if (typeof Notification === 'undefined') return 'unsupported';
-    // User previously turned off in-app — treat as disabled even if browser still grants
-    if (localStorage.getItem('mic_push_disabled') === '1') return 'disabled';
+    if (localStorage.getItem(pushKey) === '1') return 'disabled';
     return Notification.permission;
   });
 
@@ -965,13 +965,16 @@ export default function App() {
     navigator.serviceWorker.register('/sw.js', { scope: '/' })
       .then(reg => {
         console.log('[SW] registered, scope:', reg.scope);
-        // If already granted, ensure we have a subscription saved
-        if (Notification.permission === 'granted') {
-          subscribePush(reg).catch(() => {});
+        // If already granted AND not disabled for this user, re-subscribe
+        // to ensure the current user's ID is linked to this browser's subscription
+        if (Notification.permission === 'granted' && localStorage.getItem(pushKey) !== '1') {
+          subscribePush(reg)
+            .then(() => setPushPermission('granted'))
+            .catch(() => {});
         }
       })
       .catch(e => console.warn('[SW] registration failed:', e?.message));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.uid]); // re-run on user change — links subscription to new user
 
   /** Convert VAPID public key to Uint8Array for PushManager */
   const urlBase64ToUint8Array = (base64String) => {
@@ -1007,7 +1010,7 @@ export default function App() {
     if (!('Notification' in window)) return;
     const result = await Notification.requestPermission();
     if (result === 'granted') {
-      localStorage.removeItem('mic_push_disabled'); // clear manual disable flag
+      localStorage.removeItem(pushKey);
       setPushPermission('granted');
       const reg = await navigator.serviceWorker.ready;
       await subscribePush(reg);
@@ -1017,26 +1020,26 @@ export default function App() {
   };
 
   /** Unsubscribe and remove subscription from DB. */
-  const unsubscribePush = async () => {
-    try {
-      if ('serviceWorker' in navigator) {
-        const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.getSubscription();
-        if (sub) {
-          const { endpoint } = sub.toJSON();
-          await sub.unsubscribe();
-          if (sql && user?.uid) {
-            sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint}`.catch(() => {});
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('[push] unsubscribe error:', e?.message);
-    }
-    // Persist the user's manual choice so it survives page refresh
-    // (browser Notification.permission stays 'granted' — we track opt-out separately)
-    localStorage.setItem('mic_push_disabled', '1');
+  const unsubscribePush = () => {
+    // Update UI immediately — never wait for async operations
+    localStorage.setItem(pushKey, '1');
     setPushPermission('disabled');
+
+    // Best-effort async cleanup — delete from DB and browser, but UI is already updated
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then(async reg => {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            const { endpoint } = sub.toJSON();
+            await sub.unsubscribe();
+            if (sql && user?.uid) {
+              sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint}`.catch(() => {});
+            }
+          }
+        })
+        .catch(e => console.warn('[push] unsubscribe cleanup error:', e?.message));
+    }
   };
   const handlePeopleConnect = async (targetId) => {
     if (!user) return;
