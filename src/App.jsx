@@ -1114,7 +1114,8 @@ export default function App() {
                    ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
                    ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                    up.full_name as by_name, up.id as from_id, up.username as from_username,
-                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
+                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
+                   (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text)::int as likes_count
             FROM ic_recommendations ir
             JOIN user_profiles up ON up.id = ir.recommender_id
             WHERE ir.is_public = true
@@ -1138,7 +1139,7 @@ export default function App() {
             invested:     false,
             deliveryId:   null,
             isPublic:     true,
-            likes:        0,
+            likes:        r.likes_count  || 0,
             commentCount: r.comment_count || 0,
           }));
           setPublicFeedRecos(pubMapped);
@@ -4962,12 +4963,17 @@ function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProf
     setLiked(next);
     setLikeCount(c => next ? c + 1 : Math.max(0, c - 1));
     if (sql && viewerUser.uid) {
+      const _recoId = String(recoId);
+      const _userId = String(viewerUser.uid);
       if (next) {
-        sql`INSERT INTO recommendation_reactions (reco_id,user_id,reaction)
-            VALUES (${recoId},${viewerUser.uid},'like')
-            ON CONFLICT (reco_id,user_id) DO UPDATE SET reaction='like'`.catch(() => {});
+        sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction)
+            VALUES(${_recoId},${_userId},'like')
+            ON CONFLICT(reco_id,user_id) DO UPDATE SET reaction='like'`
+          .then(()=>console.log('[like] ✓ RecoPost saved:', _recoId))
+          .catch(e=>console.error('[like] ✗ RecoPost INSERT failed:', e?.message));
       } else {
-        sql`DELETE FROM recommendation_reactions WHERE reco_id=${recoId} AND user_id=${viewerUser.uid}`.catch(() => {});
+        sql`DELETE FROM recommendation_reactions WHERE reco_id=${_recoId} AND user_id=${_userId}`
+          .catch(e=>console.error('[like] ✗ RecoPost DELETE failed:', e?.message));
       }
     }
   };
@@ -6986,15 +6992,19 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
     }
 
     // ── Persist reaction to recommendation_reactions for ALL feed types ───────
-    if(sql&&me?.id&&r.id){
+    if(sql && me?.id && r.id){
+      const _recoId = String(r.id);
+      const _userId = String(me.id);
       if(next==='like'){
         sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction)
-            VALUES(${r.id},${me.id},'like')
-            ON CONFLICT DO NOTHING`
-          .catch(e=>console.warn('[react] like persist failed:',e?.message));
+            VALUES(${_recoId},${_userId},'like')
+            ON CONFLICT(reco_id,user_id) DO UPDATE SET reaction='like'`
+          .then(()=>console.log('[like] ✓ saved to recommendation_reactions:', _recoId))
+          .catch(e=>console.error('[like] ✗ INSERT failed:', e?.message, {_recoId, _userId}));
       } else {
-        sql`DELETE FROM recommendation_reactions WHERE reco_id=${r.id} AND user_id=${me.id}`
-          .catch(e=>console.warn('[react] unlike persist failed:',e?.message));
+        sql`DELETE FROM recommendation_reactions WHERE reco_id=${_recoId} AND user_id=${_userId}`
+          .then(()=>console.log('[like] ✓ deleted from recommendation_reactions:', _recoId))
+          .catch(e=>console.error('[like] ✗ DELETE failed:', e?.message));
       }
     }
     // Notify reco owner (consolidated LinkedIn-style) + fan-out to liker's network
