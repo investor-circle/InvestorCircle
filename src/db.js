@@ -381,17 +381,25 @@ export async function getMyReceivedRecos(userId) {
       sb_up.full_name     AS shared_by_name,
       grp.name            AS via_group_name,
       -- Aggregate totals visible to all recipients
+      -- Likes: union delivery-based reactions + recommendation_reactions (new path)
       (SELECT COUNT(*) FROM recommendation_deliveries d2
-       WHERE d2.recommendation_id = r.id AND d2.reaction = 'like')     AS likes,
+       WHERE d2.recommendation_id = r.id AND d2.reaction = 'like') +
+      (SELECT COUNT(*) FROM recommendation_reactions rr2
+       WHERE rr2.reco_id = r.id AND rr2.reaction = 'like'
+         AND NOT EXISTS (
+           SELECT 1 FROM recommendation_deliveries d3
+           WHERE d3.recommendation_id = r.id AND d3.delivered_to_user_id = rr2.user_id
+         ))                                                              AS likes,
       (SELECT COUNT(*) FROM recommendation_deliveries d2
-       WHERE d2.recommendation_id = r.id AND d2.reaction = 'dislike')  AS dislikes,
-      (SELECT COUNT(*) FROM recommendation_deliveries d2
-       WHERE d2.recommendation_id = r.id AND d2.is_invested = true)    AS reco_acted
+       WHERE d2.recommendation_id = r.id AND d2.is_invested = true)    AS reco_acted,
+      -- Personal reaction: prefer recommendation_reactions (new), fall back to delivery reaction
+      COALESCE(rr.reaction, rd.reaction)                                AS reaction
     FROM recommendation_deliveries rd
     JOIN ic_recommendations r    ON r.id   = rd.recommendation_id
     JOIN user_profiles rec_up    ON rec_up.id = r.recommender_id
     LEFT JOIN user_profiles sb_up ON sb_up.id = rd.shared_by_id
     LEFT JOIN ic_groups grp       ON grp.id   = rd.via_group_id
+    LEFT JOIN recommendation_reactions rr ON rr.reco_id = r.id AND rr.user_id = ${userId}
     WHERE rd.delivered_to_user_id = ${userId}
     ORDER BY r.created_at DESC
   `;
@@ -426,7 +434,6 @@ export async function getMyReceivedRecos(userId) {
     hidden:        r.is_hidden,
     // Aggregates
     likes:         Number(r.likes || 0),
-    dislikes:      Number(r.dislikes || 0),
     recoActed:     Number(r.reco_acted || 0),
   }));
 }
@@ -511,6 +518,22 @@ export async function updateDelivery(deliveryId, patch, userId) {
     WHERE id = ${deliveryId} AND delivered_to_user_id = ${userId}
     RETURNING *
   `;
+  // Mirror reaction to recommendation_reactions (single source of truth for cross-feed reactions)
+  if (patch.reaction !== undefined && row[0]) {
+    const recoId = row[0].recommendation_id;
+    if (patch.reaction === 'like') {
+      await sql`
+        INSERT INTO recommendation_reactions (reco_id, user_id, reaction)
+        VALUES (${recoId}, ${userId}, 'like')
+        ON CONFLICT DO NOTHING
+      `.catch(() => {});
+    } else {
+      await sql`
+        DELETE FROM recommendation_reactions
+        WHERE reco_id = ${recoId} AND user_id = ${userId}
+      `.catch(() => {});
+    }
+  }
   return row[0];
 }
 

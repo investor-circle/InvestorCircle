@@ -1103,7 +1103,8 @@ export default function App() {
                    ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
                    ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                    up.full_name as by_name, up.id as from_id, up.username as from_username,
-                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
+                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
+                   (SELECT COUNT(*) FROM recommendation_reactions rr WHERE rr.reco_id=ir.id AND rr.reaction='like')::int as likes_count
             FROM ic_recommendations ir
             JOIN user_profiles up ON up.id = ir.recommender_id
             WHERE ir.is_public = true
@@ -1127,6 +1128,7 @@ export default function App() {
             invested:     false,
             deliveryId:   null,
             isPublic:     true,
+            likes:        r.likes_count  || 0,
             commentCount: r.comment_count || 0,
           }));
           setPublicFeedRecos(pubMapped);
@@ -6961,21 +6963,29 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
     let likes=(r.likes||0);
     if(r.reaction==='like') likes = Math.max(0,likes-1);
     if(next==='like')       likes++;
+
+    // ── Update local state ────────────────────────────────────────────────────
     if(r.feedSource==='public'&&setPublicFeedRecos){
       setPublicFeedRecos(rs=>rs.map(x=>x.id===r.id?{...x,reaction:next,likes}:x));
-      if(sql&&me?.id){
-        if(next==='like') sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction) VALUES(${r.id},${me.id},'like') ON CONFLICT(reco_id,user_id) DO UPDATE SET reaction='like'`.catch(()=>{});
-        else              sql`DELETE FROM recommendation_reactions WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(()=>{});
-      }
     } else if(r.feedSource==='network_engagement'&&setNetworkEngagementRecos){
       setNetworkEngagementRecos(rs=>rs.map(x=>x.id===r.id?{...x,reaction:next,likes}:x));
-      if(sql&&me?.id){
-        if(next==='like') sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction) VALUES(${r.id},${me.id},'like') ON CONFLICT(reco_id,user_id) DO UPDATE SET reaction='like'`.catch(()=>{});
-        else              sql`DELETE FROM recommendation_reactions WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(()=>{});
-      }
     } else {
       setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes}:x));
+      // Also persist delivery reaction for compatibility
       if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
+    }
+
+    // ── Persist reaction to recommendation_reactions for ALL feed types ───────
+    if(sql&&me?.id&&r.id){
+      if(next==='like'){
+        sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction)
+            VALUES(${r.id},${me.id},'like')
+            ON CONFLICT DO NOTHING`
+          .catch(e=>console.warn('[react] like persist failed:',e?.message));
+      } else {
+        sql`DELETE FROM recommendation_reactions WHERE reco_id=${r.id} AND user_id=${me.id}`
+          .catch(e=>console.warn('[react] unlike persist failed:',e?.message));
+      }
     }
     // Notify reco owner (consolidated LinkedIn-style) + fan-out to liker's network
     if(next==='like' && r.id && sql){
