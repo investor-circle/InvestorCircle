@@ -365,7 +365,7 @@ export async function getMyReceivedRecos(userId) {
       rd.id               AS delivery_id,
       rd.via_type, rd.via_group_id, rd.shared_by_id,
       rd.is_invested, rd.invested_price, rd.invested_at,
-      rd.is_hidden, rd.created_at AS delivered_at,
+      rd.reaction, rd.is_hidden, rd.created_at AS delivered_at,
       r.id                AS id,
       r.recommender_id    AS from_uid,
       r.asset_name, r.ticker, r.asset_class,
@@ -380,27 +380,42 @@ export async function getMyReceivedRecos(userId) {
       rec_up.email        AS from_email,
       sb_up.full_name     AS shared_by_name,
       grp.name            AS via_group_name,
-      -- Personal reaction: prefer recommendation_reactions (new table), fall back to delivery
-      COALESCE(rr.reaction, rd.reaction)                               AS reaction,
-      -- Aggregate totals
+      -- Aggregate totals visible to all recipients
       (SELECT COUNT(*) FROM recommendation_deliveries d2
-       WHERE d2.recommendation_id = r.id AND d2.reaction = 'like')    AS likes,
+       WHERE d2.recommendation_id = r.id AND d2.reaction = 'like')     AS likes,
       (SELECT COUNT(*) FROM recommendation_deliveries d2
-       WHERE d2.recommendation_id = r.id AND d2.is_invested = true)   AS reco_acted
+       WHERE d2.recommendation_id = r.id AND d2.is_invested = true)    AS reco_acted
     FROM recommendation_deliveries rd
     JOIN ic_recommendations r    ON r.id   = rd.recommendation_id
     JOIN user_profiles rec_up    ON rec_up.id = r.recommender_id
     LEFT JOIN user_profiles sb_up ON sb_up.id = rd.shared_by_id
     LEFT JOIN ic_groups grp       ON grp.id   = rd.via_group_id
-    LEFT JOIN recommendation_reactions rr
-           ON rr.reco_id = r.id AND rr.user_id = ${userId}
     WHERE rd.delivered_to_user_id = ${userId}
     ORDER BY r.created_at DESC
   `;
+
+  // Overlay reactions from recommendation_reactions (new unified table).
+  // This runs as a separate query so a failure here never breaks the main data load.
+  let rxMap = {};
+  try {
+    if (rows.length > 0) {
+      const recoIds = rows.map(r => r.id);
+      const rxRows = await sql`
+        SELECT reco_id, reaction
+        FROM recommendation_reactions
+        WHERE user_id = ${userId}
+          AND reco_id = ANY(${recoIds})
+      `;
+      rxMap = Object.fromEntries(rxRows.map(x => [x.reco_id, x.reaction]));
+    }
+  } catch (_) {
+    // If recommendation_reactions is unavailable, fall back to delivery reaction silently
+  }
+
   return rows.map(r => ({
     // Delivery-level fields (personal to this user)
     deliveryId:    r.delivery_id,
-    id:            r.id,          // recommendation id — used for forwarding, exit signals
+    id:            r.id,
     from:          r.from_uid,
     byName:        r.from_name,
     sharedBy:      r.shared_by_id,
@@ -421,13 +436,13 @@ export async function getMyReceivedRecos(userId) {
     date:         r.reco_date ? r.reco_date.toISOString?.().slice(0,10) ?? String(r.reco_date) : null,
     exitSignal:   r.exit_signal,
     exitDate:     r.exit_date,
-    // Personal interaction
+    // Personal interaction — prefer recommendation_reactions, fall back to delivery reaction
     invested:      r.is_invested,
     investedPrice: r.invested_price ? Number(r.invested_price) : null,
-    reaction:      r.reaction || "none",
+    reaction:      rxMap[r.id] || r.reaction || "none",
     hidden:        r.is_hidden,
     // Aggregates
-    likes:         Number(r.likes || 0),
+    likes:         Number(r.likes    || 0),
     recoActed:     Number(r.reco_acted || 0),
   }));
 }
