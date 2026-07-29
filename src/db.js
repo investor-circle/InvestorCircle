@@ -365,7 +365,7 @@ export async function getMyReceivedRecos(userId) {
       rd.id               AS delivery_id,
       rd.via_type, rd.via_group_id, rd.shared_by_id,
       rd.is_invested, rd.invested_price, rd.invested_at,
-      rd.reaction, rd.is_hidden, rd.created_at AS delivered_at,
+      rd.is_hidden, rd.created_at AS delivered_at,
       r.id                AS id,
       r.recommender_id    AS from_uid,
       r.asset_name, r.ticker, r.asset_class,
@@ -380,26 +380,20 @@ export async function getMyReceivedRecos(userId) {
       rec_up.email        AS from_email,
       sb_up.full_name     AS shared_by_name,
       grp.name            AS via_group_name,
-      -- Aggregate totals visible to all recipients
-      -- Likes: union delivery-based reactions + recommendation_reactions (new path)
+      -- Personal reaction: prefer recommendation_reactions (new table), fall back to delivery
+      COALESCE(rr.reaction, rd.reaction)                               AS reaction,
+      -- Aggregate totals
       (SELECT COUNT(*) FROM recommendation_deliveries d2
-       WHERE d2.recommendation_id = r.id AND d2.reaction = 'like') +
-      (SELECT COUNT(*) FROM recommendation_reactions rr2
-       WHERE rr2.reco_id = r.id AND rr2.reaction = 'like'
-         AND NOT EXISTS (
-           SELECT 1 FROM recommendation_deliveries d3
-           WHERE d3.recommendation_id = r.id AND d3.delivered_to_user_id = rr2.user_id
-         ))                                                              AS likes,
+       WHERE d2.recommendation_id = r.id AND d2.reaction = 'like')    AS likes,
       (SELECT COUNT(*) FROM recommendation_deliveries d2
-       WHERE d2.recommendation_id = r.id AND d2.is_invested = true)    AS reco_acted,
-      -- Personal reaction: prefer recommendation_reactions (new), fall back to delivery reaction
-      COALESCE(rr.reaction, rd.reaction)                                AS reaction
+       WHERE d2.recommendation_id = r.id AND d2.is_invested = true)   AS reco_acted
     FROM recommendation_deliveries rd
     JOIN ic_recommendations r    ON r.id   = rd.recommendation_id
     JOIN user_profiles rec_up    ON rec_up.id = r.recommender_id
     LEFT JOIN user_profiles sb_up ON sb_up.id = rd.shared_by_id
     LEFT JOIN ic_groups grp       ON grp.id   = rd.via_group_id
-    LEFT JOIN recommendation_reactions rr ON rr.reco_id = r.id AND rr.user_id = ${userId}
+    LEFT JOIN recommendation_reactions rr
+           ON rr.reco_id = r.id AND rr.user_id = ${userId}
     WHERE rd.delivered_to_user_id = ${userId}
     ORDER BY r.created_at DESC
   `;
