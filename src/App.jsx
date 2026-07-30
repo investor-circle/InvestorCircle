@@ -1671,24 +1671,37 @@ export default function App() {
                       setNotifications(ns => ns.map(x => x.id===n.id ? {...x,is_read:true} : x));
                     }
                     setNotifOpen(false);
-                    // Navigate to reco post page
+
                     const recoTypes = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation'];
+
                     if (recoTypes.includes(n.type)) {
-                      const recoId   = n.metadata?.recoId;
-                      const username = n.metadata?.recommenderUsername;
+                      const recoId   = n.metadata?.recoId   || null;
+                      const username = n.metadata?.recommenderUsername || null;
+
                       if (recoId && username) {
+                        // Best case: go directly to the specific reco
                         window.location.hash = `#/investor/${username}/reco/${recoId}`;
+                      } else if (n.from_user_id && sql) {
+                        // Look up username from from_user_id, then navigate
+                        sql`SELECT username FROM user_profiles WHERE id=${n.from_user_id} AND username IS NOT NULL LIMIT 1`
+                          .then(rows => {
+                            if (!rows[0]?.username) return;
+                            window.location.hash = recoId
+                              ? `#/investor/${rows[0].username}/reco/${recoId}`
+                              : `#/investor/${rows[0].username}`;
+                          }).catch(()=>{});
                       } else if (username) {
                         window.location.hash = `#/investor/${username}`;
                       }
                       return;
                     }
-                    // Navigate to connection's public profile
-                    if (['connection_accepted','connection_rejected'].includes(n.type) && n.from_user_id && sql) {
+
+                    // All connection notification types → requester's public profile
+                    const connTypes = ['connection_request','connection_accepted','connection_rejected'];
+                    if (connTypes.includes(n.type) && n.from_user_id && sql) {
                       sql`SELECT username FROM user_profiles WHERE id=${n.from_user_id} AND username IS NOT NULL LIMIT 1`
-                        .then(rows => {
-                          if (rows[0]?.username) window.location.hash = `#/investor/${rows[0].username}`;
-                        }).catch(()=>{});
+                        .then(rows => { if (rows[0]?.username) window.location.hash = `#/investor/${rows[0].username}`; })
+                        .catch(()=>{});
                     }
                   }}
                 />}
@@ -2101,42 +2114,79 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
             : (n.type==='contact_comment'||n.type==='network_comment') ? '#0ea5b7'
             : '#22863a'
             : '#6d5df5';
-          // Is this notification navigable?
           const isNavReco = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation'].includes(n.type);
-          const isNavConn = ['connection_accepted','connection_rejected'].includes(n.type);
+          const isNavConn = ['connection_request','connection_accepted','connection_rejected'].includes(n.type);
           const isClickable = onNavigate && (isNavReco || isNavConn);
           return (
           <div key={n.id}
             onClick={isClickable ? () => onNavigate(n) : undefined}
-            style={{padding:"12px 18px",borderBottom:"1px solid var(--line)",
-                    background:n.is_read?"transparent":"var(--surface-2)",
-                    display:"flex",gap:12,alignItems:"flex-start",
-                    cursor:isClickable?'pointer':'default',
-                    transition:'background .1s'}}
-            onMouseEnter={isClickable?e=>{e.currentTarget.style.background='var(--surface-2)'}:undefined}
-            onMouseLeave={isClickable?e=>{e.currentTarget.style.background=n.is_read?'transparent':'var(--surface-2)'}:undefined}
+            style={{
+              position: 'relative',
+              padding:  "12px 18px 12px 21px",   // left padding accounts for the 3px border
+              borderBottom: "1px solid var(--line)",
+              borderLeft:   n.is_read
+                ? "3px solid transparent"          // reserve space — no layout shift on mark-read
+                : "3px solid var(--accent)",
+              background:   n.is_read
+                ? "transparent"
+                : "rgba(109,93,245,.08)",
+              display: "flex", gap: 12, alignItems: "flex-start",
+              cursor:  isClickable ? 'pointer' : 'default',
+              transition: 'background .2s, border-left-color .2s',
+            }}
+            onMouseEnter={isClickable ? e => { e.currentTarget.style.background = 'var(--surface-2)'; } : undefined}
+            onMouseLeave={isClickable ? e => { e.currentTarget.style.background = n.is_read ? 'transparent' : 'rgba(109,93,245,.08)'; } : undefined}
           >
-            <div className="av" style={{width:36,height:36,flexShrink:0,background:avBg,fontSize:isEngagement?16:13}}>
+            <div className="av" style={{
+              width: 36, height: 36, flexShrink: 0,
+              background: avBg,
+              fontSize: isEngagement ? 16 : 13,
+            }}>
               {isEngagement ? TYPE_ICON[n.type] : initialsOf(n.from_name||"?")}
             </div>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,lineHeight:1.5}}>
+              <div style={{
+                fontSize:   13,
+                lineHeight: 1.5,
+                fontWeight: n.is_read ? 400 : 600,
+                color:      n.is_read ? 'var(--ink-soft)' : 'var(--ink)',
+              }}>
                 {notifText(n)}
               </div>
-              <div className="muted small">{fmtDate(n.created_at)}</div>
-              {/* Action buttons for connection requests */}
+              <div style={{
+                fontSize:  11,
+                marginTop: 2,
+                color:     n.is_read ? 'var(--muted)' : 'var(--muted)',
+                opacity:   n.is_read ? 0.7 : 1,
+              }}>
+                {fmtDate(n.created_at)}
+                {!n.is_read && (
+                  <span style={{
+                    display: 'inline-block', width: 6, height: 6,
+                    borderRadius: '50%', background: 'var(--accent)',
+                    marginLeft: 6, verticalAlign: 'middle',
+                  }}/>
+                )}
+              </div>
+              {/* Action buttons for connection requests — stopPropagation so row click doesn't fire */}
               {n.type==="connection_request" && !n.is_read && (
                 <div style={{display:"flex",gap:8,marginTop:8}}>
-                  <button className="btn btn-pri btn-sm" onClick={()=>onAccept(n)}><Check size={13}/> Accept</button>
-                  <button className="btn btn-ghost btn-sm" onClick={()=>onReject(n)}><X size={13}/> Decline</button>
+                  <button className="btn btn-pri btn-sm"
+                    onClick={e=>{e.stopPropagation();onAccept(n);}}><Check size={13}/> Accept</button>
+                  <button className="btn btn-ghost btn-sm"
+                    onClick={e=>{e.stopPropagation();onReject(n);}}><X size={13}/> Decline</button>
                 </div>
               )}
               {n.type==="connection_request" && n.is_read && (
                 <span className="pill muted" style={{fontSize:11,marginTop:4}}>Responded</span>
               )}
             </div>
+            {/* Mark-read tick — only for unread non-connection-request notifications */}
             {!n.is_read && n.type!=="connection_request" && (
-              <button className="icon-btn" title="Mark read" onClick={e=>{e.stopPropagation();onRead(n);}}><Check size={14}/></button>
+              <button className="icon-btn" title="Mark read"
+                onClick={e=>{e.stopPropagation();onRead(n);}}>
+                <Check size={14}/>
+              </button>
             )}
           </div>
           );
@@ -4440,8 +4490,19 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
         await dbCreateReco(recoData, me.id, recipients);
         // Fan-out for public recos: in-app notifications + emails to all contacts
         if (isPublic && contacts?.length > 0) {
-          // In-app notifications (existing)
-          const meta = JSON.stringify({ ticker: recoData.ticker, assetName: recoData.assetName, recommenderUsername: me.username || '' });
+          // Query the new reco's ID first so it's in both the notification metadata and email link
+          const recoRows = await sql`SELECT id FROM ic_recommendations WHERE recommender_id=${me.id} ORDER BY created_at DESC LIMIT 1`.catch(()=>[]);
+          const newRecoId = String(recoRows[0]?.id || '');
+          const recoUrl   = newRecoId && me.username
+            ? `https://myinvestorcircle.com/#/investor/${me.username}/reco/${newRecoId}`
+            : `https://myinvestorcircle.com/#/investor/${me.username || ''}`;
+
+          const meta = JSON.stringify({
+            ticker:               recoData.ticker,
+            assetName:            recoData.assetName,
+            recommenderUsername:  me.username || '',
+            recoId:               newRecoId,
+          });
           await Promise.all(
             contacts.map(c =>
               sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
@@ -4454,29 +4515,22 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
                 .catch(() => {})
             )
           );
-          // Email notifications — query reco ID first for a direct link
-          sql`SELECT id FROM ic_recommendations WHERE recommender_id=${me.id} ORDER BY created_at DESC LIMIT 1`
-            .then(rows => {
-              const recoId  = rows[0]?.id;
-              const recoUrl = recoId && me.username
-                ? `https://myinvestorcircle.com/#/investor/${me.username}/reco/${recoId}`
-                : `https://myinvestorcircle.com/#/investor/${me.username || ''}`;
-              contacts.forEach(c => {
-                if (c.email) sendEmail('contact_recommendation', {
-                  to_email:      c.email,
-                  from_name:     me.name     || 'Someone in your circle',
-                  from_username: me.username || '',
-                  ticker:        recoData.ticker,
-                  asset_name:    recoData.assetName,
-                  reco_type:     recoData.recType || 'Buy',
-                  entry_price:   recoData.recoPrice
-                    ? `₹${Number(recoData.recoPrice).toLocaleString('en-IN')}`
-                    : '',
-                  conviction:    recoData.conviction || '',
-                  reco_url:      recoUrl,
-                });
-              });
-            }).catch(() => {});
+          // Emails
+          contacts.forEach(c => {
+            if (c.email) sendEmail('contact_recommendation', {
+              to_email:      c.email,
+              from_name:     me.name     || 'Someone in your circle',
+              from_username: me.username || '',
+              ticker:        recoData.ticker,
+              asset_name:    recoData.assetName,
+              reco_type:     recoData.recType || 'Buy',
+              entry_price:   recoData.recoPrice
+                ? `₹${Number(recoData.recoPrice).toLocaleString('en-IN')}`
+                : '',
+              conviction:    recoData.conviction || '',
+              reco_url:      recoUrl,
+            });
+          });
         }
         await onCreate?.reload?.();
       }
