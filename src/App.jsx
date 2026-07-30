@@ -2136,7 +2136,7 @@ function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, on
               )}
             </div>
             {!n.is_read && n.type!=="connection_request" && (
-              <button className="icon-btn" title="Mark read" onClick={()=>onRead(n)}><Check size={14}/></button>
+              <button className="icon-btn" title="Mark read" onClick={e=>{e.stopPropagation();onRead(n);}}><Check size={14}/></button>
             )}
           </div>
           );
