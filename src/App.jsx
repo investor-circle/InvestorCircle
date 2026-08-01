@@ -977,20 +977,37 @@ export default function App() {
   }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Proactive push opt-in toast — show once per session, 6 s after login,
-  // only if: VAPID is configured, browser supports notifications, and this
-  // user hasn't already opted in or explicitly dismissed it.
+  // only if: VAPID is configured, browser supports notifications, and the
+  // browser-level permission hasn't already been granted or denied.
+  // We check Notification.permission directly (the browser's source of truth)
+  // rather than getPushState, because getPushState requires a localStorage key
+  // that may be absent after a cache clear or on a new device.
   useEffect(() => {
     if (!user?.uid || !VAPID_PUBLIC_KEY || !('Notification' in window)) return;
-    if (getPushState(user.uid) !== 'default') return; // already opted in or denied
+    if (Notification.permission !== 'default') return; // already granted or denied
     if (sessionStorage.getItem(`mic_push_prompted_${user.uid}`) === '1') return; // shown this session
     const t = setTimeout(() => {
-      // Re-check state at fire time (user might have just opted in from the bell panel)
-      if (getPushState(user.uid) === 'default') {
-        setShowPushToast(true);
-      }
+      if (Notification.permission !== 'default') return; // re-check at fire time
+      setShowPushToast(true);
     }, 6000);
     return () => clearTimeout(t);
   }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle deep-link navigation messages sent by the service worker when a
+  // push notification is clicked and the app tab is already open.
+  // sw.js sends: { type: 'MIC_NAVIGATE', url: 'https://myinvestorcircle.com/#/investor/...' }
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const onMessage = (event) => {
+      if (event.data?.type !== 'MIC_NAVIGATE') return;
+      try {
+        const url = new URL(event.data.url);
+        if (url.hash) window.location.hash = url.hash;  // e.g. #/investor/ankur/reco/42
+      } catch { /* malformed URL — ignore */ }
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Register service worker and re-subscribe if this user has previously opted in
   useEffect(() => {
@@ -1089,6 +1106,9 @@ export default function App() {
           sendPush(targetId, {
             title: '🤝 New connection request',
             body:  `${ME?.name || 'Someone'} wants to connect with you`,
+            url:   ME?.username
+              ? `https://myinvestorcircle.com/#/investor/${ME.username}`
+              : 'https://myinvestorcircle.com',
             tag:   'connection_request',
           });
         }).catch(() => {});
@@ -1702,6 +1722,9 @@ export default function App() {
                     sendPush(n.from_user_id, {
                       title: '🤝 Connection accepted',
                       body:  `${ME?.name || 'Someone'} accepted your connection request`,
+                      url:   ME?.username
+                        ? `https://myinvestorcircle.com/#/investor/${ME.username}`
+                        : 'https://myinvestorcircle.com',
                       tag:   'connection_accepted',
                     });
                     await markNotifRead(n.id, ME.id);
@@ -2338,6 +2361,9 @@ function ContactsSection({ connections, setConnections, groups, sharing, setShar
     sendPush(c.user_id, {
       title: '🤝 Connection accepted',
       body:  `${me?.name || 'Someone'} accepted your connection request`,
+      url:   me?.username
+        ? `https://myinvestorcircle.com/#/investor/${me.username}`
+        : 'https://myinvestorcircle.com',
       tag:   'connection_accepted',
     });
     setConnections(await getMyConnections(myId));
@@ -4578,6 +4604,7 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
                 .then(() => sendPush(c.id, {
                     title: '💡 New recommendation in your circle',
                     body:  `${me.name || 'Someone'} posted a new recommendation`,
+                    url:   recoUrl,
                     tag:   'contact_recommendation',
                   }))
                 .catch(() => {})
@@ -7142,7 +7169,7 @@ function RecoComments({ recoId, me }) {
           const meta = JSON.stringify({ ticker, assetName: asset_name, recoId, recommenderUsername: ownerUsername || '' });
           sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
               VALUES (${recommender_id}, 'contact_comment', ${me.id}, ${meta})`
-              .then(()=>sendPush(recommender_id,{title:'💬 New comment on your recommendation',body:`${name} commented on your recommendation${ticker?' · '+ticker:''}`,tag:'contact_comment'}))
+              .then(()=>sendPush(recommender_id,{title:'💬 New comment on your recommendation',body:`${name} commented on your recommendation${ticker?' · '+ticker:''}`,url:ownerUsername&&recoId?`https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${recoId}`:'https://myinvestorcircle.com',tag:'contact_comment'}))
               .catch(() => {});
 
           // Email to owner
@@ -7323,7 +7350,7 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
                 });
                 sql`INSERT INTO notifications (user_id,type,from_user_id,metadata)
                     VALUES (${ownerId},'contact_like',${me.id},${meta})`
-                  .then(()=>sendPush(ownerId,{title:'👍 Someone liked your recommendation',body:`${lName} liked your recommendation${r.ticker?' · '+r.ticker:''}`,tag:'contact_like'}))
+                  .then(()=>sendPush(ownerId,{title:'👍 Someone liked your recommendation',body:`${lName} liked your recommendation${r.ticker?' · '+r.ticker:''}`,url:ownerUsername&&r.id?`https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${r.id}`:'https://myinvestorcircle.com',tag:'contact_like'}))
                   .catch(()=>{});
               }
             }).catch(()=>{});
