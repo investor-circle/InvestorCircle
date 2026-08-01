@@ -298,6 +298,7 @@ tr.hiddenrow > td{opacity:.55;}
 .cap{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
 .spin{animation:spin 1s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
+@keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(16px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}
 .nowrap{white-space:nowrap;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
 
@@ -957,6 +958,9 @@ export default function App() {
   // do NOT use it as the "on" signal, because it reflects whoever previously
   // granted it, not whether THIS user opted in.
   const [pushPermission, setPushPermission] = useState('default');
+  // One-time proactive opt-in toast — shown once per session after login
+  // if the user hasn't enabled or dismissed push notifications yet.
+  const [showPushToast, setShowPushToast] = useState(false);
 
   const getPushState = (uid) => {
     if (typeof Notification === 'undefined' || !uid) return 'default';
@@ -970,6 +974,22 @@ export default function App() {
   useEffect(() => {
     const state = getPushState(user?.uid);
     setPushPermission(state);
+  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Proactive push opt-in toast — show once per session, 6 s after login,
+  // only if: VAPID is configured, browser supports notifications, and this
+  // user hasn't already opted in or explicitly dismissed it.
+  useEffect(() => {
+    if (!user?.uid || !VAPID_PUBLIC_KEY || !('Notification' in window)) return;
+    if (getPushState(user.uid) !== 'default') return; // already opted in or denied
+    if (sessionStorage.getItem(`mic_push_prompted_${user.uid}`) === '1') return; // shown this session
+    const t = setTimeout(() => {
+      // Re-check state at fire time (user might have just opted in from the bell panel)
+      if (getPushState(user.uid) === 'default') {
+        setShowPushToast(true);
+      }
+    }, 6000);
+    return () => clearTimeout(t);
   }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Register service worker and re-subscribe if this user has previously opted in
@@ -1017,6 +1037,8 @@ export default function App() {
   /** Request permission — only call this on explicit user gesture. */
   const requestPushPermission = async () => {
     if (!('Notification' in window) || !user?.uid) return;
+    setShowPushToast(false); // dismiss toast regardless of outcome
+    if (user?.uid) sessionStorage.setItem(`mic_push_prompted_${user.uid}`, '1');
     const result = await Notification.requestPermission();
     if (result === 'granted') {
       // Record that THIS user explicitly opted in
@@ -1451,6 +1473,40 @@ export default function App() {
   return (
     <div className="app">
       <style>{STYLES}</style>
+
+      {/* ── Proactive push opt-in toast ─────────────────────────────────────── */}
+      {showPushToast && (
+        <div style={{
+          position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)',
+          zIndex:9999, background:'var(--surface)', border:'1px solid var(--line)',
+          borderRadius:14, boxShadow:'0 8px 32px rgba(0,0,0,0.18)',
+          padding:'14px 18px', display:'flex', alignItems:'center', gap:12,
+          maxWidth:420, width:'calc(100vw - 32px)',
+          animation:'slideUp 0.3s cubic-bezier(0.4,0,0.2,1)',
+        }}>
+          <span style={{fontSize:22, flexShrink:0}}>🔔</span>
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{fontWeight:700, fontSize:13, marginBottom:2}}>Stay in the loop</div>
+            <div style={{fontSize:12, color:'var(--muted)', lineHeight:1.4}}>
+              Enable push notifications so you never miss a recommendation from your circle.
+            </div>
+          </div>
+          <div style={{display:'flex', flexDirection:'column', gap:6, flexShrink:0}}>
+            <button className="btn btn-pri btn-sm" style={{whiteSpace:'nowrap'}}
+              onClick={() => { requestPushPermission(); }}>
+              Enable
+            </button>
+            <button style={{background:'none', border:'none', cursor:'pointer', fontSize:11, color:'var(--muted)', textAlign:'center'}}
+              onClick={() => {
+                setShowPushToast(false);
+                if (user?.uid) sessionStorage.setItem(`mic_push_prompted_${user.uid}`, '1');
+              }}>
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="shell">
         {/* Mobile nav backdrop — click to close drawer */}
         <div className={"nav-backdrop"+(navOpen?" open":"")} onClick={()=>setNavOpen(false)}/>
@@ -1642,6 +1698,12 @@ export default function App() {
                     if (reqInfo?.email) {
                       sendEmail('connection_accepted', { to_email:reqInfo.email, their_name:ME.name, their_username:ME.username });
                     }
+                    // Push notification to the person whose request was just accepted
+                    sendPush(n.from_user_id, {
+                      title: '🤝 Connection accepted',
+                      body:  `${ME?.name || 'Someone'} accepted your connection request`,
+                      tag:   'connection_accepted',
+                    });
                     await markNotifRead(n.id, ME.id);
                     const [conns, notifs] = await Promise.all([getMyConnections(ME.id), getMyNotifications(ME.id)]);
                     setConnections(conns); setNotifications(notifs);
@@ -2272,6 +2334,12 @@ function ContactsSection({ connections, setConnections, groups, sharing, setShar
     if (reqInfo?.email) {
       sendEmail('connection_accepted', { to_email:reqInfo.email, their_name:me?.name||'', their_username:me?.username||'' });
     }
+    // Push notification to the person whose request was accepted
+    sendPush(c.user_id, {
+      title: '🤝 Connection accepted',
+      body:  `${me?.name || 'Someone'} accepted your connection request`,
+      tag:   'connection_accepted',
+    });
     setConnections(await getMyConnections(myId));
     setBusy(b=>({...b,[c.connection_id]:false}));
   };
