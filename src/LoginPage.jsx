@@ -7,6 +7,7 @@ import { sql } from "./supabaseClient";
 
 /* ── Transactional email helper ─── */
 const EMAIL_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
+const RESET_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/reset';
 const sendEmail = (type, payload) =>
   fetch(EMAIL_API, {
     method:  'POST',
@@ -55,11 +56,16 @@ export default function LoginPage() {
   // If user arrived via a referral link (?ref=username), also default to Sign Up.
   const referralCode = localStorage.getItem("mic_ref");
 
-  const [tab,     setTab]     = useState(pendingUsername || referralCode ? "signup" : "login");
-  const [busy,    setBusy]    = useState(false);
-  const [err,     setErr]     = useState("");
-  const [showPw,  setShowPw]  = useState(false);
-  const [showCpw, setShowCpw] = useState(false);
+  // tab: "login" | "signup" | "forgot"
+  const [tab,        setTab]        = useState(pendingUsername || referralCode ? "signup" : "login");
+  const [busy,       setBusy]       = useState(false);
+  const [err,        setErr]        = useState("");
+  const [showPw,     setShowPw]     = useState(false);
+  const [showCpw,    setShowCpw]    = useState(false);
+
+  // Forgot password state
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotDone,  setForgotDone]  = useState(false);
 
   // ── Login fields ────────────────────────────────────────────────────────────
   const [loginEmail,    setLoginEmail]    = useState("");
@@ -142,7 +148,31 @@ export default function LoginPage() {
     }
   };
 
-  const switchTab = (t) => { setTab(t); setErr(""); };
+  const handleForgot = async () => {
+    if (!forgotEmail.trim()) { setErr("Please enter your email address."); return; }
+    setBusy(true); setErr("");
+    try {
+      const res = await fetch(RESET_API, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
+      });
+      // Always show "check your inbox" — even if the email doesn't exist
+      // (prevents revealing which emails are registered).
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        // Only surface server config errors, not "user not found"
+        if (res.status === 500) throw new Error(data.error || "Server error");
+      }
+      setForgotDone(true);
+    } catch (e) {
+      setErr("Something went wrong. Please try again or contact support.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const switchTab = (t) => { setTab(t); setErr(""); setForgotDone(false); setForgotEmail(""); };
 
   // ── Username availability check (debounced 500ms) ───────────────────────────
   const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
@@ -309,12 +339,79 @@ export default function LoginPage() {
               {busy ? "Signing in…" : "Sign in →"}
             </button>
 
-            <div style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: "#8a8daa" }}>
+            <div style={{ textAlign: "center", marginTop: 14, fontSize: 13, color: "#8a8daa" }}>
+              <button onClick={() => switchTab("forgot")} style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: "#8a8daa", fontSize: 13, fontFamily: "inherit", padding: 0,
+                textDecoration: "underline", textUnderlineOffset: 3,
+              }}>Forgot password?</button>
+            </div>
+
+            <div style={{ textAlign: "center", marginTop: 10, fontSize: 13, color: "#8a8daa" }}>
               New here?{" "}
               <button onClick={() => switchTab("signup")} style={{
                 background: "none", border: "none", cursor: "pointer",
                 color: "#6d5df5", fontWeight: 700, fontSize: 13, fontFamily: "inherit", padding: 0,
               }}>Create an account →</button>
+            </div>
+          </>)}
+
+          {/* ── FORGOT PASSWORD TAB ── */}
+          {tab === "forgot" && (<>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#13142b", marginBottom: 4 }}>Reset your password</div>
+            <div style={{ fontSize: 14, color: "#8a8daa", marginBottom: 22 }}>
+              {forgotDone
+                ? "Check your inbox for next steps."
+                : "Enter your account email and we'll send you a reset link."}
+            </div>
+
+            {forgotDone ? (
+              /* ── Confirmation state ── */
+              <div style={{
+                background: "#f0fdf4", border: "1px solid #86efac",
+                borderRadius: 12, padding: "20px 18px", marginBottom: 20, textAlign: "center",
+              }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>📬</div>
+                <div style={{ fontWeight: 700, color: "#166534", marginBottom: 6 }}>Email sent!</div>
+                <div style={{ fontSize: 13, color: "#15803d", lineHeight: 1.6 }}>
+                  If <strong>{forgotEmail}</strong> is registered, you'll receive a
+                  password reset link within a minute. Check your spam folder if you
+                  don't see it.
+                </div>
+              </div>
+            ) : (
+              /* ── Email input form ── */
+              <>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={label}>Email address</label>
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={e => { setForgotEmail(e.target.value); setErr(""); }}
+                    onKeyDown={e => e.key === "Enter" && handleForgot()}
+                    placeholder="you@example.com"
+                    autoFocus
+                    style={inputStyle}
+                    onFocus={focusOn} onBlur={focusOff}
+                  />
+                </div>
+
+                {err && <ErrorBox msg={err}/>}
+
+                <button
+                  onClick={handleForgot}
+                  disabled={!forgotEmail.trim() || busy}
+                  style={btnStyle(!forgotEmail.trim() || busy)}>
+                  {busy ? "Sending…" : "Send reset link →"}
+                </button>
+              </>
+            )}
+
+            <div style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: "#8a8daa" }}>
+              <button onClick={() => switchTab("login")} style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: "#6d5df5", fontWeight: 700, fontSize: 13, fontFamily: "inherit", padding: 0,
+              }}>← Back to sign in</button>
             </div>
           </>)}
 
