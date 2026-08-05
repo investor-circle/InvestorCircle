@@ -14,6 +14,7 @@
 
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
+import { getAnalytics, logEvent as _logEvent } from "firebase/analytics";
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -22,6 +23,7 @@ const firebaseConfig = {
   storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId:     import.meta.env.VITE_FIREBASE_MEASUREMENT_ID, // G-XXXXXXXXXX
 };
 
 // Primary app — manages the currently signed-in user's session
@@ -30,7 +32,22 @@ export const auth = getAuth(firebaseApp);
 
 // Secondary app instance — used by admin to create new user accounts
 // without signing out the current admin session.
-// (Firebase's createUserWithEmailAndPassword normally signs IN as the new user,
-// which would log the admin out. Using a separate app instance prevents this.)
 export const secondaryApp = initializeApp(firebaseConfig, "secondary");
 export const secondaryAuth = getAuth(secondaryApp);
+
+// Analytics — only initialised when measurementId is present (not in dev without it).
+// Use the exported `track` helper rather than calling logEvent directly.
+let _analytics = null;
+try {
+  if (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID) {
+    _analytics = getAnalytics(firebaseApp);
+  }
+} catch { /* analytics unavailable in this environment */ }
+
+export const analytics = _analytics;
+
+/** Safe logEvent wrapper — no-ops silently if analytics is not initialised. */
+export const track = (eventName, params = {}) => {
+  if (!_analytics) return;
+  try { _logEvent(_analytics, eventName, params); } catch { /* never crash for analytics */ }
+};
