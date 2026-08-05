@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "./AuthContext";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { auth } from "./firebase";
+import { auth, track } from "./firebase";
 import { sql } from "./supabaseClient";
 
 /* ── Transactional email helper ─── */
@@ -86,6 +86,7 @@ export default function LoginPage() {
     setBusy(true); setErr("");
     try {
       await login(loginEmail.trim(), loginPassword);
+      track('login', { method: 'email' });
       // onAuthStateChanged in AuthContext handles everything after this
     } catch (e) {
       setErr(friendlyError(e.code));
@@ -137,6 +138,7 @@ export default function LoginPage() {
       // Now set Firebase displayName — this triggers onAuthStateChanged in AuthContext,
       // which will read back the DB (now already containing the correct names).
       await updateProfile(cred.user, { displayName: fullName });
+      track('sign_up', { method: 'email' });
 
       // Send welcome / security-confirmation email (fire-and-forget).
       sendEmail('signup_welcome', { to_email: signupEmail.trim(), first_name: firstName.trim(), full_name: fullName });
@@ -165,6 +167,7 @@ export default function LoginPage() {
         if (res.status === 500) throw new Error(data.error || "Server error");
       }
       setForgotDone(true);
+      track('password_reset_requested');
     } catch (e) {
       setErr("Something went wrong. Please try again or contact support.");
     } finally {
