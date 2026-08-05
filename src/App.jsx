@@ -23,6 +23,7 @@ import { useAuth } from "./AuthContext";
 import { sql } from "./supabaseClient";
 import { createUserWithEmailAndPassword, updateProfile as fbUpdateProfile, confirmPasswordReset } from "firebase/auth";
 import { secondaryAuth, auth as primaryAuth } from "./firebase";
+import { track } from "./firebase";
 import LoginPage from "./LoginPage";
 import {
   getMyConnections, sendConnectionRequest, acceptConnection, rejectConnection, removeConnection,
@@ -1067,6 +1068,7 @@ export default function App() {
     if (user?.uid) sessionStorage.setItem(`mic_push_prompted_${user.uid}`, '1');
     const result = await Notification.requestPermission();
     if (result === 'granted') {
+      track('push_enabled');
       // Record that THIS user explicitly opted in
       localStorage.setItem(`mic_push_on_${user.uid}`,  '1');
       localStorage.removeItem(`mic_push_off_${user.uid}`);
@@ -1105,6 +1107,7 @@ export default function App() {
     if (!user) return;
     try {
       await sendConnectionRequest(user.uid, targetId);
+      track('connection_sent');
       sql`SELECT email FROM user_profiles WHERE id=${targetId} LIMIT 1`
         .then(rows => {
           if (rows[0]?.email) sendEmail('connection_request', {
@@ -1465,8 +1468,8 @@ export default function App() {
   const openSecurity = (ticker, name) => { setSecurityTicker({ ticker, name }); setPage('sec_intel'); };
   const page    = isInv ? investorPage : adminPage;
   const setPage = isInv
-    ? (p) => { setInvestorPage(p); setNavOpen(false); }
-    : (p) => { setAdminPage(p); };
+    ? (p) => { setInvestorPage(p); setNavOpen(false); track('page_view', { page_name: p }); }
+    : (p) => { setAdminPage(p); track('page_view', { page_name: p }); };
   const canCreateGroups = configs.groupCreationPolicy==="all";
 
   const navSections = isInv ? [
@@ -1732,6 +1735,7 @@ export default function App() {
                       sql`SELECT email, username FROM user_profiles WHERE id = ${n.from_user_id} LIMIT 1`
                         .then(r => r[0]).catch(() => null),
                     ]);
+                    track('connection_accepted');
                     if (reqInfo?.email) {
                       sendEmail('connection_accepted', { to_email:reqInfo.email, their_name:ME.name, their_username:ME.username });
                     }
@@ -4599,6 +4603,13 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
     if (sql && me?.id) {
       try {
         await dbCreateReco(recoData, me.id, recipients);
+        track('reco_created', {
+          rec_type:    recoData.recType  || 'Buy',
+          asset_class: recoData.assetClass || '',
+          is_public:   !!isPublic,
+          has_ticker:  !!recoData.ticker,
+          conviction:  recoData.conviction || '',
+        });
         // Fan-out for public recos: in-app notifications + emails to all contacts
         if (isPublic && contacts?.length > 0) {
           // Query the new reco's ID first so it's in both the notification metadata and email link
@@ -5290,6 +5301,7 @@ function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProf
       const _recoId = String(recoId);
       const _userId = String(viewerUser.uid);
       if (next) {
+        track('reco_liked');
         sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction)
             VALUES(${_recoId},${_userId},'like')
             ON CONFLICT(reco_id,user_id) DO UPDATE SET reaction='like'`
@@ -13210,6 +13222,7 @@ function ResetPasswordPage({ oobCode, onDone }) {
     try {
       // primaryAuth is the same Firebase auth instance used throughout App.jsx
       await confirmPasswordReset(primaryAuth, oobCode, newPw);
+      track('password_reset_completed');
       setDone(true);
     } catch (e) {
       if (e.code === 'auth/invalid-action-code' || e.code === 'auth/expired-action-code') {
