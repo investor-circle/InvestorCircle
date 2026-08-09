@@ -12,6 +12,7 @@
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
     "firebase": "^11.0.0",
+    "firebase-admin": "^12.7.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
     "lucide-react": "^0.383.0",
