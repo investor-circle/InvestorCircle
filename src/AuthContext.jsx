@@ -7,6 +7,16 @@ const AuthContext = createContext(null);
 
 const ADMIN_EMAILS = ["ankur.citm@gmail.com"];
 
+// Phase 2 authenticated server-side profile endpoints (see api/profile/*.js).
+// Each falls back to the direct-Neon path below when unavailable (network
+// error, misconfiguration, etc) so a server-side issue never itself breaks
+// login.
+const API_BASE = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/profile';
+const PROFILE_ME_API         = `${API_BASE}/me`;
+const PROFILE_BLACKLIST_API  = `${API_BASE}/blacklist-check`;
+const PROFILE_SYNC_API       = `${API_BASE}/sync`;
+const PROFILE_UPDATE_API     = `${API_BASE}/update`;
+
 export function AuthProvider({ children }) {
   const [user,        setUser]        = useState(null);
   const [profile,     setProfile]     = useState(null);
@@ -18,7 +28,26 @@ export function AuthProvider({ children }) {
       if (firebaseUser) {
         // ── Blacklist check ───────────────────────────────────────
         // Hard-deleted users are blocked immediately on any login attempt.
-        if (sql) {
+        // Phase 2b: try the authenticated server check first; fall back to
+        // the direct-Neon query, unchanged, if the API is unreachable.
+        let blacklistChecked = false;
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          const res = await fetch(PROFILE_BLACKLIST_API, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            blacklistChecked = true;
+            if (data?.blocked) {
+              await signOut(auth);      // force sign-out
+              setAuthLoading(false);
+              return;
+            }
+          }
+        } catch (_) { /* fall through to legacy path */ }
+
+        if (!blacklistChecked && sql) {
           try {
             const blocked = await sql`
               SELECT id FROM deleted_users WHERE id = ${firebaseUser.uid} LIMIT 1
@@ -36,7 +65,46 @@ export function AuthProvider({ children }) {
         const fullName = firebaseUser.displayName || firebaseUser.email.split("@")[0];
         setRole(isAdminEmail ? "admin" : "investor");
 
-        if (sql) {
+        // Phase 2a: try the authenticated server read first. Only an existing
+        // profile row (200) is treated as a hit; anything else (404 = no
+        // profile yet, network error, non-200) falls through to the existing
+        // direct-Neon create/sync path unchanged below.
+        let profileFromApi = null;
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          const res = await fetch(PROFILE_ME_API, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.profile) profileFromApi = data.profile;
+          }
+        } catch (_) { /* fall through to legacy path */ }
+
+        // Phase 2c: if no existing profile was found via the read API above,
+        // try the authenticated server-side create/sync next, before falling
+        // back to the direct-Neon upsert unchanged below.
+        let syncedViaApi = false;
+        if (!profileFromApi) {
+          try {
+            const idToken = await firebaseUser.getIdToken();
+            const res = await fetch(PROFILE_SYNC_API, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${idToken}` },
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.profile) {
+                setProfile(data.profile);
+                syncedViaApi = true;
+              }
+            }
+          } catch (_) { /* fall through to legacy path */ }
+        }
+
+        if (profileFromApi) {
+          setProfile(profileFromApi);
+        } else if (!syncedViaApi && sql) {
           try {
             const rows = await sql`
               INSERT INTO user_profiles (id, email, full_name, is_admin, first_name, last_name)
@@ -87,13 +155,32 @@ export function AuthProvider({ children }) {
   const login  = (email, password) => signInWithEmailAndPassword(auth, email, password);
   const logout = () => signOut(auth);
 
-  // Update first/last name in Neon and local profile state
+  // Update first/last name in Neon and local profile state.
+  // Phase 2d: try the authenticated server-side update first; fall back to
+  // the direct-Neon UPDATE, unchanged, if the API is unreachable.
   const updateProfile = async (firstName, lastName) => {
     if (!user || !firstName.trim()) return { error: "First name is required" };
     const fn = firstName.trim();
     const ln = (lastName || "").trim();
     const fullName = `${fn} ${ln}`.trim();
-    if (sql) {
+
+    let updatedViaApi = false;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch(PROFILE_UPDATE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ firstName: fn, lastName: ln }),
+      });
+      if (res.ok) {
+        updatedViaApi = true;
+      } else if (res.status === 400) {
+        const data = await res.json().catch(() => ({}));
+        return { error: data.error || "First name is required" };
+      }
+    } catch (_) { /* fall through to legacy path */ }
+
+    if (!updatedViaApi && sql) {
       try {
         await sql`
           UPDATE user_profiles
