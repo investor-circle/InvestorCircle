@@ -166,24 +166,24 @@ export function AuthProvider({ children }) {
 
     let updatedViaApi = false;
     try {
-      console.log('[DEBUG updateProfile] calling', PROFILE_UPDATE_API);
+      alert('DEBUG: updateProfile entered, calling ' + PROFILE_UPDATE_API);
       const idToken = await user.getIdToken();
       const res = await fetch(PROFILE_UPDATE_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ firstName: fn, lastName: ln }),
       });
-      console.log('[DEBUG updateProfile] response status', res.status);
+      alert('DEBUG: response status ' + res.status);
       if (res.ok) {
         updatedViaApi = true;
       } else if (res.status === 400) {
         const data = await res.json().catch(() => ({}));
         return { error: data.error || "First name is required" };
       } else {
-        console.log('[DEBUG updateProfile] non-ok, non-400 status, falling back');
+        alert('DEBUG: non-ok, non-400 status, falling back');
       }
     } catch (e) {
-      console.log('[DEBUG updateProfile] threw exception, falling back:', e);
+      alert('DEBUG: threw exception, falling back: ' + (e && e.message));
     }
 
     if (!updatedViaApi && sql) {
