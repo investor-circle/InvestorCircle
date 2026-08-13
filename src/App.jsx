@@ -2064,6 +2064,7 @@ export default function App() {
           userId={user?.uid}
           username={ME.username}
           patchProfile={patchProfile}
+          updateProfile={updateProfile}
           onClose={()=>setProfileEditOpen(false)}
         />
       )}
@@ -6495,6 +6496,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
 
 /* ── ProfileEditModal — standalone overlay triggered from the top-nav dropdown ── */
 function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
+                           updateProfile=null,
                            claimMode=false, claimToken=null, unclaimedProfile=null, onClaimSuccess=null }) {
   const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
   const [firstName,    setFirstName]    = useState(profile?.first_name || '');
@@ -6642,21 +6644,50 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
     if (!sql || !userId) return;
     setSaving(true); setErr('');
     const fn = firstName.trim(), ln = lastName.trim();
+    const fullName = [fn,ln].filter(Boolean).join(' ')||null;
+
+    // Phase 2d: route the name update through the same authenticated
+    // api/profile/update.js endpoint AuthContext.updateProfile() already uses
+    // (it falls back to a direct-Neon UPDATE internally if the API is
+    // unreachable, unchanged), so both edit screens stay consistent. Only
+    // when a first name is actually entered — updateProfile() requires one,
+    // whereas this form has always allowed clearing it to blank via the
+    // legacy path below.
+    let nameUpdatedViaApi = false;
+    if (fn && updateProfile) {
+      const result = await updateProfile(fn, ln);
+      if (result?.error) { setErr(result.error); setSaving(false); return; }
+      nameUpdatedViaApi = true;
+    }
+
     try {
-      await sql`UPDATE user_profiles SET
-        first_name=${fn||null}, last_name=${ln||null},
-        full_name=${[fn,ln].filter(Boolean).join(' ')||null},
-        avatar_color=${avatarColor||null},
-        bio=${bio||null},
-        twitter_url=${socials.twitter||null}, linkedin_url=${socials.linkedin||null},
-        telegram_url=${socials.telegram||null}, instagram_url=${socials.instagram||null},
-        registration_status=${regStatus},
-        sebi_reg_number=${isSebi?(sebiNum||null):null},
-        sebi_reg_valid_till=${isSebi?(sebiTill||null):null},
-        sebi_firm_name=${isSebi?(sebiFirm||null):null}
-      WHERE id=${userId}`;
+      if (nameUpdatedViaApi) {
+        await sql`UPDATE user_profiles SET
+          avatar_color=${avatarColor||null},
+          bio=${bio||null},
+          twitter_url=${socials.twitter||null}, linkedin_url=${socials.linkedin||null},
+          telegram_url=${socials.telegram||null}, instagram_url=${socials.instagram||null},
+          registration_status=${regStatus},
+          sebi_reg_number=${isSebi?(sebiNum||null):null},
+          sebi_reg_valid_till=${isSebi?(sebiTill||null):null},
+          sebi_firm_name=${isSebi?(sebiFirm||null):null}
+        WHERE id=${userId}`;
+      } else {
+        await sql`UPDATE user_profiles SET
+          first_name=${fn||null}, last_name=${ln||null},
+          full_name=${fullName},
+          avatar_color=${avatarColor||null},
+          bio=${bio||null},
+          twitter_url=${socials.twitter||null}, linkedin_url=${socials.linkedin||null},
+          telegram_url=${socials.telegram||null}, instagram_url=${socials.instagram||null},
+          registration_status=${regStatus},
+          sebi_reg_number=${isSebi?(sebiNum||null):null},
+          sebi_reg_valid_till=${isSebi?(sebiTill||null):null},
+          sebi_firm_name=${isSebi?(sebiFirm||null):null}
+        WHERE id=${userId}`;
+      }
       patchProfile?.({
-        first_name: fn, last_name: ln, full_name: [fn,ln].filter(Boolean).join(' '),
+        first_name: fn, last_name: ln, full_name: fullName,
         avatar_color: avatarColor, bio,
         twitter_url: socials.twitter, linkedin_url: socials.linkedin,
         telegram_url: socials.telegram, instagram_url: socials.instagram,

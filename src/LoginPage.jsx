@@ -8,6 +8,10 @@ import { sql } from "./supabaseClient";
 /* ── Transactional email helper ─── */
 const EMAIL_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
 const RESET_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/reset';
+
+/* ── Phase 2e: authenticated server-side profile endpoints ─── */
+const USERNAME_AVAILABLE_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/profile/username-available';
+const SIGNUP_API             = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/profile/signup';
 const sendEmail = (type, payload) =>
   fetch(EMAIL_API, {
     method:  'POST',
@@ -113,7 +117,27 @@ export default function LoginPage() {
       // in AuthContext, which reads back the DB. If the DB write hasn't happened
       // yet, AuthContext falls back to email.split("@")[0] as first_name and
       // overwrites the profile state with the wrong name.
-      if (sql) {
+      //
+      // Phase 2e: try the authenticated server-side write first; fall back to
+      // the direct-Neon insert, unchanged, if the API is unreachable.
+      let signupWrittenViaApi = false;
+      try {
+        const idToken = await cred.user.getIdToken();
+        const res = await fetch(SIGNUP_API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            username: username.trim(),
+          }),
+        });
+        if (res.ok) signupWrittenViaApi = true;
+      } catch (dbErr) {
+        // Non-fatal — falls through to the direct-Neon path below.
+      }
+
+      if (!signupWrittenViaApi && sql) {
         try {
           await sql`
             INSERT INTO user_profiles (id, email, full_name, first_name, last_name, is_admin, username)
@@ -178,12 +202,25 @@ export default function LoginPage() {
   const switchTab = (t) => { setTab(t); setErr(""); setForgotDone(false); setForgotEmail(""); };
 
   // ── Username availability check (debounced 500ms) ───────────────────────────
+  // Phase 2e: try the public, availability-only server endpoint first (no
+  // Firebase account/token exists yet at this point in the flow); fall back
+  // to the direct-Neon query, unchanged, if the API is unreachable.
   const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
   React.useEffect(() => {
     if (!username) { setUnStatus("idle"); return; }
     if (!USERNAME_RE.test(username)) { setUnStatus("invalid"); return; }
     setUnStatus("checking");
     const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`${USERNAME_AVAILABLE_API}?username=${encodeURIComponent(username)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data?.available === "boolean") {
+            setUnStatus(data.available ? "available" : "taken");
+            return;
+          }
+        }
+      } catch { /* fall through to legacy path */ }
       try {
         if (!sql) { setUnStatus("available"); return; }
         const rows = await sql`SELECT id FROM user_profiles WHERE username = ${username} LIMIT 1`;
