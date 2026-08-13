@@ -128,3 +128,142 @@ verified against the actual code rather than trusted blindly.
   production-impacting (deployment config, schema changes, anything affecting
   `main`), flag it and describe the intended approach before writing code —
   and inspect the real repository/configuration first rather than assuming.
+
+## Merge & Deployment Guardrails
+
+### 1. Scope check before merge
+
+Before merging any PR into `main`:
+
+- Confirm the PR is intentionally targeting `main`.
+- Confirm the working tree is clean.
+- Review `git diff main...HEAD --stat` and the complete diff.
+- Confirm all changed files are related to the stated purpose of the PR.
+- If unexpected files, unrelated functionality, or unexplained changes are
+  found, STOP and report them. Do not merge.
+
+### 2. Build and validation
+
+Before merge:
+
+- Run the project's production build (`npm run build` or the appropriate
+  existing build command).
+- Run all available automated tests, lint checks, syntax checks, and other
+  repository validation that is practical.
+- Existing unrelated warnings may be reported, but any NEW error introduced
+  by the PR must block the merge.
+
+If the production build fails, DO NOT merge.
+
+### 3. Secret and credential protection
+
+Before merge, inspect the diff for accidental exposure of:
+
+- Firebase service-account credentials
+- Neon/Postgres connection strings
+- API keys or private tokens
+- passwords
+- `.env` files or other credential files
+- private keys/certificates
+
+Never commit or merge real credentials.
+If a credential or secret is discovered, STOP immediately and report it.
+
+### 4. Security review for auth/database/API changes
+
+For any PR involving authentication, authorization, database access, API
+endpoints, or user/profile data:
+
+- Verify Firebase authentication tokens are validated server-side where
+  required.
+- Derive user identity/UID from the verified token, never from untrusted
+  request parameters or request bodies.
+- Do not introduce `VITE_DATABASE_URL` or other privileged database
+  credentials into new browser/client code.
+- Server APIs should use server-only database credentials.
+- Avoid `SELECT *` and `RETURNING *` in APIs that return data to the browser.
+  Explicitly select only the fields required by the API.
+- Never expose sensitive fields such as SEBI information, consent
+  information, claim tokens/status, private credentials, or other sensitive
+  user data unless explicitly required and approved.
+- Review CORS and authorization behavior for new authenticated endpoints.
+- Do not modify production database schema, credentials, roles, or
+  permissions without explicit user approval.
+
+Any security concern that cannot be confidently resolved must block the
+merge.
+
+### 5. Database safety
+
+For database-related changes:
+
+- Do not perform destructive schema changes automatically.
+- Do not drop tables, columns, indexes, or data without explicit approval.
+- Do not modify production database credentials or permissions without
+  explicit approval.
+- Treat checked-in schema files as potentially stale if application code
+  indicates otherwise; verify against the actual database when necessary.
+- Prefer narrowly scoped queries and explicitly selected columns.
+
+### 6. Deployment verification
+
+After a successful merge:
+
+- Verify that `main` contains the merged commit.
+- Verify that the GitHub deployment/build starts and completes successfully.
+- Verify the Vercel production deployment succeeds when Vercel is the
+  production deployment platform.
+- If deployment fails, STOP and report the failure. Do not automatically
+  make additional fixes, create another PR, or repeatedly redeploy without
+  user direction.
+
+### 7. Human smoke testing
+
+For major user-facing changes, identify 3–5 critical user journeys that
+should be manually tested after deployment. Keep this list short and
+practical. Do not require the user to manually test every small
+implementation detail when automated validation already covers it. For
+example, authentication/profile changes may require:
+
+- existing-user login
+- new-user signup
+- profile update
+- logout/login again
+
+### 8. Automatic merge policy
+
+Claude may merge a PR automatically when ALL of the following are true:
+
+- PR targets `main`.
+- Scope is understood and appropriate.
+- No unexpected files or unrelated changes are present.
+- Production build passes.
+- Relevant automated tests/checks pass.
+- No secrets or credentials are exposed.
+- Security review passes for security-sensitive changes.
+- No unapproved production schema/credential/permission changes are
+  present.
+- The PR is otherwise in a clean/mergeable state.
+
+If any of these conditions fail or Claude is uncertain, DO NOT merge.
+Report the specific issue and wait for user approval.
+
+### 9. No autonomous repair loop
+
+If a PR or deployment fails: detect → report → stop.
+
+Do NOT automatically enter a cycle of change → deploy → fail → change again
+→ deploy again without explicit user direction. Small, obvious fixes may be
+proposed, but the user must decide whether to proceed when the failure is
+material or the cause is uncertain.
+
+### 10. Preserve the existing principle of small, logical phases
+
+Do not split every tiny change into a separate PR merely for the sake of
+process. Prefer:
+
+logical phase → implementation → automated validation/security review →
+Preview/production smoke test → merge
+
+For larger migrations, divide work into sensible phases rather than dozens
+of tiny commits.
