@@ -9049,7 +9049,7 @@ function InstrumentAddForm({ onAdded }) {
 // Phase 3: API-first, fallback-to-direct-Neon (mirrors the pattern in src/db.js).
 // Admin authorization is enforced server-side in api/admin/sebi.js — never
 // trust the client-side userIsAdmin flag as proof, it only gates the UI.
-const ADMIN_SEBI_API = (import.meta.env.VITE_CAS_API_URL || "https://investor-circle.vercel.app") + "/api/admin/sebi";
+const ADMIN_SEBI_API = (import.meta.env.VITE_CAS_API_URL || "https://investor-circle.vercel.app") + "/api/data?resource=admin-sebi";
 async function adminSebiApi(user, opts = {}) {
   if (!user) return { ok: false, infra: true };
   try {

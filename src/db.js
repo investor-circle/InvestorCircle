@@ -67,7 +67,7 @@ async function callApi(path, { method = "GET", body } = {}) {
  *   direction: 'sent' = I requested | 'received' = they requested
  */
 export async function getMyConnections(myId) {
-  const api = await callApi("/connections");
+  const api = await callApi("/data?resource=connections");
   if (api.ok) return api.data.connections || [];
   if (api.denied) return [];
   if (!sql) return [];
@@ -99,7 +99,7 @@ export async function getMyConnections(myId) {
  * Returns { connection } on success, { error } if one already exists.
  */
 export async function sendConnectionRequest(myId, addresseeId) {
-  const api = await callApi("/connections", { method: "POST", body: { action: "send", addresseeId } });
+  const api = await callApi("/data?resource=connections", { method: "POST", body: { action: "send", addresseeId } });
   if (api.ok) return api.data;
   if (api.denied) return { error: "not_authorized" };
   if (!sql) throw new Error("Neon not configured");
@@ -127,7 +127,7 @@ export async function sendConnectionRequest(myId, addresseeId) {
 
 /** Accept an incoming connection request. */
 export async function acceptConnection(connectionId, myId) {
-  const api = await callApi("/connections", { method: "POST", body: { action: "accept", connectionId } });
+  const api = await callApi("/data?resource=connections", { method: "POST", body: { action: "accept", connectionId } });
   if (api.ok) return api.data.connection ? { connection: api.data.connection } : { error: "not_found" };
   if (api.denied) return { error: "not_authorized" };
   if (!sql) throw new Error("Neon not configured");
@@ -148,7 +148,7 @@ export async function acceptConnection(connectionId, myId) {
 
 /** Reject an incoming connection request. */
 export async function rejectConnection(connectionId, myId) {
-  const api = await callApi("/connections", { method: "POST", body: { action: "reject", connectionId } });
+  const api = await callApi("/data?resource=connections", { method: "POST", body: { action: "reject", connectionId } });
   if (api.ok) return api.data.connection ? { connection: api.data.connection } : { error: "not_found" };
   if (api.denied) return { error: "not_authorized" };
   if (!sql) throw new Error("Neon not configured");
@@ -163,7 +163,7 @@ export async function rejectConnection(connectionId, myId) {
 
 /** Remove an accepted connection (unfriend). */
 export async function removeConnection(connectionId, myId) {
-  const api = await callApi("/connections", { method: "POST", body: { action: "remove", connectionId } });
+  const api = await callApi("/data?resource=connections", { method: "POST", body: { action: "remove", connectionId } });
   if (api.ok) return { success: true };
   if (api.denied) return { error: "not_authorized" };
   if (!sql) throw new Error("Neon not configured");
@@ -184,7 +184,7 @@ export async function removeConnection(connectionId, myId) {
  * Returns array ready for the `groups` React state.
  */
 export async function getMyGroups(myId) {
-  const api = await callApi("/groups");
+  const api = await callApi("/data?resource=groups");
   if (api.ok) return api.data.groups || [];
   if (api.denied) return [];
   if (!sql) return [];
@@ -223,7 +223,7 @@ export async function getMyGroups(myId) {
  * Returns the new group object.
  */
 export async function createGroup(name, color, creatorId, memberIds) {
-  const api = await callApi("/groups", { method: "POST", body: { action: "create", name, color, memberIds } });
+  const api = await callApi("/data?resource=groups", { method: "POST", body: { action: "create", name, color, memberIds } });
   if (api.ok) return api.data.group;
   if (api.denied) throw new Error("Not authorized");
   if (!sql) throw new Error("Neon not configured");
@@ -256,7 +256,7 @@ export async function createGroup(name, color, creatorId, memberIds) {
 
 /** Rename a group. Only the group's admin may do this. */
 export async function renameGroup(groupId, newName, myId) {
-  const api = await callApi("/groups", { method: "POST", body: { action: "rename", groupId, name: newName } });
+  const api = await callApi("/data?resource=groups", { method: "POST", body: { action: "rename", groupId, name: newName } });
   if (api.ok) return api.data.group;
   if (api.denied) return null;
   if (!sql) throw new Error("Neon not configured");
@@ -275,7 +275,7 @@ export async function renameGroup(groupId, newName, myId) {
 
 /** Delete a group entirely. Only the creator may do this. */
 export async function deleteGroup(groupId, myId) {
-  const api = await callApi("/groups", { method: "POST", body: { action: "delete", groupId } });
+  const api = await callApi("/data?resource=groups", { method: "POST", body: { action: "delete", groupId } });
   if (api.ok) return { id: groupId };
   if (api.denied) return null;
   if (!sql) throw new Error("Neon not configured");
@@ -289,7 +289,7 @@ export async function deleteGroup(groupId, myId) {
 
 /** A member voluntarily exits a group. Notifies group admins. */
 export async function exitGroup(groupId, myId) {
-  const api = await callApi("/groups", { method: "POST", body: { action: "exit", groupId } });
+  const api = await callApi("/data?resource=groups", { method: "POST", body: { action: "exit", groupId } });
   if (api.ok) return { group_id: groupId, user_id: myId };
   if (api.denied) return null;
   if (!sql) throw new Error("Neon not configured");
@@ -319,7 +319,7 @@ export async function exitGroup(groupId, myId) {
 
 /** Admin adds more members to an existing group. */
 export async function addGroupMembers(groupId, memberIds, addedById) {
-  const api = await callApi("/groups", { method: "POST", body: { action: "add-members", groupId, memberIds } });
+  const api = await callApi("/data?resource=groups", { method: "POST", body: { action: "add-members", groupId, memberIds } });
   if (api.ok) return;
   if (api.denied) throw new Error("Not authorized");
   if (!sql) throw new Error("Neon not configured");
@@ -342,7 +342,7 @@ export async function addGroupMembers(groupId, memberIds, addedById) {
 
 /** Admin removes a member from a group (soft-exit). */
 export async function removeGroupMember(groupId, memberId) {
-  const api = await callApi("/groups", { method: "POST", body: { action: "remove-member", groupId, memberId } });
+  const api = await callApi("/data?resource=groups", { method: "POST", body: { action: "remove-member", groupId, memberId } });
   if (api.ok) return;
   if (api.denied) throw new Error("Not authorized");
   if (!sql) throw new Error("Neon not configured");
@@ -364,7 +364,7 @@ export async function removeGroupMember(groupId, memberId) {
  *   - type 'group' → deliver to all active members of that group
  */
 export async function createRecommendation(reco, senderId, recipients) {
-  const api = await callApi("/recommendations", { method: "POST", body: { action: "create", reco, recipients } });
+  const api = await callApi("/data?resource=recommendations", { method: "POST", body: { action: "create", reco, recipients } });
   if (api.ok) return api.data.recommendation;
   if (api.denied) throw new Error("Not authorized");
   if (!sql) throw new Error("Neon not configured");
@@ -436,7 +436,7 @@ export async function createRecommendation(reco, senderId, recipients) {
  * Returns rows that map directly to the recsReceived UI state shape.
  */
 export async function getMyReceivedRecos(userId) {
-  const api = await callApi("/recommendations?scope=received");
+  const api = await callApi("/data?resource=recommendations&scope=received");
   if (api.ok) return api.data.recommendations || [];
   if (api.denied) return [];
   if (!sql) return [];
@@ -510,7 +510,7 @@ export async function getMyReceivedRecos(userId) {
 
 /** Load all recommendations made by a user (for "Made by me" tab). */
 export async function getMyMadeRecos(userId) {
-  const api = await callApi("/recommendations?scope=made");
+  const api = await callApi("/data?resource=recommendations&scope=made");
   if (api.ok) return api.data.recommendations || [];
   if (api.denied) return [];
   if (!sql) return [];
@@ -578,7 +578,7 @@ export async function getMyMadeRecos(userId) {
 
 /** Update a delivery row (mark invested, react, hide). */
 export async function updateDelivery(deliveryId, patch, userId) {
-  const api = await callApi("/recommendations", { method: "POST", body: { action: "update-delivery", deliveryId, patch } });
+  const api = await callApi("/data?resource=recommendations", { method: "POST", body: { action: "update-delivery", deliveryId, patch } });
   if (api.ok) return api.data.delivery;
   if (api.denied) return null;
   if (!sql) throw new Error("Neon not configured");
@@ -610,7 +610,7 @@ export async function updateDelivery(deliveryId, patch, userId) {
 
 /** Set exit signal with an auto-stamped price from the market data service. */
 export async function setExitSignal(recommendationId, userId, exitPrice, exitPriceSource) {
-  const api = await callApi("/recommendations", { method: "POST", body: { action: "set-exit-signal", recommendationId, exitPrice, exitPriceSource } });
+  const api = await callApi("/data?resource=recommendations", { method: "POST", body: { action: "set-exit-signal", recommendationId, exitPrice, exitPriceSource } });
   if (api.ok) return api.data.recommendation;
   if (api.denied) return null;
   if (!sql) throw new Error("Neon not configured");
@@ -642,7 +642,7 @@ export async function setExitSignal(recommendationId, userId, exitPrice, exitPri
 
 /** Cancel an exit (undo). Clears all exit fields. */
 export async function cancelExitSignal(recommendationId, userId) {
-  const api = await callApi("/recommendations", { method: "POST", body: { action: "cancel-exit-signal", recommendationId } });
+  const api = await callApi("/data?resource=recommendations", { method: "POST", body: { action: "cancel-exit-signal", recommendationId } });
   if (api.ok) return api.data.recommendation;
   if (api.denied) return null;
   if (!sql) throw new Error("Neon not configured");
@@ -670,7 +670,7 @@ export async function toggleExitSignal(recommendationId, userId) {
 
 /** Forward a recommendation to additional recipients. */
 export async function forwardRecommendation(recommendationId, forwarderId, recipients) {
-  const api = await callApi("/recommendations", { method: "POST", body: { action: "forward", recommendationId, recipients } });
+  const api = await callApi("/data?resource=recommendations", { method: "POST", body: { action: "forward", recommendationId, recipients } });
   if (api.ok) return;
   if (api.denied) throw new Error("Not authorized");
   if (!sql) throw new Error("Neon not configured");
@@ -702,7 +702,7 @@ export async function forwardRecommendation(recommendationId, forwarderId, recip
 
 /** Load recent notifications for a user (last 50, newest first). */
 export async function getMyNotifications(userId) {
-  const api = await callApi("/notifications");
+  const api = await callApi("/data?resource=notifications");
   if (api.ok) return api.data.notifications || [];
   if (api.denied) return [];
   if (!sql) return [];
@@ -719,7 +719,7 @@ export async function getMyNotifications(userId) {
 
 /** Mark a single notification as read. */
 export async function markNotifRead(notifId, userId) {
-  const api = await callApi("/notifications", { method: "POST", body: { action: "mark-read", notifId } });
+  const api = await callApi("/data?resource=notifications", { method: "POST", body: { action: "mark-read", notifId } });
   if (api.ok || api.denied) return;
   if (!sql) return;
   await sql`
@@ -730,7 +730,7 @@ export async function markNotifRead(notifId, userId) {
 
 /** Mark all notifications as read for a user. */
 export async function markAllNotifRead(userId) {
-  const api = await callApi("/notifications", { method: "POST", body: { action: "mark-all-read" } });
+  const api = await callApi("/data?resource=notifications", { method: "POST", body: { action: "mark-all-read" } });
   if (api.ok || api.denied) return;
   if (!sql) return;
   await sql`UPDATE notifications SET is_read = true WHERE user_id = ${userId}`;
@@ -742,7 +742,7 @@ export async function markAllNotifRead(userId) {
 
 /** Load all sharing preferences for a user as { targetId → {visibility, level, selected} }. */
 export async function getSharingPrefs(userId) {
-  const api = await callApi("/sharing-prefs");
+  const api = await callApi("/data?resource=sharing-prefs");
   if (api.ok) return api.data.prefs || {};
   if (api.denied) return {};
   if (!sql) return {};
@@ -762,7 +762,7 @@ export async function getSharingPrefs(userId) {
 
 /** Save (upsert) a sharing preference for one target. */
 export async function upsertSharingPref(userId, targetId, targetType, prefs) {
-  const api = await callApi("/sharing-prefs", { method: "POST", body: { targetId, targetType, prefs } });
+  const api = await callApi("/data?resource=sharing-prefs", { method: "POST", body: { targetId, targetType, prefs } });
   if (api.ok || api.denied) return;
   if (!sql) return;
   await sql`
@@ -789,7 +789,7 @@ export async function upsertSharingPref(userId, targetId, targetType, prefs) {
  * Only the recommender can delete their own recommendation.
  */
 export async function deleteRecommendation(recommendationId, userId) {
-  const api = await callApi("/recommendations", { method: "POST", body: { action: "delete-reco", recommendationId } });
+  const api = await callApi("/data?resource=recommendations", { method: "POST", body: { action: "delete-reco", recommendationId } });
   if (api.ok || api.denied) return;
   if (!sql) return;
   await sql`
@@ -804,7 +804,7 @@ export async function deleteRecommendation(recommendationId, userId) {
  * The underlying recommendation (and the recommender's record) is preserved.
  */
 export async function deleteDelivery(deliveryId, userId) {
-  const api = await callApi("/recommendations", { method: "POST", body: { action: "delete-delivery", deliveryId } });
+  const api = await callApi("/data?resource=recommendations", { method: "POST", body: { action: "delete-delivery", deliveryId } });
   if (api.ok || api.denied) return;
   if (!sql) return;
   await sql`
@@ -912,7 +912,7 @@ export async function getPublicProfile(username) {
   // VITE_DATABASE_URL. Fall back to the direct-Neon query below only on an
   // infrastructure failure (network error, non-200 other than "not found").
   try {
-    const res = await fetch(`${API_BASE}/public-profile?username=${encodeURIComponent(username)}`);
+    const res = await fetch(`${API_BASE}/data?resource=public-profile&username=${encodeURIComponent(username)}`);
     if (res.ok) {
       return await res.json();
     }
