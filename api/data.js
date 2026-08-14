@@ -44,6 +44,10 @@ import handleNotifications from './_lib/handlers/notifications.js';
 import handleSharingPrefs from './_lib/handlers/sharing-prefs.js';
 import handlePublicProfile from './_lib/handlers/public-profile.js';
 import handleAdminSebi from './_lib/handlers/admin-sebi.js';
+import handleEngagement from './_lib/handlers/engagement.js';
+import handleClaimProfile from './_lib/handlers/claim-profile.js';
+import handleAdminConfig from './_lib/handlers/admin-config.js';
+import handleLookups from './_lib/handlers/lookups.js';
 
 const RESOURCES = {
   'connections':      { handler: handleConnections,     auth: 'user'  },
@@ -53,6 +57,13 @@ const RESOURCES = {
   'sharing-prefs':    { handler: handleSharingPrefs,     auth: 'user'  },
   'public-profile':   { handler: handlePublicProfile,    auth: 'none'  },
   'admin-sebi':       { handler: handleAdminSebi,        auth: 'admin' },
+  'engagement':       { handler: handleEngagement,       auth: 'user'  },
+  // claim-profile and lookups bundle mixed auth needs (public/user/admin
+  // actions in one resource) — each handler performs its own per-action
+  // requireUid()/requireAdmin() check, so they're registered as 'none' here.
+  'claim-profile':    { handler: handleClaimProfile,     auth: 'none'  },
+  'admin-config':     { handler: handleAdminConfig,      auth: 'admin' },
+  'lookups':          { handler: handleLookups,          auth: 'none'  },
 };
 
 export default async function handler(req, res) {

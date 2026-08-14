@@ -20,7 +20,6 @@ import {
 } from "./db";
 import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 import { useAuth } from "./AuthContext";
-import { sql } from "./supabaseClient";
 import { createUserWithEmailAndPassword, updateProfile as fbUpdateProfile, confirmPasswordReset } from "firebase/auth";
 import { secondaryAuth, auth as primaryAuth } from "./firebase";
 import { track } from "./firebase";
@@ -31,12 +30,44 @@ import {
   deleteGroup as dbDeleteGroup, exitGroup as dbExitGroup,
   addGroupMembers as dbAddGroupMembers, removeGroupMember as dbRemoveGroupMember,
   getMyReceivedRecos, getMyMadeRecos, createRecommendation as dbCreateReco,
-  updateDelivery, toggleExitSignal as dbToggleExit, forwardRecommendation as dbForwardReco,
+  updateDelivery, forwardRecommendation as dbForwardReco, notifyPublicContacts as dbNotifyPublicContacts,
   deleteRecommendation as dbDeleteReco, deleteDelivery as dbDeleteDelivery,
   checkUsername as dbCheckUsername, saveUsername as dbSaveUsername,
   getPublicProfile as dbGetPublicProfile, computeIci,
   getMyNotifications, markNotifRead, markAllNotifRead,
   getSharingPrefs, upsertSharingPref,
+  getEngagement as dbGetEngagement, getReactionsBatch as dbGetReactionsBatch,
+  reactToReco as dbReactToReco, commentOnReco as dbCommentOnReco,
+  trackReco as dbTrackReco, untrackReco as dbUntrackReco,
+  getClaimStatus as dbGetClaimStatus, getClaimAdminLink as dbGetClaimAdminLink,
+  lookupClaimToken as dbLookupClaimToken, getMyPendingClaimStatus as dbGetMyPendingClaimStatus,
+  submitClaim as dbSubmitClaim, getUnclaimedProfiles as dbGetUnclaimedProfiles,
+  createUnclaimedProfile as dbCreateUnclaimedProfile, deleteUnclaimedProfile as dbDeleteUnclaimedProfile,
+  getClaimRequests as dbGetClaimRequests, reviewClaimRequest as dbReviewClaimRequest,
+  getAdminFeedConfig as dbGetAdminFeedConfig, toggleFeedConfig as dbToggleFeedConfig,
+  getAdminInstruments as dbGetAdminInstruments, getInstrumentsExport as dbGetInstrumentsExport,
+  upsertInstrument as dbUpsertInstrument, deactivateInstrument as dbDeactivateInstrument,
+  adminDeleteUser as dbAdminDeleteUser, bulkSeedProfiles as dbBulkSeedProfiles, bulkSeedRecos as dbBulkSeedRecos,
+  adminCreateUserProfile as dbAdminCreateUserProfile, adminGetUserByEmail as dbAdminGetUserByEmail,
+  seedCreatorRecos as dbSeedCreatorRecos,
+  getMyTrackedRecoIds as dbGetMyTrackedRecoIds, getMyTrackedRecos as dbGetMyTrackedRecos,
+  getRecommenderUsername as dbGetRecommenderUsername,
+  getFeedConfigAndPrefs as dbGetFeedConfigAndPrefs, setFeedPref as dbSetFeedPref,
+  searchPeople as dbSearchPeople,
+  getConsensusRecosAll as dbGetConsensusRecosAll, getConsensusRecosPublic as dbGetConsensusRecosPublic,
+  getTickerRecos as dbGetTickerRecos, getInvestorIciBatch as dbGetInvestorIciBatch,
+  getNetworkEngagementFeed as dbGetNetworkEngagementFeed, getPublicFeed as dbGetPublicFeed,
+  getAllUsersAdmin as dbGetAllUsersAdmin,
+  savePushSubscription as dbSavePushSubscription, removePushSubscription as dbRemovePushSubscription,
+  getInstrumentsList as dbGetInstrumentsList,
+  getSectors as dbGetSectors, getPortfolioHoldings as dbGetPortfolioHoldings,
+  addPortfolioHolding as dbAddPortfolioHolding, deletePortfolioHolding as dbDeletePortfolioHolding,
+  deleteAllPortfolioHoldings as dbDeleteAllPortfolioHoldings,
+  getRegOptions as dbGetRegOptions, saveProfileEdit as dbSaveProfileEdit,
+  getAboutUsContent as dbGetAboutUsContent, saveAboutUsContent as dbSaveAboutUsContent,
+  voteFeature as dbVoteFeature, submitContactForm as dbSubmitContactForm,
+  lookupUser as dbLookupUser, lookupUsersBatch as dbLookupUsersBatch, processReferral as dbProcessReferral,
+  getProfileNavInfo as dbGetProfileNavInfo,
 } from "./db";
 
 /* ============================================================
@@ -492,19 +523,11 @@ const ABOUT_DEFAULT_HTML = `
 const _profileInfoCache = new Map(); // userId → { username, isSebiApproved }
 
 async function fetchPublicProfileInfo(userId) {
-  if (!sql || !userId) return null;
+  if (!userId) return null;
   if (_profileInfoCache.has(userId)) return _profileInfoCache.get(userId);
   try {
-    const rows = await sql`
-      SELECT username, registration_status, sebi_approval_status
-      FROM user_profiles WHERE id=${userId} LIMIT 1`;
-    if (rows[0]) {
-      const info = {
-        username:      rows[0].username || null,
-        isSebiApproved:
-          ['sebi_ra','sebi_ria'].includes(rows[0].registration_status) &&
-          rows[0].sebi_approval_status === 'approved',
-      };
+    const info = await dbGetProfileNavInfo(userId);
+    if (info) {
       _profileInfoCache.set(userId, info);
       return info;
     }
@@ -669,17 +692,17 @@ export default function App() {
 
   // ── Post-login/signup: auto-send connection request if user came from a public profile ─
   useEffect(() => {
-    if (!user || !sql) return;
+    if (!user) return;
     const pending = sessionStorage.getItem("pending_connect_username");
     if (!pending) return;
     sessionStorage.removeItem("pending_connect_username");
-    sql`SELECT id, full_name, first_name, last_name FROM user_profiles WHERE username = ${pending} LIMIT 1`
-      .then(rows => {
-        if (!rows[0] || rows[0].id === user.uid) return;
-        const targetId = rows[0].id;
-        const targetName = rows[0].first_name
-          ? `${rows[0].first_name} ${rows[0].last_name || ""}`.trim()
-          : rows[0].full_name || `@${pending}`;
+    dbLookupUser('username', pending)
+      .then(row => {
+        if (!row || row.id === user.uid) return;
+        const targetId = row.id;
+        const targetName = row.first_name
+          ? `${row.first_name} ${row.last_name || ""}`.trim()
+          : row.full_name || `@${pending}`;
         return sendConnectionRequest(user.uid, targetId).then(() => {
           setConnectConfirm({ name: targetName, username: pending });
           setTimeout(() => setConnectConfirm(null), 10000); // auto-dismiss after 10s
@@ -807,10 +830,10 @@ export default function App() {
   const toggleTrack = async (recoId) => {
     if (tracked.has(recoId)) {
       setTracked(s => { const n = new Set(s); n.delete(recoId); return n; });
-      if (sql && user?.uid) sql`DELETE FROM recommendation_tracking WHERE reco_id=${recoId} AND user_id=${user.uid}`.catch(console.warn);
+      if (user?.uid) dbUntrackReco(recoId).catch(console.warn);
     } else {
       setTracked(s => new Set([...s, recoId]));
-      if (sql && user?.uid) sql`INSERT INTO recommendation_tracking (reco_id, user_id) VALUES (${recoId}, ${user.uid}) ON CONFLICT DO NOTHING`.catch(console.warn);
+      if (user?.uid) dbTrackReco(recoId).catch(console.warn);
     }
   };
 
@@ -878,14 +901,10 @@ export default function App() {
       }
       return;
     }
-    if (!claimToken || !sql) return;
-    sql`SELECT id, full_name, first_name, last_name, username, bio,
-               registration_status, sebi_approval_status, claim_status
-        FROM user_profiles
-        WHERE claim_token = ${claimToken} AND claim_status = 'unclaimed'
-        LIMIT 1`
-      .then(rows => {
-        if (rows[0]) setClaimProfile(rows[0]);
+    if (!claimToken) return;
+    dbLookupClaimToken(claimToken)
+      .then(profile => {
+        if (profile) setClaimProfile(profile);
         else { localStorage.removeItem('mic_claim_token'); setClaimToken(null); }
       })
       .catch(() => {});
@@ -893,14 +912,8 @@ export default function App() {
 
   // ── Admin: load pending claim requests ───────────────────────────────────────
   const loadClaimRequests = async () => {
-    if (!sql) return;
     try {
-      const rows = await sql`
-        SELECT cr.*, up.full_name AS profile_name, up.username AS profile_username
-        FROM claim_requests cr
-        LEFT JOIN user_profiles up ON cr.profile_id = up.id
-        WHERE cr.status = 'pending'
-        ORDER BY cr.created_at DESC`;
+      const rows = await dbGetClaimRequests();
       setClaimRequests(rows);
     } catch(e) { console.warn('loadClaimRequests:', e?.message); }
   };
@@ -909,35 +922,12 @@ export default function App() {
   // Called once from the login effect when we detect a stored referral code.
   const processReferral = async (newUserId) => {
     const refUsername = localStorage.getItem('mic_ref');
-    if (!refUsername || !sql) return;
+    if (!refUsername) return;
     try {
-      // Look up the referrer by their username
-      const refs = await sql`
-        SELECT id, full_name, email, username FROM user_profiles
-        WHERE LOWER(username) = ${refUsername.toLowerCase()} AND id != ${newUserId}
-        LIMIT 1`;
-      if (!refs.length) { localStorage.removeItem('mic_ref'); return; }
+      const result = await dbProcessReferral(refUsername);
+      if (!result.referred) { localStorage.removeItem('mic_ref'); return; }
 
-      const referrer = refs[0];
-
-      // Record the referral on the new user's profile (idempotent)
-      await sql`UPDATE user_profiles SET referred_by = ${referrer.id}
-                WHERE id = ${newUserId} AND referred_by IS NULL`;
-
-      // Auto-connect: insert directly as 'accepted' — no approval step needed for referrals.
-      // Both users agreed implicitly: the referrer shared their link, the new user accepted.
-      // ON CONFLICT DO NOTHING makes this safe to re-run.
-      await sql`
-        INSERT INTO connections (requester_id, addressee_id, status)
-        VALUES (${newUserId}, ${referrer.id}, 'accepted')
-        ON CONFLICT DO NOTHING
-      `;
-
-      // Notify the referrer that their invite converted
-      await sql`
-        INSERT INTO notifications (user_id, type, from_user_id)
-        VALUES (${referrer.id}, 'connection_accepted', ${newUserId})
-      `.catch(() => {}); // non-fatal
+      const referrer = { full_name: result.referrerName, username: result.referrerUsername, email: result.referrerEmail };
 
       // Send referral emails (fire and forget)
       const newUserEmail = user?.email || '';
@@ -1042,7 +1032,7 @@ export default function App() {
 
   /** Subscribe to push and persist the subscription to Neon. */
   const subscribePush = async (reg) => {
-    if (!VAPID_PUBLIC_KEY || !user?.uid || !sql) return;
+    if (!VAPID_PUBLIC_KEY || !user?.uid) return;
     try {
       const existing = await reg.pushManager.getSubscription();
       const sub = existing || await reg.pushManager.subscribe({
@@ -1050,11 +1040,7 @@ export default function App() {
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       });
       const { endpoint, keys: { p256dh, auth } } = sub.toJSON();
-      await sql`
-        INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth_key)
-        VALUES (${user.uid}, ${endpoint}, ${p256dh}, ${auth})
-        ON CONFLICT (endpoint) DO UPDATE SET user_id = ${user.uid}
-      `;
+      await dbSavePushSubscription(endpoint, p256dh, auth);
       console.log('[push] subscription saved');
     } catch (e) {
       console.warn('[push] subscribe failed:', e?.message);
@@ -1095,8 +1081,8 @@ export default function App() {
           if (sub) {
             const { endpoint } = sub.toJSON();
             await sub.unsubscribe();
-            if (sql && user?.uid) {
-              sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint}`.catch(() => {});
+            if (user?.uid) {
+              dbRemovePushSubscription(endpoint).catch(() => {});
             }
           }
         })
@@ -1108,10 +1094,10 @@ export default function App() {
     try {
       await sendConnectionRequest(user.uid, targetId);
       track('connection_sent');
-      sql`SELECT email FROM user_profiles WHERE id=${targetId} LIMIT 1`
-        .then(rows => {
-          if (rows[0]?.email) sendEmail('connection_request', {
-            to_email:      rows[0].email,
+      dbLookupUser('id', targetId)
+        .then(row => {
+          if (row?.email) sendEmail('connection_request', {
+            to_email:      row.email,
             from_name:     ME?.name || user.displayName || 'Someone',
             from_username: ME?.username || '',
           });
@@ -1137,27 +1123,10 @@ export default function App() {
   // Debounced people search — drives both topbar dropdown and mobile search overlay
   useEffect(() => {
     const q = globalSearch.trim();
-    if (!q || q.length < 2 || !sql) { setSearchPeople([]); return; }
+    if (!q || q.length < 2 || !ME?.id) { setSearchPeople([]); return; }
     const timer = setTimeout(async () => {
       try {
-        const rows = await sql`
-          SELECT id, username, full_name, first_name, last_name,
-                 registration_status, sebi_approval_status
-          FROM user_profiles
-          WHERE (full_name   ILIKE ${'%'+q+'%'}
-              OR username    ILIKE ${'%'+q+'%'}
-              OR first_name  ILIKE ${'%'+q+'%'}
-              OR last_name   ILIKE ${'%'+q+'%'})
-            AND id != ${ME?.id||'none'}
-            AND (is_unclaimed IS NULL OR is_unclaimed = FALSE)
-            AND (claim_status IS DISTINCT FROM 'claimed')
-          ORDER BY
-            CASE WHEN LOWER(username)  = LOWER(${q})         THEN 0
-                 WHEN LOWER(username)  LIKE LOWER(${q})||'%' THEN 1
-                 WHEN LOWER(full_name) LIKE LOWER(${q})||'%' THEN 2
-                 ELSE 3 END,
-            full_name
-          LIMIT 6`;
+        const rows = await dbSearchPeople(q);
         setSearchPeople(rows);
       } catch(e) { console.warn('topbar people search:', e?.message||e); }
     }, 280);
@@ -1169,7 +1138,7 @@ export default function App() {
 
   // ── Load all shared data from Neon on login ─────────────────────────────────
   useEffect(() => {
-    if (!user || !sql) return;
+    if (!user) return;
     const load = async () => {
       try {
         const [conns, grps, recv, made, notifs, shr] = await Promise.all([
@@ -1187,13 +1156,11 @@ export default function App() {
         setNotifications(notifs);
         setSharing(shr);
         // Hydrate reactions from recommendation_reactions — fire-and-forget, never breaks main load
-        if (recv.length > 0 && sql) {
+        if (recv.length > 0) {
           const ids = recv.map(r => String(r.id));
-          sql`SELECT reco_id, reaction FROM recommendation_reactions
-              WHERE user_id=${user.uid} AND reco_id=ANY(${ids})`
-            .then(rxRows => {
-              if (!rxRows.length) return;
-              const rxMap = Object.fromEntries(rxRows.map(x=>[x.reco_id, x.reaction]));
+          dbGetReactionsBatch(ids)
+            .then(rxMap => {
+              if (!Object.keys(rxMap).length) return;
               setRecsReceived(rs => rs.map(r => rxMap[String(r.id)] ? {...r, reaction: rxMap[String(r.id)]} : r));
             }).catch(()=>{});
         }
@@ -1202,21 +1169,17 @@ export default function App() {
         // Load pending creator claim requests (admin feature — silently no-ops for non-admins)
         loadClaimRequests();
         // Check if this user is a creator awaiting admin approval for their claimed profile
-        if (sql) sql`SELECT id FROM claim_requests WHERE claimer_uid=${user.uid} AND status='pending' LIMIT 1`
-          .then(rows=>setHasPendingClaim(rows.length > 0)).catch(()=>{});
+        dbGetMyPendingClaimStatus().then(setHasPendingClaim).catch(()=>{});
         // Load tracked recommendation IDs
         try {
-          const tr = await sql`SELECT reco_id FROM recommendation_tracking WHERE user_id=${user.uid}`;
-          setTracked(new Set(tr.map(r=>r.reco_id)));
+          const recoIds = await dbGetMyTrackedRecoIds();
+          setTracked(new Set(recoIds));
         } catch(_) {}
 
         // Load feed config options + user prefs, compute effective config
         let effective = {};
         try {
-          const [opts, prefs] = await Promise.all([
-            sql`SELECT * FROM feed_config_options ORDER BY sort_order`,
-            sql`SELECT config_key, enabled FROM user_feed_preferences WHERE user_id=${user.uid}`,
-          ]);
+          const { options: opts, prefs } = await dbGetFeedConfigAndPrefs();
           setFeedConfigOptions(opts);
           const userPrefsMap = Object.fromEntries(prefs.map(p=>[p.config_key, p.enabled]));
           setUserFeedPrefs(userPrefsMap);
@@ -1240,26 +1203,7 @@ export default function App() {
           try {
             const activeConns = conns.filter(c=>c.status==='active').map(c=>c.id);
             if (activeConns.length > 0) {
-              const engRecos = await sql`
-                SELECT DISTINCT ir.id, ir.asset_name, ir.ticker, ir.asset_class,
-                       ir.recommendation_type, ir.reco_price, ir.current_price,
-                       ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
-                       ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
-                       up.full_name as by_name, up.id as from_id,
-                       0 as likes,
-                       (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
-                FROM recommendation_deliveries rd
-                JOIN ic_recommendations ir ON ir.id = rd.recommendation_id
-                JOIN user_profiles up ON up.id = ir.recommender_id
-                WHERE rd.recipient_id = ANY(${activeConns})
-                  AND (rd.reaction = 'like'
-                    OR EXISTS (SELECT 1 FROM recommendation_comments rc
-                               WHERE rc.reco_id=ir.id AND rc.user_id=ANY(${activeConns})))
-                  AND ir.id NOT IN (
-                    SELECT recommendation_id FROM recommendation_deliveries WHERE recipient_id=${user.uid}
-                  )
-                ORDER BY ir.created_at DESC
-                LIMIT 50`;
+              const engRecos = await dbGetNetworkEngagementFeed(activeConns);
               const engMapped = engRecos.map(r=>({
                 ...r, assetName:r.asset_name, priceAt:r.reco_price, price:r.current_price,
                 byName:r.by_name, from:r.from_id, feedSource:'network_engagement',
@@ -1270,10 +1214,9 @@ export default function App() {
               // Hydrate existing reactions separately — safe if table doesn't exist yet
               if (engMapped.length > 0) {
                 const ids = engMapped.map(r=>String(r.id));
-                sql`SELECT reco_id, reaction FROM recommendation_reactions WHERE user_id=${user.uid} AND reco_id=ANY(${ids})`
-                  .then(rxRows => {
-                    if (!rxRows.length) return;
-                    const rxMap = Object.fromEntries(rxRows.map(x=>[x.reco_id, x.reaction]));
+                dbGetReactionsBatch(ids)
+                  .then(rxMap => {
+                    if (!Object.keys(rxMap).length) return;
                     setNetworkEngagementRecos(rs=>rs.map(x=>rxMap[String(x.id)]?{...x,reaction:rxMap[String(x.id)]}:x));
                   }).catch(()=>{});
               }
@@ -1284,22 +1227,7 @@ export default function App() {
         // Load public recommendations — visible to all users when is_public = true.
         // Excludes the user's own recos and ones already in their direct feed.
         try {
-          const pubRows = await sql`
-            SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class,
-                   ir.recommendation_type, ir.reco_price, ir.current_price,
-                   ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
-                   ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
-                   up.full_name as by_name, up.id as from_id, up.username as from_username,
-                   (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
-                   (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text)::int as likes_count
-            FROM ic_recommendations ir
-            JOIN user_profiles up ON up.id = ir.recommender_id
-            WHERE ir.is_public = true
-              AND ir.recommender_id != ${user.uid}
-              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
-              AND (up.claim_status IS DISTINCT FROM 'claimed')
-            ORDER BY ir.created_at DESC
-            LIMIT 100`;
+          const pubRows = await dbGetPublicFeed();
           const pubMapped = pubRows.map(r => ({
             ...r,
             assetName:    r.asset_name,
@@ -1322,23 +1250,19 @@ export default function App() {
           // Hydrate existing reactions separately — safe if recommendation_reactions doesn't exist yet
           if (pubMapped.length > 0) {
             const ids = pubMapped.map(r=>String(r.id));
-            sql`SELECT reco_id, reaction FROM recommendation_reactions WHERE user_id=${user.uid} AND reco_id=ANY(${ids})`
-              .then(rxRows => {
-                if (!rxRows.length) return;
-                const rxMap = Object.fromEntries(rxRows.map(x=>[x.reco_id, x.reaction]));
+            dbGetReactionsBatch(ids)
+              .then(rxMap => {
+                if (!Object.keys(rxMap).length) return;
                 setPublicFeedRecos(rs=>rs.map(x=>rxMap[String(x.id)]?{...x,reaction:rxMap[String(x.id)]}:x));
               }).catch(()=>{});
           }
         } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
       } catch(e) { console.warn("Data load failed:", e.message); }
-      // Load registered users for admin panel — excludes 'claimed' orphan rows (those are
-      // the original unclaimed staging profiles after admin approval; the real user profile is canonical).
+      // Load registered users for admin panel (admin only — non-admins skip this
+      // call entirely rather than receiving a 403 from the server).
+      if (!userIsAdmin) return;
       try {
-        const profiles = await sql`
-          SELECT id, full_name, email, username, is_admin, is_unclaimed, claim_status, created_at
-          FROM user_profiles
-          WHERE (claim_status IS DISTINCT FROM 'claimed')
-          ORDER BY created_at`;
+        const profiles = await dbGetAllUsersAdmin();
         if (profiles.length) setUsers(profiles.map(p => ({
           id: p.id, name: p.full_name, email: p.email,
           username:     p.username     || null,
@@ -1350,11 +1274,11 @@ export default function App() {
       } catch(_) {}
     };
     load();
-  }, [user?.uid]);
+  }, [user?.uid, userIsAdmin]);
 
   // Poll notifications every 30 seconds to surface new connection requests etc.
   useEffect(() => {
-    if (!user || !sql) return;
+    if (!user) return;
     const iv = setInterval(async () => {
       try { setNotifications(await getMyNotifications(user.uid)); } catch(_) {}
     }, 30000);
@@ -1406,11 +1330,10 @@ export default function App() {
                 return;
               }
               await sendConnectionRequest(user.uid, targetId);
-              sql`SELECT email FROM user_profiles
-                  WHERE LOWER(username)=${pubUsername.toLowerCase()} LIMIT 1`
-                .then(rows => {
-                  if (rows[0]?.email) sendEmail('connection_request', {
-                    to_email:      rows[0].email,
+              dbLookupUser('username', pubUsername.toLowerCase())
+                .then(row => {
+                  if (row?.email) sendEmail('connection_request', {
+                    to_email:      row.email,
                     from_name:     ME?.name || user.displayName || 'Someone',
                     from_username: ME?.username || '',
                   });
@@ -1732,8 +1655,7 @@ export default function App() {
                   onAccept={async (n) => {
                     const [, reqInfo] = await Promise.all([
                       acceptConnection(n.reference_id, ME.id),
-                      sql`SELECT email, username FROM user_profiles WHERE id = ${n.from_user_id} LIMIT 1`
-                        .then(r => r[0]).catch(() => null),
+                      dbLookupUser('id', n.from_user_id).catch(() => null),
                     ]);
                     track('connection_accepted');
                     if (reqInfo?.email) {
@@ -1787,14 +1709,14 @@ export default function App() {
                       if (recoId && username) {
                         // Best case: go directly to the specific reco
                         window.location.hash = `#/investor/${username}/reco/${recoId}`;
-                      } else if (n.from_user_id && sql) {
+                      } else if (n.from_user_id) {
                         // Look up username from from_user_id, then navigate
-                        sql`SELECT username FROM user_profiles WHERE id=${n.from_user_id} AND username IS NOT NULL LIMIT 1`
-                          .then(rows => {
-                            if (!rows[0]?.username) return;
+                        dbLookupUser('id', n.from_user_id)
+                          .then(row => {
+                            if (!row?.username) return;
                             window.location.hash = recoId
-                              ? `#/investor/${rows[0].username}/reco/${recoId}`
-                              : `#/investor/${rows[0].username}`;
+                              ? `#/investor/${row.username}/reco/${recoId}`
+                              : `#/investor/${row.username}`;
                           }).catch(()=>{});
                       } else if (username) {
                         window.location.hash = `#/investor/${username}`;
@@ -1804,9 +1726,9 @@ export default function App() {
 
                     // All connection notification types → requester's public profile
                     const connTypes = ['connection_request','connection_accepted','connection_rejected'];
-                    if (connTypes.includes(n.type) && n.from_user_id && sql) {
-                      sql`SELECT username FROM user_profiles WHERE id=${n.from_user_id} AND username IS NOT NULL LIMIT 1`
-                        .then(rows => { if (rows[0]?.username) window.location.hash = `#/investor/${rows[0].username}`; })
+                    if (connTypes.includes(n.type) && n.from_user_id) {
+                      dbLookupUser('id', n.from_user_id)
+                        .then(row => { if (row?.username) window.location.hash = `#/investor/${row.username}`; })
                         .catch(()=>{});
                     }
                   }}
@@ -2373,8 +2295,7 @@ function ContactsSection({ connections, setConnections, groups, sharing, setShar
     setBusy(b=>({...b,[c.connection_id]:true}));
     const [, reqInfo] = await Promise.all([
       acceptConnection(c.connection_id, myId),
-      sql`SELECT email FROM user_profiles WHERE id = ${c.user_id} LIMIT 1`
-        .then(r => r[0]).catch(() => null),
+      dbLookupUser('id', c.user_id).catch(() => null),
     ]);
     if (reqInfo?.email) {
       sendEmail('connection_accepted', { to_email:reqInfo.email, their_name:me?.name||'', their_username:me?.username||'' });
@@ -2543,12 +2464,11 @@ function AddConnectionModal({ existing, me, onClose, onAddExisting, onInvite }) 
     if(existing.some(c=>c.email===e)){ setResult({type:"warn",msg:"You already have a connection with this person."}); return; }
     setBusy(true);
     try {
-      if (!sql){ setResult({type:"warn",msg:"Database not configured."}); setBusy(false); return; }
-      const rows = await sql`SELECT id, email, full_name FROM user_profiles WHERE email=${e} LIMIT 1`;
-      if (rows[0]) {
-        if (rows[0].id === me?.id){ setResult({type:"warn",msg:"That is your own email address."}); setBusy(false); return; }
-        await onAddExisting(rows[0].id, {name:rows[0].full_name,email:rows[0].email});
-        setResult({type:"ok",msg:`Connection request sent to ${rows[0].full_name}. They will see it in their notifications.`});
+      const row = await dbLookupUser('email', e);
+      if (row) {
+        if (row.id === me?.id){ setResult({type:"warn",msg:"That is your own email address."}); setBusy(false); return; }
+        await onAddExisting(row.id, {name:row.full_name,email:row.email});
+        setResult({type:"ok",msg:`Connection request sent to ${row.full_name}. They will see it in their notifications.`});
       } else {
         onInvite(e);
         setResult({type:"info",msg:`${e} is not on InvestorCircle yet. An invitation note from ${myName} will be shared with them.`});
@@ -2668,7 +2588,7 @@ function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, 
   return (<>
     <div className="toolbar">
       <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search groups…"/></div>
-      <button className="btn btn-pri btn-sm" disabled={!canCreateGroups||!sql} onClick={()=>setShowNew(true)}><Plus size={15}/> New group</button>
+      <button className="btn btn-pri btn-sm" disabled={!canCreateGroups} onClick={()=>setShowNew(true)}><Plus size={15}/> New group</button>
     </div>
     {rows.length===0 ? <div className="card"><div className="empty">No groups yet. Create one to start sharing recommendations with multiple people at once.</div></div> :
     <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:820}}>
@@ -3021,49 +2941,18 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
   useEffect(()=>{ setQ(globalSearch||""); },[globalSearch]);
 
   useEffect(()=>{
-    if(!me?.id||!sql){ setLoading(false); return; }
+    if(!me?.id){ setLoading(false); return; }
     setLoading(true);
-
-    // Try with is_invested columns (requires migration_v9 ALTER TABLE)
-    sql`SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class, ir.recommendation_type,
-               ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
-               ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
-               ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
-               up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
-               rt.tracked_at, rt.is_invested, rt.invested_price
-        FROM recommendation_tracking rt
-        JOIN ic_recommendations ir ON rt.reco_id = ir.id
-        JOIN user_profiles up ON ir.recommender_id = up.id
-        WHERE rt.user_id = ${me.id}
-        ORDER BY rt.tracked_at DESC`
+    dbGetMyTrackedRecos()
       .then(rows=>{ setRecos(rows); setLoading(false); })
-      .catch(()=>{
-        // Fallback: without is_invested (pre-migration or column missing)
-        sql`SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class, ir.recommendation_type,
-                   ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
-                   ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
-                   ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
-                   up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
-                   rt.tracked_at
-            FROM recommendation_tracking rt
-            JOIN ic_recommendations ir ON rt.reco_id = ir.id
-            JOIN user_profiles up ON ir.recommender_id = up.id
-            WHERE rt.user_id = ${me.id}
-            ORDER BY rt.tracked_at DESC`
-          .then(rows=>{ setRecos(rows.map(r=>({...r, is_invested:false, invested_price:null}))); setLoading(false); })
-          .catch(e=>{ console.error('TrackedSection load failed:', e); setLoading(false); });
-      });
+      .catch(e=>{ console.error('TrackedSection load failed:', e); setLoading(false); });
   },[me?.id, tracked.size]);
 
   // Patch invested status locally + persist to recommendation_tracking
   const patchInvested=(r, updates)=>{
     setRecos(rs=>rs.map(x=>x.id===r.id?{...x,...updates}:x));
-    if(sql&&me?.id) {
-      if(updates.is_invested) {
-        sql`UPDATE recommendation_tracking SET is_invested=true, invested_price=${updates.invested_price||null}, invested_at=now() WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(console.warn);
-      } else {
-        sql`UPDATE recommendation_tracking SET is_invested=false, invested_price=null, invested_at=null WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(console.warn);
-      }
+    if(me?.id) {
+      dbTrackReco(r.id, !!updates.is_invested, updates.is_invested ? (updates.invested_price||null) : null).catch(console.warn);
     }
   };
 
@@ -3071,12 +2960,10 @@ function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, g
     if(sharePopId===r.id){ setSharePopId(null); setShareAnchor(null); return; }
     setShareAnchor(e.currentTarget); setSharePopId(r.id); setShareUsername(null);
     if(r.recommender_username){ setShareUsername(r.recommender_username); return; }
-    if(sql) {
-      try {
-        const rows = await sql`SELECT username FROM user_profiles WHERE id = (SELECT recommender_id FROM ic_recommendations WHERE id = ${r.id}) LIMIT 1`;
-        if(rows[0]?.username) setShareUsername(rows[0].username);
-      }catch(_){}
-    }
+    try {
+      const username = await dbGetRecommenderUsername(r.id);
+      if(username) setShareUsername(username);
+    }catch(_){}
   };
 
   if(loading) return <div className="muted small" style={{padding:32,textAlign:'center'}}><Loader size={20} className="spin"/></div>;
@@ -3351,10 +3238,10 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
     setSharePopId(r.id);
     setShareUsername(null);
     // Async fetch recommender username for public link
-    if (r.from && sql) {
+    if (r.from) {
       try {
-        const rows = await sql`SELECT username FROM user_profiles WHERE id=${r.from} AND username IS NOT NULL LIMIT 1`;
-        if (rows[0]?.username) setShareUsername(rows[0].username);
+        const row = await dbLookupUser('id', r.from);
+        if (row?.username) setShareUsername(row.username);
       } catch(_) {}
     }
   };
@@ -3367,14 +3254,14 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
 
   const patch = async (r, updates) => {
     setRecs(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,...updates}:x));
-    if (sql && r.deliveryId) {
+    if (r.deliveryId) {
       try { await updateDelivery(r.deliveryId, updates, myId); } catch(e) { await onReload(); }
     }
   };
   const doInvest=(r,price)=>patch(r,{isInvested:true,investedPrice:price,invested:true});
   const unInvest=(r)=>{
     patch(r,{isInvested:false,investedPrice:null,invested:false});
-    if(sql&&myId) sql`UPDATE recommendation_tracking SET is_invested=false, invested_price=null, invested_at=null WHERE reco_id=${r.id} AND user_id=${myId}`.catch(console.warn);
+    if(myId) dbTrackReco(r.id, false).catch(console.warn);
   };
   const onInvestClick=(r)=>{ if(r.invested) unInvest(r); else setInvesting(r); };
   const react=(r,val)=>{
@@ -3383,7 +3270,7 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
     if(r.reaction==='like') likes = Math.max(0, likes-1);
     if(next==='like')       likes++;
     setRecs(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes}:x));
-    if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},myId).catch(console.warn);
+    if(r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},myId).catch(console.warn);
   };
   const toggleHide=(r)=>patch(r,{isHidden:!r.hidden,hidden:!r.hidden});
   const del=async(r)=>{
@@ -3575,11 +3462,8 @@ function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetCla
                           onMark={(price)=>{
                             doInvest(r, price);
                             // Upsert into tracking with invested data (auto-tracks + marks invested)
-                            if(sql && myId) {
-                              sql`INSERT INTO recommendation_tracking (reco_id, user_id, is_invested, invested_price, invested_at)
-                                  VALUES (${r.id}, ${myId}, true, ${price}, now())
-                                  ON CONFLICT (reco_id, user_id) DO UPDATE SET
-                                    is_invested=true, invested_price=${price}, invested_at=now()`
+                            if(myId) {
+                              dbTrackReco(r.id, true, price)
                                 .then(()=>{ if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id); })
                                 .catch(()=>{ if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id); });
                             } else if(toggleTrack && tracked && !tracked.has(r.id)) toggleTrack(r.id);
@@ -3975,7 +3859,7 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
     if (r.exit) {
       if(!confirm("Cancel the exit signal for this recommendation?")) return;
       setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:false,exitDate:null,exitPrice:null}:x));
-      if(sql && me?.id) { try { await dbCancelExit(r.id,me.id); await onReload(); } catch(_){} }
+      if(me?.id) { try { await dbCancelExit(r.id,me.id); await onReload(); } catch(_){} }
     } else {
       setExitingId(r.id);
       let exitPriceData = null;
@@ -3988,7 +3872,7 @@ function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, as
       setExitingId(null);
       if (!confirmed) return;
       setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:true,exitDate:TODAY,exitPrice:exitPriceData?.price||null}:x));
-      if(sql && me?.id) {
+      if(me?.id) {
         try { await dbSetExit(r.id, me.id, exitPriceData?.price||null, exitPriceData?.source||"unavailable"); await onReload(); } catch(_){}
       }
     }
@@ -4548,11 +4432,8 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
 
   // Load sector options from sector_master — same pattern as all other DB calls in this app
   useEffect(() => {
-    if (!sql) return;
-    sql`SELECT DISTINCT sector FROM sector_master
-        WHERE sector IS NOT NULL AND sector <> ''
-        ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector`
-      .then(rows => { if (rows?.length) setSectorOpts(rows.map(r => r.sector)); })
+    dbGetSectors()
+      .then(sectors => { if (sectors?.length) setSectorOpts(sectors); })
       .catch(() => {});
   }, []);
   useEffect(() => {
@@ -4601,9 +4482,9 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
       priceSource: priceData?.source || null,
     };
     const recipients = targets.map(id=>({ type:groups.some(g=>g.id===id)?"group":"user", id }));
-    if (sql && me?.id) {
+    if (me?.id) {
       try {
-        await dbCreateReco(recoData, me.id, recipients);
+        const created = await dbCreateReco(recoData, me.id, recipients);
         track('reco_created', {
           rec_type:    recoData.recType  || 'Buy',
           asset_class: recoData.assetClass || '',
@@ -4613,32 +4494,24 @@ function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdin
         });
         // Fan-out for public recos: in-app notifications + emails to all contacts
         if (isPublic && contacts?.length > 0) {
-          // Query the new reco's ID first so it's in both the notification metadata and email link
-          const recoRows = await sql`SELECT id FROM ic_recommendations WHERE recommender_id=${me.id} ORDER BY created_at DESC LIMIT 1`.catch(()=>[]);
-          const newRecoId = String(recoRows[0]?.id || '');
+          const newRecoId = String(created?.id || '');
           const recoUrl   = newRecoId && me.username
             ? `https://myinvestorcircle.com/#/investor/${me.username}/reco/${newRecoId}`
             : `https://myinvestorcircle.com/#/investor/${me.username || ''}`;
 
-          const meta = JSON.stringify({
+          const meta = {
             ticker:               recoData.ticker,
             assetName:            recoData.assetName,
             recommenderUsername:  me.username || '',
             recoId:               newRecoId,
-          });
-          await Promise.all(
-            contacts.map(c =>
-              sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
-                  VALUES (${c.id}, 'contact_recommendation', ${me.id}, ${meta})`
-                .then(() => sendPush(c.id, {
-                    title: '💡 New recommendation in your circle',
-                    body:  `${me.name || 'Someone'} posted a new recommendation`,
-                    url:   recoUrl,
-                    tag:   'contact_recommendation',
-                  }))
-                .catch(() => {})
-            )
-          );
+          };
+          await dbNotifyPublicContacts(newRecoId, contacts.map(c => c.id), meta);
+          contacts.forEach(c => sendPush(c.id, {
+            title: '💡 New recommendation in your circle',
+            body:  `${me.name || 'Someone'} posted a new recommendation`,
+            url:   recoUrl,
+            tag:   'contact_recommendation',
+          }));
           // Emails
           contacts.forEach(c => {
             if (c.email) sendEmail('contact_recommendation', {
@@ -4886,11 +4759,8 @@ function Sharing({ sharing, setSharing, configs, holdings, contacts, groups, fee
                       eff[x.key]=(x.key in newPrefs)?newPrefs[x.key]:x.default_on;
                     });
                     setEffectiveFeedConfig(eff);
-                    if(sql&&myId){
-                      sql`INSERT INTO user_feed_preferences (user_id, config_key, enabled)
-                          VALUES (${myId}, ${o.key}, ${next})
-                          ON CONFLICT (user_id, config_key) DO UPDATE SET enabled=${next}, updated_at=now()`
-                        .catch(console.warn);
+                    if(myId){
+                      dbSetFeedPref(o.key, next).catch(console.warn);
                     }
                   };
                   return (
@@ -5270,25 +5140,16 @@ function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProf
 
   // Load like count, comment count, and viewer's state when recoId is known
   useEffect(() => {
-    if (!recoId || !sql) return;
-    // Like count from recommendation_reactions table
-    sql`SELECT COUNT(*) AS cnt FROM recommendation_reactions WHERE reco_id=${recoId}`
-      .then(rows => setLikeCount(Number(rows[0]?.cnt) || 0)).catch(() => {});
-    // Comment count
-    sql`SELECT COUNT(*) AS cnt FROM recommendation_comments WHERE reco_id=${recoId}`
-      .then(rows => setCommentCount(Number(rows[0]?.cnt) || 0)).catch(() => {});
-    if (!viewerUser?.uid) return;
-    // Viewer's own like
-    sql`SELECT reaction FROM recommendation_reactions WHERE reco_id=${recoId} AND user_id=${viewerUser.uid} LIMIT 1`
-      .then(rows => { if (rows[0]?.reaction === 'like') setLiked(true); }).catch(() => {});
-    // Bookmark
-    sql`SELECT is_invested, invested_price FROM recommendation_tracking WHERE reco_id=${recoId} AND user_id=${viewerUser.uid} LIMIT 1`
-      .then(rows => {
-        if (rows.length) {
-          setIsTracked(true);
-          if (rows[0].is_invested) { setInvested(true); setInvestedPrice(rows[0].invested_price); }
-        }
-      }).catch(() => {});
+    if (!recoId || !viewerUser?.uid) return;
+    dbGetEngagement(recoId).then(e => {
+      setLikeCount(e.likes || 0);
+      setCommentCount(e.commentsCount || 0);
+      if (e.myReaction === 'like') setLiked(true);
+      if (e.tracking) {
+        setIsTracked(true);
+        if (e.tracking.isInvested) { setInvested(true); setInvestedPrice(e.tracking.investedPrice); }
+      }
+    }).catch(() => {});
   }, [recoId, viewerUser?.uid]);
 
   const requireLogin = () => { window.location.hash = ''; };
@@ -5298,20 +5159,10 @@ function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProf
     const next = !liked;
     setLiked(next);
     setLikeCount(c => next ? c + 1 : Math.max(0, c - 1));
-    if (sql && viewerUser.uid) {
-      const _recoId = String(recoId);
-      const _userId = String(viewerUser.uid);
-      if (next) {
-        track('reco_liked');
-        sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction)
-            VALUES(${_recoId},${_userId},'like')
-            ON CONFLICT(reco_id,user_id) DO UPDATE SET reaction='like'`
-          .then(()=>console.log('[like] ✓ RecoPost saved:', _recoId))
-          .catch(e=>console.error('[like] ✗ RecoPost INSERT failed:', e?.message));
-      } else {
-        sql`DELETE FROM recommendation_reactions WHERE reco_id=${_recoId} AND user_id=${_userId}`
-          .catch(e=>console.error('[like] ✗ RecoPost DELETE failed:', e?.message));
-      }
+    if (viewerUser.uid) {
+      if (next) track('reco_liked');
+      dbReactToReco(recoId, next ? 'like' : null)
+        .catch(e=>console.error('[like] ✗ RecoPost failed:', e?.message));
     }
   };
 
@@ -5319,25 +5170,22 @@ function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProf
     if (!viewerUser) { requireLogin(); return; }
     const next = !isTracked;
     setIsTracked(next);
-    if (sql && viewerUser.uid) {
-      if (next) sql`INSERT INTO recommendation_tracking (reco_id,user_id) VALUES (${recoId},${viewerUser.uid}) ON CONFLICT DO NOTHING`.catch(() => {});
-      else sql`DELETE FROM recommendation_tracking WHERE reco_id=${recoId} AND user_id=${viewerUser.uid}`.catch(() => {});
+    if (viewerUser.uid) {
+      if (next) dbTrackReco(recoId).catch(() => {});
+      else dbUntrackReco(recoId).catch(() => {});
     }
   };
 
   const handleInvest = (price) => {
-    if (!viewerUser || !sql) return;
+    if (!viewerUser) return;
     setInvested(true); setInvestedPrice(price); setIsTracked(true);
-    sql`INSERT INTO recommendation_tracking (reco_id,user_id,is_invested,invested_price,invested_at)
-        VALUES (${recoId},${viewerUser.uid},true,${price},now())
-        ON CONFLICT (reco_id,user_id) DO UPDATE SET is_invested=true,invested_price=${price},invested_at=now()`.catch(() => {});
+    dbTrackReco(recoId, true, price).catch(() => {});
   };
 
   const handleUnInvest = () => {
-    if (!viewerUser || !sql) return;
+    if (!viewerUser) return;
     setInvested(false); setInvestedPrice(null);
-    sql`UPDATE recommendation_tracking SET is_invested=false,invested_price=null,invested_at=null
-        WHERE reco_id=${recoId} AND user_id=${viewerUser.uid}`.catch(() => {});
+    dbTrackReco(recoId, false).catch(() => {});
   };
 
   const copyLink = () => {
@@ -5687,14 +5535,20 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
       if(!d) setNotFound(true); else setData(d);
       setLoading(false);
     }).catch(()=>{ setNotFound(true); setLoading(false); });
-    // Separately fetch claim meta so public profile works without modifying db.js
-    if (sql) sql`SELECT is_unclaimed, claim_status, claim_token FROM user_profiles WHERE username=${username} LIMIT 1`
-      .then(rows=>{ if(rows[0]) setClaimInfo(rows[0]); }).catch(()=>{});
+    // Public claim status (no token — see api/_lib/handlers/claim-profile.js).
+    dbGetClaimStatus(username).then(info=>{ if(info) setClaimInfo(info); }).catch(()=>{});
 
-  // Fetch viewer's own admin flag directly — don't wait for ME in App.jsx parent
-  // (ME loads async from Neon after Firebase auth; this page may render before it's ready)
-    if (sql && viewerUser?.uid) sql`SELECT is_admin FROM user_profiles WHERE id=${viewerUser.uid} LIMIT 1`
-      .then(rows=>{ if(rows[0]?.is_admin) setIsViewerAdmin(true); }).catch(()=>{});
+    // Admin-only: this call 403s for non-admins, so a successful response both
+    // confirms admin status and hands back the claim token in one round trip
+    // (don't wait for ME in App.jsx parent — it loads async after Firebase auth).
+    if (viewerUser?.uid) {
+      dbGetClaimAdminLink(username).then(res=>{
+        if (res) {
+          setIsViewerAdmin(true);
+          setClaimInfo(ci => ({ ...(ci||{}), claim_token: res.claim_token }));
+        }
+      }).catch(()=>{});
+    }
   },[username, viewerUser?.uid]);
 
   useEffect(()=>{
@@ -5714,12 +5568,11 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
     setEditSebiNum(p.sebi_reg_number||'');
     setEditSebiTill(p.sebi_reg_valid_till||'');
     setEditSebiFirm(p.sebi_firm_name||'');
-    if(sql && !regOptions.length) {
+    if(!regOptions.length) {
       try {
-        const opts = await sql`SELECT * FROM registration_status_options WHERE is_active=true ORDER BY sort_order`;
+        const { options: opts, verifyMessage } = await dbGetRegOptions();
         setRegOptions(opts);
-        const msg = await sql`SELECT value FROM app_settings WHERE key='sebi_verification_message' LIMIT 1`;
-        if(msg[0]) setSebiVerifyMsg(msg[0].value);
+        if(verifyMessage) setSebiVerifyMsg(verifyMessage);
       } catch(_) {}
     }
     setEditing(true);
@@ -5727,29 +5580,22 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
 
   // Save all profile fields
   const saveEdit=async()=>{
-    if(!sql||!data?.profile?.id) return;
+    if(!data?.profile?.id) return;
     setSavingEdit(true);
     const isSebi = ['sebi_ra','sebi_ria'].includes(editRegStatus);
-    const sebiChanged = editRegStatus !== (data.profile.registration_status||'self_directed');
-    const newApprovalStatus = isSebi
-      ? (sebiChanged ? 'pending' : (data.profile.sebi_approval_status||'not_applied'))
-      : 'not_applied';
     try {
       const fn = editFirstName.trim(); const ln = editLastName.trim();
-      await sql`UPDATE user_profiles SET
-        first_name=${fn||null}, last_name=${ln||null},
-        full_name=${[fn,ln].filter(Boolean).join(' ')||null},
-        avatar_color=${editAvatarColor||null},
-        bio=${editBio||null},
-        twitter_url=${editSocials.twitter||null}, linkedin_url=${editSocials.linkedin||null},
-        telegram_url=${editSocials.telegram||null}, instagram_url=${editSocials.instagram||null},
-        registration_status=${editRegStatus},
-        sebi_reg_number=${isSebi?(editSebiNum||null):null},
-        sebi_reg_valid_till=${isSebi?(editSebiTill||null):null},
-        sebi_firm_name=${isSebi?(editSebiFirm||null):null},
-        sebi_approval_status=${newApprovalStatus},
-        sebi_submitted_at=${isSebi&&sebiChanged?new Date().toISOString():data.profile.sebi_submitted_at||null}
-      WHERE id=${data.profile.id}`;
+      await dbSaveProfileEdit({
+        firstName: fn, lastName: ln,
+        avatarColor: editAvatarColor, bio: editBio,
+        twitter: editSocials.twitter, linkedin: editSocials.linkedin,
+        telegram: editSocials.telegram, instagram: editSocials.instagram,
+        registrationStatus: editRegStatus,
+        sebiNum: editSebiNum, sebiTill: editSebiTill, sebiFirm: editSebiFirm,
+      });
+      const newApprovalStatus = isSebi
+        ? (editRegStatus !== (data.profile.registration_status||'self_directed') ? 'pending' : (data.profile.sebi_approval_status||'not_applied'))
+        : 'not_applied';
       const updates = {
         first_name:fn, last_name:ln, full_name:[fn,ln].filter(Boolean).join(' '),
         avatar_color:editAvatarColor, bio:editBio,
@@ -6534,11 +6380,10 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
   const [claimBusy,     setClaimBusy]     = useState(false);
 
   useEffect(() => {
-    if (!sql) return;
-    sql`SELECT * FROM registration_status_options WHERE is_active=true ORDER BY sort_order`
-      .then(setRegOptions).catch(() => {});
-    sql`SELECT value FROM app_settings WHERE key='sebi_verification_message' LIMIT 1`
-      .then(rows => { if (rows[0]) setSebiMsg(rows[0].value); }).catch(() => {});
+    dbGetRegOptions().then(({ options, verifyMessage }) => {
+      setRegOptions(options);
+      if (verifyMessage) setSebiMsg(verifyMessage);
+    }).catch(() => {});
   }, []);
 
   // Debounced username availability check.
@@ -6600,28 +6445,13 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
       //   - Different from admin-assigned → write it now (no UNIQUE conflict since the
       //     unclaimed row holds a different value). Approval COALESCE keeps it, and
       //     Step A nulls the unclaimed row which frees the original admin username.
-      const chosenUsername = (unInput && unInput !== unclaimedProfile?.username) ? unInput : null;
-      await sql`
-        INSERT INTO user_profiles (id,email,full_name,first_name,last_name,username,bio,registration_status,is_admin)
-        VALUES (${uid},${claimEmail.trim()},${fullName},${fn},${ln||''},${chosenUsername},${bio.trim()||null},${regStatus},false)
-        ON CONFLICT (id) DO UPDATE SET
-          full_name=EXCLUDED.full_name, first_name=EXCLUDED.first_name,
-          last_name=EXCLUDED.last_name,
-          username=COALESCE(user_profiles.username, EXCLUDED.username),
-          updated_at=NOW()`;
-
-      // Link claimer → unclaimed profile (RETURNING prevents double-claim)
-      const link = await sql`
-        UPDATE user_profiles SET
-          claimed_by_uid=${uid}, claim_status='pending_approval',
-          claimed_at=NOW(), claim_token=NULL
-        WHERE claim_token=${claimToken} AND claim_status='unclaimed' RETURNING id`;
-      if (!link?.length) throw new Error('This profile has already been claimed. Contact hello@myinvestorcircle.com.');
-
-      await sql`
-        INSERT INTO claim_requests (profile_id,profile_username,profile_full_name,claimer_uid,claimer_email,claimer_full_name,status)
-        SELECT id,username,full_name,${uid},${claimEmail.trim()},${fullName},'pending'
-        FROM user_profiles WHERE claimed_by_uid=${uid} AND claim_status='pending_approval' LIMIT 1`;
+      await dbSubmitClaim({
+        token: claimToken,
+        firstName: fn, lastName: ln, bio: bio.trim(),
+        registrationStatus: regStatus,
+        username: unInput,
+        email: claimEmail.trim(),
+      });
 
       await fbUpdateProfile(cred.user,{displayName:fullName}).catch(()=>{});
 
@@ -6641,51 +6471,30 @@ function ProfileEditModal({ profile, userId, username, patchProfile, onClose,
   };
 
   const save = async () => {
-    if (!sql || !userId) return;
+    if (!userId) return;
     setSaving(true); setErr('');
     const fn = firstName.trim(), ln = lastName.trim();
     const fullName = [fn,ln].filter(Boolean).join(' ')||null;
 
     // Phase 2d: route the name update through the same authenticated
-    // api/profile/update.js endpoint AuthContext.updateProfile() already uses
-    // (it falls back to a direct-Neon UPDATE internally if the API is
-    // unreachable, unchanged), so both edit screens stay consistent. Only
-    // when a first name is actually entered — updateProfile() requires one,
-    // whereas this form has always allowed clearing it to blank via the
-    // legacy path below.
-    let nameUpdatedViaApi = false;
+    // api/profile/update.js endpoint AuthContext.updateProfile() already uses,
+    // so both edit screens stay consistent. Only when a first name is
+    // actually entered — updateProfile() requires one, whereas this form has
+    // always allowed clearing it to blank via dbSaveProfileEdit below.
     if (fn && updateProfile) {
       const result = await updateProfile(fn, ln);
       if (result?.error) { setErr(result.error); setSaving(false); return; }
-      nameUpdatedViaApi = true;
     }
 
     try {
-      if (nameUpdatedViaApi) {
-        await sql`UPDATE user_profiles SET
-          avatar_color=${avatarColor||null},
-          bio=${bio||null},
-          twitter_url=${socials.twitter||null}, linkedin_url=${socials.linkedin||null},
-          telegram_url=${socials.telegram||null}, instagram_url=${socials.instagram||null},
-          registration_status=${regStatus},
-          sebi_reg_number=${isSebi?(sebiNum||null):null},
-          sebi_reg_valid_till=${isSebi?(sebiTill||null):null},
-          sebi_firm_name=${isSebi?(sebiFirm||null):null}
-        WHERE id=${userId}`;
-      } else {
-        await sql`UPDATE user_profiles SET
-          first_name=${fn||null}, last_name=${ln||null},
-          full_name=${fullName},
-          avatar_color=${avatarColor||null},
-          bio=${bio||null},
-          twitter_url=${socials.twitter||null}, linkedin_url=${socials.linkedin||null},
-          telegram_url=${socials.telegram||null}, instagram_url=${socials.instagram||null},
-          registration_status=${regStatus},
-          sebi_reg_number=${isSebi?(sebiNum||null):null},
-          sebi_reg_valid_till=${isSebi?(sebiTill||null):null},
-          sebi_firm_name=${isSebi?(sebiFirm||null):null}
-        WHERE id=${userId}`;
-      }
+      await dbSaveProfileEdit({
+        firstName: fn, lastName: ln,
+        avatarColor, bio,
+        twitter: socials.twitter, linkedin: socials.linkedin,
+        telegram: socials.telegram, instagram: socials.instagram,
+        registrationStatus: regStatus,
+        sebiNum: isSebi?sebiNum:null, sebiTill: isSebi?sebiTill:null, sebiFirm: isSebi?sebiFirm:null,
+      });
       patchProfile?.({
         first_name: fn, last_name: ln, full_name: fullName,
         avatar_color: avatarColor, bio,
@@ -7199,70 +7008,23 @@ function RecoComments({ recoId, me }) {
   const [submitting,setSubmitting]= useState(false);
 
   useEffect(()=>{
-    if(!recoId||!sql){ setLoading(false); return; }
+    if(!recoId){ setLoading(false); return; }
     setLoading(true);
-    sql`SELECT id, user_id, user_name, comment, created_at FROM recommendation_comments WHERE reco_id=${recoId} ORDER BY created_at ASC`
-      .then(rows=>{ setComments(rows); setLoading(false); })
+    dbGetEngagement(recoId)
+      .then(e=>{ setComments(e.comments || []); setLoading(false); })
       .catch(()=>setLoading(false));
   },[recoId]);
 
   const submit=async()=>{
-    if(!text.trim()||!me?.id||!sql) return;
+    if(!text.trim()||!me?.id) return;
     setSubmitting(true);
     const name=[me.firstName,me.lastName].filter(Boolean).join(' ')||me.name||'User';
     try{
-      await sql`INSERT INTO recommendation_comments (reco_id,user_id,user_name,comment) VALUES (${recoId},${me.id},${name},${text.trim()})`;
-      setComments(prev=>[...prev,{id:Date.now(),user_id:me.id,user_name:name,comment:text.trim(),created_at:new Date().toISOString()}]);
+      // Server derives the commenter's display name from their own profile and
+      // performs the owner/network notification fan-out (see engagement.js).
+      const comment = await dbCommentOnReco(recoId, text.trim());
+      setComments(prev=>[...prev, comment]);
       setText('');
-      // Notify reco owner + email them + fan-out to commenter's network
-      sql`SELECT ir.recommender_id, ir.ticker, ir.asset_name,
-                 up.email, up.username
-          FROM ic_recommendations ir
-          JOIN user_profiles up ON up.id = ir.recommender_id
-          WHERE ir.id = ${recoId} LIMIT 1`
-        .then(rows => {
-          if (!rows[0]) return;
-          const { recommender_id, ticker, asset_name, email: ownerEmail, username: ownerUsername } = rows[0];
-          if (recommender_id === me.id) return; // no self-notifications
-
-          // In-app notification to owner
-          const meta = JSON.stringify({ ticker, assetName: asset_name, recoId, recommenderUsername: ownerUsername || '' });
-          sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
-              VALUES (${recommender_id}, 'contact_comment', ${me.id}, ${meta})`
-              .then(()=>sendPush(recommender_id,{title:'💬 New comment on your recommendation',body:`${name} commented on your recommendation${ticker?' · '+ticker:''}`,url:ownerUsername&&recoId?`https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${recoId}`:'https://myinvestorcircle.com',tag:'contact_comment'}))
-              .catch(() => {});
-
-          // Email to owner
-          if (ownerEmail) {
-            const recoUrl = ownerUsername
-              ? `https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${recoId}`
-              : `https://myinvestorcircle.com`;
-            sendEmail('reco_comment', {
-              to_email:       ownerEmail,
-              commenter_name: name,
-              ticker,
-              asset_name,
-              comment:        text.trim(),
-              reco_url:       recoUrl,
-            });
-          }
-
-          // Network fan-out — notify commenter's connections about the comment
-          if (sql && me.id) {
-            sql`SELECT user_id FROM (
-                  SELECT addressee_id AS user_id FROM connections WHERE requester_id=${me.id} AND status='accepted'
-                  UNION
-                  SELECT requester_id AS user_id FROM connections WHERE addressee_id=${me.id} AND status='accepted'
-                ) AS conn_ids WHERE user_id != ${recommender_id}`
-              .then(connRows => {
-                const netMeta = JSON.stringify({ ticker, assetName: asset_name, recoId, commenterName: name, recommenderUsername: ownerUsername || '' });
-                connRows.forEach(c => {
-                  sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
-                      VALUES (${c.user_id}, 'network_comment', ${me.id}, ${netMeta})`.catch(() => {});
-                });
-              }).catch(() => {});
-          }
-        }).catch(() => {});
     }catch(e){ console.warn('Comment failed:',e); }
     setSubmitting(false);
   };
@@ -7293,8 +7055,8 @@ function RecoComments({ recoId, me }) {
                 <div className="av" style={{width:28,height:28,background:'var(--accent)',fontSize:10,flexShrink:0}}>{initialsOf(c.user_name||'?')}</div>
                 <div style={{flex:1}}>
                   <div style={{display:'flex',alignItems:'baseline',gap:7,marginBottom:2}}>
-                    <span style={{fontSize:12,fontWeight:700}}>{c.user_name||'User'}</span>
-                    <span className="muted small" style={{fontSize:11}}>{new Date(c.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+                    <span style={{fontSize:12,fontWeight:700}}>{c.userName||'User'}</span>
+                    <span className="muted small" style={{fontSize:11}}>{new Date(c.createdAt).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
                   </div>
                   <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.6,background:'var(--surface-2)',borderRadius:10,padding:'7px 11px'}}>{c.comment}</div>
                 </div>
@@ -7338,7 +7100,7 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
       setNetworkEngagementRecos(rs=>rs.map(x=>x.id===r.id?{...x,...updates}:x));
     } else {
       setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,...updates}:x));
-      if(sql&&r.deliveryId){ try{ updateDelivery(r.deliveryId,updates,me?.id); }catch(_){} }
+      if(r.deliveryId){ try{ updateDelivery(r.deliveryId,updates,me?.id); }catch(_){} }
     }
   };
 
@@ -7357,81 +7119,14 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
     } else {
       setRecsReceived(rs=>rs.map(x=>x.deliveryId===r.deliveryId?{...x,reaction:next,likes}:x));
       // Also persist delivery reaction for compatibility
-      if(sql&&r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
+      if(r.deliveryId) updateDelivery(r.deliveryId,{reaction:next==='none'?null:next},me.id).catch(console.warn);
     }
 
-    // ── Persist reaction to recommendation_reactions for ALL feed types ───────
-    if(sql && me?.id && r.id){
-      const _recoId = String(r.id);
-      const _userId = String(me.id);
-      if(next==='like'){
-        sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction)
-            VALUES(${_recoId},${_userId},'like')
-            ON CONFLICT(reco_id,user_id) DO UPDATE SET reaction='like'`
-          .then(()=>console.log('[like] ✓ saved to recommendation_reactions:', _recoId))
-          .catch(e=>console.error('[like] ✗ INSERT failed:', e?.message, {_recoId, _userId}));
-      } else {
-        sql`DELETE FROM recommendation_reactions WHERE reco_id=${_recoId} AND user_id=${_userId}`
-          .then(()=>console.log('[like] ✓ deleted from recommendation_reactions:', _recoId))
-          .catch(e=>console.error('[like] ✗ DELETE failed:', e?.message));
-      }
-    }
-    // Notify reco owner (consolidated LinkedIn-style) + fan-out to liker's network
-    if(next==='like' && r.id && sql){
-      sql`SELECT ir.recommender_id, up.username AS recommender_username, up.full_name AS recommender_name
-          FROM ic_recommendations ir
-          JOIN user_profiles up ON up.id=ir.recommender_id
-          WHERE ir.id=${r.id} LIMIT 1`
-        .then(rows=>{
-          const ownerId        = rows[0]?.recommender_id;
-          const ownerUsername  = rows[0]?.recommender_username || '';
-          const ownerName      = rows[0]?.recommender_name     || r.byName || '';
-          if(!ownerId || ownerId===me.id) return;
-
-          // ── Consolidated like notification (check-then-upsert) ──────────────
-          sql`SELECT id, metadata FROM notifications
-              WHERE user_id=${ownerId} AND type='contact_like'
-              AND metadata->>'recoId'=${r.id} AND is_read=false LIMIT 1`
-            .then(existing=>{
-              const lName = me.name || 'Someone';
-              if(existing[0]){
-                const prev = typeof existing[0].metadata==='string'
-                  ? JSON.parse(existing[0].metadata)
-                  : (existing[0].metadata||{});
-                const likerNames=[...new Set([...(prev.likerNames||[]),lName])];
-                const newMeta=JSON.stringify({...prev,likerNames,likeCount:likerNames.length});
-                sql`UPDATE notifications SET metadata=${newMeta},from_user_id=${me.id},created_at=NOW()
-                    WHERE id=${existing[0].id}`.catch(()=>{});
-              } else {
-                const meta=JSON.stringify({
-                  ticker:r.ticker, assetName:r.assetName, recoId:r.id,
-                  likerNames:[lName], likeCount:1,
-                  recommenderUsername:ownerUsername, recommenderName:ownerName,
-                });
-                sql`INSERT INTO notifications (user_id,type,from_user_id,metadata)
-                    VALUES (${ownerId},'contact_like',${me.id},${meta})`
-                  .then(()=>sendPush(ownerId,{title:'👍 Someone liked your recommendation',body:`${lName} liked your recommendation${r.ticker?' · '+r.ticker:''}`,url:ownerUsername&&r.id?`https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${r.id}`:'https://myinvestorcircle.com',tag:'contact_like'}))
-                  .catch(()=>{});
-              }
-            }).catch(()=>{});
-
-          // ── Network fan-out: notify liker's connections ─────────────────────
-          sql`SELECT user_id FROM (
-                SELECT addressee_id AS user_id FROM connections WHERE requester_id=${me.id} AND status='accepted'
-                UNION
-                SELECT requester_id AS user_id FROM connections WHERE addressee_id=${me.id} AND status='accepted'
-              ) AS conn_ids WHERE user_id != ${ownerId}`
-            .then(connRows=>{
-              const netMeta=JSON.stringify({
-                ticker:r.ticker, assetName:r.assetName, recoId:r.id,
-                recommenderName:ownerName, recommenderUsername:ownerUsername,
-              });
-              connRows.forEach(c=>{
-                sql`INSERT INTO notifications (user_id,type,from_user_id,metadata)
-                    VALUES (${c.user_id},'network_like',${me.id},${netMeta})`.catch(()=>{});
-              });
-            }).catch(()=>{});
-        }).catch(()=>{});
+    // Persist reaction to recommendation_reactions for ALL feed types, and (on
+    // a fresh like) trigger the owner/network notification fan-out server-side.
+    if(me?.id && r.id){
+      dbReactToReco(r.id, next==='like' ? 'like' : null, next==='like' ? { likerName: me.name||'Someone' } : null)
+        .catch(e=>console.error('[like] ✗ failed:', e?.message));
     }
   };
 
@@ -7440,10 +7135,10 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
     setShareAnchor(e.currentTarget); setShowShare(true);
     const cached=recommenderInfo?.username||null;
     if(cached){ setShareUsername(cached); return; }
-    if(r.from&&sql){
+    if(r.from){
       try{
-        const rows=await sql`SELECT username FROM user_profiles WHERE id=${r.from} AND username IS NOT NULL LIMIT 1`;
-        if(rows[0]?.username) setShareUsername(rows[0].username);
+        const row=await dbLookupUser('id', r.from);
+        if(row?.username) setShareUsername(row.username);
       }catch(_){}
     }
   };
@@ -7582,17 +7277,15 @@ function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos
               reco={{...r,price:r.price,ticker:r.ticker,assetName:r.assetName,priceAt:r.priceAt}}
               onMark={(price)=>{
                 patch({isInvested:true,investedPrice:price,invested:true});
-                if(sql&&me?.id){
-                  sql`INSERT INTO recommendation_tracking(reco_id,user_id,is_invested,invested_price,invested_at)
-                      VALUES(${r.id},${me.id},true,${price},now())
-                      ON CONFLICT(reco_id,user_id) DO UPDATE SET is_invested=true,invested_price=${price},invested_at=now()`
+                if(me?.id){
+                  dbTrackReco(r.id, true, price)
                     .then(()=>{ if(toggleTrack&&tracked&&!tracked.has(r.id)) toggleTrack(r.id); })
                     .catch(()=>{ if(toggleTrack&&tracked&&!tracked.has(r.id)) toggleTrack(r.id); });
                 } else if(toggleTrack&&tracked&&!tracked.has(r.id)) toggleTrack(r.id);
               }}
               onUnmark={()=>{
                 patch({isInvested:false,investedPrice:null,invested:false});
-                if(sql&&me?.id) sql`UPDATE recommendation_tracking SET is_invested=false,invested_price=null,invested_at=null WHERE reco_id=${r.id} AND user_id=${me.id}`.catch(console.warn);
+                if(me?.id) dbTrackReco(r.id, false).catch(console.warn);
               }}
               stopProp={true}
             />
@@ -8153,8 +7846,7 @@ let _instrLoadPromise = null;
 async function loadInstruments() {
   if (_instrCache) return _instrCache;
   if (_instrLoadPromise) return _instrLoadPromise;
-  if (!sql) return [];
-  _instrLoadPromise = sql`SELECT symbol, name, exchange, type, asset_class, currency, sector FROM instruments WHERE is_active = true ORDER BY symbol`
+  _instrLoadPromise = dbGetInstrumentsList()
     .then(rows => { _instrCache = rows; return rows; })
     .catch(() => { _instrCache = []; return []; });
   return _instrLoadPromise;
@@ -8167,13 +7859,9 @@ let _sectorLoadPromise = null;
 function loadSectorOpts() {
   if (_sectorCache)       return Promise.resolve(_sectorCache);
   if (_sectorLoadPromise) return _sectorLoadPromise;
-  if (!sql)               return Promise.resolve(FALLBACK_SECTORS);
-  _sectorLoadPromise = sql`
-      SELECT DISTINCT sector FROM sector_master
-      WHERE sector IS NOT NULL AND sector <> ''
-      ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector`
-    .then(rows => {
-      _sectorCache = rows.length ? rows.map(r => r.sector) : FALLBACK_SECTORS;
+  _sectorLoadPromise = dbGetSectors()
+    .then(sectors => {
+      _sectorCache = sectors.length ? sectors : FALLBACK_SECTORS;
       return _sectorCache;
     })
     .catch(() => {
@@ -8477,7 +8165,7 @@ function AdminSeedData() {
 
   /* ── Seed ── */
   const handleSeed = async () => {
-    if(!parsed||!sql) return;
+    if(!parsed) return;
     setSeeding(true); setSeedLog([]); setSeedDone(false);
     const log = (msg, type='info') => setSeedLog(l=>[...l,{msg,type,t:new Date().toLocaleTimeString()}]);
 
@@ -8485,80 +8173,31 @@ function AdminSeedData() {
     if(parsed.profiles.length) {
       log(`── Profiles (${parsed.profiles.length} rows) ──`);
       let ok=0, fail=0;
-      for(const p of parsed.profiles) {
-        try {
-          const res = await sql`
-            UPDATE user_profiles SET
-              first_name=${p.first_name||null}, last_name=${p.last_name||null},
-              full_name=${[p.first_name,p.last_name].filter(Boolean).join(' ')||null},
-              bio=${p.bio}, avatar_color=${p.avatar_color},
-              registration_status=${p.registration_status||'self_directed'},
-              twitter_url=${p.twitter_url}, linkedin_url=${p.linkedin_url},
-              telegram_url=${p.telegram_url}, instagram_url=${p.instagram_url}
-            WHERE email=${p.email} RETURNING id`;
-          if(res.length){ ok++; log(`✓ ${p.email} — profile updated`,'success'); }
-          else { fail++; log(`⚠ ${p.email} — no user found (create account first)`,'warn'); }
-        } catch(e){ fail++; log(`✗ ${p.email} — ${e.message}`,'error'); }
-      }
+      try {
+        const results = await dbBulkSeedProfiles(parsed.profiles);
+        results.forEach(r => {
+          if(r.ok){ ok++; log(`✓ ${r.email} — profile updated`,'success'); }
+          else { fail++; log(r.error ? `✗ ${r.email} — ${r.error}` : `⚠ ${r.email} — no user found (create account first)`, r.error?'error':'warn'); }
+        });
+      } catch(e){ fail = parsed.profiles.length; log(`✗ Bulk profile update failed: ${e.message}`,'error'); }
       log(`Profiles done: ${ok} updated, ${fail} failed`);
     }
 
-    /* 2 — Recommendations: build username→id map */
+    /* 2 — Recommendations */
     if(parsed.recos.length) {
       log(`── Recommendations (${parsed.recos.length} rows) ──`);
-      const usernames = [...new Set(parsed.recos.map(r=>r.username))];
-      const userMap = {};
-      for(const uname of usernames) {
-        try {
-          const rows = await sql`SELECT id FROM user_profiles WHERE username=${uname} LIMIT 1`;
-          if(rows.length){ userMap[uname]=rows[0].id; log(`Found user: @${uname}`); }
-          else log(`⚠ @${uname} not found — create account and set username first`,'warn');
-        } catch(e){ log(`✗ Lookup @${uname}: ${e.message}`,'error'); }
-      }
-
-      /* Replace mode: delete all existing recos for found users */
-      if(seedMode==='replace') {
-        for(const [uname,uid] of Object.entries(userMap)) {
-          try {
-            const del = await sql`DELETE FROM ic_recommendations WHERE recommender_id=${uid} RETURNING id`;
-            log(`🗑 Deleted ${del.length} existing recos for @${uname}`,'warn');
-          } catch(e){ log(`✗ Delete @${uname}: ${e.message}`,'error'); }
-        }
-      }
-
-      let ok=0, skipped=0, fail=0;
-      for(const r of parsed.recos) {
-        const uid = userMap[r.username];
-        if(!uid){ skipped++; log(`↷ Skip (no user): ${r.ticker} @${r.username}`,'warn'); continue; }
-        if(r._rowErrs.length){ skipped++; log(`↷ Skip (errors): ${r.ticker} — ${r._rowErrs.join(', ')}`,'warn'); continue; }
-
-        /* Skip-mode dedup: (recommender_id, ticker, created_date) */
-        if(seedMode==='skip') {
-          try {
-            const ex = await sql`SELECT id FROM ic_recommendations WHERE recommender_id=${uid} AND ticker=${r.ticker} AND created_at::date=${r.created_date} LIMIT 1`;
-            if(ex.length){ skipped++; log(`↷ Skip (exists): ${r.ticker} on ${r.created_date}`); continue; }
-          } catch(_){}
-        }
-
-        try {
-          await sql`
-            INSERT INTO ic_recommendations (
-              recommender_id, asset_name, ticker, asset_class, exchange,
-              recommendation_type, reco_price, current_price, target_price, stop_loss,
-              horizon, thesis, sector, conviction, is_public,
-              created_at, exit_signal, exit_date
-            ) VALUES (
-              ${uid}, ${r.asset_name}, ${r.ticker}, ${r.asset_class}, ${r.exchange},
-              ${r.recommendation_type}, ${r.reco_price}, ${r.current_price},
-              ${r.target_price}, ${r.stop_loss},
-              ${r.horizon}, ${r.thesis}, ${r.sector}, ${r.conviction}, ${r.is_public},
-              ${r.created_date + 'T09:00:00.000Z'},
-              ${r.status==='closed'}, ${r.exit_date}
-            )`;
-          ok++; log(`✓ ${r.ticker} by @${r.username} — ${r.status}${r.exit_price?` @ exit ₹${r.exit_price}`:''}`,'success');
-        } catch(e){ fail++; log(`✗ ${r.ticker}: ${e.message}`,'error'); }
-      }
-      log(`Recommendations done: ${ok} inserted, ${skipped} skipped, ${fail} failed`);
+      try {
+        const results = await dbBulkSeedRecos(parsed.recos, seedMode);
+        let ok=0, skipped=0, fail=0;
+        results.forEach(r => {
+          if(r.kind==='lookup') { log(r.found ? `Found user: @${r.username}` : `⚠ @${r.username} not found — create account and set username first`, r.found?'info':'warn'); return; }
+          if(r.kind==='delete') { log(r.error ? `✗ Delete @${r.username}: ${r.error}` : `🗑 Deleted ${r.count} existing recos for @${r.username}`, r.error?'error':'warn'); return; }
+          if(r.status==='inserted'){ ok++; log(`✓ ${r.ticker} by @${r.username} — inserted`,'success'); }
+          else if(r.status?.startsWith('skipped')){ skipped++; log(`↷ Skip: ${r.ticker} @${r.username}`,'warn'); }
+          else { fail++; log(`✗ ${r.ticker}: ${r.error||'failed'}`,'error'); }
+        });
+        log(`Recommendations done: ${ok} inserted, ${skipped} skipped, ${fail} failed`);
+      } catch(e){ log(`✗ Bulk recommendation seed failed: ${e.message}`,'error'); }
     }
 
     log(`── All done ──`,'success');
@@ -8714,10 +8353,9 @@ function AdminSeedData() {
 
             {/* Run button */}
             <div style={{borderTop:'1px solid var(--line)',paddingTop:16}}>
-              <button className="btn btn-pri" disabled={seeding||!sql} onClick={handleSeed} style={{minWidth:140}}>
+              <button className="btn btn-pri" disabled={seeding} onClick={handleSeed} style={{minWidth:140}}>
                 {seeding?<><Loader size={14} className="spin"/> Seeding…</>:<><Sparkles size={14}/> Run Seed</>}
               </button>
-              {!sql&&<span style={{marginLeft:12,fontSize:12,color:'var(--loss)'}}>Database not connected</span>}
             </div>
           </div>
         </div>
@@ -8768,13 +8406,9 @@ function AdminFeedConfig({ feedConfigOptions, setFeedConfigOptions, setEffective
       effective[o.key]=(o.key in userFeedPrefs)?userFeedPrefs[o.key]:o.default_on;
     });
     setEffectiveFeedConfig(effective);
-    if(sql){
-      try{
-        if(field==='admin_enabled') await sql`UPDATE feed_config_options SET admin_enabled=${value} WHERE key=${opt.key}`;
-        if(field==='always_on')     await sql`UPDATE feed_config_options SET always_on=${value} WHERE key=${opt.key}`;
-        if(field==='default_on')    await sql`UPDATE feed_config_options SET default_on=${value} WHERE key=${opt.key}`;
-      }catch(e){console.warn('Feed config update:',e);}
-    }
+    try{
+      await dbToggleFeedConfig(opt.key, field, value);
+    }catch(e){console.warn('Feed config update:',e);}
     setSaving(null);
   };
 
@@ -8862,20 +8496,11 @@ function InstrumentBrowser() {
   const PAGE_SIZE = 50;
 
   const load = async (search, pg=0) => {
-    if (!sql) return;
     setLoading(true);
     try {
-      const offset = pg * PAGE_SIZE;
-      const data = search
-        ? await sql`SELECT * FROM instruments WHERE is_active=true AND (symbol ILIKE ${'%'+search+'%'} OR name ILIKE ${'%'+search+'%'}) ORDER BY symbol LIMIT ${PAGE_SIZE} OFFSET ${offset}`
-        : await sql`SELECT * FROM instruments WHERE is_active=true ORDER BY symbol LIMIT ${PAGE_SIZE} OFFSET ${offset}`;
-      setRows(data);
-      if (pg===0) {
-        const ct = search
-          ? await sql`SELECT COUNT(*) FROM instruments WHERE is_active=true AND (symbol ILIKE ${'%'+search+'%'} OR name ILIKE ${'%'+search+'%'})`
-          : await sql`SELECT COUNT(*) FROM instruments WHERE is_active=true`;
-        setTotal(Number(ct[0].count));
-      }
+      const { instruments, total: ct } = await dbGetAdminInstruments(search, pg, PAGE_SIZE);
+      setRows(instruments);
+      if (pg===0) setTotal(ct);
     } catch(e) { console.warn(e); }
     setLoading(false);
   };
@@ -8886,8 +8511,7 @@ function InstrumentBrowser() {
   const goPage = (p) => { setPage(p); load(q, p); };
 
   const downloadAll = async () => {
-    if (!sql) return;
-    const all = await sql`SELECT symbol, name, exchange, type, asset_class as "Asset Class", currency FROM instruments WHERE is_active=true ORDER BY symbol`;
+    const all = await dbGetInstrumentsExport();
     const ws = XLSX.utils.json_to_sheet(all);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Instruments");
@@ -8896,7 +8520,7 @@ function InstrumentBrowser() {
 
   const del = async (id) => {
     if (!confirm("Remove this instrument from the reference list?")) return;
-    await sql`UPDATE instruments SET is_active=false WHERE id=${id}`;
+    await dbDeactivateInstrument(id);
     setRows(r=>r.filter(x=>x.id!==id));
     setTotal(t=>t-1);
     clearInstrCache();
@@ -8967,13 +8591,13 @@ function InstrumentUploader() {
   };
 
   const doImport = async () => {
-    if (!sql || !preview) return;
+    if (!preview) return;
     setUploading(true); setProgress(0);
     let inserted = 0;
     for (let i=0; i<preview.length; i++) {
       const r = preview[i];
       try {
-        await sql`INSERT INTO instruments (symbol,name,exchange,type,asset_class,currency,sector) VALUES (${r.symbol},${r.name},${r.exchange},${r.type},${r.assetClass},${r.currency},${r.sector||null}) ON CONFLICT (symbol,exchange) DO UPDATE SET name=EXCLUDED.name, asset_class=EXCLUDED.asset_class, sector=COALESCE(EXCLUDED.sector, instruments.sector)`;
+        await dbUpsertInstrument(r);
         inserted++;
       } catch(_) {}
       if (i%50===0) setProgress(Math.round((i/preview.length)*100));
@@ -9019,7 +8643,7 @@ function InstrumentAddForm({ onAdded }) {
   const save = async () => {
     setSaving(true); setErr("");
     try {
-      await sql`INSERT INTO instruments (symbol,name,exchange,type,asset_class,currency,sector) VALUES (${f.symbol.trim().toUpperCase()},${f.name.trim()},${f.exchange},${f.type},${f.assetClass},${f.currency},${f.sector||null}) ON CONFLICT (symbol,exchange) DO UPDATE SET name=EXCLUDED.name, asset_class=EXCLUDED.asset_class, sector=COALESCE(EXCLUDED.sector,instruments.sector)`;
+      await dbUpsertInstrument({ ...f, symbol: f.symbol.trim().toUpperCase(), name: f.name.trim() });
       clearInstrCache();
       setSaving(false);
       onAdded();
@@ -9093,19 +8717,6 @@ function AdminSebi() {
       setLoading(false);
       return;
     }
-    if (api.denied) { setLoading(false); return; }
-    if(!sql) { setLoading(false); return; }
-    try {
-      const [pend, appr, msg, opts] = await Promise.all([
-        sql`SELECT id,full_name,first_name,last_name,email,registration_status,sebi_reg_number,sebi_reg_valid_till,sebi_firm_name,sebi_submitted_at FROM user_profiles WHERE sebi_approval_status='pending' ORDER BY sebi_submitted_at`,
-        sql`SELECT id,full_name,first_name,last_name,email,registration_status,sebi_reg_number,sebi_reg_valid_till,sebi_firm_name,sebi_approved_at FROM user_profiles WHERE sebi_approval_status='approved' ORDER BY sebi_approved_at DESC`,
-        sql`SELECT value FROM app_settings WHERE key='sebi_verification_message' LIMIT 1`,
-        sql`SELECT * FROM registration_status_options ORDER BY sort_order`,
-      ]);
-      setPending(pend); setApproved(appr);
-      if(msg[0]) setVerifyMsg(msg[0].value);
-      setRegOpts(opts); setOptDraft(opts.map(o=>({...o})));
-    } catch(e) { console.warn(e); }
     setLoading(false);
   };
 
@@ -9117,39 +8728,25 @@ function AdminSebi() {
   const doApprove = async (u) => {
     if(!confirm(`Approve SEBI registration for ${nameOf(u)}?`)) return;
     setBusy(b=>({...b,[u.id]:'approving'}));
-    const api = await adminSebiApi(user, { method: 'POST', body: { action: 'approve', userId: u.id } });
-    if (!api.ok && !api.denied && sql) {
-      await sql`UPDATE user_profiles SET sebi_approval_status='approved', sebi_approved_at=now() WHERE id=${u.id}`;
-    }
+    await adminSebiApi(user, { method: 'POST', body: { action: 'approve', userId: u.id } });
     await load();
     setBusy(b=>({...b,[u.id]:null}));
   };
   const doReject = async (u) => {
     if(!confirm(`Reject / revoke SEBI status for ${nameOf(u)}? Their profile will revert to "Not SEBI Registered".`)) return;
     setBusy(b=>({...b,[u.id]:'rejecting'}));
-    const api = await adminSebiApi(user, { method: 'POST', body: { action: 'reject', userId: u.id } });
-    if (!api.ok && !api.denied && sql) {
-      await sql`UPDATE user_profiles SET sebi_approval_status='rejected', sebi_approved_at=null WHERE id=${u.id}`;
-    }
+    await adminSebiApi(user, { method: 'POST', body: { action: 'reject', userId: u.id } });
     await load();
     setBusy(b=>({...b,[u.id]:null}));
   };
 
   const saveMsg = async () => {
-    const api = await adminSebiApi(user, { method: 'POST', body: { action: 'save-message', message: msgDraft } });
-    if (!api.ok && !api.denied && sql) {
-      await sql`INSERT INTO app_settings(key,value) VALUES('sebi_verification_message',${msgDraft}) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`;
-    }
+    await adminSebiApi(user, { method: 'POST', body: { action: 'save-message', message: msgDraft } });
     setVerifyMsg(msgDraft); setEditMsg(false);
   };
 
   const saveOpts = async () => {
-    const api = await adminSebiApi(user, { method: 'POST', body: { action: 'save-reg-options', options: optDraft } });
-    if (!api.ok && !api.denied && sql) {
-      for(const o of optDraft) {
-        await sql`UPDATE registration_status_options SET label=${o.label}, description=${o.description}, is_active=${o.is_active}, sort_order=${o.sort_order} WHERE id=${o.id}`;
-      }
-    }
+    await adminSebiApi(user, { method: 'POST', body: { action: 'save-reg-options', options: optDraft } });
     await load(); setEditOpts(false);
   };
 
@@ -9280,12 +8877,8 @@ function AdminUsers({ users, setUsers, contacts, setContacts }) {
       `This CANNOT be undone. Click OK to confirm.`
     );
     if (!confirmed) return;
-    if (!sql) { alert("Neon not configured — cannot delete."); return; }
     try {
-      // Add to blacklist so they're force-signed-out on next login
-      await sql`INSERT INTO deleted_users (id, email) VALUES (${u.id}, ${u.email}) ON CONFLICT DO NOTHING`;
-      // Delete from user_profiles — CASCADE removes all their v2 table data
-      await sql`DELETE FROM user_profiles WHERE id = ${u.id}`;
+      await dbAdminDeleteUser(u.id);
       // Remove from local state
       setUsers(us => us.filter(x => x.id !== u.id));
       alert(`${u.name} has been permanently deleted. Their data has been removed from the database. Note: their Firebase login credential still exists technically — they will be blocked from accessing the app if they attempt to sign in.`);
@@ -9414,40 +9007,27 @@ function AddUserModal({ onClose, onAdd }) {
     try {
       const cred = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password);
       await secondaryAuth.signOut();
-      if (sql) {
-        try {
-          const nameParts = name.trim().split(/\s+/);
-          const fn = nameParts[0] || "";
-          const ln = nameParts.slice(1).join(" ") || "";
-          await sql`
-            INSERT INTO user_profiles (id, email, full_name, first_name, last_name, is_admin, username)
-            VALUES (
-              ${cred.user.uid}, ${email.trim()}, ${name.trim()},
-              ${fn}, ${ln}, false, ${username.trim() || null}
-            )
-            ON CONFLICT (id) DO UPDATE SET
-              full_name  = EXCLUDED.full_name,
-              first_name = COALESCE(NULLIF(user_profiles.first_name, ''), EXCLUDED.first_name),
-              last_name  = COALESCE(NULLIF(user_profiles.last_name,  ''), EXCLUDED.last_name),
-              username   = COALESCE(user_profiles.username, EXCLUDED.username),
-              updated_at = now()
-          `;
-        } catch(e) { console.warn("user_profiles insert failed:", e.message); }
-      }
+      try {
+        const nameParts = name.trim().split(/\s+/);
+        const fn = nameParts[0] || "";
+        const ln = nameParts.slice(1).join(" ") || "";
+        await dbAdminCreateUserProfile({
+          id: cred.user.uid, email: email.trim(), fullName: name.trim(),
+          firstName: fn, lastName: ln, username: username.trim() || null,
+        });
+      } catch(e) { console.warn("user_profiles insert failed:", e.message); }
       onAdd({ id:cred.user.uid, name:name.trim(), email:email.trim(), role, status:"Active", accounts:0, joined:new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
     } catch(e) {
       if (e.code === "auth/email-already-in-use") {
         // User exists in Firebase but may not be in Neon user_profiles yet.
         // Try to look them up and surface them in the admin list.
-        if (sql) {
-          try {
-            const rows = await sql`SELECT * FROM user_profiles WHERE email = ${email.trim().toLowerCase()} LIMIT 1`;
-            if (rows[0]) {
-              onAdd({ id:rows[0].id, name:rows[0].full_name, email:rows[0].email, role:rows[0].is_admin?"Admin":"Investor", status:"Active", accounts:0, joined:new Date(rows[0].created_at).toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
-              setBusy(false); return; // successfully recovered
-            }
-          } catch(_) {}
-        }
+        try {
+          const row = await dbAdminGetUserByEmail(email.trim().toLowerCase());
+          if (row) {
+            onAdd({ id:row.id, name:row.full_name, email:row.email, role:row.is_admin?"Admin":"Investor", status:"Active", accounts:0, joined:new Date(row.created_at).toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
+            setBusy(false); return; // successfully recovered
+          }
+        } catch(_) {}
         setErr("An account with this email already exists in Firebase. If they are not showing in the list they have not logged in yet — ask them to sign in and they will appear automatically.");
       } else {
         const msg = e.code==="auth/invalid-email" ? "Please enter a valid email address."
@@ -9764,9 +9344,8 @@ function AboutPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!sql) { setLoading(false); return; }
-    sql`SELECT value FROM app_settings WHERE key='about_us_content' LIMIT 1`
-      .then(rows => { setHtml(rows[0]?.value || null); setLoading(false); })
+    dbGetAboutUsContent()
+      .then(h => { setHtml(h); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
@@ -9808,18 +9387,15 @@ function AdminAboutEditor() {
   const [tab,     setTab]     = useState('edit'); // 'edit' | 'preview'
 
   useEffect(() => {
-    if (!sql) { setHtml(ABOUT_DEFAULT_HTML); setLoading(false); return; }
-    sql`SELECT value FROM app_settings WHERE key='about_us_content' LIMIT 1`
-      .then(rows => { setHtml(rows[0]?.value || ABOUT_DEFAULT_HTML); setLoading(false); })
+    dbGetAboutUsContent()
+      .then(h => { setHtml(h || ABOUT_DEFAULT_HTML); setLoading(false); })
       .catch(() => { setHtml(ABOUT_DEFAULT_HTML); setLoading(false); });
   }, []);
 
   const save = async () => {
-    if (!sql) return;
     setSaving(true);
     try {
-      await sql`INSERT INTO app_settings(key,value) VALUES('about_us_content',${html})
-        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`;
+      await dbSaveAboutUsContent(html);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch(e) { console.warn('Save about content:', e); }
@@ -9993,11 +9569,8 @@ function ContactPage({ setPage }) {
     if (!voted.length || votesDone) return;
     setVotingNow(true);
     try {
-      if (sql) {
-        for (const key of voted) {
-          await sql`INSERT INTO feature_votes(feature_key,vote_count) VALUES(${key},1)
-            ON CONFLICT(feature_key) DO UPDATE SET vote_count=feature_votes.vote_count+1,updated_at=now()`;
-        }
+      for (const key of voted) {
+        await dbVoteFeature(key);
       }
     } catch(_) {}
     localStorage.setItem('mic_feat_votes', JSON.stringify(voted));
@@ -10012,11 +9585,8 @@ function ContactPage({ setPage }) {
     setFormErr(''); setSending(true);
     let saved = false;
     try {
-      if (sql) {
-        await sql`INSERT INTO contact_submissions(name,email,subject,category,message)
-          VALUES(${name||null},${email.trim()},${subject.trim()},${category||null},${message.trim()})`;
-        saved = true;
-      }
+      await dbSubmitContactForm({ name: name||null, email: email.trim(), subject: subject.trim(), category: category||null, message: message.trim() });
+      saved = true;
     } catch(_) {}
     if (!saved) {
       // Graceful fallback: open mailto
@@ -10571,27 +10141,9 @@ function PeopleSearch({ me, connections=[], onConnect }) {
     const q = query.trim();
     if (!q || q.length < 2) { setResults([]); return; }
     const timer = setTimeout(async () => {
-      if (!sql) return;
       setLoading(true);
       try {
-        const rows = await sql`
-          SELECT id, username, full_name, first_name, last_name,
-                 registration_status, sebi_approval_status
-          FROM user_profiles
-          WHERE (full_name   ILIKE ${'%'+q+'%'}
-              OR username    ILIKE ${'%'+q+'%'}
-              OR first_name  ILIKE ${'%'+q+'%'}
-              OR last_name   ILIKE ${'%'+q+'%'})
-            AND id != ${me?.id||'none'}
-            AND (is_unclaimed IS NULL OR is_unclaimed = FALSE)
-            AND (claim_status IS DISTINCT FROM 'claimed')
-          ORDER BY
-            CASE WHEN LOWER(username)  = LOWER(${q})         THEN 0
-                 WHEN LOWER(username)  LIKE LOWER(${q})||'%' THEN 1
-                 WHEN LOWER(full_name) LIKE LOWER(${q})||'%' THEN 2
-                 ELSE 3 END,
-            full_name
-          LIMIT 15`;
+        const rows = await dbSearchPeople(q, 15);
         setResults(rows);
       } catch(e) { console.warn('People search:', e?.message||e); }
       finally    { setLoading(false); }
@@ -10780,31 +10332,13 @@ function CreateCreatorModal({ onClose, onCreated }) {
     if (!username.trim())  { setErr('Username is required'); return; }
     setBusy(true);
     try {
-      const token      = crypto.randomUUID().replace(/-/g,'');
-      const profileId  = `unc_${token.slice(0,16)}`;
-      const fullName   = `${firstName.trim()} ${lastName.trim()}`.trim();
-      const uname      = username.trim().toLowerCase();
-      const placeholder= `creator-${uname}@myinvestorcircle.com`;
-
-      // Check username uniqueness
-      const existing = await sql`SELECT id FROM user_profiles WHERE username=${uname} LIMIT 1`;
-      if (existing.length) { setErr('Username already taken. Choose another.'); setBusy(false); return; }
-
-      await sql`
-        INSERT INTO user_profiles (
-          id, email, full_name, first_name, last_name, username, bio,
-          registration_status, is_admin,
-          is_unclaimed, claim_token, claim_status
-        ) VALUES (
-          ${profileId}, ${placeholder}, ${fullName},
-          ${firstName.trim()}, ${lastName.trim()||''}, ${uname}, ${bio.trim()||null},
-          ${regStatus}, false,
-          true, ${token}, 'unclaimed'
-        )
-      `;
-
-      const claimLink = `${window.location.origin}${window.location.pathname}?claim_token=${token}`;
-      setCreated({ claimLink, profileId, username: uname, fullName });
+      const uname = username.trim().toLowerCase();
+      const result = await dbCreateUnclaimedProfile({
+        firstName: firstName.trim(), lastName: lastName.trim(),
+        username: uname, bio: bio.trim(), registrationStatus: regStatus,
+      });
+      const claimLink = `${window.location.origin}${window.location.pathname}?claim_token=${result.claimToken}`;
+      setCreated({ claimLink, profileId: result.profileId, username: result.username, fullName: result.fullName });
       if (onCreated) onCreated();
     } catch(e) { setErr(e?.message || 'Failed to create profile'); }
     setBusy(false);
@@ -10913,11 +10447,8 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
   const ASSET_CLASSES   = ['Equity','MF','ETF','Debt','Commodity','Crypto','Other'];
   const [sectorOpts, setSectorOpts] = useState(FALLBACK_SECTORS);
   useEffect(() => {
-    if (!sql) return;
-    sql`SELECT DISTINCT sector FROM sector_master
-        WHERE sector IS NOT NULL AND sector <> ''
-        ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector`
-      .then(rows => { if (rows?.length) setSectorOpts(rows.map(r => r.sector)); })
+    dbGetSectors()
+      .then(sectors => { if (sectors?.length) setSectorOpts(sectors); })
       .catch(() => {});
   }, []);
 
@@ -10977,25 +10508,7 @@ function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, onDone 
     setBusy(true); setErr('');
     let count = 0;
     try {
-      for (const r of queue) {
-        const ts = new Date(r.recoDate + 'T12:00:00').toISOString();
-        const exitTs = r.exitDate ? new Date(r.exitDate + 'T12:00:00').toISOString() : null;
-        await sql`
-          INSERT INTO ic_recommendations (
-            recommender_id, asset_name, ticker, asset_class, exchange,
-            recommendation_type, reco_price, target_price, stop_loss,
-            horizon, thesis, sector, conviction, is_public, currency, created_at,
-            exit_signal, exit_date, current_price
-          ) VALUES (
-            ${creatorId},    ${r.assetName},  ${r.ticker},    ${r.assetClass}, ${r.exchange},
-            ${r.recType},    ${r.recoPrice},  ${r.targetPrice}, ${r.stopLoss},
-            ${r.horizon},    ${r.thesis},      ${r.sector},    ${r.conviction},
-            ${r.isPublic},   ${r.currency},    ${ts},
-            ${r.exitSignal || false}, ${exitTs}, ${r.exitSignal ? r.exitPrice : null}
-          )
-        `;
-        count++;
-      }
+      count = await dbSeedCreatorRecos(creatorId, queue);
       setQueue([]);
       setInserted(n => n + count);
       if (onDone) onDone(count);
@@ -11297,26 +10810,9 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
   const load = async () => {
     setLoading(true);
     try {
-      const rows = await sql`
-        SELECT id, full_name, username, claim_token, claim_status, claimed_by_uid, claimed_at, created_at, bio
-        FROM user_profiles
-        WHERE is_unclaimed = true
-        ORDER BY created_at DESC`;
+      const { unclaimed: rows, recoCounts: countMap } = await dbGetUnclaimedProfiles();
       setUnclaimed(rows);
-
-      // Fetch reco counts for each unclaimed profile in one query
-      if (rows.length) {
-        const ids = rows.map(r => r.id);
-        // Neon supports IN (unnest(array)) pattern for variable-length lists
-        const counts = await sql`
-          SELECT recommender_id, COUNT(*)::int AS n
-          FROM ic_recommendations
-          WHERE recommender_id = ANY(${ids})
-          GROUP BY recommender_id`;
-        const countMap = {};
-        counts.forEach(c => { countMap[c.recommender_id] = c.n; });
-        setRecoCounts(countMap);
-      }
+      setRecoCounts(countMap || {});
     } catch(e) { console.warn('AdminCreators load:', e?.message); }
     setLoading(false);
   };
@@ -11331,8 +10827,7 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
   const deleteProfile = async (id) => {
     if (!window.confirm('Delete this unclaimed profile and all its seeded data? This cannot be undone.')) return;
     try {
-      await sql`DELETE FROM ic_recommendations WHERE recommender_id = ${id}`;
-      await sql`DELETE FROM user_profiles WHERE id = ${id} AND is_unclaimed = true`;
+      await dbDeleteUnclaimedProfile(id);
       load();
     } catch(e) { alert('Delete failed: ' + (e?.message||e)); }
   };
@@ -11342,63 +10837,14 @@ function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
     if (!req) return;
     setReviewingId(reqId);
     try {
+      // Server performs the full atomic FK migration + username transfer
+      // (see api/_lib/handlers/claim-profile.js) and returns the claimer's
+      // email/name for the notification email below.
+      const result = await dbReviewClaimRequest(reqId, action, reviewNote);
       if (action === 'approve') {
-        const oldId = req.profile_id;
-        const newId = req.claimer_uid;
-        // Fetch unclaimed profile fields to copy over
-        const unc = await sql`SELECT * FROM user_profiles WHERE id=${oldId} LIMIT 1`;
-        if (!unc[0]) throw new Error('Unclaimed profile not found');
-        const u = unc[0];
-
-        // Atomic migration — update all FK tables then the PK row
-        await sql`UPDATE ic_recommendations  SET recommender_id = ${newId} WHERE recommender_id = ${oldId}`;
-        await sql`UPDATE connections          SET requester_id = ${newId}  WHERE requester_id = ${oldId}`;
-        await sql`UPDATE connections          SET addressee_id = ${newId}  WHERE addressee_id = ${oldId}`;
-        await sql`UPDATE group_members        SET user_id = ${newId}       WHERE user_id = ${oldId}`;
-        await sql`UPDATE notifications        SET user_id = ${newId}       WHERE user_id = ${oldId}`;
-        await sql`UPDATE notifications        SET from_user_id = ${newId}  WHERE from_user_id = ${oldId}`;
-        await sql`UPDATE portfolio_holdings   SET owner_id = ${newId}      WHERE owner_id = ${oldId}`;
-
-        // ── Step A: Free the username by nulling it on the unclaimed profile first.
-        // This MUST happen before we set it on the creator's profile because
-        // user_profiles.username has a UNIQUE index — setting it on the creator
-        // while the unclaimed profile still holds it causes a constraint violation.
-        await sql`
-          UPDATE user_profiles SET
-            username = NULL, claim_status = 'claimed', is_unclaimed = FALSE, claim_token = NULL
-          WHERE id = ${oldId}
-        `;
-
-        // ── Step B: Transfer username + copy profile details to creator's real account.
-        // COALESCE: respect any username the creator may have set themselves after logging in.
-        await sql`
-          UPDATE user_profiles SET
-            username            = COALESCE(user_profiles.username, ${u.username}),
-            bio                 = COALESCE(NULLIF(user_profiles.bio,''), ${u.bio||null}),
-            registration_status = CASE WHEN user_profiles.registration_status IS NULL
-                                       OR user_profiles.registration_status = 'self_directed'
-                                  THEN ${u.registration_status||'self_directed'}
-                                  ELSE user_profiles.registration_status END,
-            sebi_approval_status = CASE WHEN user_profiles.sebi_approval_status IS NULL
-                                        OR user_profiles.sebi_approval_status = 'not_applied'
-                                   THEN ${u.sebi_approval_status||'not_applied'}
-                                   ELSE user_profiles.sebi_approval_status END
-          WHERE id = ${newId}
-        `;
-
-        // Mark claim request as approved
-        await sql`UPDATE claim_requests SET status='approved', reviewed_at=NOW(), reviewed_by=${ME?.id||''}, admin_note=${reviewNote||null} WHERE id=${reqId}`;
-
-        sendEmail('claim_approved', { to_email:req.claimer_email, creator_name:req.claimer_full_name, username:req.profile_username });
-
+        sendEmail('claim_approved', { to_email:result.claimerEmail, creator_name:result.claimerFullName, username:result.profileUsername });
       } else {
-        // Reject: clear claim fields + regenerate token so admin can re-share a fresh link
-        await sql`UPDATE user_profiles SET
-          claim_status='unclaimed', claimed_by_uid=NULL, claimed_at=NULL,
-          claim_token=${crypto.randomUUID().replace(/-/g,'')}
-          WHERE id=${req.profile_id}`;
-        await sql`UPDATE claim_requests SET status='rejected', reviewed_at=NOW(), reviewed_by=${ME?.id||''}, admin_note=${reviewNote||null} WHERE id=${reqId}`;
-        sendEmail('claim_rejected', { to_email:req.claimer_email, creator_name:req.claimer_full_name, admin_note:reviewNote||'' });
+        sendEmail('claim_rejected', { to_email:result.claimerEmail, creator_name:result.claimerFullName, admin_note:reviewNote||'' });
       }
       setReviewNote('');
       if (onClaimAction) onClaimAction();
@@ -11815,8 +11261,8 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
   // Load holdings from DB whenever owner changes.
   // [ownerId] dependency ensures this re-runs on account switch — no dbLoaded flag needed.
   useEffect(()=>{
-    if (!sql || !ownerId) return;
-    sql`SELECT * FROM portfolio_holdings WHERE owner_id=${ownerId} ORDER BY created_at ASC`
+    if (!ownerId) return;
+    dbGetPortfolioHoldings()
       .then(rows => {
         // Always replace state even with []. Removing this guard was the privacy fix:
         // a user with 0 holdings must not see a previous user's stale state.
@@ -11828,46 +11274,31 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
   /** Upsert a single holding to DB */
   const saveHolding = async (h) => {
     // PRIVACY: never write a holding without a validated, non-empty owner id
-    if (!sql || !ownerId || ownerId.length < 4) {
+    if (!ownerId || ownerId.length < 4) {
       console.error('saveHolding blocked — invalid ownerId:', ownerId);
       return;
     }
     try {
-      await sql`
-        INSERT INTO portfolio_holdings
-          (id, owner_id, sym, name, type, acct, acct_name, sh, cost, price, isin, sector, currency, purchase_date, source)
-        VALUES
-          (${h.id}, ${ownerId}, ${h.sym}, ${h.name||''}, ${h.type||'Stock'},
-           ${h.acct||'manual'}, ${h.acctName||'Manual Portfolio'},
-           ${h.sh||0}, ${h.cost||0}, ${h.price||0},
-           ${h.isin||''}, ${h.sector||''}, ${h.currency||'INR'},
-           ${h.purchaseDate||null}, ${h.source||'manual'})
-        ON CONFLICT (id) DO UPDATE SET
-          sym=EXCLUDED.sym, name=EXCLUDED.name, type=EXCLUDED.type,
-          sh=EXCLUDED.sh, cost=EXCLUDED.cost, price=EXCLUDED.price,
-          isin=EXCLUDED.isin, sector=EXCLUDED.sector, currency=EXCLUDED.currency,
-          purchase_date=EXCLUDED.purchase_date, source=EXCLUDED.source,
-          updated_at=NOW()
-      `;
+      await dbAddPortfolioHolding(h);
     } catch(e) { console.warn('saveHolding:', e?.message||e); }
   };
 
   /** Delete a holding from DB */
   const deleteHolding = async (id) => {
-    if (!sql || !ownerId || ownerId.length < 4) return;
+    if (!ownerId || ownerId.length < 4) return;
     try {
-      await sql`DELETE FROM portfolio_holdings WHERE id=${id} AND owner_id=${ownerId}`;
+      await dbDeletePortfolioHolding(id);
     } catch(e) { console.warn('deleteHolding:', e?.message||e); }
   };
 
   /** Bulk-replace all holdings in DB (used by CAS import replace mode) */
   const replaceAllHoldings = async (newHoldings) => {
-    if (!sql || !ownerId || ownerId.length < 4) {
+    if (!ownerId || ownerId.length < 4) {
       console.error('replaceAllHoldings blocked — invalid ownerId:', ownerId);
       return;
     }
     try {
-      await sql`DELETE FROM portfolio_holdings WHERE owner_id=${ownerId}`;
+      await dbDeleteAllPortfolioHoldings();
       for (const h of newHoldings) await saveHolding(h);
     } catch(e) { console.warn('replaceAllHoldings:', e?.message||e); }
   };
@@ -11875,17 +11306,8 @@ function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refres
   // Load ALL active recommendations — re-runs whenever holding count changes
   // so consensus overlay stays fresh after CAS imports and manual additions
   useEffect(()=>{
-    if (!sql) { setLoading(false); return; }
     setLoading(true);
-    // Column is recommender_id (confirmed from INSERT at line 5904), NOT "from".
-    // Alias as "from" so JS filtering (circleIds.includes(r.from)) continues to work.
-    sql`SELECT r.ticker, r.asset_name, r.recommendation_type,
-               r.recommender_id as "from", r.conviction, r.created_at,
-               up.full_name, up.username
-        FROM ic_recommendations r
-        LEFT JOIN user_profiles up ON r.recommender_id = up.id
-        WHERE (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
-          AND (up.claim_status IS DISTINCT FROM 'claimed')`
+    dbGetConsensusRecosAll()
       .then(rows=>{
         const map={};
         rows.forEach(r=>{
@@ -12408,17 +11830,8 @@ function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
 
   useEffect(()=>{
-    if (!sql) { setLoading(false); return; }
     // Only public recommendations contribute to community-wide market intelligence.
-    sql`SELECT r.ticker, r.asset_name, r.recommendation_type,
-               r.recommender_id as "from", r.conviction, r.created_at, r.sector,
-               up.username, up.full_name
-        FROM ic_recommendations r
-        LEFT JOIN user_profiles up ON r.recommender_id = up.id
-        WHERE r.is_public = true
-          AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
-          AND (up.claim_status IS DISTINCT FROM 'claimed')
-        ORDER BY r.created_at DESC`
+    dbGetConsensusRecosPublic()
       .then(rows=>{ setRecos(rows); setLoading(false); })
       .catch(e=>{ console.warn('Market Intel SQL error:',e?.message||e); setLoading(false); });
   },[]);
@@ -12681,32 +12094,10 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
 
   // Fetch real ICI scores for all investors when recos loads
   useEffect(()=>{
-    if (!recos.length || !sql) return;
+    if (!recos.length) return;
     const uids = [...new Set(recos.map(r=>r.from).filter(Boolean))];
     if (!uids.length) return;
-    sql`
-      SELECT
-        r.recommender_id                                               AS uid,
-        COUNT(*)::int                                                  AS total,
-        EXTRACT(EPOCH FROM (NOW()-MIN(r.created_at)))/(365.25*86400)   AS years_history,
-        COUNT(*) FILTER (WHERE r.exit_signal=true)::int                AS closed,
-        COUNT(*) FILTER (
-          WHERE r.exit_signal=true AND r.current_price > r.reco_price
-            AND r.reco_price > 0
-        )::int                                                         AS wins,
-        COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY
-          CASE WHEN r.exit_signal=true AND r.reco_price > 0
-               THEN (r.current_price - r.reco_price) / r.reco_price * 100
-          END
-        ), 0)                                                          AS median_ret,
-        COALESCE(STDDEV(
-          CASE WHEN r.exit_signal=true AND r.reco_price > 0
-               THEN (r.current_price - r.reco_price) / r.reco_price * 100
-          END
-        ), 0)                                                          AS ret_stddev
-      FROM ic_recommendations r
-      WHERE r.recommender_id = ANY(${uids})
-      GROUP BY r.recommender_id`
+    dbGetInvestorIciBatch(uids)
       .then(rows=>{
         const scores = {};
         rows.forEach(row=>{
@@ -12727,18 +12118,9 @@ function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity
   },[recos]);
 
   useEffect(()=>{
-    if (!ticker||!sql) return;
+    if (!ticker) return;
     setLoading(true); setRecos([]);
-    sql`SELECT r.id, r.ticker, r.asset_name, r.recommendation_type,
-               r.recommender_id as "from", r.conviction, r.created_at,
-               r.thesis, r.reco_price, r.current_price, r.sector, r.exchange,
-               up.username, up.full_name, up.registration_status
-        FROM ic_recommendations r
-        LEFT JOIN user_profiles up ON r.recommender_id = up.id
-        WHERE r.ticker = ${ticker}
-          AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
-          AND (up.claim_status IS DISTINCT FROM 'claimed')
-        ORDER BY r.created_at DESC`
+    dbGetTickerRecos(ticker)
       .then(rows=>{ setRecos(rows); setLoading(false); })
       .catch(()=>setLoading(false));
   },[ticker]);

@@ -3,7 +3,6 @@ import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "./AuthContext";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { auth, track } from "./firebase";
-import { sql } from "./supabaseClient";
 
 /* ── Transactional email helper ─── */
 const EMAIL_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
@@ -117,10 +116,6 @@ export default function LoginPage() {
       // in AuthContext, which reads back the DB. If the DB write hasn't happened
       // yet, AuthContext falls back to email.split("@")[0] as first_name and
       // overwrites the profile state with the wrong name.
-      //
-      // Phase 2e: try the authenticated server-side write first; fall back to
-      // the direct-Neon insert, unchanged, if the API is unreachable.
-      let signupWrittenViaApi = false;
       try {
         const idToken = await cred.user.getIdToken();
         const res = await fetch(SIGNUP_API, {
@@ -132,31 +127,10 @@ export default function LoginPage() {
             username: username.trim(),
           }),
         });
-        if (res.ok) signupWrittenViaApi = true;
+        if (!res.ok) console.warn("Profile signup write failed:", res.status);
       } catch (dbErr) {
-        // Non-fatal — falls through to the direct-Neon path below.
-      }
-
-      if (!signupWrittenViaApi && sql) {
-        try {
-          await sql`
-            INSERT INTO user_profiles (id, email, full_name, first_name, last_name, is_admin, username)
-            VALUES (
-              ${cred.user.uid}, ${signupEmail.trim()}, ${fullName},
-              ${firstName.trim()}, ${lastName.trim() || ""}, false,
-              ${username.trim() || null}
-            )
-            ON CONFLICT (id) DO UPDATE SET
-              first_name = EXCLUDED.first_name,
-              last_name  = EXCLUDED.last_name,
-              full_name  = EXCLUDED.full_name,
-              username   = COALESCE(EXCLUDED.username, user_profiles.username),
-              updated_at = now()
-          `;
-        } catch (dbErr) {
-          console.warn("Profile DB write failed:", dbErr.message);
-          // Non-fatal — AuthContext will attempt its own upsert on auth state change
-        }
+        console.warn("Profile signup write failed:", dbErr.message);
+        // Non-fatal — AuthContext will attempt its own upsert on auth state change
       }
 
       // Now set Firebase displayName — this triggers onAuthStateChanged in AuthContext,
@@ -202,9 +176,9 @@ export default function LoginPage() {
   const switchTab = (t) => { setTab(t); setErr(""); setForgotDone(false); setForgotEmail(""); };
 
   // ── Username availability check (debounced 500ms) ───────────────────────────
-  // Phase 2e: try the public, availability-only server endpoint first (no
-  // Firebase account/token exists yet at this point in the flow); fall back
-  // to the direct-Neon query, unchanged, if the API is unreachable.
+  // No Firebase account/token exists yet at this point in the flow, so this
+  // hits the public, availability-only server endpoint (see
+  // api/profile/username-available.js).
   const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
   React.useEffect(() => {
     if (!username) { setUnStatus("idle"); return; }
@@ -220,12 +194,8 @@ export default function LoginPage() {
             return;
           }
         }
-      } catch { /* fall through to legacy path */ }
-      try {
-        if (!sql) { setUnStatus("available"); return; }
-        const rows = await sql`SELECT id FROM user_profiles WHERE username = ${username} LIMIT 1`;
-        setUnStatus(rows.length === 0 ? "available" : "taken");
-      } catch { setUnStatus("available"); } // fail open
+        setUnStatus("available"); // fail open on unexpected response shape
+      } catch { setUnStatus("available"); } // fail open on network error
     }, 500);
     return () => clearTimeout(t);
   }, [username]);

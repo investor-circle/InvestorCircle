@@ -55,11 +55,18 @@ verified against the actual code rather than trusted blindly.
   bundle, so anyone loading the app can read them. Only use `VITE_` for values
   that are intentionally public and non-sensitive. Never put secrets,
   credentials, or private API keys in a `VITE_` variable.
-- `VITE_DATABASE_URL` (a Neon connection string currently baked into the
-  client bundle) is a known legacy security issue, not an accepted design
-  choice. Do not extend this pattern to other secrets, and do not treat it as
-  precedent — it is intended to be removed in favor of server-side DB access
-  once the app moves toward production use.
+- **Browser-to-Neon direct access is prohibited.** Frontend code must not use
+  `VITE_DATABASE_URL`, `@neondatabase/serverless`, or direct SQL/database
+  connections. All application database access must go through server-side
+  APIs (`api/data.js` and `api/_lib/handlers/*.js`). Authenticated APIs must
+  derive identity from verified Firebase ID tokens (`requireUid`/
+  `requireAdmin` in `api/_lib/auth.js`) — never from a client-supplied uid.
+  Privileged operations must perform server-side authorization. API responses
+  must use explicit field selection and must never use `SELECT *` or
+  `RETURNING *`. Transitional fallbacks may be used only during migrations
+  and must never bypass authentication or authorization decisions. (Phase 4
+  security migration, completed — `src/supabaseClient.js` and
+  `VITE_DATABASE_URL` no longer exist anywhere in this repo.)
 - Never commit real credentials, API keys, or `.env` files. Only `.env.example`
   (with placeholder values) belongs in version control.
 - **Never rotate, revoke, delete, or replace credentials, database roles,

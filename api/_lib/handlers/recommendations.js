@@ -369,6 +369,23 @@ export default async function handleRecommendations(req, res, userId) {
       return;
     }
 
+    if (action === 'notify-public-contacts') {
+      const recommendationId = String(body.recommendationId || '');
+      const contactIds = Array.isArray(body.contactIds) ? body.contactIds.map(String) : [];
+      const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
+      if (!recommendationId || !contactIds.length) {
+        res.status(400).json({ error: 'recommendationId and contactIds are required' });
+        return;
+      }
+      const meta = JSON.stringify(metadata);
+      await Promise.all(contactIds.map(cid => sql`
+        INSERT INTO notifications (user_id, type, from_user_id, metadata)
+        VALUES (${cid}, 'contact_recommendation', ${userId}, ${meta})
+      `.catch(() => {})));
+      res.status(200).json({ success: true });
+      return;
+    }
+
     if (action === 'delete-delivery') {
       const deliveryId = String(body.deliveryId || '');
       if (!deliveryId) { res.status(400).json({ error: 'deliveryId is required' }); return; }
