@@ -96,15 +96,23 @@ export default async function handleLookups(req, res) {
       }
 
       if (action === 'sectors') {
-        let uid;
-        try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
-        void uid;
-        const rows = await sql`
-          SELECT DISTINCT sector FROM sector_master
-          WHERE sector IS NOT NULL AND sector <> ''
-          ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector
-        `;
-        res.status(200).json({ sectors: rows.map(r => r.sector) });
+        try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+        // sector_master is reference data the frontend already has a static
+        // fallback for (FALLBACK_SECTORS) — degrade to an empty list instead
+        // of a 500 if the table is missing in this environment (e.g. a Neon
+        // preview branch created before this table existed), rather than
+        // surfacing an infrastructure quirk as an application error.
+        try {
+          const rows = await sql`
+            SELECT DISTINCT sector FROM sector_master
+            WHERE sector IS NOT NULL AND sector <> ''
+            ORDER BY CASE WHEN sector = 'Other' THEN 1 ELSE 0 END, sector
+          `;
+          res.status(200).json({ sectors: rows.map(r => r.sector) });
+        } catch (e) {
+          console.warn('[lookups] sectors query failed, degrading to empty list:', e?.message);
+          res.status(200).json({ sectors: [] });
+        }
         return;
       }
 

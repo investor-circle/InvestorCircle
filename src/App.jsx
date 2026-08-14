@@ -1321,7 +1321,7 @@ export default function App() {
             recoId={pubRecoId}
             viewerUser={user}
             viewerConnections={connections}
-            viewerIsAdmin={ME?.is_admin === true}
+            viewerIsAdmin={userIsAdmin}
             mode="standalone"
             onBack={()=>{ setPageHash(''); }}
             onRequestConnect={async(targetId)=>{
@@ -1920,7 +1920,7 @@ export default function App() {
                       username={ME.username}
                       viewerUser={user}
                       viewerConnections={connections}
-                      viewerIsAdmin={ME?.is_admin === true}
+                      viewerIsAdmin={userIsAdmin}
                       mode="embedded"
                       isOwnProfile
                       patchProfile={patchProfile}
@@ -5539,10 +5539,10 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
     // Public claim status (no token — see api/_lib/handlers/claim-profile.js).
     dbGetClaimStatus(username).then(info=>{ if(info) setClaimInfo(info); }).catch(()=>{});
 
-    // Admin-only: this call 403s for non-admins, so a successful response both
-    // confirms admin status and hands back the claim token in one round trip
-    // (don't wait for ME in App.jsx parent — it loads async after Firebase auth).
-    if (viewerUser?.uid) {
+    // Admin-only: gated on the viewerIsAdmin prop so non-admins (the common
+    // case) never make a call that's guaranteed to 403. A successful response
+    // hands back the claim token in the same round trip.
+    if (viewerUser?.uid && viewerIsAdmin) {
       dbGetClaimAdminLink(username).then(res=>{
         if (res) {
           setIsViewerAdmin(true);
@@ -5550,7 +5550,7 @@ function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, vi
         }
       }).catch(()=>{});
     }
-  },[username, viewerUser?.uid]);
+  },[username, viewerUser?.uid, viewerIsAdmin]);
 
   useEffect(()=>{
     if(recoId&&data&&expandedRef.current)
