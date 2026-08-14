@@ -1166,8 +1166,9 @@ export default function App() {
         }
         // Process any stored referral code (fires only when localStorage has one)
         processReferral(user.uid);
-        // Load pending creator claim requests (admin feature — silently no-ops for non-admins)
-        loadClaimRequests();
+        // Load pending creator claim requests — admin-only server-side; skip
+        // the call entirely for non-admins instead of eating an expected 403.
+        if (userIsAdmin) loadClaimRequests();
         // Check if this user is a creator awaiting admin approval for their claimed profile
         dbGetMyPendingClaimStatus().then(setHasPendingClaim).catch(()=>{});
         // Load tracked recommendation IDs
