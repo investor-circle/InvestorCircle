@@ -1,6 +1,15 @@
 # CLAUDE_HANDOVER.md
 > Handover document for new Claude sessions on the myInvestorCircle web app.
 > Created from repository snapshot. Do not invent information not in the code.
+>
+> **Phase 5 note:** this doc predates the Phase 5 refactor, which split
+> `App.jsx` (previously ~12,800 lines) into `src/features/**`,
+> `src/components/common.jsx`, `src/constants/**`, `src/utils/**`, and
+> `src/services/api/**`, and added `react-router-dom` (`HashRouter`) for
+> section URLs. Any line-number references to `App.jsx` below are stale —
+> see `CLAUDE.md`'s "Phase 5 architecture" section for the current layout,
+> and locate code by feature/component name (e.g. `grep -rn` under
+> `src/features/`) rather than by the line numbers cited here.
 
 ---
 

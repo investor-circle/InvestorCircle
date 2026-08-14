@@ -5,8 +5,15 @@
  * Each function is responsible for ONE logical operation: it writes the data
  * AND inserts any notifications that operation should generate.
  *
+ * Phase 5: feature code should import from the feature-scoped barrels in
+ * src/services/api/ (connectionsApi.js, recommendationsApi.js, etc.) instead
+ * of importing this file directly — they re-export the relevant subset of
+ * functions below, grouped the way the frontend actually consumes them.
+ * This file remains the single implementation (still funnelled through
+ * callApi()) so there is exactly one place that talks to the server API.
+ *
  * Usage:
- *   import { sendConnectionRequest, getMyConnections, ... } from "./db";
+ *   import { sendConnectionRequest, getMyConnections } from "./services/api/connectionsApi";
  *
  * Every exported function:
  *   - Takes typed arguments (no raw SQL in components)
