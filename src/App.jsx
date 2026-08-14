@@ -9046,7 +9046,32 @@ function InstrumentAddForm({ onAdded }) {
 }
 
 /* =================================================================== ADMIN SEBI */
+// Phase 3: API-first, fallback-to-direct-Neon (mirrors the pattern in src/db.js).
+// Admin authorization is enforced server-side in api/admin/sebi.js — never
+// trust the client-side userIsAdmin flag as proof, it only gates the UI.
+const ADMIN_SEBI_API = (import.meta.env.VITE_CAS_API_URL || "https://investor-circle.vercel.app") + "/api/admin/sebi";
+async function adminSebiApi(user, opts = {}) {
+  if (!user) return { ok: false, infra: true };
+  try {
+    const idToken = await user.getIdToken();
+    const res = await fetch(ADMIN_SEBI_API, {
+      method: opts.method || "GET",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        ...(opts.body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    if (res.ok) return { ok: true, data: await res.json().catch(() => ({})) };
+    if (res.status === 401 || res.status === 403) return { ok: false, denied: true };
+    return { ok: false, infra: true };
+  } catch (e) {
+    return { ok: false, infra: true };
+  }
+}
+
 function AdminSebi() {
+  const { user } = useAuth();
   const [pending,   setPending]   = useState([]);
   const [approved,  setApproved]  = useState([]);
   const [loading,   setLoading]   = useState(true);
@@ -9059,8 +9084,17 @@ function AdminSebi() {
   const [optDraft,  setOptDraft]  = useState([]);
 
   const load = async () => {
-    if(!sql) return;
     setLoading(true);
+    const api = await adminSebiApi(user);
+    if (api.ok) {
+      setPending(api.data.pending || []); setApproved(api.data.approved || []);
+      setVerifyMsg(api.data.verifyMessage || '');
+      setRegOpts(api.data.regOptions || []); setOptDraft((api.data.regOptions || []).map(o=>({...o})));
+      setLoading(false);
+      return;
+    }
+    if (api.denied) { setLoading(false); return; }
+    if(!sql) { setLoading(false); return; }
     try {
       const [pend, appr, msg, opts] = await Promise.all([
         sql`SELECT id,full_name,first_name,last_name,email,registration_status,sebi_reg_number,sebi_reg_valid_till,sebi_firm_name,sebi_submitted_at FROM user_profiles WHERE sebi_approval_status='pending' ORDER BY sebi_submitted_at`,
@@ -9083,26 +9117,38 @@ function AdminSebi() {
   const doApprove = async (u) => {
     if(!confirm(`Approve SEBI registration for ${nameOf(u)}?`)) return;
     setBusy(b=>({...b,[u.id]:'approving'}));
-    await sql`UPDATE user_profiles SET sebi_approval_status='approved', sebi_approved_at=now() WHERE id=${u.id}`;
+    const api = await adminSebiApi(user, { method: 'POST', body: { action: 'approve', userId: u.id } });
+    if (!api.ok && !api.denied && sql) {
+      await sql`UPDATE user_profiles SET sebi_approval_status='approved', sebi_approved_at=now() WHERE id=${u.id}`;
+    }
     await load();
     setBusy(b=>({...b,[u.id]:null}));
   };
   const doReject = async (u) => {
     if(!confirm(`Reject / revoke SEBI status for ${nameOf(u)}? Their profile will revert to "Not SEBI Registered".`)) return;
     setBusy(b=>({...b,[u.id]:'rejecting'}));
-    await sql`UPDATE user_profiles SET sebi_approval_status='rejected', sebi_approved_at=null WHERE id=${u.id}`;
+    const api = await adminSebiApi(user, { method: 'POST', body: { action: 'reject', userId: u.id } });
+    if (!api.ok && !api.denied && sql) {
+      await sql`UPDATE user_profiles SET sebi_approval_status='rejected', sebi_approved_at=null WHERE id=${u.id}`;
+    }
     await load();
     setBusy(b=>({...b,[u.id]:null}));
   };
 
   const saveMsg = async () => {
-    await sql`INSERT INTO app_settings(key,value) VALUES('sebi_verification_message',${msgDraft}) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`;
+    const api = await adminSebiApi(user, { method: 'POST', body: { action: 'save-message', message: msgDraft } });
+    if (!api.ok && !api.denied && sql) {
+      await sql`INSERT INTO app_settings(key,value) VALUES('sebi_verification_message',${msgDraft}) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`;
+    }
     setVerifyMsg(msgDraft); setEditMsg(false);
   };
 
   const saveOpts = async () => {
-    for(const o of optDraft) {
-      await sql`UPDATE registration_status_options SET label=${o.label}, description=${o.description}, is_active=${o.is_active}, sort_order=${o.sort_order} WHERE id=${o.id}`;
+    const api = await adminSebiApi(user, { method: 'POST', body: { action: 'save-reg-options', options: optDraft } });
+    if (!api.ok && !api.denied && sql) {
+      for(const o of optDraft) {
+        await sql`UPDATE registration_status_options SET label=${o.label}, description=${o.description}, is_active=${o.is_active}, sort_order=${o.sort_order} WHERE id=${o.id}`;
+      }
     }
     await load(); setEditOpts(false);
   };
