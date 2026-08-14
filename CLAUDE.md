@@ -267,3 +267,15 @@ Preview/production smoke test → merge
 
 For larger migrations, divide work into sensible phases rather than dozens
 of tiny commits.
+
+Security migration changes should be implemented in logical batches rather
+than unnecessarily tiny commits. Claude should perform comprehensive
+automated build/security/diff validation before asking the developer for
+manual testing. Manual testing should normally be consolidated at the
+PR/Preview level. However, every migrated server endpoint must enforce
+Firebase token authentication, derive identity from the verified token,
+perform server-side authorization for privileged operations, explicitly
+select/return only required fields, and never use SELECT * or RETURNING *.
+Transitional API-first/direct-DB fallback is allowed only for infrastructure
+failures and must never bypass an explicit authentication or authorization
+denial.
