@@ -64,8 +64,9 @@ export const STYLES = `
 .content{padding:28px 30px;overflow-y:auto;flex:1;min-height:0;}
 
 /* Setup checklist bar (Phase 5.5 onboarding) */
-.mic-setup-bar{padding:10px 26px;}
-.mic-setup-panel{padding:4px 26px 14px;}
+.mic-setup-bar{display:flex;align-items:center;gap:14px;padding:10px 26px;box-sizing:border-box;width:100%;}
+.mic-setup-cta{flex-shrink:0;white-space:nowrap;}
+.mic-setup-panel{padding:4px 26px 14px;box-sizing:border-box;width:100%;}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap;}
 .eyebrow{font-size:12px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
 .page-title{font-size:26px;font-weight:800;letter-spacing:-.6px;}
@@ -329,7 +330,7 @@ tr.hiddenrow > td{opacity:.55;}
 
   /* Content area */
   .content{padding:16px 14px;}
-  .mic-setup-bar{padding:10px 14px;flex-wrap:wrap;row-gap:8px;}
+  .mic-setup-bar{padding:10px 14px;}
   .mic-setup-panel{padding:4px 14px 14px;}
   .page-title{font-size:20px!important;}
   .page-head{margin-bottom:14px;}
@@ -373,7 +374,8 @@ tr.hiddenrow > td{opacity:.55;}
 @media(max-width:480px){
   /* Small phones */
   .content{padding:12px 10px;}
-  .mic-setup-bar{padding:8px 10px;}
+  .mic-setup-bar{padding:8px 10px;flex-direction:column;align-items:stretch;gap:8px;}
+  .mic-setup-cta{width:100%;justify-content:center;}
   .mic-setup-panel{padding:4px 10px 12px;}
   .mobile-tabs{margin:0 -10px 14px;padding:0 10px;}
   .topbar{padding:0 8px 0 2px;}

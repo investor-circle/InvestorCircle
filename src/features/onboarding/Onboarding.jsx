@@ -26,30 +26,7 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
 
   const cvDone = !!profile?.onboarding_cv_done;
   const discoverDone = !!profile?.onboarding_discover_done;
-
-  // TEMPORARY diagnostic — remove once the "checklist doesn't show" report
-  // is root-caused. Logs exactly what this component received so we can see
-  // from the browser console whether onboarding_cv_done/onboarding_discover_done
-  // are present at all, and what value they hold, rather than guessing.
-  if (typeof window !== "undefined" && !window.__micSetupChecklistLogged) {
-    window.__micSetupChecklistLogged = true;
-    console.info("[SetupChecklist] profile received:", profile, {
-      hasProfile: !!profile,
-      cvDoneRaw: profile?.onboarding_cv_done,
-      discoverDoneRaw: profile?.onboarding_discover_done,
-      cvDone, discoverDone,
-      willRender: !!profile && !(cvDone && discoverDone),
-    });
-  }
-
-  // Nothing left to do (or profile not loaded yet) — render nothing. This is
-  // the ONLY thing that hides the checklist; there is no separate "dismiss"
-  // action, so an incomplete step always survives navigation, refresh, and
-  // logout/login until it's actually completed or skipped server-side.
-  if (!profile || (cvDone && discoverDone)) return null;
-
-  const activeStep = !cvDone ? "cv" : "discover";
-  const doneCount = (cvDone ? 1 : 0) + (discoverDone ? 1 : 0);
+  const username = profile?.username;
 
   const markDone = async (step) => {
     patchProfile?.({ [step === "cv" ? "onboarding_cv_done" : "onboarding_discover_done"]: true });
@@ -61,7 +38,29 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
     }
   };
 
-  const buildCv = () => { markDone("cv"); setPage?.("trackrecord"); };
+  // "Build your Investor CV" only completes once there's an actual profile
+  // to show — at minimum, a username set (Track Record requires one before
+  // it will render the public profile at all; see App.jsx's trackrecord
+  // branch). Clicking the CTA just navigates to Track Record; this effect
+  // marks the step done the moment a username appears, wherever that
+  // happens (normally right after the user sets one there). Explicitly
+  // skipping the step (below) still completes it without a username, same
+  // as before — this only stops a bare click-through from auto-completing.
+  useEffect(() => {
+    if (!cvDone && username) markDone("cv");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cvDone, username]);
+
+  // Nothing left to do (or profile not loaded yet) — render nothing. This is
+  // the ONLY thing that hides the checklist; there is no separate "dismiss"
+  // action, so an incomplete step always survives navigation, refresh, and
+  // logout/login until it's actually completed or skipped server-side.
+  if (!profile || (cvDone && discoverDone)) return null;
+
+  const activeStep = !cvDone ? "cv" : "discover";
+  const doneCount = (cvDone ? 1 : 0) + (discoverDone ? 1 : 0);
+
+  const buildCv = () => setPage?.("trackrecord");
   const skipCv = () => markDone("cv");
   const exploreNetwork = () => { markDone("discover"); setPage?.("network"); };
   const skipDiscover = () => markDone("discover");
@@ -71,16 +70,18 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
 
   return (
     <div style={wrapStyle}>
-      <div className="mic-setup-bar" style={barStyle}>
-        <ProgressRing done={doneCount} total={2} />
-        <button onClick={() => setOpen(o => !o)} style={headlineBtnStyle}>
-          <div style={{ textAlign: "left" }}>
-            <div style={headlineStyle}>Complete your Investor Circle setup</div>
-            <div style={subStyle}>{doneCount} of 2 complete</div>
-          </div>
-          <ChevronDown size={16} color="var(--muted)" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }} />
-        </button>
-        <button onClick={primaryAction} className="btn btn-pri btn-sm" style={{ flexShrink: 0, whiteSpace: "nowrap" }}>{primaryLabel} →</button>
+      <div className="mic-setup-bar">
+        <div className="mic-setup-bar-main" style={barMainStyle}>
+          <ProgressRing done={doneCount} total={2} />
+          <button onClick={() => setOpen(o => !o)} style={headlineBtnStyle}>
+            <div style={{ textAlign: "left" }}>
+              <div style={headlineStyle}>Complete your Investor Circle setup</div>
+              <div style={subStyle}>{doneCount} of 2 complete</div>
+            </div>
+            <ChevronDown size={16} color="var(--muted)" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }} />
+          </button>
+        </div>
+        <button onClick={primaryAction} className="btn btn-pri btn-sm mic-setup-cta">{primaryLabel} →</button>
       </div>
 
       {open && (
@@ -239,7 +240,12 @@ function ProgressRing({ done, total }) {
 // .btn-soft classes rather than inventing new colors, so this reads as part
 // of the app rather than a pasted-in component.
 const wrapStyle = { background: "var(--accent-soft)", borderBottom: "1px solid var(--accent-line)" };
-const barStyle = { display: "flex", alignItems: "center", gap: 14 };
+// Only non-responsive layout lives inline; anything that needs to change at
+// a breakpoint (padding, stacking) lives in the .mic-setup-bar/-main/-cta
+// classes in src/styles/globalStyles.js instead — an inline `style` always
+// wins over a class rule, including one inside a media query, so responsive
+// behavior has to be class-driven, not inline.
+const barMainStyle = { display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 };
 const headlineBtnStyle = { flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" };
 const headlineStyle = { fontSize: 13, fontWeight: 700, color: "var(--ink)" };
 const subStyle = { fontSize: 11.5, color: "var(--muted)", marginTop: 1 };
