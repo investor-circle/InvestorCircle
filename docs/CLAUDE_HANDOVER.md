@@ -383,6 +383,55 @@ Mobile application is maintained separately and is not part of this web reposito
 
 ---
 
+## 10a. PHASE 5.5 KNOWN ISSUES / TECH DEBT (flagged 2026-08-15, not yet fixed)
+
+Phase 5.5 (Google Sign-In, mandatory username+consent, one-time Discover
+modal, PR #8) shipped clean on its own release-gate review, but surfaced a
+few pre-existing or scope-adjacent items worth cleaning up later. None of
+these block current functionality — flagging so they aren't lost:
+
+- **Login error hint is unreliable due to Firebase Email Enumeration
+  Protection.** `LoginPage.jsx`'s `handleLogin` tries `fetchSignInMethodsForEmail`
+  to give a targeted "this account uses Google — click Continue with Google"
+  hint on login failure. This project has Email Enumeration Protection
+  enabled in Firebase, which makes that API return empty/unreliable data —
+  the hint silently never fires and users just see the generic "Incorrect
+  email or password" message. Not broken (fails safe to the generic
+  message), just never actually helpful. A provider-agnostic fix was
+  discussed and scoped but not built — pending a product decision on the
+  copy. Do NOT try to "fix" this by working around enumeration protection
+  client-side (that would recreate the enumeration oracle the setting
+  exists to prevent) — keep the protection, adjust the wording instead.
+- **The mandatory username+consent gate (`OnboardingGate` /
+  `MandatorySetupGate`) is UI-only, not enforced server-side on other
+  endpoints.** A caller with a valid Firebase ID token could call other
+  authenticated API actions (e.g. `portfolio-add`, `avatar-upload`) directly
+  without ever completing the consent/username gate — nothing in
+  `api/_lib/handlers/*.js` currently checks `consent_terms_accepted` /
+  `consent_data_accepted` / `username IS NOT NULL` before allowing other
+  writes. This matches the app's existing architecture (no other feature
+  enforces "onboarding complete" server-side either), so it wasn't added
+  as part of Phase 5.5, but is worth a deliberate decision later if
+  consent enforcement needs to be airtight rather than just UI-gated.
+- **Redundant legacy consent columns on `user_profiles`**: `Platform_consent`,
+  `privacy_consent`, `marketing_consent`, `consent_version`, `consent_at`
+  pre-date Phase 5.5 and are blank/unused for most rows — they were never
+  reliably populated by any code path found in this repo. Phase 5.5 added
+  its own `consent_terms_accepted` / `consent_data_accepted` /
+  `consent_accepted_at` columns instead of reusing them (see
+  `supabase/phase_5_5_consent.sql` for the reasoning). Whether to
+  backfill/consolidate onto the old columns, migrate away from them, or
+  drop them entirely is an explicitly deferred decision — do not touch
+  them without discussing scope/legal implications first.
+- **Creator-claim flow's consent checkboxes don't persist anywhere.**
+  `Profile.jsx` (`ProfileEditModal`, `claimMode`) shows the same two
+  consent checkboxes as signup, but `api/_lib/handlers/claim-profile.js`'s
+  `submit-claim` action has never accepted or stored consent fields —
+  confirmed by reading that handler. Pre-existing gap, unrelated to Phase
+  5.5's scope, not fixed by it.
+
+---
+
 ## 11. INSTRUCTIONS FOR FUTURE CLAUDE SESSIONS
 
 1. **Read `src/db.js` before writing any DB-touching code.** All table names, column names, and relationships are verified there. Do not assume schema from variable names in App.jsx.
