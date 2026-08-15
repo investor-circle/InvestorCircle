@@ -6,44 +6,46 @@ import { sendConnectionRequest as dbSendConnectionRequest } from "../../services
 import { computeIci } from "../../services/api/recommendationsApi";
 import { Avatar } from "../../components/common";
 import { initialsOf } from "../../utils/format";
+import { useIsMobile } from "../../hooks/index";
 
 /**
- * Phase 5.5 (revised) — persistent, non-blocking setup checklist.
+ * Phase 5.5 (revised again) — persistent, non-blocking setup checklist.
  *
- * Replaces the earlier two-step full-screen modal flow. That version had to
- * add session-only "don't show this again" state to work around its own
- * design flaw: navigating away from step 1 (e.g. to Track Record) caused the
- * component to re-render and immediately pop step 2's full-screen overlay on
- * top of the destination page. Rendering as an in-flow bar under the topbar
- * (see App.jsx) rather than a fixed/portal overlay removes the entire class
- * of problem — there is nothing to stack on top of, so there is nothing to
- * suppress. Visibility is driven ONLY by server-persisted state
- * (profile.onboarding_cv_done / onboarding_discover_done); no client-only
- * "session dismissed" flag exists anymore.
+ * Desktop and mobile deliberately render different markup here rather than
+ * one layout reshuffled by CSS breakpoints. Reason: Home Feed has its own
+ * pre-existing mobile-only fixed header (position:fixed, hardcoded to sit
+ * directly under the topbar — see features/discovery/Discovery.jsx), and
+ * this bar sits in normal flow right above it. On desktop that's a non-issue
+ * (Home Feed's header is in-flow there too). On mobile, anything that could
+ * grow this bar's height unpredictably (an expanding inline panel) requires
+ * exact height coordination with that fixed header to avoid overlap — fragile
+ * and easy to get subtly wrong. So mobile gets a layout that never grows: a
+ * fixed-height card with a full-width primary action and a plain "Skip for
+ * now" link, no expand/collapse. The Discover step's mobile CTA goes straight
+ * to Network (same destination "Explore Network" already uses) instead of
+ * showing the curated people list inline — desktop keeps that inline preview
+ * since it has room for it without any fixed-header conflict.
+ *
+ * MOBILE_BAR_HEIGHT_PX below is published as --mic-setup-bar-h so Home
+ * Feed's fixed header/spacer can shift down by exactly this bar's height
+ * without importing anything from this module — see the effect below and
+ * Discovery.jsx's mobile header.
  */
+const MOBILE_BAR_HEIGHT_PX = 122;
+
 export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
   const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const cvDone = !!profile?.onboarding_cv_done;
   const discoverDone = !!profile?.onboarding_discover_done;
   const username = profile?.username;
   const visible = !!profile && !(cvDone && discoverDone);
 
-  // Home Feed's mobile-only fixed header ("Welcome back" + Feed/Pulse tabs,
-  // see features/discovery/Discovery.jsx) is position:fixed at a hardcoded
-  // `top:64`, assuming it sits directly under the topbar with nothing else
-  // in the flow above it on mobile. This checklist bar, when visible, now
-  // also occupies that space. Rather than reach into Discovery.jsx's layout
-  // (a different feature module) or hardcode pixel coordination the other
-  // way, publish a single CSS custom property reflecting whether this bar
-  // is showing — Discovery.jsx's fixed header/spacer read it (defaulting to
-  // 0 when absent) to shift down by exactly this bar's height. Values are
-  // the two fixed heights .mic-setup-bar actually renders at (single-row
-  // above 480px, stacked two-row at/under 480px — see globalStyles.js).
   useEffect(() => {
-    document.documentElement.classList.toggle("mic-has-setup-checklist", visible);
-    return () => document.documentElement.classList.remove("mic-has-setup-checklist");
-  }, [visible]);
+    document.documentElement.style.setProperty("--mic-setup-bar-h", (visible && isMobile) ? `${MOBILE_BAR_HEIGHT_PX}px` : "0px");
+    return () => document.documentElement.style.setProperty("--mic-setup-bar-h", "0px");
+  }, [visible, isMobile]);
 
   const markDone = async (step) => {
     patchProfile?.({ [step === "cv" ? "onboarding_cv_done" : "onboarding_discover_done"]: true });
@@ -68,10 +70,6 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cvDone, username]);
 
-  // Nothing left to do (or profile not loaded yet) — render nothing. This is
-  // the ONLY thing that hides the checklist; there is no separate "dismiss"
-  // action, so an incomplete step always survives navigation, refresh, and
-  // logout/login until it's actually completed or skipped server-side.
   if (!visible) return null;
 
   const activeStep = !cvDone ? "cv" : "discover";
@@ -83,6 +81,27 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
   const skipDiscover = () => markDone("discover");
 
   const primaryLabel = activeStep === "cv" ? "Build My Investor CV" : "Discover people";
+  const skipAction = activeStep === "cv" ? skipCv : skipDiscover;
+
+  if (isMobile) {
+    const primaryAction = activeStep === "cv" ? buildCv : exploreNetwork;
+    return (
+      <div style={wrapStyle}>
+        <div className="mic-setup-bar-mobile">
+          <div className="mic-setup-bar-mobile-row1">
+            <ProgressRing done={doneCount} total={2} />
+            <div>
+              <div className="mic-setup-headline">Complete your Investor Circle setup</div>
+              <div className="mic-setup-sub">{doneCount} of 2 complete</div>
+            </div>
+          </div>
+          <button onClick={primaryAction} className="btn btn-pri btn-sm mic-setup-mobile-cta">{primaryLabel} →</button>
+          <button onClick={skipAction} className="mic-setup-mobile-skip">Skip for now</button>
+        </div>
+      </div>
+    );
+  }
+
   const primaryAction = activeStep === "cv" ? buildCv : () => setOpen(true);
 
   return (
@@ -150,10 +169,10 @@ function ChecklistRow({ title, subtitle, done, active, locked, onGo, onSkip, chi
   );
 }
 
-/** Curated people list for the Discover step — reuses the existing
- * discover-people query, ICI computation and connection-request API
- * unchanged; only the presentation (inline panel vs. full-screen modal)
- * differs from the earlier implementation. */
+/** Curated people list for the Discover step (desktop only — see module
+ * comment above) — reuses the existing discover-people query, ICI
+ * computation and connection-request API unchanged; only the presentation
+ * differs from the earlier full-screen-modal implementation. */
 function DiscoverPanel({ me, onExplore, onSkip }) {
   const [people, setPeople] = useState(null); // null = loading
   const [connecting, setConnecting] = useState({});
@@ -257,13 +276,9 @@ function ProgressRing({ done, total }) {
 // .btn-soft classes rather than inventing new colors, so this reads as part
 // of the app rather than a pasted-in component.
 const wrapStyle = { background: "var(--accent-soft)", borderBottom: "1px solid var(--accent-line)" };
-// The collapsed bar's own layout (.mic-setup-bar, .mic-setup-text,
-// .mic-setup-headline/-sub, .mic-setup-chevron, .mic-setup-cta) is entirely
-// class-driven — see src/styles/globalStyles.js — deliberately NOT inline.
-// An inline `style` attribute always wins over a class rule, including one
-// inside a media query, so any layout that needs to change at a breakpoint
-// (here: CSS Grid columns collapsing to a stacked mobile layout) has to live
-// in the stylesheet, not in a JS style object.
+// Layout (padding, grid/flex structure) is entirely class-driven — see
+// src/styles/globalStyles.js — deliberately NOT inline, since an inline
+// `style` attribute always wins over a class rule.
 const panelStyle = { display: "flex", flexDirection: "column", gap: 10 };
 const rowStyle = { display: "flex", alignItems: "center", gap: 10, padding: "8px 0" };
 const checkDoneStyle = { width: 20, height: 20, borderRadius: "50%", flexShrink: 0, background: "var(--gain)", display: "flex", alignItems: "center", justifyContent: "center" };

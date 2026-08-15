@@ -63,10 +63,13 @@ export const STYLES = `
 
 .content{padding:28px 30px;overflow-y:auto;flex:1;min-height:0;}
 
-/* Setup checklist bar (Phase 5.5 onboarding) — CSS Grid rather than nested
-   flex with min-width:0 chains, which is a known source of mobile-browser
-   collapse/rendering quirks; a grid with explicit column tracks has no
-   equivalent ambiguity. */
+/* Setup checklist bar (Phase 5.5 onboarding). Desktop (.mic-setup-bar) uses
+   CSS Grid rather than nested flex with min-width:0 chains, which is a known
+   source of mobile-browser collapse/rendering quirks — a grid with explicit
+   column tracks has no equivalent ambiguity. Mobile (.mic-setup-bar-mobile)
+   is an entirely separate, deliberately non-growing layout — see the module
+   comment in src/features/onboarding/Onboarding.jsx for why the two aren't
+   unified under one set of breakpoints. */
 .mic-setup-bar{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 26px;box-sizing:border-box;width:100%;}
 .mic-setup-text{min-width:0;cursor:pointer;}
 .mic-setup-headline{font-size:13px;font-weight:700;color:var(--ink);}
@@ -74,11 +77,16 @@ export const STYLES = `
 .mic-setup-chevron{cursor:pointer;flex-shrink:0;transition:transform .15s;}
 .mic-setup-cta{flex-shrink:0;white-space:nowrap;}
 .mic-setup-panel{padding:4px 26px 14px;box-sizing:border-box;width:100%;}
-/* Published for other mobile fixed-position UI to read (see
-   features/discovery/Discovery.jsx's mobile header) — defaults to 0 so
-   anything reading it is a no-op when this bar isn't rendered at all. */
+.mic-setup-bar-mobile{display:flex;flex-direction:column;gap:10px;padding:12px 16px;box-sizing:border-box;width:100%;}
+.mic-setup-bar-mobile-row1{display:flex;align-items:center;gap:10px;}
+.mic-setup-mobile-cta{width:100%;justify-content:center;}
+.mic-setup-mobile-skip{background:none;border:none;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);padding:0;font-family:inherit;align-self:center;}
+/* --mic-setup-bar-h is set directly on <html> via inline style by
+   SetupChecklist (only while visible AND on mobile) — the default here is
+   just the pre-hydration/JS-disabled fallback. Read by Home Feed's mobile
+   fixed header/spacer (features/discovery/Discovery.jsx) so they can shift
+   down by exactly this bar's height without importing this module. */
 :root{--mic-setup-bar-h:0px;}
-html.mic-has-setup-checklist{--mic-setup-bar-h:54px;}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap;}
 .eyebrow{font-size:12px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
 .page-title{font-size:26px;font-weight:800;letter-spacing:-.6px;}
@@ -342,8 +350,6 @@ tr.hiddenrow > td{opacity:.55;}
 
   /* Content area */
   .content{padding:16px 14px;}
-  .mic-setup-bar{padding:10px 14px;}
-  .mic-setup-panel{padding:4px 14px 14px;}
   .page-title{font-size:20px!important;}
   .page-head{margin-bottom:14px;}
 
@@ -386,12 +392,6 @@ tr.hiddenrow > td{opacity:.55;}
 @media(max-width:480px){
   /* Small phones */
   .content{padding:12px 10px;}
-  /* Ring + text on row 1, chevron hidden (tap the text instead), CTA gets its own full-width row */
-  .mic-setup-bar{padding:8px 10px;grid-template-columns:auto minmax(0,1fr);row-gap:8px;}
-  .mic-setup-chevron{display:none;}
-  .mic-setup-cta{grid-column:1/-1;width:100%;justify-content:center;}
-  .mic-setup-panel{padding:4px 10px 12px;}
-  html.mic-has-setup-checklist{--mic-setup-bar-h:92px;} /* stacked 2-row layout at this width */
   .mobile-tabs{margin:0 -10px 14px;padding:0 10px;}
   .topbar{padding:0 8px 0 2px;}
 

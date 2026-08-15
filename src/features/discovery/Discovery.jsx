@@ -389,11 +389,14 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         </div>
       </div>
     )}
-    {/* Spacer = fixed header height (10+32+8+48+8+2 = 108px, +4 buffer = 112px),
-        plus --mic-setup-bar-h (0px unless the setup checklist bar above is
-        visible — see the fixed header above). Prevents the first feed card
-        from hiding underneath the fixed header. */}
-    {isMobile && !showNewReco && <div aria-hidden="true" style={{height:'calc(112px + var(--mic-setup-bar-h, 0px))',flexShrink:0}}/>}
+    {/* Spacer = fixed header's OWN height only (10+32+8+48+8+2 = 108px, +4
+        buffer = 112px) — NOT the setup checklist's height too. The checklist
+        bar is a normal in-flow element rendered above this whole component
+        (see App.jsx), so its height already pushes this spacer (and
+        everything below) down on its own; the fixed header's `top` above is
+        what shifts by --mic-setup-bar-h to stay aligned with it. Adding
+        --mic-setup-bar-h here again would double-count that height. */}
+    {isMobile && !showNewReco && <div aria-hidden="true" style={{height:112,flexShrink:0}}/>}
 
     {/* ── Desktop: normal in-flow header ── */}
     {!isMobile && (
