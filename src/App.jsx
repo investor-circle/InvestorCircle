@@ -720,6 +720,14 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const load = async () => {
+      // Kick off every fetch that doesn't depend on another fetch's result
+      // immediately, in parallel with the batch below, instead of waiting
+      // for that batch to resolve first — none of these three need conns/
+      // recv/etc., so serializing them after the first batch was just
+      // adding two avoidable round-trips to the home feed's load time.
+      const trackedPromise    = dbGetMyTrackedRecoIds();
+      const feedCfgPromise    = dbGetFeedConfigAndPrefs();
+      const publicFeedPromise = dbGetPublicFeed();
       try {
         const [conns, grps, recv, made, notifs, shr] = await Promise.all([
           getMyConnections(user.uid),
@@ -751,12 +759,11 @@ export default function App() {
         if (userIsAdmin) loadClaimRequests();
         // Check if this user is a creator awaiting admin approval for their claimed profile
         dbGetMyPendingClaimStatus().then(setHasPendingClaim).catch(()=>{});
-        // Load tracked recommendation IDs + feed config/prefs in parallel —
-        // neither depends on the other, so there's no reason to serialize
-        // these two round-trips.
+        // Both were already kicked off above, in parallel with the batch
+        // that just resolved — just await them now.
         const [trackedResult, feedCfgResult] = await Promise.allSettled([
-          dbGetMyTrackedRecoIds(),
-          dbGetFeedConfigAndPrefs(),
+          trackedPromise,
+          feedCfgPromise,
         ]);
         if (trackedResult.status === 'fulfilled') setTracked(new Set(trackedResult.value));
 
@@ -815,8 +822,11 @@ export default function App() {
         const publicFeedLoad = (async () => {
           // Load public recommendations — visible to all users when is_public = true.
           // Excludes the user's own recos and ones already in their direct feed.
+          // (publicFeedPromise was already kicked off above, in parallel with
+          // the first batch, so this is usually just awaiting an
+          // already-in-flight or already-resolved request.)
           try {
-            const pubRows = await dbGetPublicFeed();
+            const pubRows = await publicFeedPromise;
             const pubMapped = pubRows.map(r => ({
               ...r,
               assetName:    r.asset_name,

@@ -4,17 +4,22 @@ import {
 
 export const _profileInfoCache = new Map(); // userId → { username, isSebiApproved }
 
-export async function fetchPublicProfileInfo(userId) {
-  if (!userId) return null;
+export function fetchPublicProfileInfo(userId) {
+  if (!userId) return Promise.resolve(null);
   if (_profileInfoCache.has(userId)) return _profileInfoCache.get(userId);
-  try {
-    const info = await dbGetProfileNavInfo(userId);
-    if (info) {
-      _profileInfoCache.set(userId, info);
+  // Cache the in-flight promise itself (not just the resolved value) so that
+  // multiple FeedCards for the same recommender — which all mount around the
+  // same time on the home feed — share one request instead of each firing
+  // its own. A miss/error is evicted rather than cached, same as before, so
+  // a later call can still retry.
+  const promise = dbGetProfileNavInfo(userId)
+    .then(info => {
+      if (!info) { _profileInfoCache.delete(userId); return null; }
       return info;
-    }
-  } catch(_) {}
-  return null;
+    })
+    .catch(() => { _profileInfoCache.delete(userId); return null; });
+  _profileInfoCache.set(userId, promise);
+  return promise;
 }
 
 /** Navigate to a public profile by username (hash-based routing). */
