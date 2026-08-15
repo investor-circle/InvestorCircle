@@ -368,13 +368,18 @@ export default async function handleLookups(req, res) {
             ON (cn.requester_id = up.id AND cn.addressee_id = ${uid})
             OR (cn.addressee_id = up.id AND cn.requester_id = ${uid})
           WHERE up.id != ${uid}
-            AND up.username IS NOT NULL AND up.username <> ''
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
           GROUP BY up.id, up.username, up.full_name, up.avatar_url, up.avatar_color
           ORDER BY COUNT(r.id) DESC, up.created_at DESC
           LIMIT 8
         `;
+        // NOTE: intentionally NOT filtering out users with no username set —
+        // Phase 5.5 made username optional at signup (chosen later during
+        // onboarding), so requiring one here (as the older people-search
+        // action does, for building a /investor/:username link) would wrongly
+        // exclude exactly the freshly-onboarded real users this card exists
+        // to surface.
         res.status(200).json({ people: rows });
         return;
       }

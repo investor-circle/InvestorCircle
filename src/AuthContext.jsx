@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
 import { auth } from "./firebase";
+import { API_ORIGIN } from "./db";
 
 const AuthContext = createContext(null);
 
@@ -10,7 +11,9 @@ const ADMIN_EMAILS = ["ankur.citm@gmail.com"];
 // browser-to-Neon direct access has been removed (Phase 4 security
 // migration) — if these are unreachable, auth degrades to a locally-derived
 // profile shape rather than falling back to a direct-Neon query.
-const API_BASE = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/profile';
+// API_ORIGIN (see src/db.js) resolves to the same-origin api/ on Vercel
+// Preview deployments so this always talks to the deployment's own backend.
+const API_BASE = API_ORIGIN + '/api/profile';
 const PROFILE_ME_API         = `${API_BASE}/me`;
 const PROFILE_BLACKLIST_API  = `${API_BASE}/blacklist-check`;
 const PROFILE_SYNC_API       = `${API_BASE}/sync`;

@@ -21,19 +21,36 @@ export function NewUserActivation({ profile, ME, patchProfile, setPage }) {
   // Once a step is marked done for THIS render tree, don't flash it again
   // before the server round-trip confirms and profile state updates.
   const [closing, setClosing] = useState(null); // 'cv' | 'discover' | null
+  // Set the moment a CTA navigates the user away (Build CV → Track Record,
+  // Explore Network → Network). Without this, completing step 1 by clicking
+  // "Build My Investor CV" navigates to Track Record underneath, but this
+  // component re-renders immediately afterward, sees onboarding_discover_done
+  // still false, and pops the full-screen Discover Circle overlay right on
+  // top of the page the user was just sent to — it looks like "the button
+  // did nothing, and now there's a different popup". Once the user has
+  // actively chosen to go do something, get out of their way for the rest of
+  // the session; the next incomplete step still surfaces on their next visit.
+  const [dismissedForSession, setDismissedForSession] = useState(false);
 
-  if (!profile) return null;
+  if (!profile || dismissedForSession) return null;
 
   const markDone = async (step) => {
     setClosing(step);
     patchProfile?.({ [step === 'cv' ? 'onboarding_cv_done' : 'onboarding_discover_done']: true });
-    dbMarkOnboardingStep(step).catch(() => {}); // best-effort; local state already updated
+    try {
+      const ok = await dbMarkOnboardingStep(step);
+      if (!ok) console.warn(`[onboarding] failed to persist step "${step}" as done — it may reappear next login`);
+    } catch (e) {
+      console.warn(`[onboarding] failed to persist step "${step}":`, e?.message || e);
+    }
   };
+
+  const goTo = (page, step) => { setDismissedForSession(true); markDone(step); setPage?.(page); };
 
   if (!profile.onboarding_cv_done && closing !== 'cv') {
     return (
       <BuildCvCard
-        onBuild={() => { markDone('cv'); setPage?.('trackrecord'); }}
+        onBuild={() => goTo('trackrecord', 'cv')}
         onSkip={() => markDone('cv')}
       />
     );
@@ -43,7 +60,7 @@ export function NewUserActivation({ profile, ME, patchProfile, setPage }) {
     return (
       <DiscoverCircleCard
         me={ME}
-        onExplore={() => { markDone('discover'); setPage?.('network'); }}
+        onExplore={() => goTo('network', 'discover')}
         onSkip={() => markDone('discover')}
       />
     );

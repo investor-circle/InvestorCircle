@@ -8,13 +8,18 @@ import {
   fetchSignInMethodsForEmail,
 } from "firebase/auth";
 import { auth, track } from "./firebase";
+import { API_ORIGIN } from "./db";
 
 /* ── Transactional email helper ─── */
-const EMAIL_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/email';
-const RESET_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/reset';
+// API_ORIGIN (see src/db.js) resolves to the same-origin api/ on Vercel
+// Preview deployments — so a Preview build of a branch with backend changes
+// (e.g. this one) talks to its own freshly-deployed api/, not a stale
+// hardcoded production URL.
+const EMAIL_API = API_ORIGIN + '/api/email';
+const RESET_API = API_ORIGIN + '/api/reset';
 
 /* ── Phase 2e: authenticated server-side profile endpoints ─── */
-const SIGNUP_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/profile/signup';
+const SIGNUP_API = API_ORIGIN + '/api/profile/signup';
 const sendEmail = (type, payload) =>
   fetch(EMAIL_API, {
     method:  'POST',
@@ -37,6 +42,35 @@ function friendlyError(code, isSignup = false) {
     default: return isSignup
       ? "Sign up failed. Please check your details and try again."
       : "Sign in failed. Please check your credentials and try again.";
+  }
+}
+
+/**
+ * Translate Google sign-in errors specifically — kept separate from
+ * friendlyError() above because the generic isSignup wording ("Sign up
+ * failed...") is misleading for Google (there's no separate signup step,
+ * and the real cause is almost always something more specific than "check
+ * your details"). Every branch stays safe to show the user — these are all
+ * standard, publicly-documented Firebase Auth error codes, never database
+ * or server internals — and the raw code is appended so a genuine failure
+ * is diagnosable instead of a dead end.
+ */
+function googleErrorMessage(code) {
+  switch (code) {
+    case "auth/unauthorized-domain":
+      return "Google sign-in isn't enabled for this domain yet. This usually means the current URL needs to be added to Firebase's authorized domains list. Please try email sign-in for now, or contact support.";
+    case "auth/operation-not-allowed":
+      return "Google sign-in isn't enabled for this app yet. Please try email sign-in for now, or contact support.";
+    case "auth/popup-blocked":
+      return "Your browser blocked the Google sign-in popup. Please allow popups for this site and try again.";
+    case "auth/network-request-failed":
+      return "Network error while contacting Google. Please check your connection and try again.";
+    case "auth/internal-error":
+    case "auth/invalid-api-key":
+    case "auth/configuration-not-found":
+      return "Google sign-in is temporarily unavailable. Please try email sign-in, or try again shortly.";
+    default:
+      return `Google sign-in failed${code ? ` (${code})` : ""}. Please try email sign-in for now, or contact support if this continues.`;
   }
 }
 
@@ -196,7 +230,8 @@ export default function LoginPage() {
       } else if (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") {
         // User dismissed the popup — not an error worth surfacing.
       } else {
-        setErr(friendlyError(e.code, tab === "signup"));
+        console.error("[Google sign-in] failed:", e.code, e.message);
+        setErr(googleErrorMessage(e.code));
       }
       setBusy(false);
     }

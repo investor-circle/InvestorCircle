@@ -30,8 +30,29 @@ import { auth } from "./firebase";
 // is an authorization decision (never trust a client-supplied uid); an
 // infrastructure failure (network error, 5xx, unreachable) degrades to a
 // safe default (empty list/null) rather than any privileged fallback.
-// ─────────────────────────────────────────────────────────────────────────────
-export const API_BASE = (import.meta.env.VITE_CAS_API_URL || "https://investor-circle.vercel.app") + "/api";
+//
+// API origin resolution:
+//   1. VITE_CAS_API_URL, when explicitly set, always wins — this is how the
+//      real production frontend (GitHub Pages, a static host with no
+//      co-located backend) reaches the separate Vercel-hosted api/.
+//   2. Otherwise, on any *.vercel.app deployment (a Vercel Preview or the
+//      Vercel project's own domain), the api/ functions are served from the
+//      SAME origin as the built frontend — use a same-origin relative path
+//      so each Preview deployment talks to its own freshly-deployed backend
+//      instead of a stale hardcoded production URL. Without this, a Preview
+//      build of a branch that changes api/ (new columns, new actions, new
+//      required fields) silently keeps calling old production endpoints —
+//      new actions 400 as "Unknown action", new response fields are simply
+//      absent, and any client code that reads them sees `undefined`.
+//   3. Everywhere else (localhost dev without VITE_CAS_API_URL set), fall
+//      back to the same fixed reference URL this always used.
+function resolveApiOrigin() {
+  if (import.meta.env.VITE_CAS_API_URL) return import.meta.env.VITE_CAS_API_URL;
+  if (typeof window !== "undefined" && /(^|\.)vercel\.app$/.test(window.location.hostname)) return "";
+  return "https://investor-circle.vercel.app";
+}
+export const API_ORIGIN = resolveApiOrigin();
+export const API_BASE = API_ORIGIN + "/api";
 
 export async function callApi(path, { method = "GET", body } = {}) {
   if (!auth.currentUser) return { ok: false, infra: true };

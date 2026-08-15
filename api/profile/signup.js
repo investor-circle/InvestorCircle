@@ -11,11 +11,15 @@
  *   Authorization: Bearer <Firebase ID token> (the token for the account
  *   just created by createUserWithEmailAndPassword — already authenticated
  *   at this point in the signup flow)
- *   Body: { firstName: string, lastName?: string, username: string }
+ *   Body: { firstName: string, lastName?: string, username?: string }
+ *   (Phase 5.5: username is no longer collected at signup — it's chosen
+ *   later during onboarding via lookups.js action=username-save. Still
+ *   accepted here, validated/uniqueness-enforced, for any caller that does
+ *   pass one.)
  *
  * Responses:
  *   200 { profile: {...} }
- *   400 missing firstName, or username fails ^[a-z0-9_]{5,20}$
+ *   400 missing firstName, or username present but fails ^[a-z0-9_]{5,20}$
  *   401 missing/malformed/invalid/expired token
  *   405 method not POST/OPTIONS
  *   409 username already taken
