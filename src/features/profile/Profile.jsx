@@ -925,7 +925,6 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
   // Username setting — only relevant when username not yet set
   const [unInput,  setUnInput]  = useState(claimMode ? (unclaimedProfile?.username || '') : '');
   const [unStatus, setUnStatus] = useState('idle'); // idle|checking|available|taken|invalid
-  const [unSaving, setUnSaving] = useState(false);
   const [unSaved,  setUnSaved]  = useState(!!username && !claimMode);
 
   // ── Claim-mode only state ─────────────────────────────────────────────────
@@ -967,17 +966,6 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
     }, 500);
     return () => clearTimeout(t);
   }, [unInput]);
-
-  const saveUsername = async () => {
-    if (unStatus !== 'available') return;
-    setUnSaving(true);
-    try {
-      await dbSaveUsername(userId, unInput);
-      patchProfile?.({ username: unInput });
-      setUnSaved(true);
-    } catch(e) { setErr('Could not save username: ' + e.message); }
-    setUnSaving(false);
-  };
 
   const handleAvatarFile = async (file) => {
     if (!file) return;
@@ -1043,9 +1031,23 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
     setClaimBusy(false);
   };
 
+  // Whether there's a pending username in the input that Save still needs to
+  // persist (i.e. the user typed one but it was never saved).
+  const hasPendingUsername = !claimMode && !!unInput && !username && !unSaved;
+
   const save = async () => {
     if (!userId) return;
-    setSaving(true); setErr('');
+    setErr('');
+
+    // Fold the username into the same Save action — no separate "Set" click
+    // required. If they typed one, it must be valid+available before Save
+    // can proceed at all (silently dropping it would be worse than blocking).
+    if (hasPendingUsername && unStatus !== 'available') {
+      setErr(unStatus === 'taken' ? 'That username is already taken — try another.' : 'Please enter a valid username before saving.');
+      return;
+    }
+
+    setSaving(true);
     const fn = firstName.trim(), ln = lastName.trim();
     const fullName = [fn,ln].filter(Boolean).join(' ')||null;
 
@@ -1060,6 +1062,11 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
     }
 
     try {
+      if (hasPendingUsername) {
+        await dbSaveUsername(userId, unInput);
+        patchProfile?.({ username: unInput });
+        setUnSaved(true);
+      }
       await dbSaveProfileEdit({
         firstName: fn, lastName: ln,
         avatarColor, bio,
@@ -1223,27 +1230,22 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
                 <div style={{background:'rgba(251,191,36,.08)',border:'1px solid rgba(251,191,36,.2)',
                     borderRadius:9,padding:'10px 13px',fontSize:12,color:'#fbbf24',marginBottom:10,lineHeight:1.5}}>
                   ⚠ Choose carefully — username cannot be changed once set.
-                  It becomes part of your permanent public profile URL.
+                  It becomes part of your permanent public profile URL, and you'll
+                  need one to post recommendations or have a public profile page.
                 </div>
-                <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                  <div style={{flex:1,position:'relative'}}>
-                    <span style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',
-                        color:'rgba(255,255,255,.4)',pointerEvents:'none',fontSize:14}}>@</span>
-                    <input value={unInput}
-                      onChange={e=>setUnInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''))}
-                      maxLength={20} placeholder="your_username"
-                      style={{...darkInput,paddingLeft:28}}/>
-                  </div>
-                  <button className="btn btn-pri btn-sm" disabled={unStatus!=='available'||unSaving}
-                    onClick={saveUsername} style={{flexShrink:0,padding:'10px 16px'}}>
-                    {unSaving?<Loader size={13} className="spin"/>:<><Check size={13}/> Set</>}
-                  </button>
+                <div style={{position:'relative'}}>
+                  <span style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',
+                      color:'rgba(255,255,255,.4)',pointerEvents:'none',fontSize:14}}>@</span>
+                  <input value={unInput}
+                    onChange={e=>setUnInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''))}
+                    maxLength={20} placeholder="your_username"
+                    style={{...darkInput,paddingLeft:28}}/>
                 </div>
                 <div style={{marginTop:6,fontSize:12,minHeight:16}}>
                   {unStatus==='checking'  && <span style={{color:'rgba(255,255,255,.4)',display:'flex',alignItems:'center',gap:5}}><Loader size={11} className="spin"/> Checking…</span>}
-                  {unStatus==='available' && <span style={{color:'#4ade80',display:'flex',alignItems:'center',gap:5}}><Check size={11}/> Available</span>}
+                  {unStatus==='available' && <span style={{color:'#4ade80',display:'flex',alignItems:'center',gap:5}}><Check size={11}/> Available — will be saved with the rest of this form</span>}
                   {unStatus==='taken'     && <span style={{color:'#f87171',display:'flex',alignItems:'center',gap:5}}><X size={11}/> Already taken — try another</span>}
-                  {unStatus==='invalid'   && <span style={{color:'#f87171',fontSize:11}}>5–20 chars, lowercase letters, numbers and underscores only</span>}
+                  {unStatus==='invalid'   && unInput && <span style={{color:'#f87171',fontSize:11}}>5–20 chars, lowercase letters, numbers and underscores only</span>}
                 </div>
               </>
             )}
@@ -1373,7 +1375,7 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
                 Cancel
               </button>
               <button className="btn btn-pri"
-                disabled={claimMode ? claimBusy : saving}
+                disabled={claimMode ? claimBusy : (saving || (hasPendingUsername && unStatus === 'checking'))}
                 onClick={claimMode ? handleClaim : save}
                 style={{flex:1,justifyContent:'center',padding:'11px 16px',
                   fontSize:14,minHeight:0,lineHeight:1.3}}>

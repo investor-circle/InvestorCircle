@@ -17,21 +17,18 @@ import { useIsMobile } from "../../hooks/index";
  * directly under the topbar — see features/discovery/Discovery.jsx), and
  * this bar sits in normal flow right above it. On desktop that's a non-issue
  * (Home Feed's header is in-flow there too). On mobile, anything that could
- * grow this bar's height unpredictably (an expanding inline panel) requires
- * exact height coordination with that fixed header to avoid overlap — fragile
- * and easy to get subtly wrong. So mobile gets a layout that never grows: a
- * fixed-height card with a full-width primary action and a plain "Skip for
- * now" link, no expand/collapse. The Discover step's mobile CTA goes straight
- * to Network (same destination "Explore Network" already uses) instead of
- * showing the curated people list inline — desktop keeps that inline preview
- * since it has room for it without any fixed-header conflict.
+ * grow this bar's height unpredictably requires exact height coordination
+ * with that fixed header to avoid overlap — so mobile's layout has a small,
+ * FIXED number of possible heights (one per step, published below) rather
+ * than an open-ended expanding panel.
  *
- * MOBILE_BAR_HEIGHT_PX below is published as --mic-setup-bar-h so Home
- * Feed's fixed header/spacer can shift down by exactly this bar's height
- * without importing anything from this module — see the effect below and
- * Discovery.jsx's mobile header.
+ * MOBILE_BAR_HEIGHT_PX is published as --mic-setup-bar-h so Home Feed's
+ * fixed header/spacer can shift down by exactly this bar's height without
+ * importing anything from this module — see the effect below and
+ * Discovery.jsx's mobile header. Keep these in sync with the actual mobile
+ * markup if either changes.
  */
-const MOBILE_BAR_HEIGHT_PX = 122;
+const MOBILE_BAR_HEIGHT_PX = { cv: 150, discover: 190 };
 
 export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
   const [open, setOpen] = useState(false);
@@ -41,11 +38,15 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
   const discoverDone = !!profile?.onboarding_discover_done;
   const username = profile?.username;
   const visible = !!profile && !(cvDone && discoverDone);
+  const activeStep = !cvDone ? "cv" : "discover";
 
   useEffect(() => {
-    document.documentElement.style.setProperty("--mic-setup-bar-h", (visible && isMobile) ? `${MOBILE_BAR_HEIGHT_PX}px` : "0px");
+    document.documentElement.style.setProperty(
+      "--mic-setup-bar-h",
+      (visible && isMobile) ? `${MOBILE_BAR_HEIGHT_PX[activeStep]}px` : "0px"
+    );
     return () => document.documentElement.style.setProperty("--mic-setup-bar-h", "0px");
-  }, [visible, isMobile]);
+  }, [visible, isMobile, activeStep]);
 
   const markDone = async (step) => {
     patchProfile?.({ [step === "cv" ? "onboarding_cv_done" : "onboarding_discover_done"]: true });
@@ -57,14 +58,15 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
     }
   };
 
-  // "Build your Investor CV" only completes once there's an actual profile
-  // to show — at minimum, a username set (Track Record requires one before
-  // it will render the public profile at all; see App.jsx's trackrecord
-  // branch). Clicking the CTA just navigates to Track Record; this effect
-  // marks the step done the moment a username appears, wherever that
-  // happens (normally right after the user sets one there). Explicitly
-  // skipping the step (below) still completes it without a username, same
-  // as before — this only stops a bare click-through from auto-completing.
+  // "Set your username" only completes once a username is actually set —
+  // Track Record requires one before it will render the public profile at
+  // all (see App.jsx's trackrecord branch), and it's also what unlocks
+  // making recommendations and having a public profile page in general.
+  // Clicking the CTA just navigates to Track Record; this effect marks the
+  // step done the moment a username appears, wherever that happens
+  // (normally right after the user sets one there). Explicitly skipping
+  // (below) still completes it without a username, same as before — this
+  // only stops a bare click-through from auto-completing.
   useEffect(() => {
     if (!cvDone && username) markDone("cv");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,7 +74,6 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
 
   if (!visible) return null;
 
-  const activeStep = !cvDone ? "cv" : "discover";
   const doneCount = (cvDone ? 1 : 0) + (discoverDone ? 1 : 0);
 
   const buildCv = () => setPage?.("trackrecord");
@@ -80,23 +81,33 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
   const exploreNetwork = () => { markDone("discover"); setPage?.("network"); };
   const skipDiscover = () => markDone("discover");
 
-  const primaryLabel = activeStep === "cv" ? "Build My Investor CV" : "Discover people";
+  const primaryLabel = activeStep === "cv" ? "Set My Username" : "Discover people";
   const skipAction = activeStep === "cv" ? skipCv : skipDiscover;
 
   if (isMobile) {
     const primaryAction = activeStep === "cv" ? buildCv : exploreNetwork;
+    const headline = activeStep === "cv" ? "Set your username" : "Discover your Investor Circle";
+    const sub = activeStep === "cv"
+      ? "Needed to post recommendations & get your public profile"
+      : "Meet a few people worth following";
     return (
       <div style={wrapStyle}>
         <div className="mic-setup-bar-mobile">
           <div className="mic-setup-bar-mobile-row1">
             <ProgressRing done={doneCount} total={2} />
             <div>
-              <div className="mic-setup-headline">Complete your Investor Circle setup</div>
-              <div className="mic-setup-sub">{doneCount} of 2 complete</div>
+              <div className="mic-setup-headline">{headline}</div>
+              <div className="mic-setup-sub">{sub}</div>
             </div>
           </div>
-          <button onClick={primaryAction} className="btn btn-pri btn-sm mic-setup-mobile-cta">{primaryLabel} →</button>
+          {activeStep === "discover" && <MobilePeopleStrip />}
+          <button onClick={primaryAction} className="btn btn-pri btn-sm mic-setup-mobile-cta">
+            {activeStep === "cv" ? "Set My Username →" : "Explore Network →"}
+          </button>
           <button onClick={skipAction} className="mic-setup-mobile-skip">Skip for now</button>
+          {activeStep === "cv" && (
+            <div className="mic-setup-mobile-caption">You can always do this later from Track Record.</div>
+          )}
         </div>
       </div>
     );
@@ -123,8 +134,9 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
       {open && (
         <div className="mic-setup-panel" style={panelStyle}>
           <ChecklistRow
-            title="Build your Investor CV"
-            subtitle="Showcase your investment journey and track record."
+            title="Set your username"
+            subtitle="Needed to post recommendations and show a public profile."
+            caption="You can always do this later from Track Record."
             done={cvDone}
             active={activeStep === "cv"}
             onGo={buildCv}
@@ -132,7 +144,7 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
           />
           <ChecklistRow
             title="Discover your Investor Circle"
-            subtitle={cvDone ? "Meet a few people worth following." : "Complete Build CV first."}
+            subtitle={cvDone ? "Meet a few people worth following." : "Complete Set your username first."}
             done={discoverDone}
             active={activeStep === "discover"}
             locked={!cvDone}
@@ -147,7 +159,7 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
   );
 }
 
-function ChecklistRow({ title, subtitle, done, active, locked, onGo, onSkip, children }) {
+function ChecklistRow({ title, subtitle, caption, done, active, locked, onGo, onSkip, children }) {
   return (
     <div style={{ opacity: locked ? 0.5 : 1 }}>
       <div style={rowStyle}>
@@ -164,7 +176,36 @@ function ChecklistRow({ title, subtitle, done, active, locked, onGo, onSkip, chi
           </div>
         )}
       </div>
+      {active && !done && caption && <div style={captionStyle}>{caption}</div>}
       {children}
+    </div>
+  );
+}
+
+/** Compact avatar row shown on mobile before the "Explore Network" CTA —
+ * fixed height regardless of how many people come back (0-6, loading, or
+ * empty all render inside the same-height container), so it never
+ * disrupts the mobile bar's published height. Reuses the same
+ * discover-people query and Avatar rendering as the desktop preview. */
+function MobilePeopleStrip() {
+  const [people, setPeople] = useState(null); // null = loading
+
+  useEffect(() => {
+    let cancelled = false;
+    dbGetSuggestedPeople().then(rows => { if (!cancelled) setPeople(rows); }).catch(() => { if (!cancelled) setPeople([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div className="mic-setup-mobile-people">
+      {people === null && <Loader size={14} className="spin" style={{ color: "var(--muted)" }} />}
+      {people?.length === 0 && <span style={{ fontSize: 11, color: "var(--muted)" }}>No investors to suggest just yet</span>}
+      {people?.slice(0, 6).map(p => (
+        <div key={p.id} className="mic-setup-mobile-person">
+          <Avatar f={{ initials: initialsOf(p.full_name || p.username || "?"), avatarUrl: p.avatar_url, color: p.avatar_color }} size={40} />
+          <div className="mic-setup-mobile-person-name">{(p.full_name || p.username || "").split(" ")[0]}</div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -285,6 +326,7 @@ const checkDoneStyle = { width: 20, height: 20, borderRadius: "50%", flexShrink:
 const checkTodoStyle = { width: 20, height: 20, borderRadius: "50%", flexShrink: 0, border: "1.5px solid var(--line-2)" };
 const rowTitleStyle = { fontSize: 13, fontWeight: 700, color: "var(--ink)" };
 const rowSubStyle = { fontSize: 11.5, color: "var(--muted)", marginTop: 1 };
+const captionStyle = { fontSize: 11, color: "var(--muted)", marginTop: 4, paddingLeft: 30 };
 const completedTagStyle = { fontSize: 11, fontWeight: 700, color: "var(--gain)", flexShrink: 0 };
 const goLinkStyle = { background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent-ink)", padding: 0, fontFamily: "inherit" };
 const skipLinkStyle = { background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--muted)", padding: 0, fontFamily: "inherit" };
