@@ -96,6 +96,7 @@ const AdminUsers       = React.lazy(() => adminModule().then(m => ({ default: m.
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { InviteModal, Network } from "./features/connections/Connections";
 import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./features/discovery/Discovery";
+import { NewUserActivation } from "./features/onboarding/Onboarding";
 import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
 import { PortfolioIntelligencePage } from "./features/portfolio/Portfolio";
@@ -164,8 +165,8 @@ export default function App() {
     const firstName = profile?.first_name || user.email?.split("@")[0] || "User";
     const lastName  = profile?.last_name  || "";
     const name = `${firstName} ${lastName}`.trim();
-    return { id:user.uid, name, firstName, lastName, username:profile?.username||"", initials:initialsOf(name), email:user.email||"" };
-  }, [user?.uid, profile?.first_name, profile?.last_name, profile?.username]);
+    return { id:user.uid, name, firstName, lastName, username:profile?.username||"", initials:initialsOf(name), email:user.email||"", avatarUrl:profile?.avatar_url||"" };
+  }, [user?.uid, profile?.first_name, profile?.last_name, profile?.username, profile?.avatar_url]);
 
   // ── Page navigation ─────────────────────────────────────────────────────────
   const navigate = useNavigate();
@@ -1352,7 +1353,7 @@ export default function App() {
                   title="Profile & settings"
                 >
                   <div className="avatar-pill">
-                    <div className="gava">{isInv ? ME.initials : "AD"}</div>
+                    <div className="gava" style={isInv && ME.avatarUrl ? { backgroundImage:`url(${ME.avatarUrl})`, backgroundSize:"cover", backgroundPosition:"center", color:"transparent" } : undefined}>{isInv ? ME.initials : "AD"}</div>
                     <div className="tb-name-role" style={{paddingRight:6}}>
                       <div style={{fontSize:13,fontWeight:700,lineHeight:1.2}}>
                         {isInv ? ME.name : "Admin"}
@@ -1369,7 +1370,7 @@ export default function App() {
                     {/* Profile header */}
                     <div style={{padding:"16px 16px 12px",borderBottom:"1px solid var(--line)"}}>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <div className="av" style={{width:40,height:40,background:"var(--grad)",fontSize:15,flexShrink:0}}>{ME.initials}</div>
+                        <div className="av" style={ME.avatarUrl ? {width:40,height:40,fontSize:15,flexShrink:0,backgroundImage:`url(${ME.avatarUrl})`,backgroundSize:"cover",backgroundPosition:"center"} : {width:40,height:40,background:"var(--grad)",fontSize:15,flexShrink:0}}>{!ME.avatarUrl && ME.initials}</div>
                         <div style={{minWidth:0}}>
                           <div style={{fontWeight:700,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ME.name}</div>
                           <div style={{fontSize:11,color:"var(--muted)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ME.email}</div>
@@ -1604,6 +1605,14 @@ export default function App() {
           updateProfile={updateProfile}
           onClose={()=>setProfileEditOpen(false)}
         />
+      )}
+      {/* ── New-user activation: Build your Investor CV / Discover your Investor
+          Circle. Gated entirely by profile.onboarding_*_done — independent of
+          feedLoading/the Home Feed data-load effect, so it never blocks or
+          changes feed population. Never shown to established users (see
+          supabase/phase_5_5_onboarding.sql — existing rows default to done). ── */}
+      {isInv && !profileEditOpen && !claimToken && (
+        <NewUserActivation profile={profile} ME={ME} patchProfile={patchProfile} setPage={setPage}/>
       )}
     </div>
   );

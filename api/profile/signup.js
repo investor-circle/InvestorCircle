@@ -100,13 +100,18 @@ export default async function handler(req, res) {
   }
   const firstName = String((body && body.firstName) || '').trim();
   const lastName = String((body && body.lastName) || '').trim();
-  const username = String((body && body.username) || '').trim();
+  // Phase 5.5: username is no longer required at signup — it's chosen later
+  // during progressive onboarding (see api/_lib/handlers/lookups.js
+  // action=username-save). Still validated/uniqueness-enforced when present,
+  // for any caller that does pass one.
+  const usernameRaw = String((body && body.username) || '').trim();
+  const username = usernameRaw || null;
 
   if (!firstName) {
     res.status(400).json({ error: 'First name is required' });
     return;
   }
-  if (!USERNAME_RE.test(username)) {
+  if (username && !USERNAME_RE.test(username)) {
     res.status(400).json({ error: 'Invalid username' });
     return;
   }
@@ -121,15 +126,20 @@ export default async function handler(req, res) {
   let rows;
   try {
     rows = await sql`
-      INSERT INTO user_profiles (id, email, full_name, first_name, last_name, is_admin, username)
-      VALUES (${uid}, ${email}, ${fullName}, ${firstName}, ${lastName}, false, ${username})
+      INSERT INTO user_profiles
+        (id, email, full_name, first_name, last_name, is_admin, username,
+         onboarding_cv_done, onboarding_discover_done)
+      VALUES
+        (${uid}, ${email}, ${fullName}, ${firstName}, ${lastName}, false, ${username},
+         false, false)
       ON CONFLICT (id) DO UPDATE SET
         first_name = EXCLUDED.first_name,
         last_name  = EXCLUDED.last_name,
         full_name  = EXCLUDED.full_name,
         username   = COALESCE(EXCLUDED.username, user_profiles.username),
         updated_at = now()
-      RETURNING id, email, full_name, first_name, last_name, username, is_admin
+      RETURNING id, email, full_name, first_name, last_name, username, is_admin,
+                avatar_url, avatar_color, onboarding_cv_done, onboarding_discover_done
     `;
   } catch (e) {
     // Unique-violation on the username column

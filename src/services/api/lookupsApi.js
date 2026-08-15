@@ -19,6 +19,7 @@ export {
   getFeedConfigAndPrefs,
   setFeedPref,
   searchPeople,
+  getSuggestedPeople,
   getAboutUsContent,
   saveAboutUsContent,
   voteFeature,

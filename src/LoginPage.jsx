@@ -1,7 +1,12 @@
 import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "./AuthContext";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword, updateProfile,
+  GoogleAuthProvider, signInWithPopup, linkWithCredential,
+  signInWithEmailAndPassword as fbSignInWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+} from "firebase/auth";
 import { auth, track } from "./firebase";
 
 /* ── Transactional email helper ─── */
@@ -9,8 +14,7 @@ const EMAIL_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.
 const RESET_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/reset';
 
 /* ── Phase 2e: authenticated server-side profile endpoints ─── */
-const USERNAME_AVAILABLE_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/profile/username-available';
-const SIGNUP_API             = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/profile/signup';
+const SIGNUP_API = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/profile/signup';
 const sendEmail = (type, payload) =>
   fetch(EMAIL_API, {
     method:  'POST',
@@ -66,6 +70,13 @@ export default function LoginPage() {
   const [showPw,     setShowPw]     = useState(false);
   const [showCpw,    setShowCpw]    = useState(false);
 
+  // Set when Google sign-in hits an email that already has a password
+  // account: { email, pendingCredential }. Prompts the user for their
+  // existing password so the two sign-in methods can be linked onto one
+  // account rather than creating a duplicate profile.
+  const [linkPending,  setLinkPending]  = useState(null);
+  const [linkPassword, setLinkPassword] = useState("");
+
   // Forgot password state
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotDone,  setForgotDone]  = useState(false);
@@ -75,10 +86,11 @@ export default function LoginPage() {
   const [loginPassword, setLoginPassword] = useState("");
 
   // ── Sign up fields ──────────────────────────────────────────────────────────
+  // Phase 5.5: username is no longer collected at signup — it's chosen later
+  // during progressive onboarding (see src/features/onboarding/Onboarding.jsx),
+  // so initial signup only needs a name, email and password.
   const [firstName,       setFirstName]       = useState("");
   const [lastName,        setLastName]         = useState("");
-  const [username,        setUsername]         = useState("");
-  const [unStatus,        setUnStatus]         = useState("idle"); // idle|checking|available|taken|invalid
   const [signupEmail,     setSignupEmail]      = useState("");
   const [signupPassword,  setSignupPassword]   = useState("");
   const [confirmPassword, setConfirmPassword]  = useState("");
@@ -92,6 +104,21 @@ export default function LoginPage() {
       track('login', { method: 'email' });
       // onAuthStateChanged in AuthContext handles everything after this
     } catch (e) {
+      // If this email has no password sign-in method (it was created via
+      // Google), give a targeted hint instead of a generic "wrong password".
+      // Best-effort: some Firebase projects enable email-enumeration
+      // protection, in which case this always returns [] and we just fall
+      // back to the generic message.
+      if (e.code === "auth/user-not-found" || e.code === "auth/invalid-credential") {
+        try {
+          const methods = await fetchSignInMethodsForEmail(auth, loginEmail.trim());
+          if (methods.length && methods.includes("google.com") && !methods.includes("password")) {
+            setErr("This account uses Google Sign-In. Click \"Continue with Google\" below instead.");
+            setBusy(false);
+            return;
+          }
+        } catch (_) { /* fall through to generic message */ }
+      }
       setErr(friendlyError(e.code));
       setBusy(false);
     }
@@ -99,8 +126,6 @@ export default function LoginPage() {
 
   const handleSignup = async () => {
     if (!firstName.trim())                  { setErr("First name is required.");                                  return; }
-    if (!username)                           { setErr("Username is required.");                                    return; }
-    if (unStatus !== "available")            { setErr("Please choose a valid, available username.");               return; }
     if (!signupEmail.trim())                 { setErr("Email address is required.");                               return; }
     if (!pwValid(signupPassword))            { setErr("Password must be 6–25 characters with a letter and number."); return; }
     if (signupPassword !== confirmPassword)  { setErr("Passwords do not match.");                                  return; }
@@ -111,11 +136,12 @@ export default function LoginPage() {
       const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
       // ── CRITICAL ORDER ──────────────────────────────────────────────────────
-      // Write the correct name/username to Neon FIRST, before calling
-      // Firebase updateProfile. Reason: updateProfile triggers onAuthStateChanged
-      // in AuthContext, which reads back the DB. If the DB write hasn't happened
+      // Write the correct name to Neon FIRST, before calling Firebase
+      // updateProfile. Reason: updateProfile triggers onAuthStateChanged in
+      // AuthContext, which reads back the DB. If the DB write hasn't happened
       // yet, AuthContext falls back to email.split("@")[0] as first_name and
-      // overwrites the profile state with the wrong name.
+      // overwrites the profile state with the wrong name. Username is no
+      // longer collected here — it's set later during progressive onboarding.
       try {
         const idToken = await cred.user.getIdToken();
         const res = await fetch(SIGNUP_API, {
@@ -124,7 +150,6 @@ export default function LoginPage() {
           body: JSON.stringify({
             firstName: firstName.trim(),
             lastName: lastName.trim(),
-            username: username.trim(),
           }),
         });
         if (!res.ok) console.warn("Profile signup write failed:", res.status);
@@ -144,6 +169,53 @@ export default function LoginPage() {
       // Auth state change fires → AuthContext logs user in → App.jsx referral processing runs
     } catch (e) {
       setErr(friendlyError(e.code, true));
+      setBusy(false);
+    }
+  };
+
+  // ── Google Sign-In / Sign-Up ─────────────────────────────────────────────────
+  // Works for both new and returning users — Firebase creates the account on
+  // first use, and AuthContext's onAuthStateChanged handler creates/syncs the
+  // Neon profile row identically to email/password (see api/profile/sync.js).
+  const handleGoogleSignIn = async () => {
+    setBusy(true); setErr("");
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+      track('login', { method: 'google' });
+      // onAuthStateChanged in AuthContext handles everything after this
+    } catch (e) {
+      if (e.code === "auth/account-exists-with-different-credential") {
+        // An email/password account already exists with this email. Firebase
+        // won't silently merge them — the documented safe path is: sign the
+        // user in with their existing method, then link the Google credential
+        // onto that same account so there's exactly one InvestorCircle profile.
+        const pendingCredential = GoogleAuthProvider.credentialFromError(e);
+        const email = e.customData?.email || "";
+        setLinkPending({ email, pendingCredential });
+        setErr("");
+      } else if (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") {
+        // User dismissed the popup — not an error worth surfacing.
+      } else {
+        setErr(friendlyError(e.code, tab === "signup"));
+      }
+      setBusy(false);
+    }
+  };
+
+  // Complete the account-link flow: verify the existing password account,
+  // then attach the Google credential to it.
+  const handleLinkGoogleAccount = async () => {
+    if (!linkPending || !linkPassword) return;
+    setBusy(true); setErr("");
+    try {
+      const existingCred = await fbSignInWithEmailAndPassword(auth, linkPending.email, linkPassword);
+      await linkWithCredential(existingCred.user, linkPending.pendingCredential);
+      track('google_account_linked');
+      setLinkPending(null);
+      setLinkPassword("");
+      // onAuthStateChanged already fired from the sign-in above — user is in.
+    } catch (e) {
+      setErr(friendlyError(e.code));
       setBusy(false);
     }
   };
@@ -175,30 +247,6 @@ export default function LoginPage() {
 
   const switchTab = (t) => { setTab(t); setErr(""); setForgotDone(false); setForgotEmail(""); };
 
-  // ── Username availability check (debounced 500ms) ───────────────────────────
-  // No Firebase account/token exists yet at this point in the flow, so this
-  // hits the public, availability-only server endpoint (see
-  // api/profile/username-available.js).
-  const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
-  React.useEffect(() => {
-    if (!username) { setUnStatus("idle"); return; }
-    if (!USERNAME_RE.test(username)) { setUnStatus("invalid"); return; }
-    setUnStatus("checking");
-    const t = setTimeout(async () => {
-      try {
-        const res = await fetch(`${USERNAME_AVAILABLE_API}?username=${encodeURIComponent(username)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (typeof data?.available === "boolean") {
-            setUnStatus(data.available ? "available" : "taken");
-            return;
-          }
-        }
-        setUnStatus("available"); // fail open on unexpected response shape
-      } catch { setUnStatus("available"); } // fail open on network error
-    }, 500);
-    return () => clearTimeout(t);
-  }, [username]);
   const inputStyle = {
     width: "100%", padding: "11px 14px", borderRadius: 10,
     border: "1.5px solid #e8e8f2", fontSize: 14, outline: "none",
@@ -309,8 +357,65 @@ export default function LoginPage() {
             ))}
           </div>
 
+          {/* ── Account-linking flow: existing password account, Google attempted with same email ── */}
+          {linkPending && (<>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#13142b", marginBottom: 4 }}>Confirm it's you</div>
+            <div style={{ fontSize: 14, color: "#8a8daa", marginBottom: 22, lineHeight: 1.5 }}>
+              <strong>{linkPending.email}</strong> already has a myInvestorCircle account with a
+              password. Enter that password to link Google sign-in to it — you'll be able to use either from now on.
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={label}>Password</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showPw ? "text" : "password"} value={linkPassword} autoFocus
+                  onChange={e => setLinkPassword(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleLinkGoogleAccount()}
+                  placeholder="••••••••"
+                  style={{ ...inputStyle, paddingRight: 44 }}
+                  onFocus={focusOn} onBlur={focusOff}/>
+                <button onClick={() => setShowPw(v => !v)} style={eyeBtn}>
+                  {showPw ? <EyeOff size={16}/> : <Eye size={16}/>}
+                </button>
+              </div>
+            </div>
+            {err && <ErrorBox msg={err}/>}
+            <button onClick={handleLinkGoogleAccount}
+              disabled={!linkPassword || busy}
+              style={btnStyle(!linkPassword || busy)}>
+              {busy ? "Linking…" : "Confirm & link Google →"}
+            </button>
+            <div style={{ textAlign: "center", marginTop: 14, fontSize: 13, color: "#8a8daa" }}>
+              <button onClick={() => { setLinkPending(null); setLinkPassword(""); setErr(""); }} style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: "#8a8daa", fontSize: 13, fontFamily: "inherit", padding: 0,
+                textDecoration: "underline", textUnderlineOffset: 3,
+              }}>Cancel</button>
+            </div>
+          </>)}
+
+          {/* ── Google Sign-In — prominent, works for both new and returning users ── */}
+          {!linkPending && tab !== "forgot" && (<>
+            <button onClick={handleGoogleSignIn} disabled={busy} style={{
+              width: "100%", padding: "12px", borderRadius: 11, marginBottom: 16,
+              background: "#fff", border: "1.5px solid #e8e8f2",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+              fontSize: 14, fontWeight: 700, color: "#13142b",
+              cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.6 : 1,
+              fontFamily: "inherit", transition: "border-color .15s",
+            }}>
+              <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.87 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.94v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.94A9 9 0 0 0 0 9c0 1.45.35 2.83.94 4.03l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .94 4.97l3.01 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+              Continue with Google
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+              <div style={{ flex: 1, height: 1, background: "#e8e8f2" }}/>
+              <span style={{ fontSize: 11, color: "#b0b3cc", fontWeight: 700 }}>OR</span>
+              <div style={{ flex: 1, height: 1, background: "#e8e8f2" }}/>
+            </div>
+          </>)}
+
           {/* ── LOGIN TAB ── */}
-          {tab === "login" && (<>
+          {!linkPending && tab === "login" && (<>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#13142b", marginBottom: 4 }}>Welcome back</div>
             <div style={{ fontSize: 14, color: "#8a8daa", marginBottom: 22 }}>
               Sign in to your myInvestorCircle account.
@@ -367,7 +472,7 @@ export default function LoginPage() {
           </>)}
 
           {/* ── FORGOT PASSWORD TAB ── */}
-          {tab === "forgot" && (<>
+          {!linkPending && tab === "forgot" && (<>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#13142b", marginBottom: 4 }}>Reset your password</div>
             <div style={{ fontSize: 14, color: "#8a8daa", marginBottom: 22 }}>
               {forgotDone
@@ -426,7 +531,7 @@ export default function LoginPage() {
           </>)}
 
           {/* ── SIGN UP TAB ── */}
-          {tab === "signup" && (<>
+          {!linkPending && tab === "signup" && (<>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#13142b", marginBottom: 4 }}>Create your account</div>
             <div style={{ fontSize: 14, color: "#8a8daa", marginBottom: 22 }}>
               Join myInvestorCircle and start sharing ideas with trusted contacts.
@@ -447,49 +552,6 @@ export default function LoginPage() {
                   onChange={e => setLastName(e.target.value)}
                   placeholder="Gupta"
                   style={inputStyle} onFocus={focusOn} onBlur={focusOff}/>
-              </div>
-            </div>
-
-            {/* Username — mandatory */}
-            <div style={field}>
-              <label style={label}>
-                Username <span style={{ color: "#c53030" }}>*</span>
-              </label>
-              <div style={{ position: "relative" }}>
-                <span style={{
-                  position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)",
-                  color: "#8a8daa", fontSize: 14, pointerEvents: "none", userSelect: "none",
-                }}>@</span>
-                <input
-                  value={username}
-                  onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
-                  placeholder="your_username"
-                  maxLength={20}
-                  style={{ ...inputStyle, paddingLeft: 28, paddingRight: 32 }}
-                  onFocus={focusOn} onBlur={focusOff}
-                />
-                <span style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", fontSize: 14 }}>
-                  {unStatus === "checking"  && <span style={{ color: "#8a8daa", fontSize: 12 }}>…</span>}
-                  {unStatus === "available" && <span style={{ color: "#38a169" }}>✓</span>}
-                  {unStatus === "taken"     && <span style={{ color: "#c53030" }}>✗</span>}
-                  {unStatus === "invalid"   && <span style={{ color: "#c53030" }}>✗</span>}
-                </span>
-              </div>
-              {/* Status messages */}
-              {unStatus === "available" && username && (
-                <div style={{ fontSize: 12, color: "#38a169", marginTop: 4 }}>✓ @{username} is available</div>
-              )}
-              {unStatus === "taken" && (
-                <div style={{ fontSize: 12, color: "#c53030", marginTop: 4 }}>@{username} is already taken — try another</div>
-              )}
-              {unStatus === "invalid" && username && (
-                <div style={{ fontSize: 12, color: "#c53030", marginTop: 4 }}>5–20 characters, lowercase letters, numbers and underscores only</div>
-              )}
-              {/* Always-visible explanation */}
-              <div style={{ fontSize: 12, color: "#8a8daa", marginTop: 5, lineHeight: 1.5 }}>
-                This creates your <strong>permanent public profile link</strong> — e.g.{" "}
-                <span style={{ fontFamily: "monospace", fontSize: 11 }}>myinvestorcircle.app/#/investor/<em>yourname</em></span>.
-                Choose wisely — it cannot be changed once set.
               </div>
             </div>
 
@@ -563,7 +625,6 @@ export default function LoginPage() {
             <button onClick={handleSignup}
               disabled={
                 !firstName.trim() ||
-                !username || unStatus !== "available" ||
                 !signupEmail.trim() ||
                 !pwValid(signupPassword) ||
                 signupPassword !== confirmPassword ||
@@ -571,7 +632,6 @@ export default function LoginPage() {
               }
               style={btnStyle(
                 !firstName.trim() ||
-                !username || unStatus !== "available" ||
                 !signupEmail.trim() ||
                 !pwValid(signupPassword) ||
                 signupPassword !== confirmPassword ||

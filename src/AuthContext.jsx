@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
 import { auth } from "./firebase";
 
 const AuthContext = createContext(null);
@@ -88,9 +88,15 @@ export function AuthProvider({ children }) {
           }
 
           if (!syncedViaApi) {
+            // Server profile create/sync is unreachable — degrade to a
+            // client-only shape. Treat onboarding as already-handled here
+            // rather than showing the new-user activation flow during what
+            // is likely an infrastructure outage.
             setProfile({ id: firebaseUser.uid, email: firebaseUser.email,
               full_name: fullName, is_admin: isAdminEmail,
-              first_name: fullName.split(" ")[0], last_name: fullName.split(" ").slice(1).join(" ") || "" });
+              first_name: fullName.split(" ")[0], last_name: fullName.split(" ").slice(1).join(" ") || "",
+              avatar_url: firebaseUser.photoURL || null,
+              onboarding_cv_done: true, onboarding_discover_done: true });
           }
         }
       } else {
@@ -104,6 +110,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login  = (email, password) => signInWithEmailAndPassword(auth, email, password);
+  // onAuthStateChanged above handles profile create/sync for both new and
+  // returning Google users identically — no separate signup path needed.
+  const loginWithGoogle = () => signInWithPopup(auth, new GoogleAuthProvider());
   const logout = () => signOut(auth);
 
   // Update first/last name in Neon and local profile state.
@@ -138,7 +147,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, profile, authLoading, login, logout,
+      user, profile, authLoading, login, loginWithGoogle, logout,
       userIsAdmin, role, setRole, updateProfile, patchProfile,
     }}>
       {children}

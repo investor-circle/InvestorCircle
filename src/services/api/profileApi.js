@@ -18,5 +18,7 @@ export {
   getRegOptions,
   lookupUser,
   processReferral,
-  getInvestorIciBatch
+  getInvestorIciBatch,
+  uploadAvatar,
+  markOnboardingStep
 } from "../../db";

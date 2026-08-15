@@ -28,8 +28,10 @@ import {
   getPublicProfile as dbGetPublicProfile,
   getRegOptions as dbGetRegOptions,
   saveProfileEdit as dbSaveProfileEdit,
-  saveUsername as dbSaveUsername
+  saveUsername as dbSaveUsername,
+  uploadAvatar as dbUploadAvatar
 } from "../../services/api/profileApi";
+import { compressAvatarFile } from "../../utils/image";
 import {
   computeIci
 } from "../../services/api/recommendationsApi";
@@ -238,7 +240,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
     const profile = {
       id: d_p.id ?? '', first_name: d_p.first_name ?? '', last_name: d_p.last_name ?? '',
       full_name: d_p.full_name ?? '', email: d_p.email ?? '', bio: d_p.bio ?? '',
-      avatar_color: d_p.avatar_color ?? '', username: d_p.username ?? '',
+      avatar_color: d_p.avatar_color ?? '', avatar_url: d_p.avatar_url ?? '', username: d_p.username ?? '',
       connection_count: d_p.connection_count ?? 0, group_count: d_p.group_count ?? 0,
       created_at: d_p.created_at ?? null,
       registration_status: d_p.registration_status ?? 'self_directed',
@@ -408,9 +410,13 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
               minWidth:0, display:'flex', gap:18, alignItems:'flex-start',
             }}>
               {/* Avatar */}
-              <div style={{width:76,height:76,borderRadius:20,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
-                {initialsOf(displayName)}
-              </div>
+              {profile.avatar_url ? (
+                <img src={profile.avatar_url} alt="" style={{width:76,height:76,borderRadius:20,objectFit:'cover',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)'}}/>
+              ) : (
+                <div style={{width:76,height:76,borderRadius:20,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
+                  {initialsOf(displayName)}
+                </div>
+              )}
 
               {/* Bio content */}
               <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:10}}>
@@ -897,6 +903,10 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
   const [firstName,    setFirstName]    = useState(profile?.first_name || '');
   const [lastName,     setLastName]     = useState(profile?.last_name  || '');
   const [avatarColor,  setAvatarColor]  = useState(profile?.avatar_color || '');
+  const [avatarUrl,    setAvatarUrl]    = useState(profile?.avatar_url || '');
+  const [avatarBusy,   setAvatarBusy]   = useState(false);
+  const [avatarErr,    setAvatarErr]    = useState('');
+  const avatarInputRef = useRef(null);
   const [bio,          setBio]          = useState(profile?.bio || '');
   const [socials,      setSocials]      = useState({
     twitter:   profile?.twitter_url   || '',
@@ -967,6 +977,20 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
       setUnSaved(true);
     } catch(e) { setErr('Could not save username: ' + e.message); }
     setUnSaving(false);
+  };
+
+  const handleAvatarFile = async (file) => {
+    if (!file) return;
+    setAvatarErr(''); setAvatarBusy(true);
+    try {
+      const compressed = await compressAvatarFile(file);
+      const saved = await dbUploadAvatar(compressed);
+      setAvatarUrl(saved || compressed);
+      patchProfile?.({ avatar_url: saved || compressed });
+    } catch (e) {
+      setAvatarErr(e.message || 'Could not upload image');
+    }
+    setAvatarBusy(false);
   };
 
   const isSebi = ['sebi_ra', 'sebi_ria'].includes(regStatus);
@@ -1129,6 +1153,34 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
               Profile details
             </div>
           </>)}
+
+          {/* Profile picture */}
+          {!claimMode && (
+            <div style={{marginBottom:22}}>
+              <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
+                  textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Profile picture</div>
+              <div style={{display:'flex',alignItems:'center',gap:14}}>
+                {avatarUrl
+                  ? <img src={avatarUrl} alt="" style={{width:56,height:56,borderRadius:16,objectFit:'cover',flexShrink:0}}/>
+                  : <div style={{width:56,height:56,borderRadius:16,flexShrink:0,background:avatarColor||'linear-gradient(135deg,#6d5df5,#cf52d8)',
+                      display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,fontWeight:900,color:'#fff'}}>
+                      {initialsOf(`${firstName} ${lastName}`.trim()||'?')}
+                    </div>}
+                <div>
+                  <input ref={avatarInputRef} type="file" accept="image/*" style={{display:'none'}}
+                    onChange={e=>handleAvatarFile(e.target.files?.[0])}/>
+                  <button onClick={()=>avatarInputRef.current?.click()} disabled={avatarBusy}
+                    style={{padding:'8px 14px',borderRadius:9,background:'rgba(255,255,255,.08)',
+                      border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontSize:12,fontWeight:700,
+                      cursor:avatarBusy?'wait':'pointer',fontFamily:'var(--font)'}}>
+                    {avatarBusy ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Upload photo'}
+                  </button>
+                  <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginTop:6}}>JPG or PNG, under 8MB</div>
+                  {avatarErr && <div style={{fontSize:11,color:'#f87171',marginTop:4}}>{avatarErr}</div>}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Avatar colour */}
           {!claimMode && <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',

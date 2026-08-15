@@ -707,6 +707,25 @@ export async function searchPeople(q, limit) {
   return api.ok ? (api.data.people || []) : [];
 }
 
+/** Small curated list of active investors for the "Discover your Investor Circle" activation card. */
+export async function getSuggestedPeople() {
+  const api = await callApi('/data?resource=lookups&action=discover-people');
+  return api.ok ? (api.data.people || []) : [];
+}
+
+/** Upload a profile picture (client-compressed data: URI — see src/utils/image.js). */
+export async function uploadAvatar(dataUrl) {
+  const api = await callApi('/data?resource=lookups', { method: 'POST', body: { action: 'avatar-upload', dataUrl } });
+  if (api.ok) return api.data.avatarUrl;
+  throw new Error(api.data?.error || 'Could not upload image');
+}
+
+/** Mark a new-user activation step (cv|discover) as done/skipped so it never shows again. */
+export async function markOnboardingStep(step) {
+  const api = await callApi('/data?resource=lookups', { method: 'POST', body: { action: 'onboarding-complete', step } });
+  return api.ok;
+}
+
 export async function savePushSubscription(endpoint, p256dh, authKey) {
   const api = await callApi('/data?resource=lookups', { method: 'POST', body: { action: 'push-subscribe', endpoint, p256dh, auth: authKey } });
   return api.ok;

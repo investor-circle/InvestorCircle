@@ -79,14 +79,17 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Identity (uid, email, display name) is derived ONLY from the verified
-  // token — never from client input.
-  let uid, email, displayName;
+  // Identity (uid, email, display name, avatar) is derived ONLY from the
+  // verified token — never from client input. `picture` is populated by
+  // Firebase for federated sign-ins (e.g. Google) — this is how a brand-new
+  // Google sign-up gets its avatar without asking the user to upload one.
+  let uid, email, displayName, picture;
   try {
     const decoded = await getAuth(firebaseApp).verifyIdToken(idToken);
     uid = decoded.uid;
     email = decoded.email;
     displayName = decoded.name;
+    picture = decoded.picture || null;
   } catch (e) {
     res.status(401).json({ error: 'Invalid or expired token' });
     return;
@@ -111,8 +114,12 @@ export default async function handler(req, res) {
   let rows;
   try {
     rows = await sql`
-      INSERT INTO user_profiles (id, email, full_name, is_admin, first_name, last_name)
-      VALUES (${uid}, ${email}, ${fullName}, ${isAdminEmail}, ${firstName}, ${lastName})
+      INSERT INTO user_profiles
+        (id, email, full_name, is_admin, first_name, last_name, avatar_url,
+         onboarding_cv_done, onboarding_discover_done)
+      VALUES
+        (${uid}, ${email}, ${fullName}, ${isAdminEmail}, ${firstName}, ${lastName}, ${picture},
+         false, false)
       ON CONFLICT (id) DO UPDATE SET
         email      = EXCLUDED.email,
         first_name = CASE
@@ -125,8 +132,14 @@ export default async function handler(req, res) {
                        THEN EXCLUDED.last_name
                        ELSE user_profiles.last_name
                      END,
+        avatar_url = CASE
+                       WHEN user_profiles.avatar_url IS NULL OR user_profiles.avatar_url = ''
+                       THEN EXCLUDED.avatar_url
+                       ELSE user_profiles.avatar_url
+                     END,
         updated_at = now()
-      RETURNING id, email, full_name, first_name, last_name, username, is_admin
+      RETURNING id, email, full_name, first_name, last_name, username, is_admin,
+                avatar_url, avatar_color, onboarding_cv_done, onboarding_discover_done
     `;
   } catch (e) {
     console.error('[profile/sync] DB query failed:', e?.message);
