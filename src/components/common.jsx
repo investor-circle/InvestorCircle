@@ -10,10 +10,7 @@ import {
   Loader
 } from "lucide-react";
 import { SOCIAL_BRAND, SOCIAL_PATHS, TYPE_COLORS } from "../constants/app";
-import { Network, PeopleSearch } from "../features/connections/Connections";
-import { ReceivedSharePopover, Recommendations, SharePublicPopover } from "../features/recommendations/Recommendations";
-import { useIsMobile } from "../hooks/index";
-import { classColor, computeTrend, fmt, fmtSigned, initialsOf } from "../utils/format";
+import { classColor, fmt, fmtSigned, initialsOf } from "../utils/format";
 import { loadInstruments } from "../utils/instruments";
 
 export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;

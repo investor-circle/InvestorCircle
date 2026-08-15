@@ -63,13 +63,10 @@ import {
 import { InstrumentSearch } from "../../components/common";
 import { EditGroupModal } from "../groups/Groups";
 import { ABOUT_DEFAULT_HTML, CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, TODAY } from "../../constants/app";
-import { AboutPage } from "../marketing/Marketing";
-import { ClaimProfilePage } from "../profile/Profile";
-import { MakeRecoModal, Recommendations, ThesisEditor } from "../recommendations/Recommendations";
-import { Sharing } from "../sharing/Sharing";
+import { ThesisEditor } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
-import { adminSebiApi, fmt, fmtDate, initialsOf, ret } from "../../utils/format";
+import { adminSebiApi, fmt, fmtDate, initialsOf } from "../../utils/format";
 import { clearInstrCache } from "../../utils/instruments";
 
 export function AdminSeedData() {

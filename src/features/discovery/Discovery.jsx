@@ -25,7 +25,6 @@ import {
   Target,
   Clock
 } from "lucide-react";
-import { confirmPasswordReset } from "firebase/auth";
 import {
   getInvestorIciBatch as dbGetInvestorIciBatch
 } from "../../services/api/profileApi";
@@ -34,11 +33,8 @@ import {
   getConsensusRecosPublic as dbGetConsensusRecosPublic,
   getTickerRecos as dbGetTickerRecos
 } from "../../services/api/recommendationsApi";
-import { Avatar, ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
-import { ResetPasswordPage } from "../auth/ResetPasswordPage";
-import { Network } from "../connections/Connections";
-import { Portfolio } from "../portfolio/Portfolio";
-import { FeedCard, MakeRecoModal, RecoCardModal, Recommendations } from "../recommendations/Recommendations";
+import { ConsensusBar, ConvBadge, SparkLine, WidgetHeader } from "../../components/common";
+import { FeedCard, RecoCardModal } from "../recommendations/Recommendations";
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, fmtDate, getThesisText, initialsOf, ret, scoreFeedRec } from "../../utils/format";
 

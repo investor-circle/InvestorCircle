@@ -18,7 +18,7 @@ import {
   Target
 } from "lucide-react";
 import { createUserWithEmailAndPassword, updateProfile as fbUpdateProfile } from "firebase/auth";
-import { auth as primaryAuth, track } from "../../firebase";
+import { auth as primaryAuth } from "../../firebase";
 import {
   getClaimAdminLink as dbGetClaimAdminLink,
   getClaimStatus as dbGetClaimStatus,
@@ -34,9 +34,8 @@ import {
 import {
   computeIci
 } from "../../services/api/recommendationsApi";
-import { Avatar, ConvBadge, IciDonut, RetBadge, ScoreBox, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
+import { ConvBadge, IciDonut, RetBadge, ScoreBox, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
 import { SECTOR_EMOJI } from "../../constants/app";
-import { FeedCard, InvestedToggle, ReceivedSection, TrackedSection } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
 import { initialsOf } from "../../utils/format";

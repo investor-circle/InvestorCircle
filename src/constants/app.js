@@ -1,12 +1,3 @@
-import {
-  Users,
-  X
-} from "lucide-react";
-import { track } from "../firebase";
-import { Portfolio } from "../features/portfolio/Portfolio";
-import { Sharing } from "../features/sharing/Sharing";
-import { fetchPublicProfileInfo, gotoUserProfile, openProfile } from "../utils/navigation";
-
 export const TODAY = new Date().toISOString().slice(0, 10); // always today
 
 export const ACCOUNTS = []; // populated when user links accounts

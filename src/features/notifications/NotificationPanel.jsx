@@ -4,7 +4,6 @@ import {
   X,
   Check
 } from "lucide-react";
-import { Network } from "../connections/Connections";
 import { useIsMobile } from "../../hooks/index";
 import { fmtDate, initialsOf } from "../../utils/format";
 

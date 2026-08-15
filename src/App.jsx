@@ -100,7 +100,7 @@ import { InviteModal, Network } from "./features/connections/Connections";
 import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./features/discovery/Discovery";
 import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
-import { Portfolio, PortfolioIntelligencePage } from "./features/portfolio/Portfolio";
+import { PortfolioIntelligencePage } from "./features/portfolio/Portfolio";
 import { ClaimProfilePage, ProfileEditModal, PublicProfilePage } from "./features/profile/Profile";
 import { RecoPostPage, Recommendations } from "./features/recommendations/Recommendations";
 import { Sharing } from "./features/sharing/Sharing";
@@ -185,6 +185,25 @@ export default function App() {
   // View-mode for dual-role users. Starts false so admin users default to investor
   // view. Toggled explicitly via the "Switch role" buttons in the profile dropdown.
   const [viewAsAdmin, setViewAsAdmin] = useState(false);
+  const isInv = !userIsAdmin || !viewAsAdmin;
+
+  // Keep investorPage/adminPage in sync with the URL: covers browser
+  // back/forward, a directly-opened/refreshed section URL, and links typed
+  // or pasted in by hand. Profile/reco URLs (#/investor/...) are handled by
+  // the separate pageHash mechanism and intentionally excluded here.
+  // NOTE: this must run unconditionally on every render (before any of the
+  // early `if (...) return` guards below) — React requires hooks to be
+  // called in the same order on every render, and authLoading/claim/reset/
+  // !user are all guards that change across the component's lifetime.
+  useEffect(() => {
+    const p = routeLocation.pathname;
+    if (p.startsWith('/investor/')) return;
+    if (isInv && INVESTOR_PATH_TO_PAGE[p] && INVESTOR_PATH_TO_PAGE[p] !== investorPage) {
+      setInvestorPage(INVESTOR_PATH_TO_PAGE[p]);
+    } else if (!isInv && ADMIN_PATH_TO_PAGE[p] && ADMIN_PATH_TO_PAGE[p] !== adminPage) {
+      setAdminPage(ADMIN_PATH_TO_PAGE[p]);
+    }
+  }, [routeLocation.pathname, isInv]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── App-level state ─────────────────────────────────────────────────────────
   const [connections,   setConnections]   = useState([]); // all connections (all statuses)
@@ -734,16 +753,18 @@ export default function App() {
         if (userIsAdmin) loadClaimRequests();
         // Check if this user is a creator awaiting admin approval for their claimed profile
         dbGetMyPendingClaimStatus().then(setHasPendingClaim).catch(()=>{});
-        // Load tracked recommendation IDs
-        try {
-          const recoIds = await dbGetMyTrackedRecoIds();
-          setTracked(new Set(recoIds));
-        } catch(_) {}
+        // Load tracked recommendation IDs + feed config/prefs in parallel —
+        // neither depends on the other, so there's no reason to serialize
+        // these two round-trips.
+        const [trackedResult, feedCfgResult] = await Promise.allSettled([
+          dbGetMyTrackedRecoIds(),
+          dbGetFeedConfigAndPrefs(),
+        ]);
+        if (trackedResult.status === 'fulfilled') setTracked(new Set(trackedResult.value));
 
-        // Load feed config options + user prefs, compute effective config
         let effective = {};
-        try {
-          const { options: opts, prefs } = await dbGetFeedConfigAndPrefs();
+        if (feedCfgResult.status === 'fulfilled') {
+          const { options: opts, prefs } = feedCfgResult.value;
           setFeedConfigOptions(opts);
           const userPrefsMap = Object.fromEntries(prefs.map(p=>[p.config_key, p.enabled]));
           setUserFeedPrefs(userPrefsMap);
@@ -755,15 +776,20 @@ export default function App() {
                              : o.default_on;
           });
           setEffectiveFeedConfig(effective);
-        } catch(_) {
+        } else {
           // table may not exist pre-migration — use safe defaults
           effective = { src_direct:true, src_group:true, src_network_engagement:true, src_public:true,
                         rank_engagement:true, rank_price_movement:true, rank_untracked_first:true };
           setEffectiveFeedConfig(effective);
         }
 
-        // Load network-engaged recos (recos liked/commented by connections not in my direct feed)
-        if (effective.src_network_engagement) {
+        // Load network-engaged recos and public recos in parallel — the public
+        // feed doesn't depend on the network-engagement fetch (only on the feed
+        // config resolved above), so these two independent round-trips no
+        // longer need to be serialized either.
+        const networkEngagementLoad = (async () => {
+          // Load network-engaged recos (recos liked/commented by connections not in my direct feed)
+          if (!effective.src_network_engagement) return;
           try {
             const activeConns = conns.filter(c=>c.status==='active').map(c=>c.id);
             if (activeConns.length > 0) {
@@ -786,41 +812,45 @@ export default function App() {
               }
             }
           } catch(_) {}
-        }
+        })();
 
-        // Load public recommendations — visible to all users when is_public = true.
-        // Excludes the user's own recos and ones already in their direct feed.
-        try {
-          const pubRows = await dbGetPublicFeed();
-          const pubMapped = pubRows.map(r => ({
-            ...r,
-            assetName:    r.asset_name,
-            priceAt:      r.reco_price,
-            price:        r.current_price,
-            targetPrice:  r.target_price,
-            stopLoss:     r.stop_loss,
-            byName:       r.by_name,
-            from:         r.from_id,
-            feedSource:   'public',
-            reaction:     'none',
-            hidden:       false,
-            invested:     false,
-            deliveryId:   null,
-            isPublic:     true,
-            likes:        r.likes_count  || 0,
-            commentCount: r.comment_count || 0,
-          }));
-          setPublicFeedRecos(pubMapped);
-          // Hydrate existing reactions separately — safe if recommendation_reactions doesn't exist yet
-          if (pubMapped.length > 0) {
-            const ids = pubMapped.map(r=>String(r.id));
-            dbGetReactionsBatch(ids)
-              .then(rxMap => {
-                if (!Object.keys(rxMap).length) return;
-                setPublicFeedRecos(rs=>rs.map(x=>rxMap[String(x.id)]?{...x,reaction:rxMap[String(x.id)]}:x));
-              }).catch(()=>{});
-          }
-        } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
+        const publicFeedLoad = (async () => {
+          // Load public recommendations — visible to all users when is_public = true.
+          // Excludes the user's own recos and ones already in their direct feed.
+          try {
+            const pubRows = await dbGetPublicFeed();
+            const pubMapped = pubRows.map(r => ({
+              ...r,
+              assetName:    r.asset_name,
+              priceAt:      r.reco_price,
+              price:        r.current_price,
+              targetPrice:  r.target_price,
+              stopLoss:     r.stop_loss,
+              byName:       r.by_name,
+              from:         r.from_id,
+              feedSource:   'public',
+              reaction:     'none',
+              hidden:       false,
+              invested:     false,
+              deliveryId:   null,
+              isPublic:     true,
+              likes:        r.likes_count  || 0,
+              commentCount: r.comment_count || 0,
+            }));
+            setPublicFeedRecos(pubMapped);
+            // Hydrate existing reactions separately — safe if recommendation_reactions doesn't exist yet
+            if (pubMapped.length > 0) {
+              const ids = pubMapped.map(r=>String(r.id));
+              dbGetReactionsBatch(ids)
+                .then(rxMap => {
+                  if (!Object.keys(rxMap).length) return;
+                  setPublicFeedRecos(rs=>rs.map(x=>rxMap[String(x.id)]?{...x,reaction:rxMap[String(x.id)]}:x));
+                }).catch(()=>{});
+            }
+          } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
+        })();
+
+        await Promise.allSettled([networkEngagementLoad, publicFeedLoad]);
       } catch(e) { console.warn("Data load failed:", e.message); }
       // Load registered users for admin panel (admin only — non-admins skip this
       // call entirely rather than receiving a 403 from the server).
@@ -949,7 +979,8 @@ export default function App() {
   // Non-admin users are ALWAYS investors.
   // Admin users are in investor view by default (viewAsAdmin starts false),
   // and must explicitly switch to admin view via the profile dropdown.
-  const isInv = !userIsAdmin || !viewAsAdmin;
+  // (isInv itself is computed earlier, above the auth-gate early returns —
+  // see the useEffect that keeps investorPage/adminPage synced with the URL.)
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
   // page + setPage — setPage also closes the mobile nav drawer for investors
   const openSecurity = (ticker, name) => { setSecurityTicker({ ticker, name }); setPage('sec_intel'); };
@@ -959,20 +990,6 @@ export default function App() {
                if (INVESTOR_PAGE_TO_PATH[p]) navigate(INVESTOR_PAGE_TO_PATH[p]); }
     : (p) => { setAdminPage(p); track('page_view', { page_name: p });
                if (ADMIN_PAGE_TO_PATH[p]) navigate(ADMIN_PAGE_TO_PATH[p]); };
-
-  // Keep investorPage/adminPage in sync with the URL: covers browser
-  // back/forward, a directly-opened/refreshed section URL, and links typed
-  // or pasted in by hand. Profile/reco URLs (#/investor/...) are handled by
-  // the separate pageHash mechanism and intentionally excluded here.
-  useEffect(() => {
-    const p = routeLocation.pathname;
-    if (p.startsWith('/investor/')) return;
-    if (isInv && INVESTOR_PATH_TO_PAGE[p] && INVESTOR_PATH_TO_PAGE[p] !== investorPage) {
-      setInvestorPage(INVESTOR_PATH_TO_PAGE[p]);
-    } else if (!isInv && ADMIN_PATH_TO_PAGE[p] && ADMIN_PATH_TO_PAGE[p] !== adminPage) {
-      setAdminPage(ADMIN_PATH_TO_PAGE[p]);
-    }
-  }, [routeLocation.pathname, isInv]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canCreateGroups = configs.groupCreationPolicy==="all";
 

@@ -1,9 +1,3 @@
-import {
-  Settings,
-  Check
-} from "lucide-react";
-import { Network } from "../features/connections/Connections";
-
 export const _CAS_API = import.meta.env.VITE_CAS_API_URL
   ? `${import.meta.env.VITE_CAS_API_URL}/api/cas`
   : '/api/cas';

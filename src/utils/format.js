@@ -1,6 +1,4 @@
 import { ADMIN_SEBI_API, CLASS_COLOR, CURRENCY_SYM, NOTIONAL, THESIS_MAX_MB, THESIS_TARGET_KB, TODAY } from "../constants/app";
-import { SecurityQuickPanel } from "../features/discovery/Discovery";
-import { ThesisEditor } from "../features/recommendations/Recommendations";
 
 export const classColor = (c) => CLASS_COLOR[c] || "#8d90ad";
 
