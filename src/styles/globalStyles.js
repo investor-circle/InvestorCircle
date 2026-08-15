@@ -82,9 +82,12 @@ export const STYLES = `
 .mic-setup-mobile-cta{width:100%;justify-content:center;}
 .mic-setup-mobile-skip{background:none;border:none;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);padding:0;font-family:inherit;align-self:center;}
 .mic-setup-mobile-caption{font-size:11px;color:var(--muted);text-align:center;margin-top:-4px;}
-.mic-setup-mobile-people{display:flex;align-items:center;gap:12px;overflow-x:auto;height:56px;flex-shrink:0;}
-.mic-setup-mobile-person{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;width:44px;}
-.mic-setup-mobile-person-name{font-size:10px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:44px;}
+.mic-setup-mobile-people{display:flex;align-items:flex-start;gap:10px;overflow-x:auto;height:104px;flex-shrink:0;padding:2px 1px;box-sizing:border-box;}
+.mic-setup-mobile-person{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;width:66px;}
+.mic-setup-mobile-person-name{font-size:11px;font-weight:700;color:var(--ink);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:66px;}
+.mic-setup-mobile-person-meta{font-size:9px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:66px;}
+.mic-setup-mobile-person-connect{display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-ink);cursor:pointer;padding:0;margin-top:2px;}
+.mic-setup-mobile-person-tag{display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:var(--gain-soft);color:var(--gain);margin-top:2px;}
 /* --mic-setup-bar-h is set directly on <html> via inline style by
    SetupChecklist (only while visible AND on mobile) — the default here is
    just the pre-hydration/JS-disabled fallback. Read by Home Feed's mobile
