@@ -71,16 +71,16 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
   return (
     <div style={wrapStyle}>
       <div className="mic-setup-bar">
-        <div className="mic-setup-bar-main" style={barMainStyle}>
-          <ProgressRing done={doneCount} total={2} />
-          <button onClick={() => setOpen(o => !o)} style={headlineBtnStyle}>
-            <div style={{ textAlign: "left" }}>
-              <div style={headlineStyle}>Complete your Investor Circle setup</div>
-              <div style={subStyle}>{doneCount} of 2 complete</div>
-            </div>
-            <ChevronDown size={16} color="var(--muted)" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }} />
-          </button>
+        <ProgressRing done={doneCount} total={2} />
+        <div className="mic-setup-text" onClick={() => setOpen(o => !o)}>
+          <div className="mic-setup-headline">Complete your Investor Circle setup</div>
+          <div className="mic-setup-sub">{doneCount} of 2 complete</div>
         </div>
+        <ChevronDown
+          size={16} color="var(--muted)" className="mic-setup-chevron"
+          onClick={() => setOpen(o => !o)}
+          style={{ transform: open ? "rotate(180deg)" : "none" }}
+        />
         <button onClick={primaryAction} className="btn btn-pri btn-sm mic-setup-cta">{primaryLabel} →</button>
       </div>
 
@@ -240,15 +240,13 @@ function ProgressRing({ done, total }) {
 // .btn-soft classes rather than inventing new colors, so this reads as part
 // of the app rather than a pasted-in component.
 const wrapStyle = { background: "var(--accent-soft)", borderBottom: "1px solid var(--accent-line)" };
-// Only non-responsive layout lives inline; anything that needs to change at
-// a breakpoint (padding, stacking) lives in the .mic-setup-bar/-main/-cta
-// classes in src/styles/globalStyles.js instead — an inline `style` always
-// wins over a class rule, including one inside a media query, so responsive
-// behavior has to be class-driven, not inline.
-const barMainStyle = { display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 };
-const headlineBtnStyle = { flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" };
-const headlineStyle = { fontSize: 13, fontWeight: 700, color: "var(--ink)" };
-const subStyle = { fontSize: 11.5, color: "var(--muted)", marginTop: 1 };
+// The collapsed bar's own layout (.mic-setup-bar, .mic-setup-text,
+// .mic-setup-headline/-sub, .mic-setup-chevron, .mic-setup-cta) is entirely
+// class-driven — see src/styles/globalStyles.js — deliberately NOT inline.
+// An inline `style` attribute always wins over a class rule, including one
+// inside a media query, so any layout that needs to change at a breakpoint
+// (here: CSS Grid columns collapsing to a stacked mobile layout) has to live
+// in the stylesheet, not in a JS style object.
 const panelStyle = { display: "flex", flexDirection: "column", gap: 10 };
 const rowStyle = { display: "flex", alignItems: "center", gap: 10, padding: "8px 0" };
 const checkDoneStyle = { width: 20, height: 20, borderRadius: "50%", flexShrink: 0, background: "var(--gain)", display: "flex", alignItems: "center", justifyContent: "center" };

@@ -63,8 +63,15 @@ export const STYLES = `
 
 .content{padding:28px 30px;overflow-y:auto;flex:1;min-height:0;}
 
-/* Setup checklist bar (Phase 5.5 onboarding) */
-.mic-setup-bar{display:flex;align-items:center;gap:14px;padding:10px 26px;box-sizing:border-box;width:100%;}
+/* Setup checklist bar (Phase 5.5 onboarding) — CSS Grid rather than nested
+   flex with min-width:0 chains, which is a known source of mobile-browser
+   collapse/rendering quirks; a grid with explicit column tracks has no
+   equivalent ambiguity. */
+.mic-setup-bar{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 26px;box-sizing:border-box;width:100%;}
+.mic-setup-text{min-width:0;cursor:pointer;}
+.mic-setup-headline{font-size:13px;font-weight:700;color:var(--ink);}
+.mic-setup-sub{font-size:11.5px;color:var(--muted);margin-top:1px;}
+.mic-setup-chevron{cursor:pointer;flex-shrink:0;transition:transform .15s;}
 .mic-setup-cta{flex-shrink:0;white-space:nowrap;}
 .mic-setup-panel{padding:4px 26px 14px;box-sizing:border-box;width:100%;}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap;}
@@ -374,8 +381,10 @@ tr.hiddenrow > td{opacity:.55;}
 @media(max-width:480px){
   /* Small phones */
   .content{padding:12px 10px;}
-  .mic-setup-bar{padding:8px 10px;flex-direction:column;align-items:stretch;gap:8px;}
-  .mic-setup-cta{width:100%;justify-content:center;}
+  /* Ring + text on row 1, chevron hidden (tap the text instead), CTA gets its own full-width row */
+  .mic-setup-bar{padding:8px 10px;grid-template-columns:auto minmax(0,1fr);row-gap:8px;}
+  .mic-setup-chevron{display:none;}
+  .mic-setup-cta{grid-column:1/-1;width:100%;justify-content:center;}
   .mic-setup-panel{padding:4px 10px 12px;}
   .mobile-tabs{margin:0 -10px 14px;padding:0 10px;}
   .topbar{padding:0 8px 0 2px;}
