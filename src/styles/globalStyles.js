@@ -220,6 +220,49 @@ tr.hiddenrow > td{opacity:.55;}
 .rte-area{min-height:420px;padding:22px 26px;outline:none;font-size:15px;line-height:1.85;color:var(--ink);font-family:var(--font);overflow-y:auto;}
 .rte-area:empty:before{content:attr(data-placeholder);color:var(--muted);pointer-events:none;}
 
+/* ─── Home feed "brewing" loading state — shown only while the feed's first
+   load is genuinely in flight, never once it's known to be empty ─── */
+.feed-brewing{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:44px 28px 36px;text-align:center;}
+.feed-brewing-art{position:relative;width:120px;height:88px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
+.feed-brewing-cup{overflow:visible;}
+.feed-brewing-cupbody{fill:var(--ink);}
+.feed-brewing-handle{stroke:var(--ink);stroke-width:6;fill:none;}
+.feed-brewing-saucer{fill:var(--surface-2);}
+.feed-brewing-liquid{fill:var(--accent);}
+.feed-brewing-steam{stroke:var(--accent);stroke-width:3;opacity:0;}
+.feed-brewing-badge{position:absolute;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);}
+.feed-brewing-badge-1{top:2px;left:2px;}
+.feed-brewing-badge-2{top:6px;right:0;}
+.feed-brewing-badge-3{bottom:2px;left:14px;}
+.feed-brewing-title{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--ink);letter-spacing:-.2px;margin:14px auto 8px;max-width:360px;}
+.feed-brewing-sub{max-width:340px;margin:0 auto 20px;line-height:1.6;}
+.feed-brewing-bar{width:180px;height:5px;border-radius:999px;background:var(--surface-2);margin:0 auto 10px;overflow:hidden;}
+.feed-brewing-bar-fill{width:40%;height:100%;border-radius:999px;background:var(--grad);}
+.feed-brewing-caption{letter-spacing:.2px;}
+@media (prefers-reduced-motion: no-preference){
+  .feed-brewing-steam{animation:feed-brewing-steam-rise 2.6s ease-in-out infinite;}
+  .feed-brewing-steam-1{animation-delay:0s;}
+  .feed-brewing-steam-2{animation-delay:.5s;}
+  .feed-brewing-steam-3{animation-delay:1s;}
+  .feed-brewing-badge{animation:feed-brewing-float 3.6s ease-in-out infinite;}
+  .feed-brewing-badge-2{animation-delay:.5s;}
+  .feed-brewing-badge-3{animation-delay:1.1s;}
+  .feed-brewing-bar-fill{animation:feed-brewing-shimmer 1.6s ease-in-out infinite;}
+}
+@keyframes feed-brewing-steam-rise{
+  0%{opacity:0;transform:translateY(4px) scaleY(.8);}
+  30%{opacity:.5;}
+  100%{opacity:0;transform:translateY(-14px) scaleY(1.05);}
+}
+@keyframes feed-brewing-float{
+  0%,100%{transform:translateY(0);}
+  50%{transform:translateY(-4px);}
+}
+@keyframes feed-brewing-shimmer{
+  0%{transform:translateX(-100%);}
+  100%{transform:translateX(340%);}
+}
+
 /* ─── MOBILE RESPONSIVE (investors only — admin panel stays desktop) ─── */
 
 /* Hamburger button: hidden on desktop, shown on mobile */

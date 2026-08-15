@@ -199,9 +199,35 @@ export function TrendingWidget({ recsReceived, tracked, contacts }) {
   );
 }
 
+/* ─── FeedBrewingState — initial-load state, distinct from a genuinely empty feed ── */
+function FeedBrewingState() {
+  return (
+    <div className="feed-brewing" role="status" aria-live="polite">
+      <div className="feed-brewing-art" aria-hidden="true">
+        <span className="feed-brewing-badge feed-brewing-badge-1"><Lightbulb size={15}/></span>
+        <span className="feed-brewing-badge feed-brewing-badge-2"><TrendingUp size={15}/></span>
+        <span className="feed-brewing-badge feed-brewing-badge-3"><Sparkles size={13}/></span>
+        <svg className="feed-brewing-cup" viewBox="0 0 120 96" width="88" height="70">
+          <path className="feed-brewing-steam feed-brewing-steam-1" d="M46 34 Q40 26 46 18 Q52 10 46 2" fill="none" strokeLinecap="round"/>
+          <path className="feed-brewing-steam feed-brewing-steam-2" d="M60 34 Q54 26 60 18 Q66 10 60 2" fill="none" strokeLinecap="round"/>
+          <path className="feed-brewing-steam feed-brewing-steam-3" d="M74 34 Q68 26 74 18 Q80 10 74 2" fill="none" strokeLinecap="round"/>
+          <ellipse className="feed-brewing-saucer" cx="60" cy="86" rx="38" ry="6"/>
+          <path className="feed-brewing-handle" d="M92 46 Q112 46 112 60 Q112 74 92 74" fill="none" strokeLinecap="round"/>
+          <rect className="feed-brewing-cupbody" x="28" y="40" width="64" height="38" rx="10"/>
+          <ellipse className="feed-brewing-liquid" cx="60" cy="42" rx="29" ry="6"/>
+        </svg>
+      </div>
+      <div className="feed-brewing-title">Great ideas from your circle are brewing</div>
+      <div className="feed-brewing-sub muted">We're gathering the latest calls, moves and insights from your network.</div>
+      <div className="feed-brewing-bar"><div className="feed-brewing-bar-fill"/></div>
+      <div className="feed-brewing-caption muted small">Preparing your feed…</div>
+    </div>
+  );
+}
+
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
 
-export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity }) {
+export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
@@ -381,7 +407,9 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         {/* Feed cards */}
 
         {/* Feed cards — searched via top nav bar */}
-        {visibleFeed.length===0
+        {feedLoading && !globalSearch
+          ? <FeedBrewingState/>
+          : visibleFeed.length===0
           ? <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,padding:'48px 32px',textAlign:'center',boxShadow:'var(--shadow)'}}>
               <div style={{fontSize:40,marginBottom:14}}>{globalSearch?'🔍':'🌱'}</div>
               <div style={{fontWeight:700,fontSize:17,marginBottom:8}}>

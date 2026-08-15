@@ -91,6 +91,15 @@ modules. These are now durable conventions, not a one-time cleanup:
   `features/admin/Admin.jsx` from investor-facing feature files, since that
   defeats the split (Vite/Rollup will warn "dynamically imported ... but also
   statically imported" at build time if this regresses).
+- **Independent data fetches must not be serialized.** Before adding a new
+  `await` in a data-loading path (`AuthContext.jsx`'s auth-resolution effect,
+  `App.jsx`'s post-login load effect, or similar), check whether it actually
+  depends on the result of the call before it. If it doesn't, fire it
+  concurrently (`Promise.all`/`allSettled`) instead of sequentially — this
+  codebase has repeatedly picked up avoidable sequential round-trips on the
+  home feed's critical path (auth blacklist-check + profile fetch; several
+  independent feed-data calls) simply because each was added as "one more
+  `await`" after the previous one, not because of a real dependency.
 
 ## Database / Neon conventions
 

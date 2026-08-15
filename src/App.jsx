@@ -217,6 +217,9 @@ export default function App() {
   const [effectiveFeedConfig,     setEffectiveFeedConfig]     = useState({}); // merged effective config
   const [networkEngagementRecos,  setNetworkEngagementRecos]  = useState([]); // extended feed recos
   const [publicFeedRecos,         setPublicFeedRecos]         = useState([]); // public recommendations from all users
+  // True until the home-feed data load has been attempted at least once — lets
+  // HomeFeed tell "still loading" apart from "genuinely no recommendations yet".
+  const [feedLoading, setFeedLoading] = useState(true);
   // Global search — shared across all pages via top nav bar
   const [globalSearch, setGlobalSearch] = useState('');
   const [notifOpen,     setNotifOpen]     = useState(false);
@@ -333,6 +336,7 @@ export default function App() {
     setClaimRequests([]);
     setHasPendingClaim(false);
     setSecurityTicker(null);
+    setFeedLoading(true);      // next user's data hasn't loaded yet either
     setInvestorPage('home');   // new user always starts at home
     setAdminPage('users');
 
@@ -860,6 +864,7 @@ export default function App() {
 
         await Promise.allSettled([networkEngagementLoad, publicFeedLoad]);
       } catch(e) { console.warn("Data load failed:", e.message); }
+      finally { setFeedLoading(false); }
       // Load registered users for admin panel (admin only — non-admins skip this
       // call entirely rather than receiving a 403 from the server).
       if (!userIsAdmin) return;
@@ -1492,7 +1497,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity}/>}
+            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading}/>}
             {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
             {isInv && page==="market_intel" && <MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
