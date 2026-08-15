@@ -1,8 +1,3 @@
-import {
-  Plus
-} from "lucide-react";
-import { Portfolio } from "../features/portfolio/Portfolio";
-
 export const STYLES = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
 :root{

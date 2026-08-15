@@ -1,32 +1,17 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
-  Search,
-  Eye,
-  EyeOff,
   TrendingUp,
   Plus,
   X,
-  Wallet,
-  ArrowUpRight,
-  ArrowDownRight,
   ChevronRight,
-  ChevronDown,
   Trash2,
-  Filter,
-  Download,
   Upload,
-  FileSpreadsheet,
-  FileText,
   Loader,
   RefreshCw,
   Globe,
   BarChart2,
   Zap
 } from "lucide-react";
-import { exportPortfolioExcel, exportPortfolioPDF } from "../../exporters";
-import { parsePortfolioFile } from "../../importers";
-import { isFinnhubConfigured } from "../../services/priceService";
-import { track } from "../../firebase";
 import {
   addPortfolioHolding as dbAddPortfolioHolding,
   deleteAllPortfolioHoldings as dbDeleteAllPortfolioHoldings,
@@ -36,122 +21,11 @@ import {
 import {
   getConsensusRecosAll as dbGetConsensusRecosAll
 } from "../../services/api/recommendationsApi";
-import { ConsensusBar, InstrumentSearch, Ring, Sparkline, StrengthDot, TypeTag } from "../../components/common";
-import { ACCOUNTS, SPARK, TYPE_COLORS } from "../../constants/app";
+import { ConsensusBar, StrengthDot } from "../../components/common";
 import { SecurityQuickPanel } from "../discovery/Discovery";
-import { ImportPreviewModal, PanPullModal } from "../recommendations/Recommendations";
-import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
-import { computeConsensus, fmt, fmtPct, fmtSigned } from "../../utils/format";
-
-export function Portfolio({ configs, holdings, setHoldings, refreshPrices, priceRefresh }) {
-  const [acct, setAcct] = useState("all"); const [hide, setHide] = useState(false);
-  const [importRes, setImportRes] = useState(null); const [importBusy, setImportBusy] = useState(false);
-  const [showPan, setShowPan] = useState(false); const [menu, setMenu] = useState(false);
-  const [showAddHolding, setShowAddHolding] = useState(false);
-  const fileRef = useRef(null);
-  const { rows } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
-  const shown = acct==="all" ? rows : rows.filter(r=>r.acct===acct);
-  const onPickFile = async (e) => {
-    const file = e.target.files?.[0]; e.target.value=""; if(!file) return;
-    setImportBusy(true);
-    try { const res = await parsePortfolioFile(file); setImportRes({ ...res, fileName:file.name }); }
-    catch(err){ setImportRes({ holdings:[], warnings:["Could not read this file: "+err.message], fileName:file.name }); }
-    setImportBusy(false);
-  };
-  const applyImport = (newHoldings, mode) => {
-    setHoldings(prev => mode==="replace" ? newHoldings : [...prev, ...newHoldings]);
-    setImportRes(null);
-  };
-  const sTotal=shown.reduce((s,r)=>s+r.value,0), sCost=shown.reduce((s,r)=>s+r.costTot,0), sPnl=sTotal-sCost;
-  const byType = useMemo(()=>{ const m={}; shown.forEach(r=>m[r.type]=(m[r.type]||0)+r.value); return Object.entries(m).map(([k,v])=>({label:k,value:v,color:TYPE_COLORS[k]||"#999"})); },[shown]);
-  const top=[...shown].sort((a,b)=>b.value-a.value)[0]; const mask=(s)=>hide?"••••••":s;
-  const fmtTime=(d)=>d?d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"";
-  return (<>
-    <div className="page-head"><div><div className="eyebrow">My Portfolio</div><div className="page-title">Everything in one place</div>
-      <div className="page-sub">{ACCOUNTS.length} accounts aggregated · {rows.length} holdings</div></div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf" style={{display:"none"}} onChange={onPickFile}/>
-        <button className="btn btn-pri btn-sm" onClick={()=>setShowAddHolding(true)}><Plus size={15}/> Add holding</button>
-        <div style={{position:"relative"}}>
-          <button className="btn btn-soft btn-sm" onClick={()=>setMenu(m=>!m)}><Download size={15}/> Export <ChevronDown size={13}/></button>
-          {menu && <div className="menu" onMouseLeave={()=>setMenu(false)}>
-            <div className="menu-item" onClick={()=>{ exportPortfolioExcel(shown); setMenu(false); }}><FileSpreadsheet size={15}/> {shown.length===0?"Download template (.xlsx)":"Excel (.xlsx)"}</div>
-            <div className="menu-item" onClick={()=>{ exportPortfolioPDF(shown); setMenu(false); }}><FileText size={15}/> PDF (.pdf)</div>
-          </div>}
-        </div>
-        <button className="btn btn-soft btn-sm" disabled={importBusy} onClick={()=>fileRef.current?.click()}>
-          {importBusy ? <><Loader size={15} className="spin"/> Reading…</> : <><Upload size={15}/> Import</>}</button>
-        <button className="btn btn-soft btn-sm" onClick={()=>setShowPan(true)}><Upload size={15}/> Upload CAS</button>
-        <button className="btn btn-ghost btn-sm" onClick={()=>setHide(v=>!v)}>{hide?<Eye size={15}/>:<EyeOff size={15}/>} {hide?"Show values":"Hide values"}</button>
-      </div></div>
-
-    {/* ── Live price refresh bar ── */}
-    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-      {isFinnhubConfigured
-        ? <button className="btn btn-pri btn-sm" disabled={priceRefresh.busy} onClick={refreshPrices} style={{gap:7}}>
-            {priceRefresh.busy
-              ? <><Loader size={14} className="spin"/> Refreshing all prices…</>
-              : <><RefreshCw size={14}/> Refresh live prices</>}
-          </button>
-        : <button className="btn btn-soft btn-sm" disabled title="Add VITE_FINNHUB_KEY to .env to enable live prices" style={{gap:7,opacity:.55}}>
-            <RefreshCw size={14}/> Refresh live prices
-          </button>}
-      {!isFinnhubConfigured &&
-        <span className="muted small">Live prices disabled — add <code style={{background:"var(--surface-2,#f0f0f8)",padding:"1px 6px",borderRadius:5,fontFamily:"monospace"}}>VITE_FINNHUB_KEY</code> to <code style={{background:"var(--surface-2,#f0f0f8)",padding:"1px 6px",borderRadius:5,fontFamily:"monospace"}}>.env</code> to enable. See <b>README</b>.</span>}
-      {isFinnhubConfigured && priceRefresh.lastAt &&
-        <span className="muted small"><span className="hl green" style={{fontSize:12}}>✓ Updated {fmtTime(priceRefresh.lastAt)}</span></span>}
-      {isFinnhubConfigured && !priceRefresh.lastAt && !priceRefresh.busy &&
-        <span className="muted small">Prices are mock data — click to pull live quotes from Finnhub.</span>}
-      {priceRefresh.errors.length>0 &&
-        <span className="muted small" style={{color:"var(--loss)"}}>{priceRefresh.errors.length} symbol{priceRefresh.errors.length>1?"s":""} had no data (kept existing price)</span>}
-    </div>
-    <div className="hero-grad"><div>
-      <div className="lbl">Total balance · {acct==="all"?"all accounts":ACCOUNTS.find(a=>a.id===acct)?.name}</div>
-      <div className="balance tnum">{mask(fmt(sTotal))}</div>
-      <div className="delta-light">{sPnl>=0?<ArrowUpRight size={17}/>:<ArrowDownRight size={17}/>} {mask(fmtSigned(sPnl))} ({fmtPct(sPnl/sCost)}) all time</div></div>
-      <Sparkline data={SPARK} w={190} h={58} color="#ffffff"/></div>
-    <div className="kpi-row">
-      <div className="kpi"><div className="lbl"><Wallet size={14}/> Invested (cost)</div><div className="val tnum">{mask(fmt(sCost))}</div></div>
-      <div className="kpi"><div className="lbl">Unrealized P&L</div><div className={"val tnum "+(sPnl>=0?"pos":"neg")}>{mask(fmtSigned(sPnl))}</div><div className={"sub "+(sPnl>=0?"pos":"neg")}>{fmtPct(sPnl/sCost)}</div></div>
-      <div className="kpi"><div className="lbl">Holdings</div><div className="val">{shown.length}</div><div className="sub muted">in {new Set(shown.map(r=>r.acct)).size} accounts</div></div>
-      <div className="kpi"><div className="lbl">Top position</div><div className="val">{top?.sym}</div><div className="sub muted">{fmt(top?.value||0)}</div></div></div>
-    <div className="portfolio-layout" style={{ display:"grid", gridTemplateColumns:"1fr 320px", gap:18 }}>
-      <div className="card"><div className="card-head">Holdings
-        <select className="inline-select" value={acct} onChange={e=>setAcct(e.target.value)}><option value="all">All accounts</option>{ACCOUNTS.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
-        <div className="card-body" style={{ padding:"8px 10px" }}>
-          {shown.length===0
-            ? <div className="empty" style={{padding:"32px 16px"}}>
-                <div style={{marginBottom:12}}>No holdings yet.</div>
-                <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
-                  <button className="btn btn-pri btn-sm" onClick={()=>setShowAddHolding(true)}><Plus size={14}/> Add holding</button>
-                  <button className="btn btn-ghost btn-sm" onClick={()=>fileRef.current?.click()}><Upload size={14}/> Import Excel</button>
-                  <button className="btn btn-ghost btn-sm" onClick={()=>{ exportPortfolioExcel([]); }}><Download size={14}/> Download template</button>
-                </div>
-              </div>
-            : <table className="grid">
-                <thead><tr><th>Asset</th><th>Account</th><th>Type</th><th style={{textAlign:"right"}}>Value</th><th style={{textAlign:"right"}}>P&L</th><th></th></tr></thead>
-                <tbody>{shown.map(r=>(<tr key={r.id} className="hoverable">
-                  <td><div className="sym">{r.sym}</div><div className="muted small">{r.name}</div></td>
-                  <td className="muted small">{r.acctName}</td><td><TypeTag t={r.type}/></td>
-                  <td style={{textAlign:"right"}} className="tnum">{mask(fmt(r.value))}</td>
-                  <td style={{textAlign:"right"}} className={"tnum "+(r.pnl>=0?"pos":"neg")}>{hide?"••••":<>{fmtSigned(r.pnl)}<div className="small">{fmtPct(r.pnlPct)}</div></>}</td>
-                  <td><button className="iconbtn danger" title="Remove holding" onClick={()=>setHoldings(hs=>hs.filter(h=>h.id!==r.id))}><Trash2 size={13}/></button></td>
-                </tr>))}</tbody>
-              </table>}
-        </div></div>
-      <div className="card" style={{ height:"fit-content" }}><div className="card-head">Allocation</div>
-        <div className="card-body" style={{ display:"flex", flexDirection:"column", alignItems:"center" }}><Ring data={byType}/>
-          <div style={{ width:"100%", marginTop:18, display:"flex", flexDirection:"column", gap:11 }}>
-            {byType.map(d=>(<div key={d.label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:13 }}>
-              <span style={{ display:"flex", alignItems:"center", gap:9 }}><span className="dot" style={{background:d.color, width:10, height:10}}/>{d.label}</span>
-              <b className="tnum">{((d.value/sTotal)*100).toFixed(0)}%</b></div>))}</div></div></div>
-    </div>
-    {importRes && <ImportPreviewModal result={importRes} onClose={()=>setImportRes(null)} onApply={applyImport}/>}
-    {showPan && <PanPullModal onClose={()=>setShowPan(false)} onApply={(h,mode)=>{ applyImport(h,mode); setShowPan(false); }}/>}
-    {showAddHolding && <AddHoldingModal onClose={()=>setShowAddHolding(false)} onAdd={(h)=>{ setHoldings(hs=>[...hs,h]); setShowAddHolding(false); }}/>}
-  </>);
-}
-/* =================================================================== RECOMMENDATIONS */
+import { PanPullModal } from "../recommendations/Recommendations";
+import { useIsMobile } from "../../hooks/index";
+import { computeConsensus } from "../../utils/format";
 
 export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refreshPrices, priceRefresh, onOpenSecurity, setPage }) {
   const isMobile = useIsMobile();

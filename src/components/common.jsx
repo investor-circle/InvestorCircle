@@ -20,10 +20,6 @@ export const Avatar = ({ f, size=40 }) => {
   return <div className="av" style={{ width:size, height:size, background:f.color||"var(--grad)", fontSize:size*0.38 }}>{f.initials||initialsOf(f.name||"?")}</div>;
 };
 
-/* permission helpers (outbound = what I share with them) */
-
-export const PermBadge = ({ p }) => p==="full" ? <span className="pill accent">Amounts & P&L</span> : p==="names" ? <span className="pill">Only names</span> : <span className="pill">Not shared</span>;
-
 /* ── useIsMobile — JS-driven responsive control (bypasses CSS media query issues) ── */
 
 export function SortTh({ label, k, sort, setSort, align }) {
@@ -53,26 +49,6 @@ export function RecoBreakdown({ stats, onPnl, pnlLabel }) {
 }
 
 /* ── Notification Panel ─────────────────────────────────────────────────────── */
-
-export function Sparkline({ data, w=150, h=44, color="var(--accent)" }) {
-  const min=Math.min(...data), max=Math.max(...data), pad=4;
-  const pts = data.map((v,i)=>[ pad+(i/(data.length-1))*(w-2*pad), pad+(1-(v-min)/(max-min))*(h-2*pad) ]);
-  const line = pts.map(p=>p.join(",")).join(" "); const id="sg"+Math.round(w);
-  return (<svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-    <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.25"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
-    <polygon points={`${pad},${h-pad} ${line} ${w-pad},${h-pad}`} fill={`url(#${id})`}/>
-    <polyline points={line} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
-    <circle cx={pts[pts.length-1][0]} cy={pts[pts.length-1][1]} r="3.5" fill={color}/></svg>);
-}
-
-export function Ring({ data, size=176 }) {
-  const total=data.reduce((s,d)=>s+d.value,0), r=size/2-14, c=2*Math.PI*r; let off=0;
-  return (<svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-    <g transform={`rotate(-90 ${size/2} ${size/2})`}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={20}/>
-      {data.map((d,i)=>{ const dash=(d.value/total)*c; const el=<circle key={i} cx={size/2} cy={size/2} r={r} fill="none" stroke={d.color} strokeWidth={20} strokeLinecap="round" strokeDasharray={`${Math.max(dash-3,0)} ${c-Math.max(dash-3,0)}`} strokeDashoffset={-off}/>; off+=dash; return el; })}</g>
-    <text x="50%" y="46%" textAnchor="middle" fontSize="12" fill="var(--muted)" fontWeight="600">Total value</text>
-    <text x="50%" y="58%" textAnchor="middle" fontFamily="var(--serif)" fontSize="21" fontWeight="600" fill="var(--ink)">{fmt(total)}</text></svg>);
-}
 
 export const Money = ({ itm }) => <span className={"pill "+(itm?"gain":"loss")}>{itm?<TrendingUp size={12}/>:<TrendingDown size={12}/>} {itm?"In the money":"Out of the money"}</span>;
 

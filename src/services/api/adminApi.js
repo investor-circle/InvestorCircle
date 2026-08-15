@@ -10,7 +10,6 @@
  * by feature and are easy to keep in sync with the mobile app later.
  */
 export {
-  getAdminFeedConfig,
   toggleFeedConfig,
   getAdminInstruments,
   getInstrumentsExport,

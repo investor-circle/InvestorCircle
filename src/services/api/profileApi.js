@@ -17,7 +17,6 @@ export {
   saveProfileEdit,
   getRegOptions,
   lookupUser,
-  lookupUsersBatch,
   processReferral,
   getInvestorIciBatch
 } from "../../db";

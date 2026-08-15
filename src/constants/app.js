@@ -12,8 +12,6 @@ export const DEFAULT_CLASSES = ["Equity","Bonds","ETF","Mutual Funds","Crypto","
 
 export const CLASS_COLOR = { Equity:"#6d5df5", Bonds:"#0ea5b7", ETF:"#9a55ee", "Mutual Funds":"#cf52d8", Crypto:"#d97706", Metals:"#64748b", "F&P":"#15924e", Others:"#8d90ad" };
 
-export const SPARK = [62,61,64,63,67,66,69,72,70,74,77,76,80,84,83,88,92,90,95,100];
-
 /* ── About MIC — default page content (stored/overridden via app_settings) ── */
 
 export const ABOUT_DEFAULT_HTML = `
@@ -46,8 +44,6 @@ export const ABOUT_DEFAULT_HTML = `
 export const CURRENCY_SYM = { INR:'₹', USD:'$', GBP:'£', EUR:'€' };
 
 export const NOTIONAL = 1000; // assumed notional per acted recommendation, for demo P&L
-
-export const PERM_ORDER = { off:0, names:1, full:2 };
 
 export const HORIZONS = ["<3m","6m","12m",">2Y"];
 

@@ -26,9 +26,6 @@ import {
   sendConnectionRequest
 } from "../../services/api/connectionsApi";
 import {
-  searchPeople as dbSearchPeople
-} from "../../services/api/lookupsApi";
-import {
   lookupUser as dbLookupUser
 } from "../../services/api/profileApi";
 import {
@@ -335,118 +332,6 @@ export function PortfolioModal({ contact, onClose }) {
           </table>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ---------- groups ---------- */
-
-export function PeopleSearch({ me, connections=[], onConnect }) {
-  const [query,   setQuery]   = useState('');
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  // Derive connection status sets from current connections
-  const activeIds  = useMemo(()=>new Set(connections.filter(c=>c.status==='active').map(c=>c.id)),[connections]);
-  const pendingIds = useMemo(()=>new Set(connections.filter(c=>c.status&&c.status!=='active').map(c=>c.id)),[connections]);
-
-  // Debounced search — fires 300ms after the user stops typing
-  useEffect(() => {
-    const q = query.trim();
-    if (!q || q.length < 2) { setResults([]); return; }
-    const timer = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const rows = await dbSearchPeople(q, 15);
-        setResults(rows);
-      } catch(e) { console.warn('People search:', e?.message||e); }
-      finally    { setLoading(false); }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [query, me?.id]);
-
-  const clear = () => { setQuery(''); setResults([]); };
-
-  const isSebi = u => u.sebi_approval_status==='approved'||['sebi_ra','sebi_ria'].includes(u.registration_status||'');
-
-  return (
-    <div style={{marginBottom:16}}>
-      {/* Search input */}
-      <div style={{position:'relative'}}>
-        <Search size={15} style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'var(--muted)',pointerEvents:'none'}}/>
-        <input
-          value={query}
-          onChange={e=>setQuery(e.target.value)}
-          placeholder="Search investors by name or @username…"
-          style={{width:'100%',boxSizing:'border-box',padding:'10px 36px',border:'1px solid var(--line)',borderRadius:12,fontFamily:'var(--font)',fontSize:14,background:'var(--surface)',color:'var(--ink)',outline:'none'}}
-        />
-        {query && (
-          <button onClick={clear} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',border:'none',background:'none',cursor:'pointer',color:'var(--muted)',padding:4}}>
-            <X size={14}/>
-          </button>
-        )}
-      </div>
-
-      {/* Results */}
-      {(results.length>0||loading||(query.trim().length>=2&&!loading)) && (
-        <div className="card" style={{marginTop:6,padding:0,overflow:'hidden'}}>
-          {loading && <div style={{padding:'14px',textAlign:'center',color:'var(--muted)',fontSize:13}}>Searching…</div>}
-
-          {!loading && results.length===0 && query.trim().length>=2 && (
-            <div style={{padding:'14px 16px',fontSize:13,color:'var(--muted)',textAlign:'center'}}>
-              No investors found for "{query.trim()}"
-            </div>
-          )}
-
-          {results.map((u,i) => {
-            const connected = activeIds.has(u.id);
-            const pending   = pendingIds.has(u.id);
-            const name      = u.full_name || u.username || 'Investor';
-            return (
-              <div key={u.id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',
-                borderBottom:i<results.length-1?'1px solid var(--line)':'none'}}>
-                {/* Avatar */}
-                <div className="av" style={{width:38,height:38,fontSize:13,flexShrink:0,background:'var(--grad)'}}>
-                  {initialsOf(name)}
-                </div>
-
-                {/* Name + meta */}
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:700,fontSize:14,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                    {name}
-                  </div>
-                  <div style={{display:'flex',gap:6,alignItems:'center',marginTop:2,flexWrap:'wrap'}}>
-                    {u.username && <span style={{fontSize:12,color:'var(--muted)'}}>@{u.username}</span>}
-                    {isSebi(u) && (
-                      <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)'}}>
-                        SEBI
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
-                  {u.username && (
-                    <button className="btn btn-ghost btn-sm" style={{fontSize:11}}
-                      onClick={()=>{ window.location.hash=`#/investor/${u.username}`; clear(); }}>
-                      View
-                    </button>
-                  )}
-                  {connected  && <span style={{fontSize:11,fontWeight:700,color:'var(--gain)'}}>Connected</span>}
-                  {pending    && <span style={{fontSize:11,color:'var(--muted)'}}>Pending</span>}
-                  {!connected && !pending && (
-                    <button className="btn btn-pri btn-sm" style={{fontSize:11}}
-                      onClick={()=>{ onConnect(u.id); setResults(rs=>rs.map(r=>r.id===u.id?{...r,_pendingLocal:true}:r)); }}>
-                      <UserPlus size={12}/> Connect
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

@@ -34,12 +34,6 @@ export const recoStats = (recs, pred) => {
   };
 };
 
-export const normLevel = (lvl) => lvl==="none" ? "off" : lvl;          // their level -> off/names/full
-
-export const myPerm = (sharing,id) => { const c=sharing[id]; if(!c||c.visibility==="off") return "off"; return c.level==="full"?"full":"names"; };
-
-export const setMyPerm = (setSharing,id,val) => setSharing(s=>({ ...s, [id]:{ visibility: val==="off"?"off":"all", level: val==="full"?"full":"names", selected: s[id]?.selected||[] } }));
-
 export const ret = (r) => (r.priceAt && r.priceAt !== 0) ? (r.price - r.priceAt) / r.priceAt : 0;
 
 export const calcTargetDate = (date, horizon) => {

@@ -13,6 +13,5 @@ export default defineConfig({
 
   server: { port: 5173, open: true },
 
-  // pdfjs-dist ships an ESM worker loaded with `?url` in src/importers.js.
-  optimizeDeps: { include: ["xlsx", "jspdf", "jspdf-autotable"] },
+  optimizeDeps: { include: ["xlsx"] },
 });

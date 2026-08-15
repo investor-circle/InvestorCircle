@@ -7,7 +7,6 @@ import {
   Layers,
   ChevronDown,
   UserPlus,
-  Crown,
   Trash2,
   Pencil
 } from "lucide-react";
@@ -148,28 +147,6 @@ export function GroupsSection({ groups, setGroups, contacts, configs, canCreateG
     {editGroup && <EditGroupModal group={editGroup} groups={groups} myId={myId}
         onClose={()=>setEditGroup(null)} onSave={(name)=>doRenameGroup(editGroup.id,name)}/>}
   </>);
-}
-
-export function MemberPanel({ group, nameOf, avOf, canManage, max, onAdd, onRemove }) {
-  const active = (group.members||[]).filter(m=>m.status==="active");
-  return (
-    <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-        <b style={{fontSize:13}}>Members ({active.length}/{max})</b>
-        {canManage && active.length<max && <button className="btn btn-soft btn-sm" onClick={onAdd}><UserPlus size={14}/> Add members</button>}
-      </div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-        {active.map(m=>(
-          <div key={m.user_id} style={{display:"flex",alignItems:"center",gap:7,background:"var(--surface-2)",borderRadius:10,padding:"5px 10px",border:"1px solid var(--line)"}}>
-            <Avatar f={avOf(m.user_id)} size={26}/>
-            <span style={{fontSize:13,fontWeight:600}}>{m.name||nameOf(m.user_id)}</span>
-            {m.role==="admin" && <Crown size={12} color="#f59e0b"/>}
-            {canManage && m.role!=="admin" && <X size={13} style={{cursor:"pointer",color:"var(--muted)"}} onClick={()=>onRemove(m.user_id)}/>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export function GroupModal({ title, contacts, max, alreadyIn, onClose, onSave, addOnly }) {
