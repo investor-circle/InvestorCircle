@@ -27,6 +27,21 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
   const cvDone = !!profile?.onboarding_cv_done;
   const discoverDone = !!profile?.onboarding_discover_done;
 
+  // TEMPORARY diagnostic — remove once the "checklist doesn't show" report
+  // is root-caused. Logs exactly what this component received so we can see
+  // from the browser console whether onboarding_cv_done/onboarding_discover_done
+  // are present at all, and what value they hold, rather than guessing.
+  if (typeof window !== "undefined" && !window.__micSetupChecklistLogged) {
+    window.__micSetupChecklistLogged = true;
+    console.info("[SetupChecklist] profile received:", profile, {
+      hasProfile: !!profile,
+      cvDoneRaw: profile?.onboarding_cv_done,
+      discoverDoneRaw: profile?.onboarding_discover_done,
+      cvDone, discoverDone,
+      willRender: !!profile && !(cvDone && discoverDone),
+    });
+  }
+
   // Nothing left to do (or profile not loaded yet) — render nothing. This is
   // the ONLY thing that hides the checklist; there is no separate "dismiss"
   // action, so an incomplete step always survives navigation, refresh, and
