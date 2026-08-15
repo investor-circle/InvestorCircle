@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
 import { auth } from "./firebase";
+import { API_ORIGIN } from "./db";
 
 const AuthContext = createContext(null);
 
@@ -10,7 +11,9 @@ const ADMIN_EMAILS = ["ankur.citm@gmail.com"];
 // browser-to-Neon direct access has been removed (Phase 4 security
 // migration) — if these are unreachable, auth degrades to a locally-derived
 // profile shape rather than falling back to a direct-Neon query.
-const API_BASE = (import.meta.env.VITE_CAS_API_URL || 'https://investor-circle.vercel.app') + '/api/profile';
+// API_ORIGIN (see src/db.js) resolves to the same-origin api/ on Vercel
+// Preview deployments so this always talks to the deployment's own backend.
+const API_BASE = API_ORIGIN + '/api/profile';
 const PROFILE_ME_API         = `${API_BASE}/me`;
 const PROFILE_BLACKLIST_API  = `${API_BASE}/blacklist-check`;
 const PROFILE_SYNC_API       = `${API_BASE}/sync`;
@@ -88,9 +91,19 @@ export function AuthProvider({ children }) {
           }
 
           if (!syncedViaApi) {
+            // Server profile create/sync is unreachable — degrade to a
+            // client-only shape. Treat onboarding/consent as already-handled
+            // here rather than showing the mandatory setup gate or the
+            // Discover modal during what is likely an infrastructure outage
+            // (any save attempt would fail anyway) — this is not persisted,
+            // so the real state is re-checked correctly the next time the
+            // server is reachable.
             setProfile({ id: firebaseUser.uid, email: firebaseUser.email,
               full_name: fullName, is_admin: isAdminEmail,
-              first_name: fullName.split(" ")[0], last_name: fullName.split(" ").slice(1).join(" ") || "" });
+              first_name: fullName.split(" ")[0], last_name: fullName.split(" ").slice(1).join(" ") || "",
+              avatar_url: firebaseUser.photoURL || null,
+              onboarding_cv_done: true, onboarding_discover_done: true,
+              consent_terms_accepted: true, consent_data_accepted: true });
           }
         }
       } else {
@@ -104,6 +117,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login  = (email, password) => signInWithEmailAndPassword(auth, email, password);
+  // onAuthStateChanged above handles profile create/sync for both new and
+  // returning Google users identically — no separate signup path needed.
+  const loginWithGoogle = () => signInWithPopup(auth, new GoogleAuthProvider());
   const logout = () => signOut(auth);
 
   // Update first/last name in Neon and local profile state.
@@ -138,7 +154,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, profile, authLoading, login, logout,
+      user, profile, authLoading, login, loginWithGoogle, logout,
       userIsAdmin, role, setRole, updateProfile, patchProfile,
     }}>
       {children}

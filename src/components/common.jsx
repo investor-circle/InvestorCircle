@@ -17,6 +17,10 @@ export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" s
 
 export const Avatar = ({ f, size=40 }) => {
   if (!f) return <div className="av" style={{ width:size, height:size, background:"var(--grad)", fontSize:size*0.38 }}>?</div>;
+  const avatarUrl = f.avatarUrl || f.avatar_url;
+  if (avatarUrl) {
+    return <img src={avatarUrl} alt="" className="av" style={{ width:size, height:size, objectFit:"cover" }}/>;
+  }
   return <div className="av" style={{ width:size, height:size, background:f.color||"var(--grad)", fontSize:size*0.38 }}>{f.initials||initialsOf(f.name||"?")}</div>;
 };
 

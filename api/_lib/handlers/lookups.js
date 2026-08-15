@@ -15,7 +15,10 @@
  *
  * POST ?resource=lookups
  *   Body: { action, ... }
- *     username-save:      { username }                        (auth: user)
+ *     username-save:      { username, consentTerms?, consentData? }  (auth: user)
+ *                          (consentTerms/consentData present together completes
+ *                          the mandatory post-signup setup gate; omitted for a
+ *                          plain username save from an already-consented account)
  *     portfolio-add:      { holding: {...} }                   (auth: user)
  *     portfolio-delete:   { id }                                (auth: user)
  *     portfolio-delete-all: {}                                  (auth: user)
@@ -24,11 +27,16 @@
  *     about-us-save:      { html }                              (auth: admin)
  *     user-lookup:        { by: 'id'|'username'|'email', value }         (auth: user)
  *     user-lookup-batch:  { by: 'id', values: [...] }                    (auth: user)
+ *     avatar-upload:      { dataUrl }                                    (auth: user)
+ *     onboarding-complete:{ step: 'discover' }                           (auth: user)
+ * GET  ?resource=lookups&action=discover-people                         (auth: user)
  *
- * SECURITY: this file only ever exposes id/username/full_name/email from
- * user_profiles — never sebi_*, claim_token, claim_status, claimed_by_uid,
- * consent_*, referred_by, or any other sensitive column. Every write derives
- * identity from requireUid()/requireAdmin() — never from a client-supplied id.
+ * SECURITY: this file only ever exposes id/username/full_name/email plus a
+ * small set of public-profile display fields (avatar_url, avatar_color,
+ * aggregate recommendation stats, connection status) from user_profiles —
+ * never sebi_*, claim_token, claim_status, claimed_by_uid, consent_*,
+ * referred_by, or any other sensitive column. Every write derives identity
+ * from requireUid()/requireAdmin() — never from a client-supplied id.
  */
 
 import { sql, parseBody, requireUid, requireAdmin, sendAuthError } from '../auth.js';
@@ -38,6 +46,19 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FEATURE_KEYS = ['portfolio_import', 'ai_summaries', 'mutual_fund', 'leaderboards', 'overlap', 'mobile_app'];
 const CONTACT_CATEGORIES = ['bug', 'feature', 'question', 'partner', 'media', 'misleading', 'abuse', 'other'];
 const ALLOWED_REG_STATUS_LOOKUPS = ['self_directed', 'sebi_ra', 'sebi_ria'];
+// Profile-picture upload guardrail: client compresses to a small JPEG/PNG/WebP
+// before upload (see src/utils/image.js); this is a hard server-side backstop
+// against a caller sending something much larger. ~130,000 base64 chars is
+// roughly a 95KB binary image — plenty for a small avatar, tiny against free
+// Neon DB space.
+const MAX_AVATAR_DATA_URL_LENGTH = 130000;
+const AVATAR_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+// 'cv' was the old skippable "Build your Investor CV" checklist step
+// (pre-Phase-5.5-revision) — username/consent is now mandatory and folded
+// directly into signup / username-save (see action=username-save above), so
+// onboarding_cv_done is set there and this action only ever needs to mark
+// the one-time Discover modal as dismissed/completed.
+const ONBOARDING_STEPS = ['discover'];
 
 async function isUsernameAvailable(username, excludeId) {
   const rows = excludeId
@@ -322,6 +343,55 @@ export default async function handleLookups(req, res) {
         return;
       }
 
+      if (action === 'discover-people') {
+        let uid;
+        try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+        // Simple curated ranking for the "Discover your Investor Circle" new-user
+        // activation card — most-active recommenders first. Same aggregate stats
+        // shape as action=investor-ici-batch so the frontend can reuse
+        // computeIci() unchanged.
+        const rows = await sql`
+          SELECT
+            up.id, up.username, up.full_name, up.avatar_url, up.avatar_color,
+            COUNT(r.id)::int AS total,
+            EXTRACT(EPOCH FROM (NOW()-MIN(r.created_at)))/(365.25*86400) AS years_history,
+            COUNT(*) FILTER (WHERE r.exit_signal=true)::int AS closed,
+            COUNT(*) FILTER (
+              WHERE r.exit_signal=true AND r.current_price > r.reco_price AND r.reco_price > 0
+            )::int AS wins,
+            COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY
+              CASE WHEN r.exit_signal=true AND r.reco_price > 0
+                   THEN (r.current_price - r.reco_price) / r.reco_price * 100
+              END
+            ), 0) AS median_ret,
+            COALESCE(STDDEV(
+              CASE WHEN r.exit_signal=true AND r.reco_price > 0
+                   THEN (r.current_price - r.reco_price) / r.reco_price * 100
+              END
+            ), 0) AS ret_stddev,
+            MAX(cn.status) AS connection_status
+          FROM user_profiles up
+          LEFT JOIN ic_recommendations r ON r.recommender_id = up.id
+          LEFT JOIN connections cn
+            ON (cn.requester_id = up.id AND cn.addressee_id = ${uid})
+            OR (cn.addressee_id = up.id AND cn.requester_id = ${uid})
+          WHERE up.id != ${uid}
+            AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+            AND (up.claim_status IS DISTINCT FROM 'claimed')
+          GROUP BY up.id, up.username, up.full_name, up.avatar_url, up.avatar_color
+          ORDER BY COUNT(r.id) DESC, up.created_at DESC
+          LIMIT 8
+        `;
+        // NOTE: intentionally NOT filtering out users with no username set —
+        // username is mandatory for new signups (Phase 5.5), but pre-existing
+        // accounts from before that requirement can still have a blank
+        // username, and this card should still be able to surface them.
+        // (DiscoverModal already renders username-less rows without a
+        // broken profile link — see src/features/onboarding/Onboarding.jsx.)
+        res.status(200).json({ people: rows });
+        return;
+      }
+
       res.status(400).json({ error: 'Unknown action' });
       return;
     }
@@ -337,8 +407,32 @@ export default async function handleLookups(req, res) {
       if (!USERNAME_RE.test(username)) { res.status(400).json({ error: 'invalid_username' }); return; }
       const available = await isUsernameAvailable(username, uid);
       if (!available) { res.status(400).json({ error: 'taken' }); return; }
+
+      // Optional consent fields — present only when this call is completing
+      // the mandatory post-Google-signin setup gate (see
+      // src/features/onboarding/Onboarding.jsx, MandatorySetupGate), which
+      // bundles username + both consent statements into one submission.
+      // Omitted entirely for the existing plain username-only save used by
+      // ProfileEditModal (legacy users who already consented — see
+      // supabase/phase_5_5_consent.sql).
+      const consentProvided = body.consentTerms !== undefined || body.consentData !== undefined;
+      if (consentProvided && (body.consentTerms !== true || body.consentData !== true)) {
+        res.status(400).json({ error: 'Please accept both consent statements to continue' });
+        return;
+      }
+
       try {
-        await sql`UPDATE user_profiles SET username = ${username}, updated_at = now() WHERE id = ${uid}`;
+        if (consentProvided) {
+          await sql`
+            UPDATE user_profiles SET
+              username = ${username}, onboarding_cv_done = true,
+              consent_terms_accepted = true, consent_data_accepted = true, consent_accepted_at = now(),
+              updated_at = now()
+            WHERE id = ${uid}
+          `;
+        } else {
+          await sql`UPDATE user_profiles SET username = ${username}, updated_at = now() WHERE id = ${uid}`;
+        }
       } catch (e) {
         if (String(e?.message || '').toLowerCase().includes('unique')) {
           res.status(400).json({ error: 'taken' });
@@ -615,6 +709,29 @@ export default async function handleLookups(req, res) {
         SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE id = ANY(${values})
       `;
       res.status(200).json({ users: rows });
+      return;
+    }
+
+    if (action === 'avatar-upload') {
+      let uid;
+      try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+      const dataUrl = String(body.dataUrl || '');
+      if (!dataUrl || dataUrl.length > MAX_AVATAR_DATA_URL_LENGTH || !AVATAR_DATA_URL_RE.test(dataUrl)) {
+        res.status(400).json({ error: 'Invalid or too-large image' });
+        return;
+      }
+      await sql`UPDATE user_profiles SET avatar_url = ${dataUrl}, updated_at = now() WHERE id = ${uid}`;
+      res.status(200).json({ success: true, avatarUrl: dataUrl });
+      return;
+    }
+
+    if (action === 'onboarding-complete') {
+      let uid;
+      try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+      const step = String(body.step || '');
+      if (!ONBOARDING_STEPS.includes(step)) { res.status(400).json({ error: 'invalid step' }); return; }
+      await sql`UPDATE user_profiles SET onboarding_discover_done = true, updated_at = now() WHERE id = ${uid}`;
+      res.status(200).json({ success: true });
       return;
     }
 

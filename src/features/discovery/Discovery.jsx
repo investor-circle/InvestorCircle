@@ -316,7 +316,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
     {/* ── Mobile: header + tabs merged into one fixed block ──────────────
          Keeps Welcome, Recommend an idea, and Feed/Pulse tabs pinned
          below the topbar at ALL scroll depths. Nothing overlaps content
-         because the 104px spacer below reserves the exact same height
+         because the 112px spacer below reserves the exact same height
          in the flow.                                                 ── */}
     {isMobile && !showNewReco && (
       <div style={{

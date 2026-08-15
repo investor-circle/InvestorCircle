@@ -11,11 +11,18 @@
  *   Authorization: Bearer <Firebase ID token> (the token for the account
  *   just created by createUserWithEmailAndPassword — already authenticated
  *   at this point in the signup flow)
- *   Body: { firstName: string, lastName?: string, username: string }
+ *   Body: { firstName: string, lastName?: string, username: string,
+ *           consentTerms: true, consentData: true }
+ *   (Phase 5.5 revised: username and both consent flags are mandatory —
+ *   the frontend collects them as part of the signup form/consent step
+ *   before ever calling this endpoint, see src/LoginPage.jsx. Google
+ *   sign-in has no signup form, so those users go through the same
+ *   requirement post-auth instead — see api/_lib/handlers/lookups.js
+ *   action=username-save, which accepts the same consent fields.)
  *
  * Responses:
  *   200 { profile: {...} }
- *   400 missing firstName, or username fails ^[a-z0-9_]{5,20}$
+ *   400 missing firstName/username/consent, or username fails ^[a-z0-9_]{5,20}$
  *   401 missing/malformed/invalid/expired token
  *   405 method not POST/OPTIONS
  *   409 username already taken
@@ -100,14 +107,22 @@ export default async function handler(req, res) {
   }
   const firstName = String((body && body.firstName) || '').trim();
   const lastName = String((body && body.lastName) || '').trim();
+  // Username and both consent flags are mandatory at signup — the frontend
+  // collects them before ever calling this endpoint (see LoginPage.jsx).
   const username = String((body && body.username) || '').trim();
+  const consentTerms = body?.consentTerms === true;
+  const consentData = body?.consentData === true;
 
   if (!firstName) {
     res.status(400).json({ error: 'First name is required' });
     return;
   }
-  if (!USERNAME_RE.test(username)) {
-    res.status(400).json({ error: 'Invalid username' });
+  if (!username || !USERNAME_RE.test(username)) {
+    res.status(400).json({ error: 'A valid username is required' });
+    return;
+  }
+  if (!consentTerms || !consentData) {
+    res.status(400).json({ error: 'Please accept both consent statements to continue' });
     return;
   }
   const fullName = `${firstName} ${lastName}`.trim();
@@ -121,15 +136,26 @@ export default async function handler(req, res) {
   let rows;
   try {
     rows = await sql`
-      INSERT INTO user_profiles (id, email, full_name, first_name, last_name, is_admin, username)
-      VALUES (${uid}, ${email}, ${fullName}, ${firstName}, ${lastName}, false, ${username})
+      INSERT INTO user_profiles
+        (id, email, full_name, first_name, last_name, is_admin, username,
+         onboarding_cv_done, onboarding_discover_done,
+         consent_terms_accepted, consent_data_accepted, consent_accepted_at)
+      VALUES
+        (${uid}, ${email}, ${fullName}, ${firstName}, ${lastName}, false, ${username},
+         true, false,
+         true, true, now())
       ON CONFLICT (id) DO UPDATE SET
         first_name = EXCLUDED.first_name,
         last_name  = EXCLUDED.last_name,
         full_name  = EXCLUDED.full_name,
         username   = COALESCE(EXCLUDED.username, user_profiles.username),
+        consent_terms_accepted = true,
+        consent_data_accepted  = true,
+        consent_accepted_at    = now(),
         updated_at = now()
-      RETURNING id, email, full_name, first_name, last_name, username, is_admin
+      RETURNING id, email, full_name, first_name, last_name, username, is_admin,
+                avatar_url, avatar_color, onboarding_cv_done, onboarding_discover_done,
+                consent_terms_accepted, consent_data_accepted
     `;
   } catch (e) {
     // Unique-violation on the username column
