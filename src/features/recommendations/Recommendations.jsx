@@ -4,7 +4,6 @@ import {
   Lightbulb,
   Shield,
   Search,
-  Settings,
   Lock,
   Eye,
   EyeOff,
@@ -19,12 +18,10 @@ import {
   ChevronDown,
   Sparkles,
   ArrowUpDown,
-  List,
   ThumbsUp,
   Trash2,
   LogOut,
   AlertTriangle,
-  Filter,
   Upload,
   CreditCard,
   Share2,
@@ -34,7 +31,6 @@ import {
   Copy,
   ArrowLeft,
   Link,
-  Target,
   Image as ImageIcon
 } from "lucide-react";
 import { getPreviousClose, getTodayClose, sourceName } from "../../services/marketData";

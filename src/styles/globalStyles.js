@@ -340,5 +340,3 @@ tr.hiddenrow > td{opacity:.55;}
   .kpi .val{font-size:19px;}
 }
 `;
-
-/* ---------- mock data ---------- */

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   Users,
@@ -14,10 +14,8 @@ import {
   UserPlus,
   Trash2,
   Loader,
-  Copy,
-  Link
+  Copy
 } from "lucide-react";
-import { track } from "../../firebase";
 import {
   acceptConnection,
   getMyConnections,

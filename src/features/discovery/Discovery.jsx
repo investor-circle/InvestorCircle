@@ -33,10 +33,10 @@ import {
   getConsensusRecosPublic as dbGetConsensusRecosPublic,
   getTickerRecos as dbGetTickerRecos
 } from "../../services/api/recommendationsApi";
-import { ConsensusBar, ConvBadge, SparkLine, WidgetHeader } from "../../components/common";
-import { FeedCard, RecoCardModal } from "../recommendations/Recommendations";
+import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
+import { FeedCard, MakeRecoModal, RecoCardModal } from "../recommendations/Recommendations";
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
-import { computeConsensus, computeTrend, fmtDate, getThesisText, initialsOf, ret, scoreFeedRec } from "../../utils/format";
+import { computeConsensus, computeTrend, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
 
 export function FreshWidget({ recsReceived, contacts, setPage }) {
   const fresh = [...recsReceived].filter(r=>!r.hidden)

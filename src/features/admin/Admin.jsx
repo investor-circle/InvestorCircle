@@ -1,11 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
-  Users,
   Shield,
   Search,
   Bell,
-  Settings,
   Lock,
   Eye,
   Plus,
@@ -24,15 +22,13 @@ import {
   Database,
   Globe,
   Copy,
-  Link,
   Flame,
-  Info,
-  Target
+  Info
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useAuth } from "../../AuthContext";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { secondaryAuth, track } from "../../firebase";
+import { secondaryAuth } from "../../firebase";
 import {
   adminCreateUserProfile as dbAdminCreateUserProfile,
   adminDeleteUser as dbAdminDeleteUser,
@@ -66,7 +62,7 @@ import { ABOUT_DEFAULT_HTML, CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, TODAY }
 import { ThesisEditor } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
-import { adminSebiApi, fmt, fmtDate, initialsOf } from "../../utils/format";
+import { adminSebiApi, fmtDate, initialsOf } from "../../utils/format";
 import { clearInstrCache } from "../../utils/instruments";
 
 export function AdminSeedData() {

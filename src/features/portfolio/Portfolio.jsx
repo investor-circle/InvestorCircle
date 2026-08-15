@@ -21,7 +21,7 @@ import {
 import {
   getConsensusRecosAll as dbGetConsensusRecosAll
 } from "../../services/api/recommendationsApi";
-import { ConsensusBar, StrengthDot } from "../../components/common";
+import { ConsensusBar, InstrumentSearch, StrengthDot } from "../../components/common";
 import { SecurityQuickPanel } from "../discovery/Discovery";
 import { PanPullModal } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
