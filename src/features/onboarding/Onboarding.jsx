@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import { X, Trophy, Users, UserPlus, Check, Loader } from "lucide-react";
+import { ChevronDown, Check, UserPlus, Loader } from "lucide-react";
 import { markOnboardingStep as dbMarkOnboardingStep } from "../../services/api/profileApi";
 import { getSuggestedPeople as dbGetSuggestedPeople } from "../../services/api/lookupsApi";
 import { sendConnectionRequest as dbSendConnectionRequest } from "../../services/api/connectionsApi";
@@ -9,34 +8,36 @@ import { Avatar } from "../../components/common";
 import { initialsOf } from "../../utils/format";
 
 /**
- * Phase 5.5 — lightweight two-step new-user activation flow.
+ * Phase 5.5 (revised) — persistent, non-blocking setup checklist.
  *
- * Shown once per step, gated by profile.onboarding_cv_done /
- * onboarding_discover_done (persisted server-side — see
- * api/_lib/handlers/lookups.js action=onboarding-complete). Renders as a
- * portal overlay, entirely independent of the Home Feed's own data-load
- * effect in App.jsx — it neither reads nor blocks feed state.
+ * Replaces the earlier two-step full-screen modal flow. That version had to
+ * add session-only "don't show this again" state to work around its own
+ * design flaw: navigating away from step 1 (e.g. to Track Record) caused the
+ * component to re-render and immediately pop step 2's full-screen overlay on
+ * top of the destination page. Rendering as an in-flow bar under the topbar
+ * (see App.jsx) rather than a fixed/portal overlay removes the entire class
+ * of problem — there is nothing to stack on top of, so there is nothing to
+ * suppress. Visibility is driven ONLY by server-persisted state
+ * (profile.onboarding_cv_done / onboarding_discover_done); no client-only
+ * "session dismissed" flag exists anymore.
  */
-export function NewUserActivation({ profile, ME, patchProfile, setPage }) {
-  // Once a step is marked done for THIS render tree, don't flash it again
-  // before the server round-trip confirms and profile state updates.
-  const [closing, setClosing] = useState(null); // 'cv' | 'discover' | null
-  // Set the moment a CTA navigates the user away (Build CV → Track Record,
-  // Explore Network → Network). Without this, completing step 1 by clicking
-  // "Build My Investor CV" navigates to Track Record underneath, but this
-  // component re-renders immediately afterward, sees onboarding_discover_done
-  // still false, and pops the full-screen Discover Circle overlay right on
-  // top of the page the user was just sent to — it looks like "the button
-  // did nothing, and now there's a different popup". Once the user has
-  // actively chosen to go do something, get out of their way for the rest of
-  // the session; the next incomplete step still surfaces on their next visit.
-  const [dismissedForSession, setDismissedForSession] = useState(false);
+export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
+  const [open, setOpen] = useState(false);
 
-  if (!profile || dismissedForSession) return null;
+  const cvDone = !!profile?.onboarding_cv_done;
+  const discoverDone = !!profile?.onboarding_discover_done;
+
+  // Nothing left to do (or profile not loaded yet) — render nothing. This is
+  // the ONLY thing that hides the checklist; there is no separate "dismiss"
+  // action, so an incomplete step always survives navigation, refresh, and
+  // logout/login until it's actually completed or skipped server-side.
+  if (!profile || (cvDone && discoverDone)) return null;
+
+  const activeStep = !cvDone ? "cv" : "discover";
+  const doneCount = (cvDone ? 1 : 0) + (discoverDone ? 1 : 0);
 
   const markDone = async (step) => {
-    setClosing(step);
-    patchProfile?.({ [step === 'cv' ? 'onboarding_cv_done' : 'onboarding_discover_done']: true });
+    patchProfile?.({ [step === "cv" ? "onboarding_cv_done" : "onboarding_discover_done"]: true });
     try {
       const ok = await dbMarkOnboardingStep(step);
       if (!ok) console.warn(`[onboarding] failed to persist step "${step}" as done — it may reappear next login`);
@@ -45,192 +46,198 @@ export function NewUserActivation({ profile, ME, patchProfile, setPage }) {
     }
   };
 
-  const goTo = (page, step) => { setDismissedForSession(true); markDone(step); setPage?.(page); };
+  const buildCv = () => { markDone("cv"); setPage?.("trackrecord"); };
+  const skipCv = () => markDone("cv");
+  const exploreNetwork = () => { markDone("discover"); setPage?.("network"); };
+  const skipDiscover = () => markDone("discover");
 
-  if (!profile.onboarding_cv_done && closing !== 'cv') {
-    return (
-      <BuildCvCard
-        onBuild={() => goTo('trackrecord', 'cv')}
-        onSkip={() => markDone('cv')}
-      />
-    );
-  }
+  const primaryLabel = activeStep === "cv" ? "Build My Investor CV" : "Discover people";
+  const primaryAction = activeStep === "cv" ? buildCv : () => setOpen(true);
 
-  if (!profile.onboarding_discover_done && closing !== 'discover') {
-    return (
-      <DiscoverCircleCard
-        me={ME}
-        onExplore={() => goTo('network', 'discover')}
-        onSkip={() => markDone('discover')}
-      />
-    );
-  }
-
-  return null;
-}
-
-function OverlayShell({ onDismiss, children }) {
-  return createPortal(
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(13,14,30,.65)', backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9500, padding: 20,
-    }} onClick={onDismiss}>
-      <div style={{
-        width: '100%', maxWidth: 480, background: '#16182a', borderRadius: 22,
-        border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 24px 80px rgba(0,0,0,.6)',
-        padding: '30px 28px 26px', position: 'relative', textAlign: 'center',
-      }} onClick={e => e.stopPropagation()}>
-        {children}
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-function BuildCvCard({ onBuild, onSkip }) {
   return (
-    <OverlayShell onDismiss={onSkip}>
-      <button onClick={onSkip} style={closeBtnStyle}><X size={16}/></button>
-      <div style={{
-        width: 60, height: 60, borderRadius: 16, margin: '0 auto 18px',
-        background: 'linear-gradient(135deg,#6d5df5,#cf52d8)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 8px 24px rgba(109,93,245,.4)',
-      }}>
-        <Trophy size={28} color="#fff"/>
+    <div style={wrapStyle}>
+      <div className="mic-setup-bar" style={barStyle}>
+        <ProgressRing done={doneCount} total={2} />
+        <button onClick={() => setOpen(o => !o)} style={headlineBtnStyle}>
+          <div style={{ textAlign: "left" }}>
+            <div style={headlineStyle}>Complete your Investor Circle setup</div>
+            <div style={subStyle}>{doneCount} of 2 complete</div>
+          </div>
+          <ChevronDown size={16} color="var(--muted)" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s", flexShrink: 0 }} />
+        </button>
+        <button onClick={primaryAction} className="btn btn-pri btn-sm" style={{ flexShrink: 0, whiteSpace: "nowrap" }}>{primaryLabel} →</button>
       </div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginBottom: 10 }}>
-        Build your Investor Profile
-      </div>
-      <div style={{ fontSize: 14, color: 'rgba(255,255,255,.65)', lineHeight: 1.6, marginBottom: 26 }}>
-        Create your personalized Investor CV and showcase your investment journey,
-        track record and thinking to your investment circle.
-      </div>
-      <button onClick={onBuild} style={primaryBtnStyle}>
-        Build My Investor CV →
-      </button>
-      <button onClick={onSkip} style={laterBtnStyle}>I'll do this later</button>
-      <div style={{ fontSize: 12, color: 'rgba(255,255,255,.4)', marginTop: 14 }}>
-        You can always do this later from Track Record.
-      </div>
-    </OverlayShell>
+
+      {open && (
+        <div className="mic-setup-panel" style={panelStyle}>
+          <ChecklistRow
+            title="Build your Investor CV"
+            subtitle="Showcase your investment journey and track record."
+            done={cvDone}
+            active={activeStep === "cv"}
+            onGo={buildCv}
+            onSkip={skipCv}
+          />
+          <ChecklistRow
+            title="Discover your Investor Circle"
+            subtitle={cvDone ? "Meet a few people worth following." : "Complete Build CV first."}
+            done={discoverDone}
+            active={activeStep === "discover"}
+            locked={!cvDone}
+          >
+            {activeStep === "discover" && (
+              <DiscoverPanel me={ME} onExplore={exploreNetwork} onSkip={skipDiscover} />
+            )}
+          </ChecklistRow>
+        </div>
+      )}
+    </div>
   );
 }
 
-function DiscoverCircleCard({ me, onExplore, onSkip }) {
+function ChecklistRow({ title, subtitle, done, active, locked, onGo, onSkip, children }) {
+  return (
+    <div style={{ opacity: locked ? 0.5 : 1 }}>
+      <div style={rowStyle}>
+        <div style={done ? checkDoneStyle : checkTodoStyle}>{done ? <Check size={12} color="#06240f" /> : null}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={rowTitleStyle}>{title}</div>
+          <div style={rowSubStyle}>{subtitle}</div>
+        </div>
+        {done && <span style={completedTagStyle}>Completed</span>}
+        {active && !done && !children && (
+          <div style={{ display: "flex", gap: 12, flexShrink: 0 }}>
+            <button onClick={onSkip} style={skipLinkStyle}>Skip</button>
+            <button onClick={onGo} style={goLinkStyle}>Go →</button>
+          </div>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Curated people list for the Discover step — reuses the existing
+ * discover-people query, ICI computation and connection-request API
+ * unchanged; only the presentation (inline panel vs. full-screen modal)
+ * differs from the earlier implementation. */
+function DiscoverPanel({ me, onExplore, onSkip }) {
   const [people, setPeople] = useState(null); // null = loading
-  const [connecting, setConnecting] = useState({}); // { [uid]: true }
-  const [connected, setConnected] = useState({});   // { [uid]: true }
+  const [connecting, setConnecting] = useState({});
+  const [connected, setConnected] = useState({});
 
   useEffect(() => {
-    dbGetSuggestedPeople().then(setPeople).catch(() => setPeople([]));
+    let cancelled = false;
+    dbGetSuggestedPeople().then(rows => { if (!cancelled) setPeople(rows); }).catch(() => { if (!cancelled) setPeople([]); });
+    return () => { cancelled = true; };
   }, []);
 
   const connect = async (uid) => {
     setConnecting(c => ({ ...c, [uid]: true }));
     try {
-      await dbSendConnectionRequest(me?.id, uid);
-      setConnected(c => ({ ...c, [uid]: true }));
+      // sendConnectionRequest resolves (doesn't throw) with { error } on a
+      // denied/unauthorized response — only mark connected on genuine success.
+      const result = await dbSendConnectionRequest(me?.id, uid);
+      if (!result?.error) setConnected(c => ({ ...c, [uid]: true }));
     } catch (_) { /* non-fatal — button just stays enabled */ }
     setConnecting(c => ({ ...c, [uid]: false }));
   };
 
   return (
-    <OverlayShell onDismiss={onSkip}>
-      <button onClick={onSkip} style={closeBtnStyle}><X size={16}/></button>
-      <div style={{
-        width: 60, height: 60, borderRadius: 16, margin: '0 auto 18px',
-        background: 'linear-gradient(135deg,#0ea5b7,#15924e)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 8px 24px rgba(14,165,183,.4)',
-      }}>
-        <Users size={28} color="#fff"/>
-      </div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginBottom: 10 }}>
-        Discover your Investor Circle
-      </div>
-      <div style={{ fontSize: 14, color: 'rgba(255,255,255,.65)', lineHeight: 1.6, marginBottom: 20 }}>
-        Meet investors, explore their investment thinking and find people you'd
-        like in your circle.
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 22, maxHeight: 300, overflowY: 'auto', textAlign: 'left' }}>
+    <div style={{ marginTop: 10, paddingLeft: 32 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
         {people === null && (
-          <div style={{ padding: '20px 0', display: 'flex', justifyContent: 'center', color: 'rgba(255,255,255,.4)' }}>
-            <Loader size={18} className="spin"/>
+          <div style={{ padding: "14px 0", display: "flex", justifyContent: "center", color: "var(--muted)" }}>
+            <Loader size={16} className="spin" />
           </div>
         )}
         {people?.length === 0 && (
-          <div style={{ padding: '12px 0', textAlign: 'center', fontSize: 13, color: 'rgba(255,255,255,.4)' }}>
+          <div style={{ padding: "8px 0", fontSize: 12.5, color: "var(--muted)" }}>
             No investors to suggest just yet — check back soon.
           </div>
         )}
         {people?.map(p => {
-          const hitPct  = p.closed > 0 ? (p.wins / p.closed * 100) : 0;
+          const hitPct = p.closed > 0 ? (p.wins / p.closed * 100) : 0;
           const riskAdj = Number(p.ret_stddev) > 0 ? Math.max(Number(p.median_ret) / Number(p.ret_stddev), 0) : 0;
           const ici = computeIci({
             years_history: Number(p.years_history) || 0, total: p.total,
             hit_rate_pct: hitPct, median_return: Number(p.median_ret) || 0,
             risk_adjusted_return: riskAdj, deleted_count: 0,
           });
-          const isConnected = connected[p.id] || p.connection_status === 'accepted';
-          const isPending   = connected[p.id] || p.connection_status === 'pending';
+          const isConnected = connected[p.id] || p.connection_status === "accepted";
+          const isPending = connected[p.id] || p.connection_status === "pending";
           return (
-            <div key={p.id} style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px',
-              background: 'rgba(255,255,255,.05)', borderRadius: 12,
-            }}>
-              <Avatar f={{ initials: initialsOf(p.full_name || p.username || '?'), avatarUrl: p.avatar_url, color: p.avatar_color }} size={36}/>
+            <div key={p.id} style={personCardStyle}>
+              <Avatar f={{ initials: initialsOf(p.full_name || p.username || "?"), avatarUrl: p.avatar_url, color: p.avatar_color }} size={30} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {p.full_name || p.username}
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,.45)' }}>
-                  {p.username ? `@${p.username}` : ''}{p.total ? ` · ${p.total} recs` : ''}{p.total ? ` · ICI ${ici.score}` : ''}
+                <div style={personNameStyle}>{p.full_name || p.username}</div>
+                <div style={personMetaStyle}>
+                  {p.username ? `@${p.username}` : ""}{p.total ? ` · ${p.total} recs` : ""}{p.total ? ` · ICI ${ici.score}` : ""}
                 </div>
               </div>
               {isConnected || isPending ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#4ade80', fontWeight: 700, flexShrink: 0 }}>
-                  <Check size={13}/> {isConnected ? 'Connected' : 'Pending'}
-                </span>
+                <span style={connectedTagStyle}><Check size={12} /> {isConnected ? "Connected" : "Pending"}</span>
               ) : (
-                <button onClick={() => connect(p.id)} disabled={connecting[p.id]} style={connectBtnStyle}>
-                  {connecting[p.id] ? <Loader size={12} className="spin"/> : <UserPlus size={12}/>} Connect
+                <button onClick={() => connect(p.id)} disabled={connecting[p.id]} className="btn btn-soft btn-sm" style={{ flexShrink: 0 }}>
+                  {connecting[p.id] ? <Loader size={11} className="spin" /> : <UserPlus size={11} />} Connect
                 </button>
               )}
             </div>
           );
         })}
       </div>
-
-      <button onClick={onExplore} style={primaryBtnStyle}>
-        Explore Network →
-      </button>
-      <button onClick={onSkip} style={laterBtnStyle}>I'll do this later</button>
-      <div style={{ fontSize: 12, color: 'rgba(255,255,255,.4)', marginTop: 14 }}>
-        You can always discover more people from Network.
+      <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
+        <button onClick={onExplore} style={goLinkStyle}>Explore Network →</button>
+        <button onClick={onSkip} style={skipLinkStyle}>Skip for now</button>
       </div>
-    </OverlayShell>
+    </div>
   );
 }
 
-const closeBtnStyle = {
-  position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,.08)', border: 'none',
-  color: 'rgba(255,255,255,.7)', cursor: 'pointer', width: 30, height: 30, borderRadius: 8,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-};
-const primaryBtnStyle = {
-  width: '100%', padding: '13px', borderRadius: 11,
-  background: 'linear-gradient(120deg,#6d5df5,#9a55ee 55%,#cf52d8)',
-  border: 'none', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
-  fontFamily: 'inherit', letterSpacing: '-.1px',
-};
-const laterBtnStyle = {
-  width: '100%', padding: '10px', marginTop: 10, background: 'none', border: 'none',
-  color: 'rgba(255,255,255,.5)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-};
-const connectBtnStyle = {
-  display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8,
-  background: 'rgba(109,93,245,.18)', border: '1px solid rgba(109,93,245,.4)',
-  color: '#c5bcff', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
-};
+function ProgressRing({ done, total }) {
+  const r = 12, circ = 2 * Math.PI * r;
+  const filled = (done / total) * circ;
+  return (
+    <div style={{ position: "relative", width: 30, height: 30, flexShrink: 0 }}>
+      <svg width={30} height={30} viewBox="0 0 30 30" style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={15} cy={15} r={r} fill="none" stroke="rgba(120,120,140,.25)" strokeWidth={3} />
+        <circle cx={15} cy={15} r={r} fill="none" stroke="url(#mic-setup-ring)" strokeWidth={3}
+          strokeDasharray={`${filled} ${circ - filled}`} strokeLinecap="round" />
+        <defs>
+          <linearGradient id="mic-setup-ring" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#6d5df5" />
+            <stop offset="100%" stopColor="#cf52d8" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9.5, fontWeight: 800, color: "var(--ink)" }}>
+        {done}/{total}
+      </div>
+    </div>
+  );
+}
+
+// Styled with the app's existing design tokens (see src/styles/globalStyles.js
+// :root) — the authenticated app shell (.app/.main/.content) is a LIGHT
+// theme (--bg:#f5f5fb, --ink:#13142b); only the sidebar is dark. Reuses
+// --accent-soft/--accent-line/--grad/--gain and the existing .btn/.btn-pri/
+// .btn-soft classes rather than inventing new colors, so this reads as part
+// of the app rather than a pasted-in component.
+const wrapStyle = { background: "var(--accent-soft)", borderBottom: "1px solid var(--accent-line)" };
+const barStyle = { display: "flex", alignItems: "center", gap: 14 };
+const headlineBtnStyle = { flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" };
+const headlineStyle = { fontSize: 13, fontWeight: 700, color: "var(--ink)" };
+const subStyle = { fontSize: 11.5, color: "var(--muted)", marginTop: 1 };
+const panelStyle = { display: "flex", flexDirection: "column", gap: 10 };
+const rowStyle = { display: "flex", alignItems: "center", gap: 10, padding: "8px 0" };
+const checkDoneStyle = { width: 20, height: 20, borderRadius: "50%", flexShrink: 0, background: "var(--gain)", display: "flex", alignItems: "center", justifyContent: "center" };
+const checkTodoStyle = { width: 20, height: 20, borderRadius: "50%", flexShrink: 0, border: "1.5px solid var(--line-2)" };
+const rowTitleStyle = { fontSize: 13, fontWeight: 700, color: "var(--ink)" };
+const rowSubStyle = { fontSize: 11.5, color: "var(--muted)", marginTop: 1 };
+const completedTagStyle = { fontSize: 11, fontWeight: 700, color: "var(--gain)", flexShrink: 0 };
+const goLinkStyle = { background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent-ink)", padding: 0, fontFamily: "inherit" };
+const skipLinkStyle = { background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--muted)", padding: 0, fontFamily: "inherit" };
+const personCardStyle = { display: "flex", alignItems: "center", gap: 9, padding: "7px 9px", background: "var(--surface-2)", borderRadius: 10 };
+const personNameStyle = { fontSize: 12.5, fontWeight: 700, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+const personMetaStyle = { fontSize: 11, color: "var(--muted)" };
+const connectedTagStyle = { display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "var(--gain)", flexShrink: 0 };
