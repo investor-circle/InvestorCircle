@@ -28,7 +28,7 @@
  *     user-lookup:        { by: 'id'|'username'|'email', value }         (auth: user)
  *     user-lookup-batch:  { by: 'id', values: [...] }                    (auth: user)
  *     avatar-upload:      { dataUrl }                                    (auth: user)
- *     onboarding-complete:{ step: 'cv'|'discover' }                      (auth: user)
+ *     onboarding-complete:{ step: 'discover' }                           (auth: user)
  * GET  ?resource=lookups&action=discover-people                         (auth: user)
  *
  * SECURITY: this file only ever exposes id/username/full_name/email plus a
@@ -53,7 +53,12 @@ const ALLOWED_REG_STATUS_LOOKUPS = ['self_directed', 'sebi_ra', 'sebi_ria'];
 // Neon DB space.
 const MAX_AVATAR_DATA_URL_LENGTH = 130000;
 const AVATAR_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/;
-const ONBOARDING_STEPS = ['cv', 'discover'];
+// 'cv' was the old skippable "Build your Investor CV" checklist step
+// (pre-Phase-5.5-revision) — username/consent is now mandatory and folded
+// directly into signup / username-save (see action=username-save above), so
+// onboarding_cv_done is set there and this action only ever needs to mark
+// the one-time Discover modal as dismissed/completed.
+const ONBOARDING_STEPS = ['discover'];
 
 async function isUsernameAvailable(username, excludeId) {
   const rows = excludeId
@@ -378,11 +383,11 @@ export default async function handleLookups(req, res) {
           LIMIT 8
         `;
         // NOTE: intentionally NOT filtering out users with no username set —
-        // Phase 5.5 made username optional at signup (chosen later during
-        // onboarding), so requiring one here (as the older people-search
-        // action does, for building a /investor/:username link) would wrongly
-        // exclude exactly the freshly-onboarded real users this card exists
-        // to surface.
+        // username is mandatory for new signups (Phase 5.5), but pre-existing
+        // accounts from before that requirement can still have a blank
+        // username, and this card should still be able to surface them.
+        // (DiscoverModal already renders username-less rows without a
+        // broken profile link — see src/features/onboarding/Onboarding.jsx.)
         res.status(200).json({ people: rows });
         return;
       }
@@ -725,11 +730,7 @@ export default async function handleLookups(req, res) {
       try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
       const step = String(body.step || '');
       if (!ONBOARDING_STEPS.includes(step)) { res.status(400).json({ error: 'invalid step' }); return; }
-      if (step === 'cv') {
-        await sql`UPDATE user_profiles SET onboarding_cv_done = true, updated_at = now() WHERE id = ${uid}`;
-      } else {
-        await sql`UPDATE user_profiles SET onboarding_discover_done = true, updated_at = now() WHERE id = ${uid}`;
-      }
+      await sql`UPDATE user_profiles SET onboarding_discover_done = true, updated_at = now() WHERE id = ${uid}`;
       res.status(200).json({ success: true });
       return;
     }

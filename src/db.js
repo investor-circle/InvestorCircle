@@ -752,7 +752,7 @@ export async function uploadAvatar(dataUrl) {
   throw new Error(api.data?.error || 'Could not upload image');
 }
 
-/** Mark a new-user activation step (cv|discover) as done/skipped so it never shows again. */
+/** Mark the one-time Discover activation card as done/skipped so it never shows again. */
 export async function markOnboardingStep(step) {
   const api = await callApi('/data?resource=lookups', { method: 'POST', body: { action: 'onboarding-complete', step } });
   return api.ok;
