@@ -63,37 +63,6 @@ export const STYLES = `
 
 .content{padding:28px 30px;overflow-y:auto;flex:1;min-height:0;}
 
-/* Setup checklist bar (Phase 5.5 onboarding). Desktop (.mic-setup-bar) uses
-   CSS Grid rather than nested flex with min-width:0 chains, which is a known
-   source of mobile-browser collapse/rendering quirks — a grid with explicit
-   column tracks has no equivalent ambiguity. Mobile (.mic-setup-bar-mobile)
-   is an entirely separate, deliberately non-growing layout — see the module
-   comment in src/features/onboarding/Onboarding.jsx for why the two aren't
-   unified under one set of breakpoints. */
-.mic-setup-bar{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 26px;box-sizing:border-box;width:100%;}
-.mic-setup-text{min-width:0;cursor:pointer;}
-.mic-setup-headline{font-size:13px;font-weight:700;color:var(--ink);}
-.mic-setup-sub{font-size:11.5px;color:var(--muted);margin-top:1px;}
-.mic-setup-chevron{cursor:pointer;flex-shrink:0;transition:transform .15s;}
-.mic-setup-cta{flex-shrink:0;white-space:nowrap;}
-.mic-setup-panel{padding:4px 26px 14px;box-sizing:border-box;width:100%;}
-.mic-setup-bar-mobile{display:flex;flex-direction:column;gap:10px;padding:12px 16px;box-sizing:border-box;width:100%;}
-.mic-setup-bar-mobile-row1{display:flex;align-items:center;gap:10px;}
-.mic-setup-mobile-cta{width:100%;justify-content:center;}
-.mic-setup-mobile-skip{background:none;border:none;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);padding:0;font-family:inherit;align-self:center;}
-.mic-setup-mobile-caption{font-size:11px;color:var(--muted);text-align:center;margin-top:-4px;}
-.mic-setup-mobile-people{display:flex;align-items:flex-start;gap:10px;overflow-x:auto;height:104px;flex-shrink:0;padding:2px 1px;box-sizing:border-box;}
-.mic-setup-mobile-person{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;width:66px;}
-.mic-setup-mobile-person-name{font-size:11px;font-weight:700;color:var(--ink);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:66px;}
-.mic-setup-mobile-person-meta{font-size:9px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:66px;}
-.mic-setup-mobile-person-connect{display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-ink);cursor:pointer;padding:0;margin-top:2px;}
-.mic-setup-mobile-person-tag{display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:var(--gain-soft);color:var(--gain);margin-top:2px;}
-/* --mic-setup-bar-h is set directly on <html> via inline style by
-   SetupChecklist (only while visible AND on mobile) — the default here is
-   just the pre-hydration/JS-disabled fallback. Read by Home Feed's mobile
-   fixed header/spacer (features/discovery/Discovery.jsx) so they can shift
-   down by exactly this bar's height without importing this module. */
-:root{--mic-setup-bar-h:0px;}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap;}
 .eyebrow{font-size:12px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
 .page-title{font-size:26px;font-weight:800;letter-spacing:-.6px;}

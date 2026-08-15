@@ -92,7 +92,8 @@ export default async function handler(req, res) {
   try {
     rows = await sql`
       SELECT id, email, full_name, first_name, last_name, username, is_admin,
-             avatar_url, avatar_color, onboarding_cv_done, onboarding_discover_done
+             avatar_url, avatar_color, onboarding_cv_done, onboarding_discover_done,
+             consent_terms_accepted, consent_data_accepted
       FROM user_profiles
       WHERE id = ${uid}
       LIMIT 1

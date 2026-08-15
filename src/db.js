@@ -373,13 +373,24 @@ export async function checkUsername(username, myId) {
 }
 
 /**
- * Persist a username for the current user.
- * Should only be called once the caller has verified availability.
+ * Persist a username for the current user (call only once availability has
+ * been verified). Pass `consent` ({ terms: true, data: true }) only when
+ * this call is also completing the mandatory post-signup setup gate (see
+ * MandatorySetupGate in src/features/onboarding/Onboarding.jsx) — omit it
+ * for a plain username save from an already-consented account (e.g.
+ * ProfileEditModal, for legacy users who never set one).
  */
-export async function saveUsername(userId, username) {
-  const api = await callApi("/data?resource=lookups", { method: "POST", body: { action: "username-save", username } });
+export async function saveUsername(userId, username, consent) {
+  const body = { action: "username-save", username };
+  if (consent) { body.consentTerms = consent.terms === true; body.consentData = consent.data === true; }
+  const api = await callApi("/data?resource=lookups", { method: "POST", body });
   if (api.ok) return;
-  if (api.denied) throw new Error(api.data?.error === 'taken' ? 'Username already taken' : 'Not authorized');
+  if (api.denied) {
+    const code = api.data?.error;
+    if (code === 'taken') throw new Error('Username already taken');
+    if (code === 'invalid_username') throw new Error('Invalid username');
+    throw new Error(code || 'Not authorized');
+  }
   throw new Error("Neon not configured");
 }
 

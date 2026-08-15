@@ -92,14 +92,18 @@ export function AuthProvider({ children }) {
 
           if (!syncedViaApi) {
             // Server profile create/sync is unreachable — degrade to a
-            // client-only shape. Treat onboarding as already-handled here
-            // rather than showing the new-user activation flow during what
-            // is likely an infrastructure outage.
+            // client-only shape. Treat onboarding/consent as already-handled
+            // here rather than showing the mandatory setup gate or the
+            // Discover modal during what is likely an infrastructure outage
+            // (any save attempt would fail anyway) — this is not persisted,
+            // so the real state is re-checked correctly the next time the
+            // server is reachable.
             setProfile({ id: firebaseUser.uid, email: firebaseUser.email,
               full_name: fullName, is_admin: isAdminEmail,
               first_name: fullName.split(" ")[0], last_name: fullName.split(" ").slice(1).join(" ") || "",
               avatar_url: firebaseUser.photoURL || null,
-              onboarding_cv_done: true, onboarding_discover_done: true });
+              onboarding_cv_done: true, onboarding_discover_done: true,
+              consent_terms_accepted: true, consent_data_accepted: true });
           }
         }
       } else {

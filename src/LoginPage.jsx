@@ -19,7 +19,8 @@ const EMAIL_API = API_ORIGIN + '/api/email';
 const RESET_API = API_ORIGIN + '/api/reset';
 
 /* ── Phase 2e: authenticated server-side profile endpoints ─── */
-const SIGNUP_API = API_ORIGIN + '/api/profile/signup';
+const SIGNUP_API             = API_ORIGIN + '/api/profile/signup';
+const USERNAME_AVAILABLE_API = API_ORIGIN + '/api/profile/username-available';
 const sendEmail = (type, payload) =>
   fetch(EMAIL_API, {
     method:  'POST',
@@ -120,14 +121,20 @@ export default function LoginPage() {
   const [loginPassword, setLoginPassword] = useState("");
 
   // ── Sign up fields ──────────────────────────────────────────────────────────
-  // Phase 5.5: username is no longer collected at signup — it's chosen later
-  // during progressive onboarding (see src/features/onboarding/Onboarding.jsx),
-  // so initial signup only needs a name, email and password.
+  // Phase 5.5 (revised): username and consent are mandatory again. Consent is
+  // shown as a separate step (showConsent) on "Create account" click, rather
+  // than adding two more checkboxes to an already-busy form — the account is
+  // only actually created once that step is agreed to.
   const [firstName,       setFirstName]       = useState("");
   const [lastName,        setLastName]         = useState("");
+  const [username,        setUsername]         = useState("");
+  const [unStatus,        setUnStatus]         = useState("idle"); // idle|checking|available|taken|invalid
   const [signupEmail,     setSignupEmail]      = useState("");
   const [signupPassword,  setSignupPassword]   = useState("");
   const [confirmPassword, setConfirmPassword]  = useState("");
+  const [showConsent,     setShowConsent]      = useState(false);
+  const [consentTerms,    setConsentTerms]     = useState(false);
+  const [consentData,     setConsentData]      = useState(false);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
   const handleLogin = async () => {
@@ -158,11 +165,23 @@ export default function LoginPage() {
     }
   };
 
-  const handleSignup = async () => {
-    if (!firstName.trim())                  { setErr("First name is required.");                                  return; }
-    if (!signupEmail.trim())                 { setErr("Email address is required.");                               return; }
+  // Step 1 of 2: validate the form, then reveal the consent step. Nothing is
+  // created yet — the Firebase account only gets created once consent is
+  // explicitly agreed to, in completeSignup() below.
+  const beginSignup = () => {
+    if (!firstName.trim())                  { setErr("First name is required.");                                    return; }
+    if (!username)                           { setErr("Username is required.");                                     return; }
+    if (unStatus !== "available")            { setErr("Please choose a valid, available username.");                return; }
+    if (!signupEmail.trim())                 { setErr("Email address is required.");                                return; }
     if (!pwValid(signupPassword))            { setErr("Password must be 6–25 characters with a letter and number."); return; }
-    if (signupPassword !== confirmPassword)  { setErr("Passwords do not match.");                                  return; }
+    if (signupPassword !== confirmPassword)  { setErr("Passwords do not match.");                                   return; }
+    setErr("");
+    setShowConsent(true);
+  };
+
+  // Step 2 of 2: consent agreed — now actually create the account.
+  const completeSignup = async () => {
+    if (!consentTerms || !consentData) { setErr("Please accept both consent statements to continue."); return; }
     setBusy(true); setErr("");
     try {
       // Create Firebase auth account
@@ -170,12 +189,12 @@ export default function LoginPage() {
       const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
       // ── CRITICAL ORDER ──────────────────────────────────────────────────────
-      // Write the correct name to Neon FIRST, before calling Firebase
-      // updateProfile. Reason: updateProfile triggers onAuthStateChanged in
-      // AuthContext, which reads back the DB. If the DB write hasn't happened
+      // Write the correct name/username/consent to Neon FIRST, before calling
+      // Firebase updateProfile. Reason: updateProfile triggers onAuthStateChanged
+      // in AuthContext, which reads back the DB. If the DB write hasn't happened
       // yet, AuthContext falls back to email.split("@")[0] as first_name and
-      // overwrites the profile state with the wrong name. Username is no
-      // longer collected here — it's set later during progressive onboarding.
+      // overwrites the profile state with the wrong name.
+      let signupOk = false;
       try {
         const idToken = await cred.user.getIdToken();
         const res = await fetch(SIGNUP_API, {
@@ -184,13 +203,22 @@ export default function LoginPage() {
           body: JSON.stringify({
             firstName: firstName.trim(),
             lastName: lastName.trim(),
+            username,
+            consentTerms: true,
+            consentData: true,
           }),
         });
+        signupOk = res.ok;
         if (!res.ok) console.warn("Profile signup write failed:", res.status);
       } catch (dbErr) {
         console.warn("Profile signup write failed:", dbErr.message);
-        // Non-fatal — AuthContext will attempt its own upsert on auth state change
       }
+
+      // Non-fatal at the Firebase-auth level, but username/consent are
+      // mandatory — if the write above failed, the mandatory setup gate
+      // (see App.jsx/OnboardingGate) will correctly catch it and ask again
+      // on next login rather than silently letting an incomplete account in.
+      if (!signupOk) console.warn("Signup completed but profile write may be incomplete — OnboardingGate will resume it.");
 
       // Now set Firebase displayName — this triggers onAuthStateChanged in AuthContext,
       // which will read back the DB (now already containing the correct names).
@@ -280,7 +308,32 @@ export default function LoginPage() {
     }
   };
 
-  const switchTab = (t) => { setTab(t); setErr(""); setForgotDone(false); setForgotEmail(""); };
+  const switchTab = (t) => { setTab(t); setErr(""); setForgotDone(false); setForgotEmail(""); setShowConsent(false); };
+
+  // ── Username availability check (debounced 500ms) ───────────────────────────
+  // No Firebase account/token exists yet at this point in the flow, so this
+  // hits the public, availability-only server endpoint (see
+  // api/profile/username-available.js).
+  const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
+  React.useEffect(() => {
+    if (!username) { setUnStatus("idle"); return; }
+    if (!USERNAME_RE.test(username)) { setUnStatus("invalid"); return; }
+    setUnStatus("checking");
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`${USERNAME_AVAILABLE_API}?username=${encodeURIComponent(username)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data?.available === "boolean") {
+            setUnStatus(data.available ? "available" : "taken");
+            return;
+          }
+        }
+        setUnStatus("available"); // fail open on unexpected response shape
+      } catch { setUnStatus("available"); } // fail open on network error
+    }, 500);
+    return () => clearTimeout(t);
+  }, [username]);
 
   const inputStyle = {
     width: "100%", padding: "11px 14px", borderRadius: 10,
@@ -430,7 +483,7 @@ export default function LoginPage() {
           </>)}
 
           {/* ── Google Sign-In — prominent, works for both new and returning users ── */}
-          {!linkPending && tab !== "forgot" && (<>
+          {!linkPending && tab !== "forgot" && !showConsent && (<>
             <button onClick={handleGoogleSignIn} disabled={busy} style={{
               width: "100%", padding: "12px", borderRadius: 11, marginBottom: 16,
               background: "#fff", border: "1.5px solid #e8e8f2",
@@ -566,7 +619,7 @@ export default function LoginPage() {
           </>)}
 
           {/* ── SIGN UP TAB ── */}
-          {!linkPending && tab === "signup" && (<>
+          {!linkPending && tab === "signup" && !showConsent && (<>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#13142b", marginBottom: 4 }}>Create your account</div>
             <div style={{ fontSize: 14, color: "#8a8daa", marginBottom: 22 }}>
               Join myInvestorCircle and start sharing ideas with trusted contacts.
@@ -587,6 +640,47 @@ export default function LoginPage() {
                   onChange={e => setLastName(e.target.value)}
                   placeholder="Gupta"
                   style={inputStyle} onFocus={focusOn} onBlur={focusOff}/>
+              </div>
+            </div>
+
+            {/* Username — mandatory */}
+            <div style={field}>
+              <label style={label}>
+                Username <span style={{ color: "#c53030" }}>*</span>
+              </label>
+              <div style={{ position: "relative" }}>
+                <span style={{
+                  position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)",
+                  color: "#8a8daa", fontSize: 14, pointerEvents: "none", userSelect: "none",
+                }}>@</span>
+                <input
+                  value={username}
+                  onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                  placeholder="your_username"
+                  maxLength={20}
+                  style={{ ...inputStyle, paddingLeft: 28, paddingRight: 32 }}
+                  onFocus={focusOn} onBlur={focusOff}
+                />
+                <span style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", fontSize: 14 }}>
+                  {unStatus === "checking"  && <span style={{ color: "#8a8daa", fontSize: 12 }}>…</span>}
+                  {unStatus === "available" && <span style={{ color: "#38a169" }}>✓</span>}
+                  {unStatus === "taken"     && <span style={{ color: "#c53030" }}>✗</span>}
+                  {unStatus === "invalid"   && <span style={{ color: "#c53030" }}>✗</span>}
+                </span>
+              </div>
+              {unStatus === "available" && username && (
+                <div style={{ fontSize: 12, color: "#38a169", marginTop: 4 }}>✓ @{username} is available</div>
+              )}
+              {unStatus === "taken" && (
+                <div style={{ fontSize: 12, color: "#c53030", marginTop: 4 }}>@{username} is already taken — try another</div>
+              )}
+              {unStatus === "invalid" && username && (
+                <div style={{ fontSize: 12, color: "#c53030", marginTop: 4 }}>5–20 characters, lowercase letters, numbers and underscores only</div>
+              )}
+              <div style={{ fontSize: 12, color: "#8a8daa", marginTop: 5, lineHeight: 1.5 }}>
+                This creates your <strong>permanent public profile link</strong> — e.g.{" "}
+                <span style={{ fontFamily: "monospace", fontSize: 11 }}>myinvestorcircle.app/#/investor/<em>yourname</em></span>.
+                Choose wisely — it cannot be changed once set.
               </div>
             </div>
 
@@ -639,7 +733,7 @@ export default function LoginPage() {
               <div style={{ position: "relative" }}>
                 <input type={showCpw ? "text" : "password"} value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleSignup()}
+                  onKeyDown={e => e.key === "Enter" && beginSignup()}
                   placeholder="••••••••"
                   maxLength={25}
                   style={{ ...inputStyle, paddingRight: 44 }} onFocus={focusOn} onBlur={focusOff}/>
@@ -657,9 +751,10 @@ export default function LoginPage() {
 
             {err && <ErrorBox msg={err}/>}
 
-            <button onClick={handleSignup}
+            <button onClick={beginSignup}
               disabled={
                 !firstName.trim() ||
+                !username || unStatus !== "available" ||
                 !signupEmail.trim() ||
                 !pwValid(signupPassword) ||
                 signupPassword !== confirmPassword ||
@@ -667,12 +762,13 @@ export default function LoginPage() {
               }
               style={btnStyle(
                 !firstName.trim() ||
+                !username || unStatus !== "available" ||
                 !signupEmail.trim() ||
                 !pwValid(signupPassword) ||
                 signupPassword !== confirmPassword ||
                 busy
               )}>
-              {busy ? "Creating account…" : "Create account →"}
+              Continue →
             </button>
 
             <div style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: "#8a8daa" }}>
@@ -681,6 +777,44 @@ export default function LoginPage() {
                 background: "none", border: "none", cursor: "pointer",
                 color: "#6d5df5", fontWeight: 700, fontSize: 13, fontFamily: "inherit", padding: 0,
               }}>Sign in →</button>
+            </div>
+          </>)}
+
+          {/* ── SIGN UP TAB — Step 2: consent (account not created until agreed) ── */}
+          {!linkPending && tab === "signup" && showConsent && (<>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#13142b", marginBottom: 4 }}>Just one more thing</div>
+            <div style={{ fontSize: 14, color: "#8a8daa", marginBottom: 22, lineHeight: 1.5 }}>
+              Confirm you're okay with how myInvestorCircle works. You can fill in the rest of your
+              profile anytime from Track Record.
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 22 }}>
+              {[
+                [consentTerms, setConsentTerms, "I agree to the Terms of Service and Privacy Policy"],
+                [consentData, setConsentData, "I consent to myInvestorCircle storing and publicly displaying my investment recommendations"],
+              ].map(([checked, setChecked, text], i) => (
+                <label key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer", fontSize: 13, color: "#4a4d6a", lineHeight: 1.5 }}>
+                  <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)}
+                    style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0, accentColor: "#6d5df5" }}/>
+                  <span>{text} <span style={{ color: "#c53030" }}>*</span></span>
+                </label>
+              ))}
+            </div>
+
+            {err && <ErrorBox msg={err}/>}
+
+            <button onClick={completeSignup}
+              disabled={!consentTerms || !consentData || busy}
+              style={btnStyle(!consentTerms || !consentData || busy)}>
+              {busy ? "Creating account…" : "Agree & create account →"}
+            </button>
+
+            <div style={{ textAlign: "center", marginTop: 14, fontSize: 13, color: "#8a8daa" }}>
+              <button onClick={() => { setShowConsent(false); setErr(""); }} style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: "#8a8daa", fontSize: 13, fontFamily: "inherit", padding: 0,
+                textDecoration: "underline", textUnderlineOffset: 3,
+              }}>← Back</button>
             </div>
           </>)}
 

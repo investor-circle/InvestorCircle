@@ -317,16 +317,10 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
          Keeps Welcome, Recommend an idea, and Feed/Pulse tabs pinned
          below the topbar at ALL scroll depths. Nothing overlaps content
          because the 112px spacer below reserves the exact same height
-         in the flow.
-         --mic-setup-bar-h (default 0px, see src/styles/globalStyles.js) is
-         published by the Phase 5.5 setup checklist bar (App.jsx, rendered
-         above this component on every page) only while it's visible — this
-         shifts the fixed header (and the matching spacer below) down by
-         exactly its height so the two don't overlap, without this file
-         needing to import or know anything about the onboarding feature. ── */}
+         in the flow.                                                 ── */}
     {isMobile && !showNewReco && (
       <div style={{
-        position:'fixed', top:'calc(64px + var(--mic-setup-bar-h, 0px))', left:0, right:0, zIndex:185,
+        position:'fixed', top:64, left:0, right:0, zIndex:185,
         background:'var(--surface)',
         borderBottom:'2px solid var(--line)',
         boxShadow:'0 2px 8px rgba(0,0,0,.07)',
@@ -389,13 +383,8 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         </div>
       </div>
     )}
-    {/* Spacer = fixed header's OWN height only (10+32+8+48+8+2 = 108px, +4
-        buffer = 112px) — NOT the setup checklist's height too. The checklist
-        bar is a normal in-flow element rendered above this whole component
-        (see App.jsx), so its height already pushes this spacer (and
-        everything below) down on its own; the fixed header's `top` above is
-        what shifts by --mic-setup-bar-h to stay aligned with it. Adding
-        --mic-setup-bar-h here again would double-count that height. */}
+    {/* Spacer = fixed header height (10+32+8+48+8+2 = 108px, +4 buffer = 112px).
+        Prevents the first feed card from hiding underneath the fixed header. */}
     {isMobile && !showNewReco && <div aria-hidden="true" style={{height:112,flexShrink:0}}/>}
 
     {/* ── Desktop: normal in-flow header ── */}

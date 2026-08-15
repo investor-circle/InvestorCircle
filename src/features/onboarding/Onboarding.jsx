@@ -1,367 +1,284 @@
 import React, { useEffect, useState } from "react";
-import { ChevronDown, Check, UserPlus, Loader } from "lucide-react";
-import { markOnboardingStep as dbMarkOnboardingStep } from "../../services/api/profileApi";
+import { createPortal } from "react-dom";
+import { Check, X, UserPlus, Loader } from "lucide-react";
+import { checkUsername as dbCheckUsername, saveUsername as dbSaveUsername, markOnboardingStep as dbMarkOnboardingStep } from "../../services/api/profileApi";
 import { getSuggestedPeople as dbGetSuggestedPeople } from "../../services/api/lookupsApi";
 import { sendConnectionRequest as dbSendConnectionRequest } from "../../services/api/connectionsApi";
 import { computeIci } from "../../services/api/recommendationsApi";
 import { Avatar } from "../../components/common";
 import { initialsOf } from "../../utils/format";
-import { useIsMobile } from "../../hooks/index";
+
+const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 
 /**
- * Phase 5.5 (revised again) — persistent, non-blocking setup checklist.
+ * Phase 5.5 (revised again) — mandatory username + consent, one-time Discover.
  *
- * Desktop and mobile deliberately render different markup here rather than
- * one layout reshuffled by CSS breakpoints. Reason: Home Feed has its own
- * pre-existing mobile-only fixed header (position:fixed, hardcoded to sit
- * directly under the topbar — see features/discovery/Discovery.jsx), and
- * this bar sits in normal flow right above it. On desktop that's a non-issue
- * (Home Feed's header is in-flow there too). On mobile, anything that could
- * grow this bar's height unpredictably requires exact height coordination
- * with that fixed header to avoid overlap — so mobile's layout has a small,
- * FIXED number of possible heights (one per step, published below) rather
- * than an open-ended expanding panel.
+ * Product decision change from the earlier checklist design: username and
+ * consent are no longer a skippable nudge — they're required before the
+ * account can be used at all. Email signup collects both directly in
+ * LoginPage.jsx (username on the form, consent as a step shown on "Create
+ * account" click, before the Firebase account is even created), so by the
+ * time an email-signup user lands here their profile is already complete
+ * and MandatorySetupGate has nothing to do. Google sign-in has no signup
+ * form, so those users — and anyone who drops off mid-setup on either path
+ * before this completes — see MandatorySetupGate right after auth resolves,
+ * gated purely on server-persisted profile state
+ * (username / consent_terms_accepted / consent_data_accepted), so it
+ * correctly resumes from wherever they left off on next login rather than
+ * losing progress or re-asking for things already saved.
  *
- * MOBILE_BAR_HEIGHT_PX is published as --mic-setup-bar-h so Home Feed's
- * fixed header/spacer can shift down by exactly this bar's height without
- * importing anything from this module — see the effect below and
- * Discovery.jsx's mobile header. Keep these in sync with the actual mobile
- * markup if either changes.
+ * Once that's satisfied, DiscoverModal shows exactly once (gated on
+ * onboarding_discover_done) — a curated people list with Connect actions,
+ * skippable, and never shown again once dismissed either way.
+ *
+ * Both render as portal overlays, not in-flow bars — this also means
+ * neither needs to coordinate height with Home Feed's mobile fixed header
+ * the way the old persistent checklist did (see git history if curious;
+ * that whole coordination mechanism — --mic-setup-bar-h etc. — is gone).
  */
-const MOBILE_BAR_HEIGHT_PX = { cv: 150, discover: 240 };
+export function OnboardingGate({ user, profile, ME, patchProfile, setPage }) {
+  const setupIncomplete = !profile?.username || !profile?.consent_terms_accepted || !profile?.consent_data_accepted;
 
-export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
-  const [open, setOpen] = useState(false);
-  const isMobile = useIsMobile();
+  if (!profile) return null;
+  if (setupIncomplete) {
+    return <MandatorySetupGate user={user} profile={profile} patchProfile={patchProfile} />;
+  }
+  if (!profile.onboarding_discover_done) {
+    return <DiscoverModal ME={ME} patchProfile={patchProfile} setPage={setPage} />;
+  }
+  return null;
+}
 
-  const cvDone = !!profile?.onboarding_cv_done;
-  const discoverDone = !!profile?.onboarding_discover_done;
-  const username = profile?.username;
-  const visible = !!profile && !(cvDone && discoverDone);
-  const activeStep = !cvDone ? "cv" : "discover";
+/* ── Mandatory setup gate — username + consent ─────────────────────────── */
+
+function MandatorySetupGate({ user, profile, patchProfile }) {
+  const [username, setUsername] = useState("");
+  const [unStatus, setUnStatus] = useState("idle"); // idle|checking|available|taken|invalid
+  const [consentTerms, setConsentTerms] = useState(false);
+  const [consentData, setConsentData] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const usernameAlreadySet = !!profile?.username;
 
   useEffect(() => {
-    document.documentElement.style.setProperty(
-      "--mic-setup-bar-h",
-      (visible && isMobile) ? `${MOBILE_BAR_HEIGHT_PX[activeStep]}px` : "0px"
-    );
-    return () => document.documentElement.style.setProperty("--mic-setup-bar-h", "0px");
-  }, [visible, isMobile, activeStep]);
+    if (usernameAlreadySet) { setUnStatus("available"); return; }
+    if (!username) { setUnStatus("idle"); return; }
+    if (!USERNAME_RE.test(username)) { setUnStatus("invalid"); return; }
+    setUnStatus("checking");
+    const t = setTimeout(async () => {
+      const ok = await dbCheckUsername(username, user?.uid);
+      setUnStatus(ok ? "available" : "taken");
+    }, 500);
+    return () => clearTimeout(t);
+  }, [username, usernameAlreadySet, user?.uid]);
 
-  const markDone = async (step) => {
-    patchProfile?.({ [step === "cv" ? "onboarding_cv_done" : "onboarding_discover_done"]: true });
+  const canContinue = unStatus === "available" && consentTerms && consentData && !busy;
+
+  const submit = async () => {
+    if (!canContinue) return;
+    setBusy(true); setErr("");
     try {
-      const ok = await dbMarkOnboardingStep(step);
-      if (!ok) console.warn(`[onboarding] failed to persist step "${step}" as done — it may reappear next login`);
+      await dbSaveUsername(user.uid, usernameAlreadySet ? profile.username : username, { terms: true, data: true });
+      patchProfile?.({
+        username: usernameAlreadySet ? profile.username : username,
+        consent_terms_accepted: true,
+        consent_data_accepted: true,
+      });
     } catch (e) {
-      console.warn(`[onboarding] failed to persist step "${step}":`, e?.message || e);
+      setErr(e.message || "Could not save — please try again.");
+      setBusy(false);
     }
   };
 
-  // "Set your username" only completes once a username is actually set —
-  // Track Record requires one before it will render the public profile at
-  // all (see App.jsx's trackrecord branch), and it's also what unlocks
-  // making recommendations and having a public profile page in general.
-  // Clicking the CTA just navigates to Track Record; this effect marks the
-  // step done the moment a username appears, wherever that happens
-  // (normally right after the user sets one there). Explicitly skipping
-  // (below) still completes it without a username, same as before — this
-  // only stops a bare click-through from auto-completing.
-  useEffect(() => {
-    if (!cvDone && username) markDone("cv");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cvDone, username]);
+  return createPortal(
+    <div style={overlayStyle}>
+      <div style={gateCardStyle}>
+        <div style={{ fontSize: 19, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Just two quick things</div>
+        <div style={{ fontSize: 13.5, color: "rgba(255,255,255,.65)", lineHeight: 1.6, marginBottom: 22 }}>
+          Set your username and confirm you're okay with how myInvestorCircle works.
+          You can fill in the rest of your profile anytime from Track Record.
+        </div>
 
-  if (!visible) return null;
-
-  const doneCount = (cvDone ? 1 : 0) + (discoverDone ? 1 : 0);
-
-  const buildCv = () => setPage?.("trackrecord");
-  const skipCv = () => markDone("cv");
-  const exploreNetwork = () => { markDone("discover"); setPage?.("network"); };
-  const skipDiscover = () => markDone("discover");
-
-  const primaryLabel = activeStep === "cv" ? "Set My Username" : "Discover people";
-  const skipAction = activeStep === "cv" ? skipCv : skipDiscover;
-
-  if (isMobile) {
-    const primaryAction = activeStep === "cv" ? buildCv : exploreNetwork;
-    const headline = activeStep === "cv" ? "Set your username" : "Discover your Investor Circle";
-    const sub = activeStep === "cv"
-      ? "Needed to post recommendations & get your public profile"
-      : "Meet a few people worth following";
-    return (
-      <div style={wrapStyle}>
-        <div className="mic-setup-bar-mobile">
-          <div className="mic-setup-bar-mobile-row1">
-            <ProgressRing done={doneCount} total={2} />
-            <div>
-              <div className="mic-setup-headline">{headline}</div>
-              <div className="mic-setup-sub">{sub}</div>
+        {!usernameAlreadySet && (
+          <div style={{ marginBottom: 18 }}>
+            <label style={gateLabelStyle}>Username</label>
+            <div style={{ position: "relative" }}>
+              <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,.4)", fontSize: 14, pointerEvents: "none" }}>@</span>
+              <input
+                value={username} autoFocus
+                onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                maxLength={20} placeholder="your_username"
+                style={{ ...gateInputStyle, paddingLeft: 28 }}
+              />
+            </div>
+            <div style={{ marginTop: 6, fontSize: 12, minHeight: 16 }}>
+              {unStatus === "checking" && <span style={{ color: "rgba(255,255,255,.4)", display: "flex", alignItems: "center", gap: 5 }}><Loader size={11} className="spin" /> Checking…</span>}
+              {unStatus === "available" && username && <span style={{ color: "#4ade80", display: "flex", alignItems: "center", gap: 5 }}><Check size={11} /> Available</span>}
+              {unStatus === "taken" && <span style={{ color: "#f87171", display: "flex", alignItems: "center", gap: 5 }}><X size={11} /> Already taken — try another</span>}
+              {unStatus === "invalid" && username && <span style={{ color: "#f87171" }}>5–20 chars, lowercase letters, numbers and underscores only</span>}
+            </div>
+            <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.4)", marginTop: 6, lineHeight: 1.5 }}>
+              This becomes your public profile link and can't be changed once set.
             </div>
           </div>
-          {activeStep === "discover" && <MobilePeopleStrip me={ME} />}
-          <button onClick={primaryAction} className="btn btn-pri btn-sm mic-setup-mobile-cta">
-            {activeStep === "cv" ? "Set My Username →" : "Explore Network →"}
-          </button>
-          <button onClick={skipAction} className="mic-setup-mobile-skip">Skip for now</button>
-          {activeStep === "cv" && (
-            <div className="mic-setup-mobile-caption">You can always do this later from Track Record.</div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 22 }}>
+          {[
+            [consentTerms, setConsentTerms, "I agree to the Terms of Service and Privacy Policy"],
+            [consentData, setConsentData, "I consent to myInvestorCircle storing and publicly displaying my investment recommendations"],
+          ].map(([checked, setChecked, label], i) => (
+            <label key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer", fontSize: 12.5, color: "rgba(255,255,255,.75)", lineHeight: 1.5 }}>
+              <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)}
+                style={{ marginTop: 2, width: 15, height: 15, flexShrink: 0, accentColor: "#6d5df5" }} />
+              <span>{label} <span style={{ color: "#c53030" }}>*</span></span>
+            </label>
+          ))}
+        </div>
+
+        {err && <div style={gateErrStyle}>{err}</div>}
+
+        <button onClick={submit} disabled={!canContinue} style={gateBtnStyle(!canContinue)}>
+          {busy ? <><Loader size={14} className="spin" /> Saving…</> : "Continue →"}
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/* ── One-time Discover modal ────────────────────────────────────────────── */
+
+function DiscoverModal({ ME, patchProfile, setPage }) {
+  const [people, setPeople] = useState(null); // null = loading
+  const [connecting, setConnecting] = useState({});
+  const [connected, setConnected] = useState({});
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    dbGetSuggestedPeople().then(rows => { if (!cancelled) setPeople(rows); }).catch(() => { if (!cancelled) setPeople([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (dismissed) return null;
+
+  const finish = () => {
+    patchProfile?.({ onboarding_discover_done: true });
+    setDismissed(true);
+    // Best-effort persistence — UI already moved on regardless; a failure
+    // here just means the modal could reappear on next login.
+    dbMarkOnboardingStep("discover").catch(() => {});
+  };
+  const exploreNetwork = () => { finish(); setPage?.("network"); };
+
+  const connect = async (uid) => {
+    setConnecting(c => ({ ...c, [uid]: true }));
+    try {
+      const result = await dbSendConnectionRequest(ME?.id, uid);
+      if (!result?.error) setConnected(c => ({ ...c, [uid]: true }));
+    } catch (_) { /* non-fatal — button just stays enabled */ }
+    setConnecting(c => ({ ...c, [uid]: false }));
+  };
+
+  return createPortal(
+    <div style={overlayStyle} onClick={finish}>
+      <div style={discoverCardStyle} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 19, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Discover your Investor Circle</div>
+        <div style={{ fontSize: 13.5, color: "rgba(255,255,255,.65)", lineHeight: 1.6, marginBottom: 18 }}>
+          Meet a few investors, explore their thinking, and find people you'd like in your circle.
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto", marginBottom: 20 }}>
+          {people === null && (
+            <div style={{ padding: "24px 0", display: "flex", justifyContent: "center", color: "rgba(255,255,255,.4)" }}>
+              <Loader size={18} className="spin" />
+            </div>
           )}
-        </div>
-      </div>
-    );
-  }
-
-  const primaryAction = activeStep === "cv" ? buildCv : () => setOpen(true);
-
-  return (
-    <div style={wrapStyle}>
-      <div className="mic-setup-bar">
-        <ProgressRing done={doneCount} total={2} />
-        <div className="mic-setup-text" onClick={() => setOpen(o => !o)}>
-          <div className="mic-setup-headline">Complete your Investor Circle setup</div>
-          <div className="mic-setup-sub">{doneCount} of 2 complete</div>
-        </div>
-        <ChevronDown
-          size={16} color="var(--muted)" className="mic-setup-chevron"
-          onClick={() => setOpen(o => !o)}
-          style={{ transform: open ? "rotate(180deg)" : "none" }}
-        />
-        <button onClick={primaryAction} className="btn btn-pri btn-sm mic-setup-cta">{primaryLabel} →</button>
-      </div>
-
-      {open && (
-        <div className="mic-setup-panel" style={panelStyle}>
-          <ChecklistRow
-            title="Set your username"
-            subtitle="Needed to post recommendations and show a public profile."
-            caption="You can always do this later from Track Record."
-            done={cvDone}
-            active={activeStep === "cv"}
-            onGo={buildCv}
-            onSkip={skipCv}
-          />
-          <ChecklistRow
-            title="Discover your Investor Circle"
-            subtitle={cvDone ? "Meet a few people worth following." : "Complete Set your username first."}
-            done={discoverDone}
-            active={activeStep === "discover"}
-            locked={!cvDone}
-          >
-            {activeStep === "discover" && (
-              <DiscoverPanel me={ME} onExplore={exploreNetwork} onSkip={skipDiscover} />
-            )}
-          </ChecklistRow>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ChecklistRow({ title, subtitle, caption, done, active, locked, onGo, onSkip, children }) {
-  return (
-    <div style={{ opacity: locked ? 0.5 : 1 }}>
-      <div style={rowStyle}>
-        <div style={done ? checkDoneStyle : checkTodoStyle}>{done ? <Check size={12} color="#06240f" /> : null}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={rowTitleStyle}>{title}</div>
-          <div style={rowSubStyle}>{subtitle}</div>
-        </div>
-        {done && <span style={completedTagStyle}>Completed</span>}
-        {active && !done && !children && (
-          <div style={{ display: "flex", gap: 12, flexShrink: 0 }}>
-            <button onClick={onSkip} style={skipLinkStyle}>Skip</button>
-            <button onClick={onGo} style={goLinkStyle}>Go →</button>
-          </div>
-        )}
-      </div>
-      {active && !done && caption && <div style={captionStyle}>{caption}</div>}
-      {children}
-    </div>
-  );
-}
-
-/** Compact people row shown on mobile before the "Explore Network" CTA —
- * fixed height regardless of how many people come back (0-6, loading, or
- * empty all render inside the same-height container), so it never disrupts
- * the mobile bar's published height (see MOBILE_BAR_HEIGHT_PX above).
- * Reuses the same discover-people query, ICI computation and
- * connection-request API as the desktop preview — same data, denser card. */
-function MobilePeopleStrip({ me }) {
-  const [people, setPeople] = useState(null); // null = loading
-  const [connecting, setConnecting] = useState({});
-  const [connected, setConnected] = useState({});
-
-  useEffect(() => {
-    let cancelled = false;
-    dbGetSuggestedPeople().then(rows => { if (!cancelled) setPeople(rows); }).catch(() => { if (!cancelled) setPeople([]); });
-    return () => { cancelled = true; };
-  }, []);
-
-  const connect = async (uid) => {
-    setConnecting(c => ({ ...c, [uid]: true }));
-    try {
-      const result = await dbSendConnectionRequest(me?.id, uid);
-      if (!result?.error) setConnected(c => ({ ...c, [uid]: true }));
-    } catch (_) { /* non-fatal — button just stays enabled */ }
-    setConnecting(c => ({ ...c, [uid]: false }));
-  };
-
-  return (
-    <div className="mic-setup-mobile-people">
-      {people === null && <Loader size={14} className="spin" style={{ color: "var(--muted)" }} />}
-      {people?.length === 0 && <span style={{ fontSize: 11, color: "var(--muted)" }}>No investors to suggest just yet</span>}
-      {people?.slice(0, 6).map(p => {
-        const hitPct = p.closed > 0 ? (p.wins / p.closed * 100) : 0;
-        const riskAdj = Number(p.ret_stddev) > 0 ? Math.max(Number(p.median_ret) / Number(p.ret_stddev), 0) : 0;
-        const ici = computeIci({
-          years_history: Number(p.years_history) || 0, total: p.total,
-          hit_rate_pct: hitPct, median_return: Number(p.median_ret) || 0,
-          risk_adjusted_return: riskAdj, deleted_count: 0,
-        });
-        const isConnected = connected[p.id] || p.connection_status === "accepted";
-        const isPending = connected[p.id] || p.connection_status === "pending";
-        return (
-          <div key={p.id} className="mic-setup-mobile-person">
-            <Avatar f={{ initials: initialsOf(p.full_name || p.username || "?"), avatarUrl: p.avatar_url, color: p.avatar_color }} size={40} />
-            <div className="mic-setup-mobile-person-name">{(p.full_name || p.username || "").split(" ")[0]}</div>
-            <div className="mic-setup-mobile-person-meta">{p.total ? `ICI ${ici.score} · ${p.total} rec${p.total === 1 ? "" : "s"}` : "New"}</div>
-            {isConnected || isPending ? (
-              <span className="mic-setup-mobile-person-tag"><Check size={11} /></span>
-            ) : (
-              <button onClick={() => connect(p.id)} disabled={connecting[p.id]} className="mic-setup-mobile-person-connect" aria-label={`Connect with ${p.full_name || p.username}`}>
-                {connecting[p.id] ? <Loader size={11} className="spin" /> : <UserPlus size={11} />}
-              </button>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Curated people list for the Discover step (desktop only — see module
- * comment above) — reuses the existing discover-people query, ICI
- * computation and connection-request API unchanged; only the presentation
- * differs from the earlier full-screen-modal implementation. */
-function DiscoverPanel({ me, onExplore, onSkip }) {
-  const [people, setPeople] = useState(null); // null = loading
-  const [connecting, setConnecting] = useState({});
-  const [connected, setConnected] = useState({});
-
-  useEffect(() => {
-    let cancelled = false;
-    dbGetSuggestedPeople().then(rows => { if (!cancelled) setPeople(rows); }).catch(() => { if (!cancelled) setPeople([]); });
-    return () => { cancelled = true; };
-  }, []);
-
-  const connect = async (uid) => {
-    setConnecting(c => ({ ...c, [uid]: true }));
-    try {
-      // sendConnectionRequest resolves (doesn't throw) with { error } on a
-      // denied/unauthorized response — only mark connected on genuine success.
-      const result = await dbSendConnectionRequest(me?.id, uid);
-      if (!result?.error) setConnected(c => ({ ...c, [uid]: true }));
-    } catch (_) { /* non-fatal — button just stays enabled */ }
-    setConnecting(c => ({ ...c, [uid]: false }));
-  };
-
-  return (
-    <div style={{ marginTop: 10, paddingLeft: 32 }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
-        {people === null && (
-          <div style={{ padding: "14px 0", display: "flex", justifyContent: "center", color: "var(--muted)" }}>
-            <Loader size={16} className="spin" />
-          </div>
-        )}
-        {people?.length === 0 && (
-          <div style={{ padding: "8px 0", fontSize: 12.5, color: "var(--muted)" }}>
-            No investors to suggest just yet — check back soon.
-          </div>
-        )}
-        {people?.map(p => {
-          const hitPct = p.closed > 0 ? (p.wins / p.closed * 100) : 0;
-          const riskAdj = Number(p.ret_stddev) > 0 ? Math.max(Number(p.median_ret) / Number(p.ret_stddev), 0) : 0;
-          const ici = computeIci({
-            years_history: Number(p.years_history) || 0, total: p.total,
-            hit_rate_pct: hitPct, median_return: Number(p.median_ret) || 0,
-            risk_adjusted_return: riskAdj, deleted_count: 0,
-          });
-          const isConnected = connected[p.id] || p.connection_status === "accepted";
-          const isPending = connected[p.id] || p.connection_status === "pending";
-          return (
-            <div key={p.id} style={personCardStyle}>
-              <Avatar f={{ initials: initialsOf(p.full_name || p.username || "?"), avatarUrl: p.avatar_url, color: p.avatar_color }} size={30} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={personNameStyle}>{p.full_name || p.username}</div>
-                <div style={personMetaStyle}>
-                  {p.username ? `@${p.username}` : ""}{p.total ? ` · ${p.total} recs` : ""}{p.total ? ` · ICI ${ici.score}` : ""}
-                </div>
-              </div>
-              {isConnected || isPending ? (
-                <span style={connectedTagStyle}><Check size={12} /> {isConnected ? "Connected" : "Pending"}</span>
-              ) : (
-                <button onClick={() => connect(p.id)} disabled={connecting[p.id]} className="btn btn-soft btn-sm" style={{ flexShrink: 0 }}>
-                  {connecting[p.id] ? <Loader size={11} className="spin" /> : <UserPlus size={11} />} Connect
-                </button>
-              )}
+          {people?.length === 0 && (
+            <div style={{ padding: "16px 0", textAlign: "center", fontSize: 13, color: "rgba(255,255,255,.4)" }}>
+              No investors to suggest just yet — check back soon.
             </div>
-          );
-        })}
+          )}
+          {people?.map(p => {
+            const hitPct = p.closed > 0 ? (p.wins / p.closed * 100) : 0;
+            const riskAdj = Number(p.ret_stddev) > 0 ? Math.max(Number(p.median_ret) / Number(p.ret_stddev), 0) : 0;
+            const ici = computeIci({
+              years_history: Number(p.years_history) || 0, total: p.total,
+              hit_rate_pct: hitPct, median_return: Number(p.median_ret) || 0,
+              risk_adjusted_return: riskAdj, deleted_count: 0,
+            });
+            const isConnected = connected[p.id] || p.connection_status === "accepted";
+            const isPending = connected[p.id] || p.connection_status === "pending";
+            return (
+              <div key={p.id} style={personRowStyle}>
+                <Avatar f={{ initials: initialsOf(p.full_name || p.username || "?"), avatarUrl: p.avatar_url, color: p.avatar_color }} size={38} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {p.full_name || p.username}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.45)" }}>
+                    {p.username ? `@${p.username}` : ""}{p.total ? ` · ${p.total} recs` : ""}{p.total ? ` · ICI ${ici.score}` : ""}
+                  </div>
+                </div>
+                {isConnected || isPending ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#4ade80", fontWeight: 700, flexShrink: 0 }}>
+                    <Check size={13} /> {isConnected ? "Connected" : "Pending"}
+                  </span>
+                ) : (
+                  <button onClick={() => connect(p.id)} disabled={connecting[p.id]} style={connectBtnStyle}>
+                    {connecting[p.id] ? <Loader size={12} className="spin" /> : <UserPlus size={12} />} Connect
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <button onClick={exploreNetwork} style={gateBtnStyle(false)}>Explore Network →</button>
+        <button onClick={finish} style={laterBtnStyle}>I'll do this later</button>
       </div>
-      <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
-        <button onClick={onExplore} style={goLinkStyle}>Explore Network →</button>
-        <button onClick={onSkip} style={skipLinkStyle}>Skip for now</button>
-      </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
-function ProgressRing({ done, total }) {
-  const r = 12, circ = 2 * Math.PI * r;
-  const filled = (done / total) * circ;
-  return (
-    <div style={{ position: "relative", width: 30, height: 30, flexShrink: 0 }}>
-      <svg width={30} height={30} viewBox="0 0 30 30" style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={15} cy={15} r={r} fill="none" stroke="rgba(120,120,140,.25)" strokeWidth={3} />
-        <circle cx={15} cy={15} r={r} fill="none" stroke="url(#mic-setup-ring)" strokeWidth={3}
-          strokeDasharray={`${filled} ${circ - filled}`} strokeLinecap="round" />
-        <defs>
-          <linearGradient id="mic-setup-ring" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#6d5df5" />
-            <stop offset="100%" stopColor="#cf52d8" />
-          </linearGradient>
-        </defs>
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9.5, fontWeight: 800, color: "var(--ink)" }}>
-        {done}/{total}
-      </div>
-    </div>
-  );
-}
+const overlayStyle = {
+  position: "fixed", inset: 0, background: "rgba(13,14,30,.7)", backdropFilter: "blur(4px)",
+  display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9500, padding: 20,
+  overflowY: "auto",
+};
+const cardBase = {
+  width: "100%", maxWidth: 440, background: "#16182a", borderRadius: 22,
+  border: "1px solid rgba(255,255,255,.1)", boxShadow: "0 24px 80px rgba(0,0,0,.6)",
+  padding: "28px 26px 24px",
+};
+const gateCardStyle = { ...cardBase };
+const discoverCardStyle = { ...cardBase, maxWidth: 480 };
+const gateLabelStyle = { display: "block", fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.6)", marginBottom: 6 };
+const gateInputStyle = {
+  width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.15)",
+  background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box",
+};
+const gateErrStyle = { background: "rgba(248,113,113,.12)", border: "1px solid rgba(248,113,113,.3)", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, color: "#f87171", marginBottom: 14 };
+const laterBtnStyle = {
+  width: "100%", padding: "10px", marginTop: 10, background: "none", border: "none",
+  color: "rgba(255,255,255,.5)", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+};
+const personRowStyle = { display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "rgba(255,255,255,.05)", borderRadius: 12 };
+const connectBtnStyle = {
+  display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8,
+  background: "rgba(109,93,245,.18)", border: "1px solid rgba(109,93,245,.4)",
+  color: "#c5bcff", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+};
 
-// Styled with the app's existing design tokens (see src/styles/globalStyles.js
-// :root) — the authenticated app shell (.app/.main/.content) is a LIGHT
-// theme (--bg:#f5f5fb, --ink:#13142b); only the sidebar is dark. Reuses
-// --accent-soft/--accent-line/--grad/--gain and the existing .btn/.btn-pri/
-// .btn-soft classes rather than inventing new colors, so this reads as part
-// of the app rather than a pasted-in component.
-const wrapStyle = { background: "var(--accent-soft)", borderBottom: "1px solid var(--accent-line)" };
-// Layout (padding, grid/flex structure) is entirely class-driven — see
-// src/styles/globalStyles.js — deliberately NOT inline, since an inline
-// `style` attribute always wins over a class rule.
-const panelStyle = { display: "flex", flexDirection: "column", gap: 10 };
-const rowStyle = { display: "flex", alignItems: "center", gap: 10, padding: "8px 0" };
-const checkDoneStyle = { width: 20, height: 20, borderRadius: "50%", flexShrink: 0, background: "var(--gain)", display: "flex", alignItems: "center", justifyContent: "center" };
-const checkTodoStyle = { width: 20, height: 20, borderRadius: "50%", flexShrink: 0, border: "1.5px solid var(--line-2)" };
-const rowTitleStyle = { fontSize: 13, fontWeight: 700, color: "var(--ink)" };
-const rowSubStyle = { fontSize: 11.5, color: "var(--muted)", marginTop: 1 };
-const captionStyle = { fontSize: 11, color: "var(--muted)", marginTop: 4, paddingLeft: 30 };
-const completedTagStyle = { fontSize: 11, fontWeight: 700, color: "var(--gain)", flexShrink: 0 };
-const goLinkStyle = { background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent-ink)", padding: 0, fontFamily: "inherit" };
-const skipLinkStyle = { background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--muted)", padding: 0, fontFamily: "inherit" };
-const personCardStyle = { display: "flex", alignItems: "center", gap: 9, padding: "7px 9px", background: "var(--surface-2)", borderRadius: 10 };
-const personNameStyle = { fontSize: 12.5, fontWeight: 700, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
-const personMetaStyle = { fontSize: 11, color: "var(--muted)" };
-const connectedTagStyle = { display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "var(--gain)", flexShrink: 0 };
+function gateBtnStyle(disabled) {
+  return {
+    width: "100%", padding: "13px", borderRadius: 11,
+    background: "linear-gradient(120deg,#6d5df5,#9a55ee 55%,#cf52d8)",
+    border: "none", color: "#fff", fontSize: 15, fontWeight: 700,
+    cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
+    fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+  };
+}

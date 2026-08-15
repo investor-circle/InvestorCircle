@@ -15,7 +15,10 @@
  *
  * POST ?resource=lookups
  *   Body: { action, ... }
- *     username-save:      { username }                        (auth: user)
+ *     username-save:      { username, consentTerms?, consentData? }  (auth: user)
+ *                          (consentTerms/consentData present together completes
+ *                          the mandatory post-signup setup gate; omitted for a
+ *                          plain username save from an already-consented account)
  *     portfolio-add:      { holding: {...} }                   (auth: user)
  *     portfolio-delete:   { id }                                (auth: user)
  *     portfolio-delete-all: {}                                  (auth: user)
@@ -399,8 +402,32 @@ export default async function handleLookups(req, res) {
       if (!USERNAME_RE.test(username)) { res.status(400).json({ error: 'invalid_username' }); return; }
       const available = await isUsernameAvailable(username, uid);
       if (!available) { res.status(400).json({ error: 'taken' }); return; }
+
+      // Optional consent fields — present only when this call is completing
+      // the mandatory post-Google-signin setup gate (see
+      // src/features/onboarding/Onboarding.jsx, MandatorySetupGate), which
+      // bundles username + both consent statements into one submission.
+      // Omitted entirely for the existing plain username-only save used by
+      // ProfileEditModal (legacy users who already consented — see
+      // supabase/phase_5_5_consent.sql).
+      const consentProvided = body.consentTerms !== undefined || body.consentData !== undefined;
+      if (consentProvided && (body.consentTerms !== true || body.consentData !== true)) {
+        res.status(400).json({ error: 'Please accept both consent statements to continue' });
+        return;
+      }
+
       try {
-        await sql`UPDATE user_profiles SET username = ${username}, updated_at = now() WHERE id = ${uid}`;
+        if (consentProvided) {
+          await sql`
+            UPDATE user_profiles SET
+              username = ${username}, onboarding_cv_done = true,
+              consent_terms_accepted = true, consent_data_accepted = true, consent_accepted_at = now(),
+              updated_at = now()
+            WHERE id = ${uid}
+          `;
+        } else {
+          await sql`UPDATE user_profiles SET username = ${username}, updated_at = now() WHERE id = ${uid}`;
+        }
       } catch (e) {
         if (String(e?.message || '').toLowerCase().includes('unique')) {
           res.status(400).json({ error: 'taken' });

@@ -96,7 +96,7 @@ const AdminUsers       = React.lazy(() => adminModule().then(m => ({ default: m.
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { InviteModal, Network } from "./features/connections/Connections";
 import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./features/discovery/Discovery";
-import { SetupChecklist } from "./features/onboarding/Onboarding";
+import { OnboardingGate } from "./features/onboarding/Onboarding";
 import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
 import { PortfolioIntelligencePage } from "./features/portfolio/Portfolio";
@@ -1476,13 +1476,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ── Persistent setup checklist (Phase 5.5 onboarding) — sits under the
-              topbar on every investor page so it survives navigation, refresh and
-              logout/login instead of resetting; visibility is driven entirely by
-              server-persisted profile.onboarding_*_done, not by which page/feed
-              state the user is currently on. See features/onboarding/Onboarding.jsx. ── */}
-          {isInv && <SetupChecklist profile={profile} ME={ME} patchProfile={patchProfile} setPage={setPage}/>}
-
           <div className="content">
             {/* Connection-request confirmation banner — shown after signup from a public profile */}
             {connectConfirm && isInv && (
@@ -1613,6 +1606,11 @@ export default function App() {
           onClose={()=>setProfileEditOpen(false)}
         />
       )}
+      {/* ── Mandatory username+consent gate, then a one-time Discover modal —
+          both portal overlays gated purely on server-persisted profile state,
+          so a user who drops off mid-setup resumes exactly where they left
+          off on next login. See features/onboarding/Onboarding.jsx. ── */}
+      {isInv && <OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={setPage}/>}
     </div>
   );
 }
