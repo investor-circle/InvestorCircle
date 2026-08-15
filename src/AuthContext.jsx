@@ -25,62 +25,67 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        // Non-fatal: if we can't even get an ID token, skip straight to the
+        // local fallback profile shape below rather than throwing (which
+        // would leave authLoading stuck true forever).
+        let idToken = null;
+        try { idToken = await firebaseUser.getIdToken(); } catch (_) { /* fall through */ }
+
+        // Blacklist check and the profile read below both only need the ID
+        // token — neither depends on the other's result — so fire them
+        // together instead of waiting for the blacklist check to finish
+        // first. We still gate on the blacklist result before committing to
+        // a session (setUser/setProfile), exactly as before: a blocked user
+        // is signed out and the profile response is simply discarded.
+        let blacklistSettled = { status: 'rejected' };
+        let profileSettled   = { status: 'rejected' };
+        if (idToken) {
+          [blacklistSettled, profileSettled] = await Promise.allSettled([
+            fetch(PROFILE_BLACKLIST_API, { headers: { Authorization: `Bearer ${idToken}` } })
+              .then(res => res.ok ? res.json() : null),
+            fetch(PROFILE_ME_API, { headers: { Authorization: `Bearer ${idToken}` } })
+              .then(res => res.ok ? res.json() : null),
+          ]);
+        }
+
         // ── Blacklist check ───────────────────────────────────────
         // Hard-deleted users are blocked immediately on any login attempt.
-        try {
-          const idToken = await firebaseUser.getIdToken();
-          const res = await fetch(PROFILE_BLACKLIST_API, {
-            headers: { Authorization: `Bearer ${idToken}` },
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.blocked) {
-              await signOut(auth);      // force sign-out
-              setAuthLoading(false);
-              return;
-            }
-          }
-        } catch (_) { /* non-fatal — infra failure, not an authorization decision */ }
+        if (blacklistSettled.status === 'fulfilled' && blacklistSettled.value?.blocked) {
+          await signOut(auth);      // force sign-out
+          setAuthLoading(false);
+          return;
+        }
 
         setUser(firebaseUser);
         const isAdminEmail = ADMIN_EMAILS.includes(firebaseUser.email?.toLowerCase());
         const fullName = firebaseUser.displayName || firebaseUser.email.split("@")[0];
         setRole(isAdminEmail ? "admin" : "investor");
 
-        // Try the authenticated server read first. Only an existing profile
-        // row (200) is treated as a hit; anything else (404 = no profile
-        // yet, network error, non-200) falls through to create/sync below.
-        let profileFromApi = null;
-        try {
-          const idToken = await firebaseUser.getIdToken();
-          const res = await fetch(PROFILE_ME_API, {
-            headers: { Authorization: `Bearer ${idToken}` },
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.profile) profileFromApi = data.profile;
-          }
-        } catch (_) { /* fall through to sync */ }
+        // Only an existing profile row (200 with a profile) is treated as a
+        // hit; anything else (404 = no profile yet, network error, non-200)
+        // falls through to create/sync below.
+        const profileFromApi = profileSettled.status === 'fulfilled' ? (profileSettled.value?.profile || null) : null;
 
         if (profileFromApi) {
           setProfile(profileFromApi);
         } else {
           // No existing profile — create/sync it server-side.
           let syncedViaApi = false;
-          try {
-            const idToken = await firebaseUser.getIdToken();
-            const res = await fetch(PROFILE_SYNC_API, {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${idToken}` },
-            });
-            if (res.ok) {
-              const data = await res.json();
-              if (data?.profile) {
-                setProfile(data.profile);
-                syncedViaApi = true;
+          if (idToken) {
+            try {
+              const res = await fetch(PROFILE_SYNC_API, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${idToken}` },
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data?.profile) {
+                  setProfile(data.profile);
+                  syncedViaApi = true;
+                }
               }
-            }
-          } catch (_) { /* fall through to local fallback shape */ }
+            } catch (_) { /* fall through to local fallback shape */ }
+          }
 
           if (!syncedViaApi) {
             setProfile({ id: firebaseUser.uid, email: firebaseUser.email,

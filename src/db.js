@@ -5,8 +5,15 @@
  * Each function is responsible for ONE logical operation: it writes the data
  * AND inserts any notifications that operation should generate.
  *
+ * Phase 5: feature code should import from the feature-scoped barrels in
+ * src/services/api/ (connectionsApi.js, recommendationsApi.js, etc.) instead
+ * of importing this file directly — they re-export the relevant subset of
+ * functions below, grouped the way the frontend actually consumes them.
+ * This file remains the single implementation (still funnelled through
+ * callApi()) so there is exactly one place that talks to the server API.
+ *
  * Usage:
- *   import { sendConnectionRequest, getMyConnections, ... } from "./db";
+ *   import { sendConnectionRequest, getMyConnections } from "./services/api/connectionsApi";
  *
  * Every exported function:
  *   - Takes typed arguments (no raw SQL in components)
@@ -553,11 +560,6 @@ export async function reviewClaimRequest(requestId, action, reviewNote) {
 // Phase 4: ADMIN CONFIG (feed config, instruments, admin user ops)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getAdminFeedConfig() {
-  const api = await callApi('/data?resource=admin-config&scope=feed-config');
-  return api.ok ? (api.data.options || []) : [];
-}
-
 export async function toggleFeedConfig(key, field, value) {
   const api = await callApi('/data?resource=admin-config', { method: 'POST', body: { action: 'feed-config-toggle', key, field, value } });
   if (!api.ok) throw new Error(api.data?.error || 'Update failed');
@@ -784,8 +786,3 @@ export async function lookupUser(by, value) {
   return api.ok ? api.data.user : null;
 }
 
-export async function lookupUsersBatch(ids) {
-  if (!ids || ids.length === 0) return [];
-  const api = await callApi('/data?resource=lookups', { method: 'POST', body: { action: 'user-lookup-batch', by: 'id', values: ids } });
-  return api.ok ? (api.data.users || []) : [];
-}

@@ -16,18 +16,30 @@ verified against the actual code rather than trusted blindly.
 
 ## Architecture
 
-- **Frontend**: React 18 + Vite 5, single-page app with hash-based routing.
-  `src/App.jsx` is a large monolith containing most UI components and business
-  logic; `src/services/` holds focused client helpers (CAS import, market data,
-  PAN import, price fetching).
+- **Frontend**: React 18 + Vite 5, single-page app. `src/App.jsx` is the
+  application shell (providers, top-level nav/state orchestration, page
+  composition) — feature UI and business logic live under `src/features/**`
+  (see "Phase 5 architecture" below). `src/services/` holds client helpers
+  (CAS import, market data, PAN import, price fetching, notify, and the
+  `services/api/**` frontend service layer).
+- **Routing**: `react-router-dom`'s `HashRouter` (see `src/main.jsx`). The app
+  is a static SPA on GitHub Pages with no server-side rewrite/404 fallback, so
+  only the hash portion of a URL survives a hard refresh or a directly-opened
+  link — path-based (`BrowserRouter`) routing would 404 on refresh. Major
+  sections have real, shareable, refreshable URLs (`#/connections`,
+  `#/recommendations`, `#/portfolio`, `#/sharing`, `#/admin/users`, etc. — see
+  `INVESTOR_PATH_TO_PAGE` / `ADMIN_PATH_TO_PAGE` in `App.jsx`), alongside the
+  pre-existing `#/investor/:username` and `#/investor/:username/reco/:id`
+  public profile/recommendation deep links.
 - **Backend**: Vercel serverless functions in `api/`, mixed Node.js and Python
   3.9. Used for email (Resend), push notifications, price proxying, CAS PDF
   parsing, and Firebase-Admin-based password reset.
-- **Database**: Postgres via Neon, queried directly from the frontend using
-  `@neondatabase/serverless` (no general-purpose backend API layer). All DB
-  query/helper functions are centralized in `src/db.js`; `src/supabaseClient.js`
-  exports the Neon client (named "supabase" for legacy reasons — this project
-  does not use Supabase).
+- **Database**: Postgres via Neon. The browser never connects to Neon
+  directly — all application data access goes through authenticated server
+  APIs (`api/data.js` + `api/_lib/handlers/*.js`), called from the frontend
+  via `src/db.js` (`callApi()`) and the feature-scoped barrels in
+  `src/services/api/*.js`. See "Prohibition on browser-side Neon access"
+  below.
 - **Auth**: Firebase Authentication (email/password). Auth state and profile
   sync live in `src/AuthContext.jsx`; login/signup/reset UI in `src/LoginPage.jsx`.
   Password reset is server-mediated via `api/reset.py` using the Firebase Admin
@@ -35,6 +47,59 @@ verified against the actual code rather than trusted blindly.
 - **Deployment**: Frontend deploys to GitHub Pages via
   `.github/workflows/deploy.yml` on push to `main`; backend functions deploy to
   Vercel. `public/CNAME` pins the custom domain — do not remove it.
+
+## Phase 5 architecture (feature-oriented frontend)
+
+Phase 5 (2026) broke the ~12,800-line `App.jsx` monolith into feature
+modules. These are now durable conventions, not a one-time cleanup:
+
+- **`App.jsx` is the shell only**: providers, the top-level `investorPage`/
+  `adminPage` state machine, URL sync (`useLocation`/`useNavigate`), and page
+  composition. New screens/features should NOT be added as new inline
+  components in `App.jsx` — add a component under `src/features/<feature>/`
+  and import it into `App.jsx`.
+- **`src/features/<feature>/`**: one file per feature area (recommendations,
+  connections, groups, portfolio, sharing, notifications, profile, discovery,
+  admin, marketing, auth) holding that feature's page-level and modal
+  components. A feature file may import from another feature file when a
+  component is genuinely shared across features (e.g. `EditGroupModal` lives
+  in `features/groups/Groups.jsx` and is used by both the investor Groups UI
+  and `features/admin/Admin.jsx`) — prefer putting the shared component in
+  the feature it most conceptually belongs to, and import it from there,
+  rather than duplicating it. Avoid unnecessary cross-feature statically-eager
+  imports into `features/admin/**`, since the admin bundle is lazy-loaded
+  (see Performance below).
+- **`src/components/common.jsx`**: small shared presentational atoms used
+  across multiple features (badges, avatars, sparklines, etc.).
+- **`src/constants/app.js`** and **`src/utils/*.js`**: pure constants and
+  formatting/calculation helpers with no JSX, shared across features.
+- **`src/hooks/index.js`**: shared hooks (`useIsMobile`, etc.).
+- **`src/services/api/*.js`**: feature-scoped frontend API barrels
+  (`connectionsApi.js`, `recommendationsApi.js`, `adminApi.js`, etc.). Import
+  from here in feature code, not `src/db.js` directly — these re-export the
+  relevant subset of `src/db.js`, which remains the single implementation
+  (still funnelled through `callApi()`). New API calls should be added to
+  `src/db.js` and re-exported from the appropriate `services/api/*.js`
+  barrel.
+- **Prohibition on browser-side Neon access**: never reintroduce
+  `@neondatabase/serverless`, a `VITE_DATABASE_URL`, or any direct SQL call
+  in `src/**`. All frontend data access goes through `services/api/*.js` ->
+  `db.js` -> `callApi()` -> the server APIs in `api/`.
+- **Performance**: `src/features/admin/**` is code-split via `React.lazy()`
+  in `App.jsx` (wrapped in `<React.Suspense>`) since only admin-role users
+  ever need it — keep it that way; avoid adding static (non-lazy) imports of
+  `features/admin/Admin.jsx` from investor-facing feature files, since that
+  defeats the split (Vite/Rollup will warn "dynamically imported ... but also
+  statically imported" at build time if this regresses).
+- **Independent data fetches must not be serialized.** Before adding a new
+  `await` in a data-loading path (`AuthContext.jsx`'s auth-resolution effect,
+  `App.jsx`'s post-login load effect, or similar), check whether it actually
+  depends on the result of the call before it. If it doesn't, fire it
+  concurrently (`Promise.all`/`allSettled`) instead of sequentially — this
+  codebase has repeatedly picked up avoidable sequential round-trips on the
+  home feed's critical path (auth blacklist-check + profile fetch; several
+  independent feed-data calls) simply because each was added as "one more
+  `await`" after the previous one, not because of a real dependency.
 
 ## Database / Neon conventions
 
@@ -91,9 +156,10 @@ verified against the actual code rather than trusted blindly.
 ## Coding / change conventions
 
 - This is a JavaScript (JSX) codebase — no TypeScript.
-- `App.jsx` is a large, intentional monolith. Do not refactor it into separate
-  files or components "for cleanliness" — only restructure it if explicitly
-  asked to.
+- `App.jsx` is the application shell (Phase 5) — see "Phase 5 architecture"
+  above. Do not add new feature UI directly into `App.jsx`; add it under
+  `src/features/<feature>/` instead. Do not undo the feature-oriented split
+  "for cleanliness" — only restructure it further if explicitly asked to.
 - Prefer small, targeted edits over broad rewrites, especially in `App.jsx` and
   `LoginPage.jsx`.
 - Treat business calculations (ICI score, return/P&L calculations,
