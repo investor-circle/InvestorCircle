@@ -31,7 +31,9 @@ export default async function handlePublicProfile(req, res) {
          WHERE (requester_id = up.id OR addressee_id = up.id)
            AND status = 'accepted')                                AS connection_count,
         (SELECT COUNT(*) FROM group_members
-         WHERE user_id = up.id AND status = 'active')             AS group_count
+         WHERE user_id = up.id AND status = 'active')             AS group_count,
+        (SELECT COUNT(*) FROM user_tracking
+         WHERE tracked_id = up.id)                                 AS tracking_count
       FROM user_profiles up
       WHERE up.username = ${username}
       LIMIT 1

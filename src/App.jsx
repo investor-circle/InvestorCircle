@@ -95,6 +95,7 @@ const AdminSeedData    = React.lazy(() => adminModule().then(m => ({ default: m.
 const AdminUsers       = React.lazy(() => adminModule().then(m => ({ default: m.AdminUsers })));
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { InviteModal, Network } from "./features/connections/Connections";
+import { CirclePage } from "./features/groups/Groups";
 import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./features/discovery/Discovery";
 import { OnboardingGate } from "./features/onboarding/Onboarding";
 import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
@@ -895,6 +896,29 @@ export default function App() {
 
   // securityTicker must be here — before ANY conditional return — Rules of Hooks
   const [securityTicker, setSecurityTicker] = useState(null);
+
+  // ── Circle route — no auth required (shareable, works from an invite link) ──
+  // Matches: #/circle/slug  (optionally ?invite=<code> appended by an invite link)
+  const circleMatch = pageHash.match(/^#\/circle\/([a-z0-9-]+)/i);
+  if (circleMatch && !authLoading) {
+    const circleSlug = circleMatch[1];
+    const circleQuery = new URLSearchParams(pageHash.split('?')[1] || '');
+    return (
+      <div className="app"><style>{STYLES}</style>
+        <ProfileErrorBoundary>
+          <div className="content" style={{maxWidth:900,margin:'0 auto',padding:isMobile?'16px 12px':'28px 24px'}}>
+            <CirclePage
+              slug={circleSlug}
+              inviteCode={circleQuery.get('invite')}
+              viewerUser={user}
+              onBack={()=>setPageHash('')}
+              onNavigateProfile={(uname)=>{ if(uname) window.location.hash = `#/investor/${uname}`; }}
+            />
+          </div>
+        </ProfileErrorBoundary>
+      </div>
+    );
+  }
 
   // ── Public profile route — no auth required ────────────────────────────────
   // Matches: #/investor/username  OR  #/investor/username/reco/recoId

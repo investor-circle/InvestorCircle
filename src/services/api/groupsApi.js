@@ -16,5 +16,14 @@ export {
   deleteGroup,
   exitGroup,
   addGroupMembers,
-  removeGroupMember
+  removeGroupMember,
+  // Circles (Phase 6) — same underlying ic_groups/group_members tables.
+  getCircleBySlug,
+  getOwnerCircles,
+  getCircleJoinRequests,
+  getCircleEligibleMembers,
+  requestJoinCircle,
+  reviewCircleJoinRequest,
+  regenerateCircleInviteLink,
+  updateCircleSettings
 } from "../../db";

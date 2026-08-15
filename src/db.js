@@ -135,6 +135,109 @@ export async function removeConnection(connectionId, myId) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TRACKING — one-way, no-approval "Track an investor" relationship.
+// Distinct from `connections` (mutual, requires accept) and from the
+// per-recommendation "track"/trackReco functions below (Phase 4 engagement —
+// marking a specific recommendation as tracked/invested). This section is
+// about tracking a *person's* ideas, i.e. the Follow replacement.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Start tracking an investor/creator (no approval required). */
+export async function trackInvestor(targetId) {
+  const api = await callApi('/data?resource=tracking', { method: 'POST', body: { action: 'track', targetId } });
+  return api.ok;
+}
+
+/** Stop tracking an investor/creator. */
+export async function untrackInvestor(targetId) {
+  const api = await callApi('/data?resource=tracking', { method: 'POST', body: { action: 'untrack', targetId } });
+  return api.ok;
+}
+
+/** Whether the current user is tracking targetId. */
+export async function getTrackingStatus(targetId) {
+  const api = await callApi(`/data?resource=tracking&action=status&targetId=${encodeURIComponent(targetId)}`);
+  return api.ok ? !!api.data.tracking : false;
+}
+
+/** List of investors the current user tracks. */
+export async function getMyTracking() {
+  const api = await callApi('/data?resource=tracking');
+  return api.ok ? (api.data.tracking || []) : [];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CIRCLES — community around an investor/creator or group of people.
+// Product-facing rename of the pre-existing Group concept; still backed by
+// the same ic_groups/group_members tables (see api/_lib/handlers/groups.js
+// and supabase/phase6_relationships.sql). Private circles: owner-managed
+// membership, added from Connections. Public circles: subscribable via
+// request-to-join (owner approves) or a shareable invite link.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Look up a Circle's full detail by its shareable slug (public if the circle is public; 404-equivalent otherwise for non-members). */
+export async function getCircleBySlug(slug) {
+  try {
+    const res = await fetch(`${API_BASE}/data?resource=groups&action=by-slug&slug=${encodeURIComponent(slug)}`, {
+      headers: auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {},
+    });
+    if (res.ok) return (await res.json()).circle;
+    return null;
+  } catch (_) { return null; }
+}
+
+/** Public + (viewer-visible) private Circles owned by a given user — for the investor profile page. */
+export async function getOwnerCircles(ownerId) {
+  try {
+    const res = await fetch(`${API_BASE}/data?resource=groups&action=owner-circles&ownerId=${encodeURIComponent(ownerId)}`, {
+      headers: auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {},
+    });
+    if (res.ok) return await res.json();
+    return { public: [], private: [] };
+  } catch (_) { return { public: [], private: [] }; }
+}
+
+/** Pending join requests for a Circle the caller owns. */
+export async function getCircleJoinRequests(groupId) {
+  const api = await callApi(`/data?resource=groups&action=join-requests&groupId=${encodeURIComponent(groupId)}`);
+  return api.ok ? (api.data.requests || []) : [];
+}
+
+/** People eligible for direct-add to a Circle the caller owns (Connections, plus Trackers for public circles). */
+export async function getCircleEligibleMembers(groupId) {
+  const api = await callApi(`/data?resource=groups&action=eligible-members&groupId=${encodeURIComponent(groupId)}`);
+  return api.ok ? (api.data.people || []) : [];
+}
+
+/** Request to join / subscribe to a public Circle. Auto-tracks the owner regardless of approval outcome. */
+export async function requestJoinCircle(groupId, inviteCode) {
+  const api = await callApi('/data?resource=groups', { method: 'POST', body: { action: 'request-join', groupId, inviteCode } });
+  if (api.ok) return api.data;
+  if (api.denied) return { error: api.data?.error || 'not_authorized' };
+  throw new Error('Neon not configured');
+}
+
+/** Circle owner approves/rejects a pending join request. */
+export async function reviewCircleJoinRequest(requestId, approve) {
+  const api = await callApi('/data?resource=groups', { method: 'POST', body: { action: approve ? 'approve-join-request' : 'reject-join-request', requestId } });
+  return api.ok;
+}
+
+/** Circle owner regenerates the shareable invite code (invalidates the old link). */
+export async function regenerateCircleInviteLink(groupId) {
+  const api = await callApi('/data?resource=groups', { method: 'POST', body: { action: 'regenerate-invite-link', groupId } });
+  return api.ok ? api.data.invite_code : null;
+}
+
+/** Update a Circle's name/description. Only the owner may do this. */
+export async function updateCircleSettings(groupId, name, description) {
+  const api = await callApi('/data?resource=groups', { method: 'POST', body: { action: 'update-settings', groupId, name, description } });
+  if (api.ok) return api.data.group;
+  if (api.denied) return null;
+  throw new Error('Neon not configured');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GROUPS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -150,20 +253,23 @@ export async function getMyGroups(myId) {
 }
 
 /**
- * Create a new group. Creator is automatically admin.
- * memberIds: array of user IDs of confirmed contacts to add initially.
- * Returns the new group object.
+ * Create a new Circle. Creator is automatically owner/admin.
+ * memberIds: array of user IDs to add initially — the server re-validates
+ * eligibility (Connections for a private circle; Connections or Trackers
+ * for a public circle) rather than trusting this list.
+ * circleType: 'private' (default) or 'public'.
+ * Returns the new group/circle object.
  */
-export async function createGroup(name, color, creatorId, memberIds) {
-  const api = await callApi("/data?resource=groups", { method: "POST", body: { action: "create", name, color, memberIds } });
+export async function createGroup(name, color, creatorId, memberIds, circleType, description) {
+  const api = await callApi("/data?resource=groups", { method: "POST", body: { action: "create", name, color, memberIds, circleType, description } });
   if (api.ok) return api.data.group;
   if (api.denied) throw new Error("Not authorized");
   throw new Error("Neon not configured");
 }
 
-/** Rename a group. Only the group's admin may do this. */
+/** Rename a group / update a Circle's name+description. Only the owner may do this. */
 export async function renameGroup(groupId, newName, myId) {
-  const api = await callApi("/data?resource=groups", { method: "POST", body: { action: "rename", groupId, name: newName } });
+  const api = await callApi("/data?resource=groups", { method: "POST", body: { action: "update-settings", groupId, name: newName } });
   if (api.ok) return api.data.group;
   if (api.denied) return null;
   throw new Error("Neon not configured");

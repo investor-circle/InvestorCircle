@@ -44,16 +44,16 @@ export function Network({ connections, setConnections, groups, setGroups, sharin
   return (
     <>
       <div className="page-head">
-        <div><div className="eyebrow">Network</div><div className="page-title">Your circle</div>
-          <div className="page-sub">Manage connections and groups</div></div>
+        <div><div className="eyebrow">Network</div><div className="page-title">Your network</div>
+          <div className="page-sub">Manage connections and Circles</div></div>
       </div>
       <div className="seg" style={{marginBottom:20}}>
         <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}>
-          <Users size={15}/> Contacts · {connections.filter(c=>c.status==="accepted").length}
+          <Users size={15}/> Connections · {connections.filter(c=>c.status==="accepted").length}
           {pendingReceived>0 && <span className="nav-badge" style={{position:"static",marginLeft:6}}>{pendingReceived}</span>}
         </button>
         <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}>
-          <Layers size={15}/> Groups · {groups.length}
+          <Layers size={15}/> Circles · {groups.length}
         </button>
       </div>
       {tab==="contacts"
