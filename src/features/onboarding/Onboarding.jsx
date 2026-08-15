@@ -27,6 +27,23 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
   const cvDone = !!profile?.onboarding_cv_done;
   const discoverDone = !!profile?.onboarding_discover_done;
   const username = profile?.username;
+  const visible = !!profile && !(cvDone && discoverDone);
+
+  // Home Feed's mobile-only fixed header ("Welcome back" + Feed/Pulse tabs,
+  // see features/discovery/Discovery.jsx) is position:fixed at a hardcoded
+  // `top:64`, assuming it sits directly under the topbar with nothing else
+  // in the flow above it on mobile. This checklist bar, when visible, now
+  // also occupies that space. Rather than reach into Discovery.jsx's layout
+  // (a different feature module) or hardcode pixel coordination the other
+  // way, publish a single CSS custom property reflecting whether this bar
+  // is showing — Discovery.jsx's fixed header/spacer read it (defaulting to
+  // 0 when absent) to shift down by exactly this bar's height. Values are
+  // the two fixed heights .mic-setup-bar actually renders at (single-row
+  // above 480px, stacked two-row at/under 480px — see globalStyles.js).
+  useEffect(() => {
+    document.documentElement.classList.toggle("mic-has-setup-checklist", visible);
+    return () => document.documentElement.classList.remove("mic-has-setup-checklist");
+  }, [visible]);
 
   const markDone = async (step) => {
     patchProfile?.({ [step === "cv" ? "onboarding_cv_done" : "onboarding_discover_done"]: true });
@@ -55,7 +72,7 @@ export function SetupChecklist({ profile, ME, patchProfile, setPage }) {
   // the ONLY thing that hides the checklist; there is no separate "dismiss"
   // action, so an incomplete step always survives navigation, refresh, and
   // logout/login until it's actually completed or skipped server-side.
-  if (!profile || (cvDone && discoverDone)) return null;
+  if (!visible) return null;
 
   const activeStep = !cvDone ? "cv" : "discover";
   const doneCount = (cvDone ? 1 : 0) + (discoverDone ? 1 : 0);

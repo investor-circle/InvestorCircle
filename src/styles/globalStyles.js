@@ -74,6 +74,11 @@ export const STYLES = `
 .mic-setup-chevron{cursor:pointer;flex-shrink:0;transition:transform .15s;}
 .mic-setup-cta{flex-shrink:0;white-space:nowrap;}
 .mic-setup-panel{padding:4px 26px 14px;box-sizing:border-box;width:100%;}
+/* Published for other mobile fixed-position UI to read (see
+   features/discovery/Discovery.jsx's mobile header) — defaults to 0 so
+   anything reading it is a no-op when this bar isn't rendered at all. */
+:root{--mic-setup-bar-h:0px;}
+html.mic-has-setup-checklist{--mic-setup-bar-h:54px;}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap;}
 .eyebrow{font-size:12px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
 .page-title{font-size:26px;font-weight:800;letter-spacing:-.6px;}
@@ -386,6 +391,7 @@ tr.hiddenrow > td{opacity:.55;}
   .mic-setup-chevron{display:none;}
   .mic-setup-cta{grid-column:1/-1;width:100%;justify-content:center;}
   .mic-setup-panel{padding:4px 10px 12px;}
+  html.mic-has-setup-checklist{--mic-setup-bar-h:92px;} /* stacked 2-row layout at this width */
   .mobile-tabs{margin:0 -10px 14px;padding:0 10px;}
   .topbar{padding:0 8px 0 2px;}
 
