@@ -64,6 +64,20 @@ export async function requireUid(req) {
 }
 
 /**
+ * Best-effort identity check for endpoints that behave differently for a
+ * logged-in caller but must still work for anonymous visitors (e.g. a
+ * public Circle page opened from a shared/invite link). Returns the
+ * verified uid if a valid Bearer token is present, or null otherwise —
+ * never throws. Never used to gate a privileged action; only to decide
+ * what to show to a caller who may or may not be authenticated.
+ */
+export async function optionalUid(req) {
+  const authHeader = req.headers.authorization || '';
+  if (!/^Bearer\s+.+/.test(authHeader)) return null;
+  try { return await requireUid(req); } catch { return null; }
+}
+
+/**
  * Verify the caller and require them to be an admin (server-side
  * user_profiles.is_admin lookup — never trust a client-supplied flag).
  * Returns the verified uid. Throws 401 (bad/missing token) or 403 (not admin).

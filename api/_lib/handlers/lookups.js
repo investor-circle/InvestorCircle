@@ -30,6 +30,7 @@
  *     avatar-upload:      { dataUrl }                                    (auth: user)
  *     onboarding-complete:{ step: 'discover' }                           (auth: user)
  * GET  ?resource=lookups&action=discover-people                         (auth: user)
+ * GET  ?resource=lookups&action=discover-more                           (auth: user)
  *
  * SECURITY: this file only ever exposes id/username/full_name/email plus a
  * small set of public-profile display fields (avatar_url, avatar_color,
@@ -343,13 +344,19 @@ export default async function handleLookups(req, res) {
         return;
       }
 
-      if (action === 'discover-people') {
+      if (action === 'discover-people' || action === 'discover-more') {
         let uid;
         try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
-        // Simple curated ranking for the "Discover your Investor Circle" new-user
-        // activation card — most-active recommenders first. Same aggregate stats
-        // shape as action=investor-ici-batch so the frontend can reuse
-        // computeIci() unchanged.
+        // Curated ranking for "Discover your Investor Circle" (onboarding
+        // modal + the top-nav discover icon reusing the same modal) and for
+        // the full Discovery page (action=discover-more). Same aggregate
+        // stats shape as action=investor-ici-batch so the frontend can reuse
+        // computeIci() unchanged for both entry points.
+        //
+        // Excludes people the caller already Tracks or is Connected to
+        // (any status — pending or accepted): discovery is for finding NEW
+        // people, not re-surfacing the caller's existing network.
+        const limit = action === 'discover-more' ? 300 : 8;
         const rows = await sql`
           SELECT
             up.id, up.username, up.full_name, up.avatar_url, up.avatar_color,
@@ -368,19 +375,23 @@ export default async function handleLookups(req, res) {
               CASE WHEN r.exit_signal=true AND r.reco_price > 0
                    THEN (r.current_price - r.reco_price) / r.reco_price * 100
               END
-            ), 0) AS ret_stddev,
-            MAX(cn.status) AS connection_status
+            ), 0) AS ret_stddev
           FROM user_profiles up
           LEFT JOIN ic_recommendations r ON r.recommender_id = up.id
-          LEFT JOIN connections cn
-            ON (cn.requester_id = up.id AND cn.addressee_id = ${uid})
-            OR (cn.addressee_id = up.id AND cn.requester_id = ${uid})
           WHERE up.id != ${uid}
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
+            AND NOT EXISTS (
+              SELECT 1 FROM connections c
+              WHERE (c.requester_id = ${uid} AND c.addressee_id = up.id)
+                 OR (c.addressee_id = ${uid} AND c.requester_id = up.id)
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM user_tracking ut WHERE ut.tracker_id = ${uid} AND ut.tracked_id = up.id
+            )
           GROUP BY up.id, up.username, up.full_name, up.avatar_url, up.avatar_color
           ORDER BY COUNT(r.id) DESC, up.created_at DESC
-          LIMIT 8
+          LIMIT ${limit}
         `;
         // NOTE: intentionally NOT filtering out users with no username set —
         // username is mandatory for new signups (Phase 5.5), but pre-existing

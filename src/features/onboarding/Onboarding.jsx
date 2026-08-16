@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, X, UserPlus, Loader } from "lucide-react";
+import { Check, X, UserPlus, Loader, Radar, Search } from "lucide-react";
 import { checkUsername as dbCheckUsername, saveUsername as dbSaveUsername, markOnboardingStep as dbMarkOnboardingStep } from "../../services/api/profileApi";
-import { getSuggestedPeople as dbGetSuggestedPeople } from "../../services/api/lookupsApi";
+import { getSuggestedPeople as dbGetSuggestedPeople, getDiscoverMore as dbGetDiscoverMore } from "../../services/api/lookupsApi";
 import { sendConnectionRequest as dbSendConnectionRequest } from "../../services/api/connectionsApi";
+import { trackInvestor as dbTrackInvestor } from "../../services/api/trackingApi";
 import { computeIci } from "../../services/api/recommendationsApi";
 import { Avatar } from "../../components/common";
 import { initialsOf } from "../../utils/format";
+import { openProfile } from "../../utils/navigation";
 
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 
@@ -44,7 +46,15 @@ export function OnboardingGate({ user, profile, ME, patchProfile, setPage }) {
     return <MandatorySetupGate user={user} profile={profile} patchProfile={patchProfile} />;
   }
   if (!profile.onboarding_discover_done) {
-    return <DiscoverModal ME={ME} patchProfile={patchProfile} setPage={setPage} />;
+    return (
+      <DiscoverModal
+        ME={ME}
+        patchProfile={patchProfile}
+        markOnboardingDone
+        onClose={()=>{}}
+        onDiscoverMore={()=>setPage?.("discover")}
+      />
+    );
   }
   return null;
 }
@@ -148,12 +158,16 @@ function MandatorySetupGate({ user, profile, patchProfile }) {
   );
 }
 
-/* ── One-time Discover modal ────────────────────────────────────────────── */
+/* ── Discover modal — shared by the mandatory one-time onboarding gate AND
+   the always-available top-nav discover icon. Exported so App.jsx can
+   render it standalone (markOnboardingDone omitted/false in that case). ── */
 
-function DiscoverModal({ ME, patchProfile, setPage }) {
+export function DiscoverModal({ ME, patchProfile, onClose, onDiscoverMore, markOnboardingDone=false }) {
   const [people, setPeople] = useState(null); // null = loading
   const [connecting, setConnecting] = useState({});
   const [connected, setConnected] = useState({});
+  const [tracking, setTracking] = useState({});
+  const [trackBusy, setTrackBusy] = useState({});
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -164,14 +178,15 @@ function DiscoverModal({ ME, patchProfile, setPage }) {
 
   if (dismissed) return null;
 
-  const finish = () => {
+  const markDone = () => {
+    if (!markOnboardingDone) return;
     patchProfile?.({ onboarding_discover_done: true });
-    setDismissed(true);
     // Best-effort persistence — UI already moved on regardless; a failure
     // here just means the modal could reappear on next login.
     dbMarkOnboardingStep("discover").catch(() => {});
   };
-  const exploreNetwork = () => { finish(); setPage?.("network"); };
+  const finish = () => { markDone(); setDismissed(true); onClose?.(); };
+  const discoverMore = () => { markDone(); setDismissed(true); onDiscoverMore?.(); };
 
   const connect = async (uid) => {
     setConnecting(c => ({ ...c, [uid]: true }));
@@ -181,11 +196,19 @@ function DiscoverModal({ ME, patchProfile, setPage }) {
     } catch (_) { /* non-fatal — button just stays enabled */ }
     setConnecting(c => ({ ...c, [uid]: false }));
   };
+  const track = async (uid) => {
+    setTrackBusy(b => ({ ...b, [uid]: true }));
+    try {
+      await dbTrackInvestor(uid);
+      setTracking(t => ({ ...t, [uid]: true }));
+    } catch (_) { /* non-fatal — button just stays enabled */ }
+    setTrackBusy(b => ({ ...b, [uid]: false }));
+  };
 
   return createPortal(
     <div style={overlayStyle} onClick={finish}>
       <div style={discoverCardStyle} onClick={e => e.stopPropagation()}>
-        <div style={{ fontSize: 19, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Discover your Investor Circle</div>
+        <div style={{ fontSize: 19, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Grow your Investor Circle</div>
         <div style={{ fontSize: 13.5, color: "rgba(255,255,255,.65)", lineHeight: 1.6, marginBottom: 18 }}>
           Meet a few investors, explore their thinking, and find people you'd like in your circle.
         </div>
@@ -198,7 +221,7 @@ function DiscoverModal({ ME, patchProfile, setPage }) {
           )}
           {people?.length === 0 && (
             <div style={{ padding: "16px 0", textAlign: "center", fontSize: 13, color: "rgba(255,255,255,.4)" }}>
-              No investors to suggest just yet — check back soon.
+              No new investors to suggest just yet — check back soon.
             </div>
           )}
           {people?.map(p => {
@@ -211,36 +234,197 @@ function DiscoverModal({ ME, patchProfile, setPage }) {
             });
             const isConnected = connected[p.id] || p.connection_status === "accepted";
             const isPending = connected[p.id] || p.connection_status === "pending";
+            const isTracking = tracking[p.id];
             return (
               <div key={p.id} style={personRowStyle}>
                 <Avatar f={{ initials: initialsOf(p.full_name || p.username || "?"), avatarUrl: p.avatar_url, color: p.avatar_color }} size={38} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ flex: 1, minWidth: 0, cursor: p.username ? "pointer" : "default" }} onClick={()=>p.username && openProfile(p.username)}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", lineHeight: 1.3, wordBreak: "break-word" }}>
                     {p.full_name || p.username}
                   </div>
-                  <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.45)" }}>
-                    {p.username ? `@${p.username}` : ""}{p.total ? ` · ${p.total} recs` : ""}{p.total ? ` · ICI ${ici.score}` : ""}
+                  <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.45)", whiteSpace: "nowrap" }}>
+                    {p.username ? `@${p.username}` : ""}{p.total ? ` · ${p.total} ideas` : ""}{p.total ? ` · ICI ${ici.score}` : ""}
                   </div>
                 </div>
-                {isConnected || isPending ? (
-                  <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#4ade80", fontWeight: 700, flexShrink: 0 }}>
-                    <Check size={13} /> {isConnected ? "Connected" : "Pending"}
-                  </span>
-                ) : (
-                  <button onClick={() => connect(p.id)} disabled={connecting[p.id]} style={connectBtnStyle}>
-                    {connecting[p.id] ? <Loader size={12} className="spin" /> : <UserPlus size={12} />} Connect
-                  </button>
-                )}
+                {/* Stacked (not side-by-side) so the name/meta column keeps most of the row's width */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0, alignItems: "stretch" }}>
+                  {isTracking ? (
+                    <span style={trackedPillStyle}><Check size={12} /> Tracking</span>
+                  ) : (
+                    <button onClick={() => track(p.id)} disabled={trackBusy[p.id]} style={trackBtnStyle}>
+                      {trackBusy[p.id] ? <Loader size={12} className="spin" /> : <Radar size={12} />} Track
+                    </button>
+                  )}
+                  {isConnected || isPending ? (
+                    <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 11, color: "#4ade80", fontWeight: 700, padding: "6px 0" }}>
+                      <Check size={13} /> {isConnected ? "Connected" : "Pending"}
+                    </span>
+                  ) : (
+                    <button onClick={() => connect(p.id)} disabled={connecting[p.id]} style={connectBtnStyle}>
+                      {connecting[p.id] ? <Loader size={12} className="spin" /> : <UserPlus size={12} />} Connect
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
 
-        <button onClick={exploreNetwork} style={gateBtnStyle(false)}>Explore Network →</button>
-        <button onClick={finish} style={laterBtnStyle}>I'll do this later</button>
+        <button onClick={discoverMore} style={gateBtnStyle(false)}>Discover more →</button>
+        <button onClick={finish} style={laterBtnStyle}>{markOnboardingDone ? "I'll do this later" : "Close"}</button>
       </div>
     </div>,
     document.body
+  );
+}
+
+/* ── Full Discovery page — reached via "Discover more" or the top-nav icon.
+   Same exclusion rules as the modal (never re-surfaces the caller's
+   existing Tracking/Connections), but the full candidate list, with
+   search, sort, and a "Recommended for you" / "Explore more investors"
+   split. ── */
+
+export function DiscoverPeoplePage({ ME }) {
+  const [people, setPeople] = useState(null); // null = loading
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState("recommended"); // recommended | name | ici | ideas
+  const [connecting, setConnecting] = useState({});
+  const [connected, setConnected] = useState({});
+  const [tracking, setTracking] = useState({});
+  const [trackBusy, setTrackBusy] = useState({});
+
+  useEffect(() => {
+    dbGetDiscoverMore().then(setPeople).catch(() => setPeople([]));
+  }, []);
+
+  const withIci = useMemo(() => (people || []).map(p => {
+    const hitPct = p.closed > 0 ? (p.wins / p.closed * 100) : 0;
+    const riskAdj = Number(p.ret_stddev) > 0 ? Math.max(Number(p.median_ret) / Number(p.ret_stddev), 0) : 0;
+    const ici = computeIci({
+      years_history: Number(p.years_history) || 0, total: p.total,
+      hit_rate_pct: hitPct, median_return: Number(p.median_ret) || 0,
+      risk_adjusted_return: riskAdj, deleted_count: 0,
+    });
+    return { ...p, ici };
+  }), [people]);
+
+  const filtered = useMemo(() => {
+    if (!q.trim()) return withIci;
+    const s = q.trim().toLowerCase();
+    return withIci.filter(p => (p.full_name || "").toLowerCase().includes(s) || (p.username || "").toLowerCase().includes(s));
+  }, [withIci, q]);
+
+  const sorted = useMemo(() => {
+    const r = [...filtered];
+    if (sort === "name") r.sort((a, b) => (a.full_name || a.username || "").localeCompare(b.full_name || b.username || ""));
+    else if (sort === "ici") r.sort((a, b) => b.ici.score - a.ici.score);
+    else if (sort === "ideas") r.sort((a, b) => (b.total || 0) - (a.total || 0));
+    else r.sort((a, b) => (b.ici.score + (b.total || 0) * 2) - (a.ici.score + (a.total || 0) * 2)); // blended "recommended" ranking
+    return r;
+  }, [filtered, sort]);
+
+  const showSplit = sort === "recommended" && !q.trim();
+  const recommended = showSplit ? sorted.slice(0, 6) : [];
+  const rest = showSplit ? sorted.slice(6) : sorted;
+
+  const connect = async (uid) => {
+    setConnecting(c => ({ ...c, [uid]: true }));
+    try {
+      const result = await dbSendConnectionRequest(ME?.id, uid);
+      if (!result?.error) setConnected(c => ({ ...c, [uid]: true }));
+    } catch (_) {}
+    setConnecting(c => ({ ...c, [uid]: false }));
+  };
+  const track = async (uid) => {
+    setTrackBusy(b => ({ ...b, [uid]: true }));
+    try { await dbTrackInvestor(uid); setTracking(t => ({ ...t, [uid]: true })); } catch (_) {}
+    setTrackBusy(b => ({ ...b, [uid]: false }));
+  };
+
+  const PersonCard = ({ p }) => {
+    const isConnected = connected[p.id] || p.connection_status === "accepted";
+    const isPending = connected[p.id] || p.connection_status === "pending";
+    const isTracking = tracking[p.id];
+    return (
+      <div className="card" style={{ padding: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: p.username ? "pointer" : "default", flex: 1, minWidth: 180 }}
+            onClick={() => p.username && openProfile(p.username)}>
+            <Avatar f={{ name: p.full_name, avatarUrl: p.avatar_url, color: p.avatar_color, initials: initialsOf(p.full_name || p.username || "?") }} size={40} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: "var(--accent-ink)", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3 }}>{p.full_name || p.username}</div>
+              <div className="muted small">@{p.username || "—"}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: p.ici.band === "Strong" ? "#4ade80" : p.ici.band === "Good" ? "#a78bfa" : p.ici.band === "Building" ? "#fbbf24" : "var(--muted)" }}>{p.ici.score}</div>
+              <div className="muted" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".04em" }}>ICI</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>{p.total || 0}</div>
+              <div className="muted" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".04em" }}>Ideas</div>
+            </div>
+            {isTracking
+              ? <span className="pill accent" style={{ fontSize: 11 }}><Check size={11} style={{ verticalAlign: -1, marginRight: 2 }} />Tracking</span>
+              : <button className="btn btn-pri btn-sm" disabled={trackBusy[p.id]} onClick={() => track(p.id)}>
+                  {trackBusy[p.id] ? <Loader size={13} className="spin" /> : <><Radar size={13} /> Track</>}
+                </button>}
+            {isConnected || isPending
+              ? <span className="pill" style={{ fontSize: 11, background: isConnected ? "var(--gain-soft)" : undefined, color: isConnected ? "var(--gain)" : undefined }}>{isConnected ? "Connected" : "Pending"}</span>
+              : <button className="btn btn-ghost btn-sm" disabled={connecting[p.id]} onClick={() => connect(p.id)}>
+                  {connecting[p.id] ? <Loader size={13} className="spin" /> : <><UserPlus size={13} /> Connect</>}
+                </button>}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Discover</div>
+          <div className="page-title">Grow your Investor Circle</div>
+          <div className="page-sub">Find new investors to Track or Connect with — never your existing network.</div>
+        </div>
+      </div>
+
+      <div className="toolbar" style={{ marginBottom: 16 }}>
+        <div className="searchbox grow"><Search size={16} color="var(--muted)" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by name or username…" /></div>
+        <select className="inline-select sm" value={sort} onChange={e => setSort(e.target.value)}>
+          <option value="recommended">Recommended</option>
+          <option value="name">Name (A–Z)</option>
+          <option value="ici">ICI score</option>
+          <option value="ideas">Ideas posted</option>
+        </select>
+      </div>
+
+      {people === null && <div className="card"><div className="empty"><Loader size={16} className="spin" /> Loading…</div></div>}
+      {people !== null && sorted.length === 0 && (
+        <div className="card"><div className="empty">
+          {q.trim() ? `No investors match "${q}".` : "No new investors to discover right now — check back soon."}
+        </div></div>
+      )}
+
+      {recommended.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>Recommended for you</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {recommended.map(p => <PersonCard key={p.id} p={p} />)}
+          </div>
+        </div>
+      )}
+      {rest.length > 0 && (
+        <div>
+          {showSplit && <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>Explore more investors</div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {rest.map(p => <PersonCard key={p.id} p={p} />)}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -268,9 +452,18 @@ const laterBtnStyle = {
 };
 const personRowStyle = { display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "rgba(255,255,255,.05)", borderRadius: 12 };
 const connectBtnStyle = {
-  display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8,
+  display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 12px", borderRadius: 8,
   background: "rgba(109,93,245,.18)", border: "1px solid rgba(109,93,245,.4)",
-  color: "#c5bcff", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+  color: "#c5bcff", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap",
+};
+const trackBtnStyle = {
+  display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 12px", borderRadius: 8,
+  background: "rgba(74,222,128,.14)", border: "1px solid rgba(74,222,128,.35)",
+  color: "#86efac", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap",
+};
+const trackedPillStyle = {
+  display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "6px 10px", borderRadius: 8,
+  fontSize: 11, color: "#86efac", fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap",
 };
 
 function gateBtnStyle(disabled) {

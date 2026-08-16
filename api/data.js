@@ -48,16 +48,24 @@ import handleEngagement from './_lib/handlers/engagement.js';
 import handleClaimProfile from './_lib/handlers/claim-profile.js';
 import handleAdminConfig from './_lib/handlers/admin-config.js';
 import handleLookups from './_lib/handlers/lookups.js';
+import handleTracking from './_lib/handlers/tracking.js';
 
 const RESOURCES = {
   'connections':      { handler: handleConnections,     auth: 'user'  },
-  'groups':           { handler: handleGroups,           auth: 'user'  },
+  // groups (Circles) bundles mixed auth needs: viewing a public Circle by
+  // slug, or the public/member-visible Circles on an investor's profile,
+  // must work for logged-out visitors (e.g. a WhatsApp invite-link open),
+  // while every write and the "my circles" list require a verified user.
+  // handleGroups performs its own per-action requireUid()/optionalUid()
+  // check — see api/_lib/handlers/groups.js.
+  'groups':           { handler: handleGroups,           auth: 'none'  },
   'recommendations':  { handler: handleRecommendations,  auth: 'user'  },
   'notifications':    { handler: handleNotifications,    auth: 'user'  },
   'sharing-prefs':    { handler: handleSharingPrefs,     auth: 'user'  },
   'public-profile':   { handler: handlePublicProfile,    auth: 'none'  },
   'admin-sebi':       { handler: handleAdminSebi,        auth: 'admin' },
   'engagement':       { handler: handleEngagement,       auth: 'user'  },
+  'tracking':         { handler: handleTracking,         auth: 'user'  },
   // claim-profile and lookups bundle mixed auth needs (public/user/admin
   // actions in one resource) — each handler performs its own per-action
   // requireUid()/requireAdmin() check, so they're registered as 'none' here.

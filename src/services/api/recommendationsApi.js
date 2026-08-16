@@ -26,5 +26,6 @@ export {
   getTickerRecos,
   getNetworkEngagementFeed,
   getPublicFeed,
-  getRecommenderUsername
+  getRecommenderUsername,
+  getCircleIdeas
 } from "../../db";

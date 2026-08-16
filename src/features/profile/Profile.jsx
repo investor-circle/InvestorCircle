@@ -14,7 +14,11 @@ import {
   Globe,
   Copy,
   ExternalLink,
-  ArrowLeft
+  ArrowLeft,
+  Radar,
+  Users,
+  Layers,
+  Share2
 } from "lucide-react";
 import { createUserWithEmailAndPassword, updateProfile as fbUpdateProfile } from "firebase/auth";
 import { auth as primaryAuth } from "../../firebase";
@@ -31,6 +35,16 @@ import {
   saveUsername as dbSaveUsername,
   uploadAvatar as dbUploadAvatar
 } from "../../services/api/profileApi";
+import {
+  getOwnerCircles as dbGetOwnerCircles,
+  requestJoinCircle as dbRequestJoinCircle
+} from "../../services/api/groupsApi";
+import {
+  trackInvestor as dbTrackInvestor,
+  untrackInvestor as dbUntrackInvestor,
+  getTrackingStatus as dbGetTrackingStatus
+} from "../../services/api/trackingApi";
+import { gotoCircle } from "../../utils/navigation";
 import { compressAvatarFile } from "../../utils/image";
 import {
   computeIci
@@ -41,6 +55,60 @@ import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
 import { initialsOf } from "../../utils/format";
 
+/* ── ProfileSharePopover — Copy link / Share on WhatsApp for a profile,
+   same anchored-popover-on-desktop / bottom-sheet-on-mobile pattern as the
+   reco card's share button (SharePublicPopover in Recommendations.jsx) and
+   the Circle page's share button (CircleSharePopover in Groups.jsx). ── */
+function ProfileSharePopover({ profileUrl, displayName, anchorEl, onClose }) {
+  const isMobile = useIsMobile();
+  const [copied, setCopied] = useState(false);
+  const [pos, setPos] = useState(null);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    if (!isMobile && anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    }
+    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
+    setTimeout(() => document.addEventListener('mousedown', h), 0);
+    return () => document.removeEventListener('mousedown', h);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const waText = encodeURIComponent(`Check out ${displayName}'s investment track record on myInvestorCircle:\n${profileUrl}`);
+  const copyLink = () => navigator.clipboard.writeText(profileUrl).then(() => { setCopied(true); setTimeout(() => { setCopied(false); onClose(); }, 1600); });
+
+  const content = (
+    <>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:'flex',alignItems:'center',gap:6}}><Share2 size={15} color="var(--accent)"/> Share this profile</div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        <button className="btn btn-pri btn-sm" style={{justifyContent:'center'}} onClick={copyLink}>{copied ? <><Check size={14}/> Copied!</> : <><Copy size={14}/> Copy link</>}</button>
+        <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{justifyContent:'center',textDecoration:'none'}} onClick={onClose}><span style={{fontSize:15,lineHeight:1}}>💬</span> Share on WhatsApp</a>
+      </div>
+      <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center',marginTop:10}} onClick={onClose}>Cancel</button>
+    </>
+  );
+
+  if (isMobile) return createPortal(
+    <div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
+      <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.45)'}}/>
+      <div ref={popRef} style={{position:'relative',background:'var(--surface)',borderRadius:'20px 20px 0 0',padding:'20px 20px 36px',boxShadow:'0 -8px 40px rgba(0,0,0,.28)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:36,height:4,background:'var(--line)',borderRadius:2,margin:'0 auto 18px'}}/>
+        {content}
+      </div>
+    </div>,
+    document.body
+  );
+
+  if (!pos) return null;
+  return createPortal(
+    <div ref={popRef} style={{position:'fixed',top:pos.top,right:pos.right,zIndex:9999,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,boxShadow:'0 8px 32px rgba(0,0,0,.18)',padding:'16px 18px',minWidth:270,maxWidth:320,fontFamily:'var(--font)'}} onClick={e=>e.stopPropagation()}>
+      {content}
+    </div>,
+    document.body
+  );
+}
+
 export function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, viewerIsAdmin=false, viewerForClaim=false, onClaimClick=null, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
   const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
@@ -50,8 +118,14 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   const [connecting,  setConnecting]  = useState(false);
   const [connected,   setConnected]   = useState(false);
   const [copied,      setCopied]      = useState(false);
+  const [shareOpen,   setShareOpen]   = useState(false);
+  const shareBtnRef = useRef(null);
   const [expandedId,  setExpandedId]  = useState(recoId||null);
   const expandedRef = useRef(null);
+  const [tracking,    setTracking]    = useState(false);
+  const [trackBusy,   setTrackBusy]   = useState(false);
+  const [circles,     setCircles]     = useState({ public: [], private: [] });
+  const [joiningCircle, setJoiningCircle] = useState(null);
 
   // Public URL — defined early so it's always in scope for both shells
   const profileUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}`;
@@ -180,6 +254,40 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
     setConnecting(false);
   };
 
+  // Tracking status + Circles (public always; private only those the viewer
+  // is already a member of — server enforces this, see api/_lib/handlers/groups.js).
+  useEffect(()=>{
+    if(!profileUserId) return;
+    dbGetOwnerCircles(profileUserId).then(setCircles).catch(()=>{});
+    if (viewerUser && !isOwnProfile) {
+      dbGetTrackingStatus(profileUserId).then(setTracking).catch(()=>{});
+    }
+  },[profileUserId, viewerUser?.uid, isOwnProfile]);
+
+  const handleToggleTrack = async()=>{
+    if(!profileUserId || trackBusy) return;
+    setTrackBusy(true);
+    if(tracking){ await dbUntrackInvestor(profileUserId); setTracking(false); }
+    else { await dbTrackInvestor(profileUserId); setTracking(true); }
+    setTrackBusy(false);
+  };
+
+  const handleJoinCircle = async(circle)=>{
+    if(!viewerUser){ onRequestConnect && sessionStorage.setItem("pending_connect_username", username); return; }
+    setJoiningCircle(circle.id);
+    const res = await dbRequestJoinCircle(circle.id);
+    if(res && !res.error){
+      setTracking(true); // Subscribing always tracks the circle owner too.
+      setCircles(c=>({...c, public: c.public.map(pc=>pc.id===circle.id?{...pc, _requested:true}:pc)}));
+    } else {
+      // Surface a failure instead of silently doing nothing (e.g. a
+      // dropped connection). Public Circle Subscribe itself has no
+      // eligibility gate — a 403 here would mean something else broke.
+      alert("Couldn't send your request to join. Please try again.");
+    }
+    setJoiningCircle(null);
+  };
+
   // ── Content renderer ──────────────────────────────────────────────────────
   const renderContent=()=>{
     if(loading) return <div style={{textAlign:'center',padding:'60px 0',color:'var(--muted)'}}><Loader size={28} className="spin" style={{marginBottom:14}}/><div>Loading public investment record…</div></div>;
@@ -242,6 +350,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
       full_name: d_p.full_name ?? '', email: d_p.email ?? '', bio: d_p.bio ?? '',
       avatar_color: d_p.avatar_color ?? '', avatar_url: d_p.avatar_url ?? '', username: d_p.username ?? '',
       connection_count: d_p.connection_count ?? 0, group_count: d_p.group_count ?? 0,
+      tracking_count: d_p.tracking_count ?? 0,
       created_at: d_p.created_at ?? null,
       registration_status: d_p.registration_status ?? 'self_directed',
       sebi_approval_status: d_p.sebi_approval_status ?? 'not_applied',
@@ -455,10 +564,18 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                   {['twitter','linkedin','telegram','instagram'].map(p=>(
                     <SocialIconBtn key={p} platform={p} url={profile[`${p}_url`]}/>
                   ))}
-                  {showAddBtn&&<button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}>{connecting?<><Loader size={13} className="spin"/>Sending…</>:<><UserPlus size={13}/>Add to network</>}</button>}
-                  {showPending&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Request sent</span>}
+                  {!isOwnProfile && viewerUser && (
+                    <button className="btn btn-sm" disabled={trackBusy} onClick={handleToggleTrack}
+                      style={tracking
+                        ? {background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.22)',color:'rgba(255,255,255,.85)',marginLeft:4}
+                        : {background:'rgba(109,93,245,.85)',border:'none',color:'#fff',marginLeft:4}}>
+                      {trackBusy?<Loader size={13} className="spin"/>:tracking?<><Check size={13}/>Tracking</>:<><Radar size={13}/>Track</>}
+                    </button>
+                  )}
+                  {showAddBtn&&<button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}>{connecting?<><Loader size={13} className="spin"/>Sending…</>:<><UserPlus size={13}/>Connect</>}</button>}
+                  {showPending&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Request Pending</span>}
                   {showConnected&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Connected</span>}
-                  {showJoinBtn&&<button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}><UserPlus size={13}/>Join to connect</button>}
+                  {showJoinBtn&&<button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}><UserPlus size={13}/>Track / Connect</button>}
                 </div>
 
                 {/* Edit button */}
@@ -517,11 +634,12 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
               display:'flex',gap:16,flexWrap:'wrap',alignItems:'center',padding:'9px 28px',
             }}>
               {[
-                {val:profile.connection_count||0, label:'Connections'},
-                {val:profile.group_count||0,      label:'Groups'},
-                {val:summary.total,               label:'Total Recos'},
-                {val:summary.active,              label:'Active'},
-                {val:summary.closed,              label:'Closed'},
+                {val:summary.total,                label:'Ideas'},
+                {val:profile.tracking_count||0,    label:'Tracking'},
+                {val:profile.connection_count||0,  label:'Connections'},
+                {val:profile.group_count||0,       label:'Circles'},
+                {val:summary.active,               label:'Active'},
+                {val:summary.closed,               label:'Closed'},
                 {val:`${summary.years_history.toFixed(1)}y`, label:'History'},
               ].map((s,i)=>(
                 <React.Fragment key={s.label}>
@@ -720,6 +838,53 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
           <AlertTriangle size={13} style={{flexShrink:0}}/><span>Returns on active positions use current price and may change daily. Only closed recommendations feed the realized scorecard.</span>
         </div>
 
+        {/* ── CIRCLES ── */}
+        {(circles.public.length>0 || circles.private.length>0) && (
+          <div className="card" style={{marginBottom:14}}>
+            <div className="card-head"><Layers size={14} style={{verticalAlign:-2,marginRight:4}}/> Circles</div>
+            <div className="card-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+              {circles.public.length>0 && (
+                <div>
+                  <div className="muted small" style={{fontWeight:700,marginBottom:8,textTransform:'uppercase',letterSpacing:'.04em',fontSize:11}}>Public Circles</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    {circles.public.map(c=>(
+                      <div key={c.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'10px 12px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10}}>
+                        <div style={{cursor:'pointer',minWidth:0}} onClick={()=>gotoCircle(c.slug)}>
+                          <div style={{fontWeight:700,fontSize:13.5}}>{c.name}</div>
+                          <div className="muted small">{c.member_count} member{c.member_count!==1?'s':''}{c.description?` · ${c.description}`:''}</div>
+                        </div>
+                        {isOwnProfile
+                          ? <button className="btn btn-ghost btn-sm" onClick={()=>gotoCircle(c.slug)}>View</button>
+                          : c._requested
+                            ? <span className="pill" style={{fontSize:11,flexShrink:0}}>Requested</span>
+                            : <button className="btn btn-pri btn-sm" disabled={joiningCircle===c.id} onClick={()=>handleJoinCircle(c)} style={{flexShrink:0}}>
+                                {joiningCircle===c.id?<Loader size={13} className="spin"/>:'Subscribe'}
+                              </button>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {circles.private.length>0 && (
+                <div>
+                  <div className="muted small" style={{fontWeight:700,marginBottom:8,textTransform:'uppercase',letterSpacing:'.04em',fontSize:11}}><Lock size={10} style={{verticalAlign:-1,marginRight:3}}/>Private Circles</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    {circles.private.map(c=>(
+                      <div key={c.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'10px 12px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,cursor:'pointer'}} onClick={()=>gotoCircle(c.slug)}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:13.5}}>{c.name}</div>
+                          <div className="muted small">{c.member_count} member{c.member_count!==1?'s':''}</div>
+                        </div>
+                        <button className="btn btn-ghost btn-sm" style={{flexShrink:0}}>View</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── SECTOR PERFORMANCE ── */}
         {sectors.length>0&&(
           <div className="card" style={{marginBottom:14}}>
@@ -870,10 +1035,23 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
             <div><div style={{fontWeight:800,fontSize:13,lineHeight:1.1}}>myInvestorCircle</div><div style={{fontSize:10,color:'var(--muted)'}}>Transparency Platform</div></div>
           </div>
           <div style={{flex:1}}/>
+          {data && (
+            <button ref={shareBtnRef} className="icon-btn" title="Share this profile" aria-label="Share this profile" onClick={()=>setShareOpen(true)}>
+              <Share2 size={16}/>
+            </button>
+          )}
           {viewerUser
             ?<button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
             :<a href={window.location.pathname} style={{fontSize:13,fontWeight:600,color:'var(--accent)',textDecoration:'none'}}>Sign in →</a>}
         </div>
+        {shareOpen && (
+          <ProfileSharePopover
+            profileUrl={profileUrl}
+            displayName={data?.profile?.full_name || username}
+            anchorEl={shareBtnRef.current}
+            onClose={()=>setShareOpen(false)}
+          />
+        )}
         <div style={{padding:'20px 20px 0'}}>{renderContent()}</div>
       </div>
     );

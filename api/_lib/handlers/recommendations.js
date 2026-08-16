@@ -5,6 +5,12 @@
  * for why this lives under api/_lib/ instead of being its own route.
  *
  * GET  ?resource=recommendations&scope=received|made
+ * GET  ?resource=recommendations&scope=circle&groupId=<id>
+ *   -> ideas delivered to a Circle, newest-ACTIVITY-first (posting, a new
+ *      comment, or a new reaction all count) — caller must be an active
+ *      member or the owner of that circle (private circles: never exposed
+ *      to non-members; public circles: members-only too, same as the
+ *      Circle's member list itself).
  *
  * POST ?resource=recommendations
  *   Body: { action, ... }
@@ -148,7 +154,73 @@ async function getMade(userId) {
   }));
 }
 
-async function deliverToRecipients(recId, senderId, recipients, reco, { asForward, forwarderId } = {}) {
+/**
+ * Which of the caller's requested Circle (group) recipients they're actually
+ * allowed to post to — never trust the client's target list. Rule (product
+ * spec): a PRIVATE circle's ideas are shared between its members, so any
+ * active member may post to it; a PUBLIC circle is the owner's broadcast
+ * channel, so only its owner/admin may post to it. Recipients that fail
+ * this check are silently dropped rather than rejecting the whole idea, the
+ * same pattern already used for Circle direct-add eligibility filtering.
+ */
+async function authorizedCircleRecipientIds(senderId, recipients) {
+  const groupIds = [...new Set((recipients || []).filter(r => r.type === 'group').map(r => String(r.id)))];
+  if (!groupIds.length) return new Set();
+  const rows = await sql`
+    SELECT g.id, g.circle_type, gm.role, gm.status
+    FROM ic_groups g
+    LEFT JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = ${senderId}
+    WHERE g.id = ANY(${groupIds}::uuid[])
+  `;
+  const ok = new Set();
+  for (const row of rows) {
+    if (row.status !== 'active') continue;                            // not a member at all
+    if (row.circle_type === 'public' && row.role !== 'admin') continue; // only the owner may post to a public circle
+    ok.add(row.id);
+  }
+  return ok;
+}
+
+async function getCircleFeed(groupId, userId) {
+  const membership = await sql`
+    SELECT 1 FROM ic_groups g
+    LEFT JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = ${userId} AND gm.status = 'active'
+    WHERE g.id = ${groupId} AND (g.created_by = ${userId} OR gm.user_id IS NOT NULL)
+    LIMIT 1
+  `;
+  if (!membership.length) return null; // not authorized — caller decides the response code
+
+  const rows = await sql`
+    SELECT
+      r.id, r.asset_name, r.ticker, r.asset_class, r.recommendation_type,
+      r.reco_price, r.current_price, r.target_price, r.horizon, r.target_date,
+      r.thesis, r.exit_signal, r.exit_date, r.is_public, r.created_at,
+      r.conviction, r.sector,
+      rec_up.id          AS recommender_id,
+      rec_up.full_name   AS recommender_name,
+      rec_up.username    AS recommender_username,
+      rec_up.avatar_url  AS recommender_avatar_url,
+      rec_up.avatar_color AS recommender_avatar_color,
+      (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id = r.id::text) AS likes,
+      (SELECT COUNT(*) FROM recommendation_comments  c  WHERE c.reco_id  = r.id)        AS comments_count,
+      GREATEST(
+        r.created_at,
+        COALESCE((SELECT MAX(c.created_at)  FROM recommendation_comments  c  WHERE c.reco_id = r.id), r.created_at),
+        COALESCE((SELECT MAX(rx.created_at) FROM recommendation_reactions rx WHERE rx.reco_id = r.id::text), r.created_at)
+      ) AS last_activity_at
+    FROM ic_recommendations r
+    JOIN user_profiles rec_up ON rec_up.id = r.recommender_id
+    WHERE r.id IN (
+      SELECT DISTINCT recommendation_id FROM recommendation_deliveries
+      WHERE via_type = 'group' AND via_group_id = ${groupId}
+    )
+    ORDER BY last_activity_at DESC
+    LIMIT 200
+  `;
+  return rows;
+}
+
+async function deliverToRecipients(recId, senderId, recipients, reco, { asForward, forwarderId, authorizedGroupIds } = {}) {
   const delivered = new Set();
   for (const r of recipients || []) {
     if (r.type === 'user') {
@@ -176,6 +248,13 @@ async function deliverToRecipients(recId, senderId, recipients, reco, { asForwar
                 ${JSON.stringify({ ticker: reco.ticker, assetName: reco.assetName })})
       `;
     } else if (r.type === 'group' && !asForward) {
+      if (!authorizedGroupIds?.has(String(r.id))) continue; // not authorized to post to this circle — see authorizedCircleRecipientIds
+      const circleRows = await sql`SELECT name, slug FROM ic_groups WHERE id = ${r.id} LIMIT 1`;
+      const circleMeta = {
+        ticker: reco.ticker, assetName: reco.assetName,
+        groupName: circleRows[0]?.name || '', groupSlug: circleRows[0]?.slug || '',
+        recoId: recId,
+      };
       const members = await sql`
         SELECT user_id FROM group_members
         WHERE group_id = ${r.id} AND status = 'active' AND user_id != ${senderId}
@@ -189,10 +268,12 @@ async function deliverToRecipients(recId, senderId, recipients, reco, { asForwar
           VALUES (${recId}, ${m.user_id}, 'group', ${r.id})
           ON CONFLICT (recommendation_id, delivered_to_user_id) DO NOTHING
         `;
+        // Distinct type from a direct/1:1 share ('recommendation') so the
+        // notification can name the Circle and deep-link straight to it
+        // (see NotificationPanel.jsx + App.jsx's onNavigate handler).
         await sql`
           INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
-          VALUES (${m.user_id}, 'recommendation', ${senderId}, ${recId},
-                  ${JSON.stringify({ ticker: reco.ticker, assetName: reco.assetName })})
+          VALUES (${m.user_id}, 'circle_idea', ${senderId}, ${recId}, ${JSON.stringify(circleMeta)})
         `;
       }
     }
@@ -212,8 +293,14 @@ export default async function handleRecommendations(req, res, userId) {
         res.status(200).json({ recommendations: await getMade(userId) });
       } else if (scope === 'received') {
         res.status(200).json({ recommendations: await getReceived(userId) });
+      } else if (scope === 'circle') {
+        const groupId = String(req.query?.groupId || '');
+        if (!groupId) { res.status(400).json({ error: 'groupId is required' }); return; }
+        const rows = await getCircleFeed(groupId, userId);
+        if (rows === null) { res.status(403).json({ error: 'Not authorized for this circle' }); return; }
+        res.status(200).json({ ideas: rows });
       } else {
-        res.status(400).json({ error: 'scope must be "received" or "made"' });
+        res.status(400).json({ error: 'scope must be "received", "made" or "circle"' });
       }
       return;
     }
@@ -247,7 +334,8 @@ export default async function handleRecommendations(req, res, userId) {
                   target_price, horizon, target_date, thesis, is_public, recommendation_type,
                   stop_loss, conviction, sector, exchange, created_at
       `;
-      await deliverToRecipients(rec[0].id, userId, recipients, reco);
+      const authorizedGroupIds = await authorizedCircleRecipientIds(userId, recipients);
+      await deliverToRecipients(rec[0].id, userId, recipients, reco, { authorizedGroupIds });
       res.status(200).json({ recommendation: rec[0] });
       return;
     }

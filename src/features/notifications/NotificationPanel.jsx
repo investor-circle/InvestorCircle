@@ -14,9 +14,14 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
     connection_request:      "wants to connect with you",
     connection_accepted:     "accepted your connection request",
     connection_rejected:     "declined your connection request",
-    group_added:             "added you to a group",
-    group_member_exit:       "left your group",
+    group_added:             "added you to a Circle",
+    group_member_exit:       "left your Circle",
+    circle_join_request:     "requested to join your Circle",
+    circle_join_approved:    "approved your request to join their Circle",
+    circle_join_rejected:    "declined your request to join their Circle",
+    tracking_new:            "started tracking you",
     recommendation:          "shared a recommendation with you",
+    circle_idea:             "shared an idea in a Circle",
     exit_signal:             "issued an exit signal",
     contact_recommendation:  "posted a new recommendation",
     contact_comment:         "commented on your recommendation",
@@ -51,6 +56,21 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
         ? <><b>{names[0]}</b> and <b>{names[1]}</b></>
         : <><b>{names[0]}</b> and <b>{count - 1} others</b></>;
       return <>{who} liked your {ticker ? <>{ticker} </> : ''}recommendation</>;
+    }
+
+    // Smart-bundled tracking: "Rahul Sharma started tracking you" or
+    // "Ankur + 10 new investors started tracking you" once it bundles.
+    if (n.type === 'tracking_new') {
+      const count = n.metadata?.count || 1;
+      const leadName = n.metadata?.leadName || n.from_name || 'Someone';
+      if (count <= 1) return <><b>{leadName}</b> started tracking you</>;
+      return <><b>{leadName}</b> + {count - 1} new investor{count - 1 === 1 ? '' : 's'} started tracking you</>;
+    }
+
+    // "Vivaan Rawat shared an idea in Piggy Wealth — HFCL"
+    if (n.type === 'circle_idea') {
+      const groupName = n.metadata?.groupName;
+      return <><b>{n.from_name||'Someone'}</b> shared an idea{groupName ? <> in <b>{groupName}</b></> : ' in a Circle'}{ticker ? <> — {ticker}</> : ''}</>;
     }
 
     // Network: "Ankur Gupta liked INDSWFTLAB by Abhijheet"
@@ -129,7 +149,10 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
             : '#6d5df5';
           const isNavReco = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation'].includes(n.type);
           const isNavConn = ['connection_request','connection_accepted','connection_rejected'].includes(n.type);
-          const isClickable = onNavigate && (isNavReco || isNavConn);
+          const isNavTracking = n.type === 'tracking_new';
+          const isNavCircleIdea = n.type === 'circle_idea';
+          const isNavCircleJoinRequest = n.type === 'circle_join_request';
+          const isClickable = onNavigate && (isNavReco || isNavConn || isNavTracking || isNavCircleIdea || isNavCircleJoinRequest);
           return (
           <div key={n.id}
             onClick={isClickable ? () => onNavigate(n) : undefined}

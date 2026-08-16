@@ -34,3 +34,8 @@ export async function gotoUserProfile(userId) {
   const info = await fetchPublicProfileInfo(userId);
   if (info?.username) openProfile(info.username);
 }
+
+/** Navigate to a Circle's dedicated page by its shareable slug (hash-based routing). */
+export function gotoCircle(slug) {
+  if (slug) window.location.hash = `#/circle/${slug}`;
+}

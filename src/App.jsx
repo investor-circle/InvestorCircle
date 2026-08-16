@@ -53,7 +53,12 @@ import {
   untrackReco as dbUntrackReco
 } from "./services/api/engagementApi";
 import {
-  getMyGroups
+  getTrackingCounts as dbGetTrackingCounts
+} from "./services/api/trackingApi";
+import {
+  getMyGroups,
+  getCircleBySlug as dbGetCircleBySlug,
+  requestJoinCircle as dbRequestJoinCircle
 } from "./services/api/groupsApi";
 import {
   getFeedConfigAndPrefs as dbGetFeedConfigAndPrefs,
@@ -95,8 +100,9 @@ const AdminSeedData    = React.lazy(() => adminModule().then(m => ({ default: m.
 const AdminUsers       = React.lazy(() => adminModule().then(m => ({ default: m.AdminUsers })));
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { InviteModal, Network } from "./features/connections/Connections";
+import { CirclePage } from "./features/groups/Groups";
 import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./features/discovery/Discovery";
-import { OnboardingGate } from "./features/onboarding/Onboarding";
+import { DiscoverModal, DiscoverPeoplePage, OnboardingGate } from "./features/onboarding/Onboarding";
 import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
 import { PortfolioIntelligencePage } from "./features/portfolio/Portfolio";
@@ -132,6 +138,7 @@ const INVESTOR_PATH_TO_PAGE = {
   "/portfolio": "portfolio",
   "/market": "market_intel",
   "/security": "sec_intel",
+  "/discover": "discover",
   "/connections": "network",
   "/recommendations": "recs",
   "/sharing": "sharing",
@@ -212,6 +219,12 @@ export default function App() {
   const [sharing,       setSharing]       = useState({});
   const [notifications, setNotifications] = useState([]);
   const [tracked,       setTracked]       = useState(new Set()); // Set of reco IDs the user has tracked
+  // Track-an-investor relationship (distinct from the recommendation-tracking
+  // Set above): lightweight counts only — the Network page's Tracking me /
+  // I'm tracking tabs fetch their own paginated lists lazily, never the full
+  // list, so a creator with thousands of trackers doesn't load them all here.
+  const [trackingCounts,  setTrackingCounts]  = useState({ trackersCount: 0, trackingCount: 0 });
+  const [networkInitTab,  setNetworkInitTab]  = useState(null); // one-shot: which Network tab to open next (e.g. from a notification)
   // Feed configuration
   const [feedConfigOptions,       setFeedConfigOptions]       = useState([]); // admin-defined options
   const [userFeedPrefs,           setUserFeedPrefs]           = useState({}); // {key: boolean} user overrides
@@ -238,12 +251,31 @@ export default function App() {
     return () => window.removeEventListener("hashchange", h);
   }, []);
 
-  // SECURITY: whenever a profile URL is active, replace the browser history entry
-  // with the clean base URL so browser session-restore / "reopen closed tab" and
-  // the back-button don't re-load a specific investor profile.
-  // We keep pageHash in React state so the profile still renders correctly.
+  // Circle URLs (#/circle/...) still get their history entry replaced with
+  // the clean base URL once loaded — unlike investor profiles below, a
+  // Circle's shareable link is the dedicated Circle page's own Share
+  // button (copy link / WhatsApp), not the address bar, so there's no
+  // product reason to keep it visible there. Stripping it also fixes a
+  // real bug: without stripping, window.location.hash stays set to this
+  // exact value after Close, so re-opening the SAME circle later sets an
+  // identical hash — which the browser does not fire a hashchange event
+  // for — leaving the page stuck until a full reload. Stripping it here
+  // means the next "Open" always assigns a hash that differs from the
+  // (now-empty) current one. We keep pageHash in React state so the page
+  // still renders correctly regardless.
+  //
+  // Investor profile URLs (#/investor/...) are DELIBERATELY left in the
+  // address bar — the whole point of a public profile is that its link is
+  // directly shareable, so the browser URL must show the real
+  // #/investor/username (or .../reco/id) link no matter how the user got
+  // there (search, Discovery, a Circle's member list, a notification,
+  // etc.). To avoid reintroducing the identical-hash-is-a-no-op bug this
+  // pattern has elsewhere, every exit from a profile page clears
+  // window.location.hash directly (not just React state) — see the
+  // onBack/onRequestConnect handlers below — so the address bar and
+  // pageHash never drift out of sync.
   useEffect(() => {
-    if (pageHash.startsWith('#/investor/')) {
+    if (pageHash.startsWith('#/circle/')) {
       window.history.replaceState(
         { _micProfileHash: pageHash },
         '',
@@ -271,7 +303,7 @@ export default function App() {
     if (!pageHash.startsWith('#/investor/')) return;
     if (_profileCameFromThisSite) return;           // intentional same-site nav — allow
     if (!userIsAdmin || !viewAsAdmin) return;        // investor-view users — always allow
-    setPageHash('');                                // admin-view + stale URL → go to admin panel
+    window.location.hash = '';                      // admin-view + stale URL → go to admin panel (also keeps the address bar in sync with pageHash — see the profile-URL note above)
   }, [authLoading, user?.uid, userIsAdmin, viewAsAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Post-login/signup: auto-send connection request if user came from a public profile ─
@@ -290,6 +322,26 @@ export default function App() {
         return sendConnectionRequest(user.uid, targetId).then(() => {
           setConnectConfirm({ name: targetName, username: pending });
           setTimeout(() => setConnectConfirm(null), 10000); // auto-dismiss after 10s
+        });
+      })
+      .catch(console.warn);
+  }, [user?.uid]);
+
+  // ── Post-login/signup: auto-resume a Circle join request if the user came
+  // from a public Circle page and had to sign in first (mirrors the
+  // pending_connect_username pattern above) ──
+  useEffect(() => {
+    if (!user) return;
+    const pendingSlug = sessionStorage.getItem("pending_join_circle_slug");
+    if (!pendingSlug) return;
+    sessionStorage.removeItem("pending_join_circle_slug");
+    const pendingInvite = sessionStorage.getItem("pending_join_circle_invite");
+    sessionStorage.removeItem("pending_join_circle_invite");
+    dbGetCircleBySlug(pendingSlug)
+      .then(circle => {
+        if (!circle || circle.is_owner || circle.is_member) return;
+        return dbRequestJoinCircle(circle.id, pendingInvite || null).then(() => {
+          window.location.hash = `#/circle/${pendingSlug}`;
         });
       })
       .catch(console.warn);
@@ -350,6 +402,8 @@ export default function App() {
         window.history.replaceState({}, '', window.location.pathname + window.location.search);
       }
       sessionStorage.removeItem('pending_connect_username');
+      sessionStorage.removeItem('pending_join_circle_slug');
+      sessionStorage.removeItem('pending_join_circle_invite');
       localStorage.removeItem('mic_claim_token');
     }
   }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -702,6 +756,7 @@ export default function App() {
 
   // ── Invite modal state ────────────────────────────────────────────────────────
   const [showInvite, setShowInvite] = useState(false);
+  const [showDiscover, setShowDiscover] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [searchPeople,     setSearchPeople]     = useState([]);
 
@@ -764,6 +819,8 @@ export default function App() {
         if (userIsAdmin) loadClaimRequests();
         // Check if this user is a creator awaiting admin approval for their claimed profile
         dbGetMyPendingClaimStatus().then(setHasPendingClaim).catch(()=>{});
+        // Network tab badge counts — cheap indexed COUNTs, never the full tracker/tracking lists
+        dbGetTrackingCounts().then(setTrackingCounts).catch(()=>{});
         // Both were already kicked off above, in parallel with the batch
         // that just resolved — just await them now.
         const [trackedResult, feedCfgResult] = await Promise.allSettled([
@@ -896,6 +953,31 @@ export default function App() {
   // securityTicker must be here — before ANY conditional return — Rules of Hooks
   const [securityTicker, setSecurityTicker] = useState(null);
 
+  // ── Circle route — no auth required (shareable, works from an invite link) ──
+  // Matches: #/circle/slug  (optionally ?invite=<code> appended by an invite link)
+  const circleMatch = pageHash.match(/^#\/circle\/([a-z0-9-]+)/i);
+  if (circleMatch && !authLoading) {
+    const circleSlug = circleMatch[1];
+    const circleQuery = new URLSearchParams(pageHash.split('?')[1] || '');
+    return (
+      <div className="app"><style>{STYLES}</style>
+        <ProfileErrorBoundary>
+          <div className="content" style={{maxWidth:900,margin:'0 auto',padding:isMobile?'16px 12px':'28px 24px'}}>
+            <CirclePage
+              slug={circleSlug}
+              inviteCode={circleQuery.get('invite')}
+              highlightIdeaId={circleQuery.get('highlight')}
+              autoOpenRequests={circleQuery.get('requests')==='1'}
+              viewerUser={user}
+              onBack={()=>setPageHash('')}
+              onNavigateProfile={(uname)=>{ if(uname) window.location.hash = `#/investor/${uname}`; }}
+            />
+          </div>
+        </ProfileErrorBoundary>
+      </div>
+    );
+  }
+
   // ── Public profile route — no auth required ────────────────────────────────
   // Matches: #/investor/username  OR  #/investor/username/reco/recoId
   const publicMatch = pageHash.match(/^#\/investor\/([a-z0-9_]+)(?:\/reco\/([a-zA-Z0-9-]+))?/i);
@@ -912,7 +994,7 @@ export default function App() {
             recoId={pubRecoId}
             viewerUser={user}
             ME={ME}
-            onBack={()=>setPageHash('')}
+            onBack={()=>{ window.location.hash = ''; }}
             onNavigateProfile={()=>{ window.location.hash = `#/investor/${pubUsername}`; }}
           />
         </div>
@@ -930,11 +1012,11 @@ export default function App() {
             viewerConnections={connections}
             viewerIsAdmin={userIsAdmin}
             mode="standalone"
-            onBack={()=>{ setPageHash(''); }}
+            onBack={()=>{ window.location.hash = ''; }}
             onRequestConnect={async(targetId)=>{
               if (!user) {
                 sessionStorage.setItem("pending_connect_username", pubUsername);
-                setPageHash('');
+                window.location.hash = '';
                 return;
               }
               await sendConnectionRequest(user.uid, targetId);
@@ -1018,6 +1100,7 @@ export default function App() {
       { id:"sec_intel",    label:"Stock Insights",  sub:"Discover stock conviction",     icon:Shield,    iconColor:"#34d399", iconBg:"rgba(52,211,153,.13)" },
     ]},
     { label:"CONNECT & GROW", items: [
+      { id:"discover",    label:"Discover",      sub:"Find new investors",                icon:Sparkles, iconColor:"#c084fc", iconBg:"rgba(192,132,252,.15)" },
       { id:"network",     label:"Network",       sub:"Connect with investors",            icon:Users,  iconColor:"#60a5fa", iconBg:"rgba(96,165,250,.13)" },
       { id:"trackrecord", label:"Track Record",  sub:"Your public investment record",    icon:Trophy, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)" },
     ]},
@@ -1240,6 +1323,19 @@ export default function App() {
                 </button>
               )}
 
+              {/* ── Discover people — permanent, deliberately eye-catching entry point
+                   into DiscoverModal (same modal used for onboarding) ── */}
+              {isInv && (
+                <button
+                  className="icon-btn discover-icon-btn"
+                  onClick={()=>setShowDiscover(true)}
+                  title="Discover investors to Track or Connect with"
+                  aria-label="Discover investors"
+                >
+                  <Sparkles size={18}/>
+                </button>
+              )}
+
               {/* ── Invite button (desktop: text+icon; mobile: icon only) ── */}
               {isInv && (
                 isMobile
@@ -1342,6 +1438,30 @@ export default function App() {
                       dbLookupUser('id', n.from_user_id)
                         .then(row => { if (row?.username) window.location.hash = `#/investor/${row.username}`; })
                         .catch(()=>{});
+                      return;
+                    }
+
+                    // Tracking notifications (individual or bundled) → Network → Tracking me,
+                    // newest trackers first — never a specific record, so no lookup needed.
+                    if (n.type === 'tracking_new') {
+                      setNetworkInitTab('trackers');
+                      setPage('network');
+                      return;
+                    }
+
+                    // An idea shared to a Circle → that Circle's page, with the
+                    // idea scrolled to and highlighted (metadata carries the
+                    // slug directly — set once, server-side, at delivery time).
+                    if (n.type === 'circle_idea' && n.metadata?.groupSlug) {
+                      const highlight = n.metadata?.recoId ? `?highlight=${encodeURIComponent(n.metadata.recoId)}` : '';
+                      window.location.hash = `#/circle/${n.metadata.groupSlug}${highlight}`;
+                      return;
+                    }
+
+                    // Someone requested to join a Circle you own → the Circle
+                    // page, with the Join requests panel opened straight away.
+                    if (n.type === 'circle_join_request' && n.metadata?.groupSlug) {
+                      window.location.hash = `#/circle/${n.metadata.groupSlug}?requests=1`;
                     }
                   }}
                 />}
@@ -1500,9 +1620,11 @@ export default function App() {
             )}
             {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading}/>}
             {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
+            {isInv && showDiscover && <DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
             {isInv && page==="market_intel" && <MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
             {isInv && page==="sec_intel"    && <SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
+            {isInv && page==="discover"     && <DiscoverPeoplePage ME={ME}/>}
             {isInv && page==="network"   && <Network
                 connections={connections} setConnections={setConnections}
                 groups={groups} setGroups={setGroups}
@@ -1510,7 +1632,9 @@ export default function App() {
                 configs={configs} canCreateGroups={canCreateGroups}
                 pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
                 recsReceived={recsReceived} me={ME}
-                onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}/>}
+                onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}
+                initTab={networkInitTab} onInitTabConsumed={()=>setNetworkInitTab(null)}
+                trackingCounts={trackingCounts} onTrackingCountsChange={setTrackingCounts}/>}
             {isInv && page==="recs"      && <Recommendations
                 recsReceived={recsReceived} setRecsReceived={setRecsReceived}
                 recsMade={recsMade} setRecsMade={setRecsMade}

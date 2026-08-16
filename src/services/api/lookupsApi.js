@@ -20,6 +20,7 @@ export {
   setFeedPref,
   searchPeople,
   getSuggestedPeople,
+  getDiscoverMore,
   getAboutUsContent,
   saveAboutUsContent,
   voteFeature,
