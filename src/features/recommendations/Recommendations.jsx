@@ -1134,7 +1134,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
         <span style={{fontSize:12,fontWeight:600,color:"var(--ink-soft)",whiteSpace:"nowrap"}}>Expired</span>
         {expiredCount>0 && <span className="pill loss" style={{fontSize:11,padding:"1px 6px"}}>{expiredCount}</span>}
       </div>
-      <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)}><Plus size={15}/> New recommendation</button>
+      <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)}><Plus size={15}/> New idea</button>
     </div>
 
     {rows.length===0
@@ -1561,7 +1561,18 @@ export function ThesisRenderer({ thesis, previewLines=3 }) {
 
 export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, me, onClose, onCreate }) {
   const myId = me?.id || "me";
-  const myGroups = groups.filter(g=>g.my_role==="admin"||g.members?.some(m=>m.user_id===myId&&m.status==="active"));
+  // Posting permission (product rule): a private Circle is shared between
+  // friends, so any active member may post an idea to it. A public Circle
+  // is the owner's broadcast channel, so only its owner/admin may post to
+  // it — the server enforces this too (see authorizedCircleRecipientIds in
+  // api/_lib/handlers/recommendations.js); this filter just keeps the
+  // picker from offering a Circle the click would silently be rejected for.
+  const myGroups = groups.filter(g=>{
+    const isMember = g.my_role==="admin"||g.members?.some(m=>m.user_id===myId&&m.status==="active");
+    if(!isMember) return false;
+    if(g.circle_type==="public" && g.my_role!=="admin") return false;
+    return true;
+  });
   const [selectedInstr, setSelectedInstr] = useState(null);
   const [assetName,   setAssetName]   = useState("");
   const [ticker,      setTicker]      = useState("");
@@ -1617,6 +1628,16 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
 
   const toggle  = (id) => setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
 
+  // A public Circle is, by definition, discoverable by anyone — so an idea
+  // shared to one can never be marked non-public. Forcing (not just
+  // defaulting) this keeps the Public checkbox truthful even if the user
+  // had switched it off before picking a public Circle.
+  const hasPublicCircleSelected = useMemo(
+    () => targets.some(id => myGroups.find(g=>g.id===id)?.circle_type==="public"),
+    [targets, myGroups]
+  );
+  useEffect(() => { if (hasPublicCircleSelected) setIsPublic(true); }, [hasPublicCircleSelected]);
+
   const create = async () => {
     const rp = priceData?.price || 0;
     const td = calcTargetDate(TODAY, horizon);
@@ -1627,7 +1648,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
       targetPrice: targetPrice ? +targetPrice : null,
       stopLoss:    stopLoss    ? +stopLoss    : null,
       horizon, targetDate: td, thesis: thesis||"—",
-      isPublic, recType,
+      isPublic: isPublic || hasPublicCircleSelected, recType,
       conviction:  conviction  || null,
       sector:      sector      || null,
       exchange:    selectedInstr?.exchange || "NSE",
@@ -1691,7 +1712,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
   const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && (priceData?.price > 0 || !!priceError);
 
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> New recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> New idea</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">
 
       {/* Recommendation type — Buy / Sell */}
@@ -1821,21 +1842,46 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
       </div>
 
       <div className="field"><label>Thesis <span className="muted small">(optional — formatting, emojis &amp; images supported)</span></label><ThesisEditor value={thesis} onChange={setThesis}/></div>
-      <div className="field"><label>Send to contacts</label>
-        {contacts.length===0 ? <div className="muted small">No contacts yet.</div> :
-        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{contacts.map(c=><span key={c.id} className={"chip"+(targets.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{targets.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}</div>}</div>
-      <div className="field"><label>Send to groups</label>
-        {myGroups.length===0 ? <div className="muted small">No groups yet.</div> :
-        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{myGroups.map(g=><span key={g.id} className={"chip"+(targets.includes(g.id)?" sel":"")} onClick={()=>toggle(g.id)}>{targets.includes(g.id)&&<Check size={13}/>}<Layers size={13}/>{g.name}</span>)}</div>}</div>
-      <label style={{display:"flex",alignItems:"flex-start",gap:10,fontSize:13,fontWeight:600,cursor:"pointer",padding:"12px 0 0",borderTop:"1px solid var(--line)",marginTop:8}}>
-        <input type="checkbox" checked={isPublic} onChange={e=>setIsPublic(e.target.checked)} style={{width:16,height:16,accentColor:"var(--accent)",marginTop:1,flexShrink:0}}/>
-        <div>
-          Make this recommendation public
-          <div style={{fontWeight:400,color:"var(--muted)",fontSize:12,marginTop:2}}>
-            Visible to anyone who visits your public profile page, not just your network.
+      {/* ── Who should see this? ─────────────────────────────────────── */}
+      <div className="field" style={{borderTop:"1px solid var(--line)",paddingTop:14,marginTop:8}}>
+        <label style={{display:"block",marginBottom:10}}>Who should see this?</label>
+
+        <label
+          title={hasPublicCircleSelected ? "A public Circle is selected below — ideas shared to a public Circle are always public." : undefined}
+          style={{display:"flex",gap:10,alignItems:"flex-start",padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,marginBottom:8,cursor:hasPublicCircleSelected?"not-allowed":"pointer"}}>
+          <input type="checkbox" checked={isPublic} disabled={hasPublicCircleSelected}
+            onChange={e=>setIsPublic(e.target.checked)}
+            style={{width:16,height:16,accentColor:"var(--accent)",marginTop:2,flexShrink:0}}/>
+          <div>
+            <div style={{fontWeight:700,fontSize:13.5}}>🌐 Public</div>
+            <div className="muted small" style={{marginTop:2}}>Anyone on My Investor Circle can discover this.</div>
+            {hasPublicCircleSelected && (
+              <div className="muted small" style={{marginTop:4,color:"var(--accent-ink)"}}>
+                Can&apos;t be turned off — a public Circle is selected below.
+              </div>
+            )}
           </div>
+        </label>
+
+        <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,marginBottom:8}}>
+          <div style={{fontWeight:700,fontSize:13.5}}>👥 People</div>
+          <div className="muted small" style={{marginTop:2,marginBottom:8}}>Select specific people.</div>
+          {contacts.length===0 ? <div className="muted small">No contacts yet.</div> :
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{contacts.map(c=><span key={c.id} className={"chip"+(targets.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{targets.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}</div>}
         </div>
-      </label>
+
+        <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11}}>
+          <div style={{fontWeight:700,fontSize:13.5}}>⭕ Circles</div>
+          <div className="muted small" style={{marginTop:2,marginBottom:8}}>Select one or more Circles.</div>
+          {myGroups.length===0 ? <div className="muted small">No Circles yet — Circles you belong to (or own) will appear here.</div> :
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{myGroups.map(g=>
+            <span key={g.id} className={"chip"+(targets.includes(g.id)?" sel":"")} onClick={()=>toggle(g.id)} title={g.circle_type==="public"?"Public Circle":"Private Circle"}>
+              {targets.includes(g.id)&&<Check size={13}/>}
+              {g.circle_type==="public" ? <Globe size={13}/> : <Lock size={13}/>}
+              {g.name}
+            </span>)}</div>}
+        </div>
+      </div>
     </div>
     <div className="modal-foot">
       <span className="muted small">Target date: {calcTargetDate(TODAY,horizon)?fmtDate(calcTargetDate(TODAY,horizon)):"—"}</span>

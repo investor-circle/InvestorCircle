@@ -362,6 +362,16 @@ export async function getMyMadeRecos(userId) {
   return [];
 }
 
+/**
+ * Ideas shared with a Circle, newest-activity-first (post, comment, or
+ * reaction) — server enforces the caller is an active member/owner.
+ */
+export async function getCircleIdeas(groupId) {
+  const api = await callApi(`/data?resource=recommendations&scope=circle&groupId=${encodeURIComponent(groupId)}`);
+  if (api.ok) return api.data.ideas || [];
+  return [];
+}
+
 /** Update a delivery row (mark invested, react, hide). */
 export async function updateDelivery(deliveryId, patch, userId) {
   const api = await callApi("/data?resource=recommendations", { method: "POST", body: { action: "update-delivery", deliveryId, patch } });

@@ -13,7 +13,10 @@ import {
   Lock,
   Copy,
   Bell,
-  Loader
+  Loader,
+  Lightbulb,
+  MessageSquare,
+  ThumbsUp
 } from "lucide-react";
 import {
   addGroupMembers as dbAddGroupMembers,
@@ -31,7 +34,8 @@ import {
   regenerateCircleInviteLink as dbRegenerateCircleInviteLink,
   requestJoinCircle as dbRequestJoinCircle
 } from "../../services/api/groupsApi";
-import { Avatar } from "../../components/common";
+import { getCircleIdeas as dbGetCircleIdeas } from "../../services/api/recommendationsApi";
+import { Avatar, ConvBadge, RetBadge, TypeBadge } from "../../components/common";
 import { fmtDate, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile, gotoCircle } from "../../utils/navigation";
 
@@ -343,9 +347,20 @@ export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigatePro
   const [showAdd,      setShowAdd]      = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
+  const [ideas,    setIdeas]    = useState(null); // null = not loaded yet
+  const [ideasErr, setIdeasErr] = useState(false);
 
   const load = () => dbGetCircleBySlug(slug).then(c => setCircle(c || null));
   useEffect(()=>{ setCircle(undefined); load(); },[slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ideas feed — only once we know the circle exists AND the viewer is
+  // actually a member/owner (the server enforces this too; skipping the
+  // call entirely for a non-member avoids an expected 403 round-trip).
+  useEffect(()=>{
+    if(!circle || !(circle.is_owner || circle.is_member)) { setIdeas(null); return; }
+    setIdeas(null); setIdeasErr(false);
+    dbGetCircleIdeas(circle.id).then(setIdeas).catch(()=>setIdeasErr(true));
+  },[circle?.id, circle?.is_owner, circle?.is_member]);
 
   const handleJoin = async () => {
     if (!viewerUser) {
@@ -449,6 +464,49 @@ export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigatePro
                 </div>
               </div>
             ))}
+        </div>
+      </div>
+    )}
+
+    {(circle.is_owner || circle.is_member) && (
+      <div className="card" style={{marginTop:16}}>
+        <div className="card-head"><Lightbulb size={14} style={{verticalAlign:-2,marginRight:4}}/> Ideas shared here</div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
+          {ideas===null && !ideasErr && <div className="muted small" style={{padding:'8px 0'}}><Loader size={14} className="spin"/> Loading…</div>}
+          {ideasErr && <div className="muted small">Couldn&apos;t load ideas right now.</div>}
+          {ideas && ideas.length===0 && <div className="empty">No ideas shared with this circle yet.</div>}
+          {ideas && ideas.map(idea=>(
+            <div key={idea.id} className="hoverable" style={{display:'flex',gap:12,padding:'12px 14px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,cursor:'pointer'}}
+              onClick={()=>{
+                const dest = idea.recommender_username ? `#/investor/${idea.recommender_username}/reco/${idea.id}` : null;
+                if (dest) window.location.hash = dest;
+              }}>
+              <Avatar f={{name:idea.recommender_name,avatarUrl:idea.recommender_avatar_url,color:idea.recommender_avatar_color,initials:initialsOf(idea.recommender_name||"?")}} size={34}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:2}}>
+                  <span style={{fontWeight:700,fontSize:13.5}}>{idea.ticker}</span>
+                  <TypeBadge t={idea.recommendation_type}/>
+                  {idea.conviction && <ConvBadge level={idea.conviction}/>}
+                  <span className="muted small">· {idea.asset_name}</span>
+                </div>
+                <div className="muted small" style={{marginBottom:4}}>
+                  by <b>{idea.recommender_name}</b> · {fmtDate(idea.last_activity_at)}
+                  {idea.last_activity_at !== idea.created_at && <span> (active)</span>}
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:14,fontSize:12,color:'var(--muted)'}}>
+                  {idea.current_price!=null && idea.reco_price!=null && idea.reco_price>0 && (
+                    <RetBadge pct={
+                      idea.recommendation_type==='Sell'
+                        ? (idea.reco_price - idea.current_price) / idea.reco_price * 100
+                        : (idea.current_price - idea.reco_price) / idea.reco_price * 100
+                    }/>
+                  )}
+                  <span style={{display:'flex',alignItems:'center',gap:4}}><ThumbsUp size={12}/> {idea.likes||0}</span>
+                  <span style={{display:'flex',alignItems:'center',gap:4}}><MessageSquare size={12}/> {idea.comments_count||0}</span>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     )}
