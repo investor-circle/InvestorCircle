@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Search,
   Plus,
@@ -16,7 +17,10 @@ import {
   Loader,
   Lightbulb,
   MessageSquare,
-  ThumbsUp
+  ThumbsUp,
+  Share2,
+  Info,
+  Users
 } from "lucide-react";
 import {
   addGroupMembers as dbAddGroupMembers,
@@ -38,6 +42,7 @@ import { getCircleIdeas as dbGetCircleIdeas } from "../../services/api/recommend
 import { Avatar, ConvBadge, RetBadge, TypeBadge } from "../../components/common";
 import { fmtDate, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile, gotoCircle } from "../../utils/navigation";
+import { useIsMobile } from "../../hooks/index";
 
 /** Circles = the product-facing rename of the pre-existing Group concept.
  * Still backed by ic_groups/group_members (see api/_lib/handlers/groups.js).
@@ -384,6 +389,60 @@ export function JoinRequestsModal({ group, onClose, onReviewed }) {
    visitor (e.g. opening a WhatsApp-shared link) — the backend enforces that
    private circles never reveal details to non-members (see
    api/_lib/handlers/groups.js action=by-slug). */
+/* ── CircleSharePopover — compact share icon + Copy link/WhatsApp popover,
+   mirrors SharePublicPopover in Recommendations.jsx (same anchored-popover-
+   on-desktop / bottom-sheet-on-mobile pattern) ── */
+function CircleSharePopover({ circle, anchorEl, onClose }) {
+  const isMobile = useIsMobile();
+  const [copied, setCopied] = useState(false);
+  const [pos, setPos] = useState(null);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    if (!isMobile && anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    }
+    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
+    setTimeout(() => document.addEventListener('mousedown', h), 0);
+    return () => document.removeEventListener('mousedown', h);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const link = `${window.location.origin}${window.location.pathname}#/circle/${circle.slug}`;
+  const waText = encodeURIComponent(`Join "${circle.name}" on myInvestorCircle:\n${link}`);
+  const copyLink = () => navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => { setCopied(false); onClose(); }, 1600); });
+
+  const content = (
+    <>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:'flex',alignItems:'center',gap:6}}><Share2 size={15} color="var(--accent)"/> Share this Circle</div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        <button className="btn btn-pri btn-sm" style={{justifyContent:'center'}} onClick={copyLink}>{copied ? <><Check size={14}/> Copied!</> : <><Copy size={14}/> Copy link</>}</button>
+        <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{justifyContent:'center',textDecoration:'none'}} onClick={onClose}><span style={{fontSize:15,lineHeight:1}}>💬</span> Share on WhatsApp</a>
+      </div>
+      <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center',marginTop:10}} onClick={onClose}>Cancel</button>
+    </>
+  );
+
+  if (isMobile) return createPortal(
+    <div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
+      <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.45)'}}/>
+      <div ref={popRef} style={{position:'relative',background:'var(--surface)',borderRadius:'20px 20px 0 0',padding:'20px 20px 36px',boxShadow:'0 -8px 40px rgba(0,0,0,.28)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:36,height:4,background:'var(--line)',borderRadius:2,margin:'0 auto 18px'}}/>
+        {content}
+      </div>
+    </div>,
+    document.body
+  );
+
+  if (!pos) return null;
+  return createPortal(
+    <div ref={popRef} style={{position:'fixed',top:pos.top,right:pos.right,zIndex:9999,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,boxShadow:'0 8px 32px rgba(0,0,0,.18)',padding:'16px 18px',minWidth:270,maxWidth:320,fontFamily:'var(--font)'}} onClick={e=>e.stopPropagation()}>
+      {content}
+    </div>,
+    document.body
+  );
+}
+
 export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigateProfile }) {
   const [circle,  setCircle]  = useState(undefined); // undefined = loading, null = not found
   const [joining, setJoining] = useState(false);
@@ -392,6 +451,13 @@ export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigatePro
   const [showRequests, setShowRequests] = useState(false);
   const [ideas,    setIdeas]    = useState(null); // null = not loaded yet
   const [ideasErr, setIdeasErr] = useState(false);
+  const [shareOpen,    setShareOpen]    = useState(false);
+  const shareBtnRef = useRef(null);
+  const [descOpen,     setDescOpen]     = useState(false);
+  const [membersOpen,  setMembersOpen]  = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [selectedMembers, setSelectedMembers] = useState([]);
+  const [removingMembers, setRemovingMembers] = useState(false);
 
   const load = () => dbGetCircleBySlug(slug).then(c => setCircle(c || null));
   useEffect(()=>{ setCircle(undefined); load(); },[slug]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -418,6 +484,16 @@ export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigatePro
     setJoining(false);
   };
 
+  const handleBulkRemoveMembers = async () => {
+    if (selectedMembers.length===0) return;
+    if (!confirm(`Remove ${selectedMembers.length} member${selectedMembers.length>1?"s":""} from this circle?`)) return;
+    setRemovingMembers(true);
+    await Promise.all(selectedMembers.map(uid => dbRemoveGroupMember(circle.id, uid)));
+    setSelectedMembers([]);
+    await load();
+    setRemovingMembers(false);
+  };
+
   if (circle === undefined) return (
     <div style={{textAlign:'center',padding:'60px 0',color:'var(--muted)'}}>
       <Loader size={28} className="spin" style={{marginBottom:14}}/><div>Loading circle…</div>
@@ -433,81 +509,124 @@ export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigatePro
   );
 
   const isPublic = circle.circle_type === "public";
-  const inviteLink = `${window.location.origin}${window.location.pathname}#/circle/${circle.slug}`;
-  const waText = encodeURIComponent(`Join "${circle.name}" on myInvestorCircle:\n${inviteLink}`);
+
+  const canShowMembers = circle.is_owner || circle.is_member || isPublic;
+  const memberList = circle.members || [];
+  const filteredMembers = memberSearch.trim()
+    ? memberList.filter(m=>(m.name||"").toLowerCase().includes(memberSearch.trim().toLowerCase()))
+    : memberList;
+  const toggleMemberSel = (uid) => setSelectedMembers(s=>s.includes(uid)?s.filter(x=>x!==uid):[...s,uid]);
+  const allFilteredSelectable = filteredMembers.filter(m=>m.role!=='admin');
+  const allFilteredSelected = allFilteredSelectable.length>0 && allFilteredSelectable.every(m=>selectedMembers.includes(m.user_id));
 
   return (<div style={{maxWidth:760,margin:'0 auto'}}>
-    {onBack && <button className="btn btn-ghost btn-sm" style={{marginBottom:14}} onClick={onBack}><X size={14}/> Close</button>}
-    <div className="card" style={{marginBottom:16}}>
-      <div className="card-body" style={{padding:'22px 24px'}}>
-        <div style={{display:'flex',alignItems:'flex-start',gap:14,flexWrap:'wrap'}}>
-          <div className="av" style={{width:52,height:52,background:circle.color||'var(--grad)',flexShrink:0}}><Layers size={22}/></div>
-          <div style={{flex:1,minWidth:200}}>
+    <div className="card" style={{marginBottom:14,position:'relative'}}>
+      <div className="card-body" style={{padding:'18px 20px'}}>
+        {onBack && <button className="iconbtn" title="Close" onClick={onBack} style={{position:'absolute',top:12,right:12}}><X size={16}/></button>}
+
+        <div style={{display:'flex',alignItems:'flex-start',gap:12,paddingRight:30}}>
+          <div className="av" style={{width:44,height:44,background:circle.color||'var(--grad)',flexShrink:0}}><Layers size={18}/></div>
+          <div style={{flex:1,minWidth:0}}>
             <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-              <h2 style={{margin:0,fontSize:20}}>{circle.name}</h2>
+              <h2 style={{margin:0,fontSize:18}}>{circle.name}</h2>
               {isPublic
                 ? <span className="pill accent" style={{fontSize:11}}><Globe size={11} style={{verticalAlign:-1,marginRight:3}}/>Public</span>
                 : <span className="pill" style={{fontSize:11}}><Lock size={11} style={{verticalAlign:-1,marginRight:3}}/>Private</span>}
+              {circle.description && (
+                <button className="iconbtn" title={descOpen?"Hide description":"Show description"} onClick={()=>setDescOpen(o=>!o)} style={{width:22,height:22}}>
+                  <Info size={13}/>
+                </button>
+              )}
             </div>
-            <div className="muted small" style={{marginTop:4}}>
+            <div className="muted small" style={{marginTop:3}}>
               {circle.member_count} member{circle.member_count!==1?"s":""} · by{" "}
               <span className="clickable" style={{color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted"}}
                 onClick={()=>onNavigateProfile ? onNavigateProfile(circle.owner_username) : gotoUserProfile(circle.created_by)}>
                 {circle.owner_name}
               </span>
             </div>
-            {circle.description && <p style={{fontSize:13.5,lineHeight:1.6,margin:'10px 0 0'}}>{circle.description}</p>}
-          </div>
-          <div style={{display:'flex',flexDirection:'column',gap:8,alignItems:'flex-end'}}>
-            {circle.is_owner ? (
-              <span className="pill accent">You own this circle</span>
-            ) : circle.is_member ? (
-              <span className="pill" style={{background:'var(--gain-soft)',color:'var(--gain)'}}><Check size={12} style={{verticalAlign:-1,marginRight:3}}/>Member</span>
-            ) : isPublic ? (
-              circle.my_join_request_status === 'pending'
-                ? <span className="pill" style={{fontSize:12}}>Request pending</span>
-                : <button className="btn btn-pri btn-sm" disabled={joining} onClick={handleJoin}>
-                    {joining ? <Loader size={13} className="spin"/> : <UserPlus size={13}/>} {viewerUser ? "Subscribe" : "Sign in to subscribe"}
-                  </button>
-            ) : null}
+            {descOpen && circle.description && <p style={{fontSize:13,lineHeight:1.55,margin:'8px 0 0',color:'var(--ink-soft)'}}>{circle.description}</p>}
           </div>
         </div>
 
-        {(isPublic && (circle.is_owner || circle.is_member)) && (
-          <div style={{display:"flex",alignItems:"center",gap:8,background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10,padding:"8px 12px",marginTop:16,flexWrap:"wrap"}}>
-            <span className="muted small" style={{flex:1,minWidth:180,wordBreak:"break-all"}}>{inviteLink}</span>
-            <button className="btn btn-ghost btn-sm" onClick={()=>navigator.clipboard.writeText(inviteLink)}><Copy size={13}/> Copy link</button>
-            <a className="btn btn-ghost btn-sm" style={{textDecoration:'none'}} href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer">Share on WhatsApp</a>
-          </div>
-        )}
+        {/* ── Actions row: status/CTA + icon buttons ── */}
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginTop:14,paddingTop:14,borderTop:'1px solid var(--line)'}}>
+          {circle.is_owner ? (
+            <span className="pill accent">Owner</span>
+          ) : circle.is_member ? (
+            <span className="pill" style={{background:'var(--gain-soft)',color:'var(--gain)'}}><Check size={12} style={{verticalAlign:-1,marginRight:3}}/>Member</span>
+          ) : isPublic ? (
+            circle.my_join_request_status === 'pending'
+              ? <span className="pill" style={{fontSize:12}}>Request pending</span>
+              : <button className="btn btn-pri btn-sm" disabled={joining} onClick={handleJoin}>
+                  {joining ? <Loader size={13} className="spin"/> : <UserPlus size={13}/>} {viewerUser ? "Subscribe" : "Sign in to subscribe"}
+                </button>
+          ) : null}
 
-        {circle.is_owner && (
-          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:16,paddingTop:16,borderTop:'1px solid var(--line)'}}>
-            <button className="btn btn-soft btn-sm" onClick={()=>setShowAdd(true)}><UserPlus size={13}/> Add members</button>
-            {isPublic && <button className="btn btn-soft btn-sm" onClick={()=>setShowRequests(true)}><Bell size={13}/> Join requests</button>}
-            <button className="btn btn-ghost btn-sm" onClick={()=>setShowSettings(true)}><Pencil size={13}/> Settings</button>
+          <div style={{marginLeft:'auto',display:'flex',gap:6}}>
+            {(circle.is_owner || circle.is_member) && (
+              <button ref={shareBtnRef} className="iconbtn" title="Share this circle" onClick={()=>setShareOpen(true)}><Share2 size={15}/></button>
+            )}
+            {circle.is_owner && <button className="iconbtn" title="Add members" onClick={()=>setShowAdd(true)}><UserPlus size={15}/></button>}
+            {circle.is_owner && isPublic && <button className="iconbtn" title="Join requests" onClick={()=>setShowRequests(true)}><Bell size={15}/></button>}
+            {circle.is_owner && <button className="iconbtn" title="Circle settings" onClick={()=>setShowSettings(true)}><Pencil size={15}/></button>}
           </div>
-        )}
+        </div>
       </div>
     </div>
 
-    {(circle.is_owner || circle.is_member || isPublic) && (
-      <div className="card">
-        <div className="card-head">Members</div>
-        <div className="card-body" style={{display:'flex',flexWrap:'wrap',gap:10}}>
-          {(circle.members||[]).length===0
-            ? <div className="empty">No members yet.</div>
-            : circle.members.map(m=>(
-              <div key={m.user_id} style={{display:'flex',alignItems:'center',gap:8,background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,padding:'6px 12px',cursor:'pointer'}}
-                onClick={()=>onNavigateProfile ? onNavigateProfile(m.username) : gotoUserProfile(m.user_id)}>
-                <Avatar f={{name:m.name,avatarUrl:m.avatar_url,color:m.avatar_color,initials:initialsOf(m.name||"?")}} size={28}/>
-                <div>
-                  <div style={{fontWeight:600,fontSize:13}}>{m.name}</div>
-                  <div className="muted" style={{fontSize:11}}>{m.role==='admin'?'Owner':'Member'}</div>
-                </div>
-              </div>
-            ))}
+    {shareOpen && <CircleSharePopover circle={circle} anchorEl={shareBtnRef.current} onClose={()=>setShareOpen(false)}/>}
+
+    {canShowMembers && (
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 16px',cursor:'pointer'}} onClick={()=>setMembersOpen(o=>!o)}>
+          <Users size={14} className="muted"/>
+          <span style={{fontWeight:700,fontSize:13.5,flex:1}}>Members ({circle.member_count})</span>
+          <ChevronDown size={16} className="muted" style={{transform:membersOpen?"rotate(180deg)":"none",transition:".15s"}}/>
         </div>
+        {membersOpen && (
+          <div className="card-body" style={{paddingTop:0}}>
+            {memberList.length===0 ? <div className="empty">No members yet.</div> : (<>
+              <div style={{display:'flex',gap:8,marginBottom:10,alignItems:'center',flexWrap:'wrap'}}>
+                <div className="searchbox" style={{flex:1,minWidth:160}}>
+                  <Search size={14} color="var(--muted)"/>
+                  <input value={memberSearch} onChange={e=>setMemberSearch(e.target.value)} placeholder="Search members…"/>
+                </div>
+                {circle.is_owner && allFilteredSelectable.length>0 && (
+                  <button className="btn btn-ghost btn-sm" onClick={()=>{
+                    const ids = allFilteredSelectable.map(m=>m.user_id);
+                    setSelectedMembers(s=> allFilteredSelected ? s.filter(id=>!ids.includes(id)) : [...new Set([...s, ...ids])]);
+                  }}>{allFilteredSelected?"Unselect all":"Select all"}</button>
+                )}
+                {circle.is_owner && selectedMembers.length>0 && (
+                  <button className="btn btn-ghost btn-sm" style={{color:'var(--loss)'}} disabled={removingMembers} onClick={handleBulkRemoveMembers}>
+                    {removingMembers?<Loader size={13} className="spin"/>:<Trash2 size={13}/>} Remove ({selectedMembers.length})
+                  </button>
+                )}
+              </div>
+              <div style={{maxHeight:280,overflowY:'auto',display:'flex',flexDirection:'column',gap:6}}>
+                {filteredMembers.length===0
+                  ? <div className="muted small" style={{padding:'6px 2px'}}>No members match &ldquo;{memberSearch}&rdquo;.</div>
+                  : filteredMembers.map(m=>(
+                    <div key={m.user_id} style={{display:'flex',alignItems:'center',gap:10,background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,padding:'6px 10px'}}>
+                      {circle.is_owner && m.role!=='admin' && (
+                        <input type="checkbox" checked={selectedMembers.includes(m.user_id)} onChange={()=>toggleMemberSel(m.user_id)}
+                          style={{width:15,height:15,accentColor:'var(--accent)',flexShrink:0}}/>
+                      )}
+                      <div style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',flex:1,minWidth:0}}
+                        onClick={()=>onNavigateProfile ? onNavigateProfile(m.username) : gotoUserProfile(m.user_id)}>
+                        <Avatar f={{name:m.name,avatarUrl:m.avatar_url,color:m.avatar_color,initials:initialsOf(m.name||"?")}} size={28}/>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontWeight:600,fontSize:13}}>{m.name}</div>
+                          <div className="muted" style={{fontSize:11}}>{m.role==='admin'?'Owner':'Member'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </>)}
+          </div>
+        )}
       </div>
     )}
 
