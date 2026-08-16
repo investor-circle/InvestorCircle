@@ -17,7 +17,8 @@ import {
   ArrowLeft,
   Radar,
   Users,
-  Layers
+  Layers,
+  Share2
 } from "lucide-react";
 import { createUserWithEmailAndPassword, updateProfile as fbUpdateProfile } from "firebase/auth";
 import { auth as primaryAuth } from "../../firebase";
@@ -54,6 +55,60 @@ import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
 import { initialsOf } from "../../utils/format";
 
+/* ── ProfileSharePopover — Copy link / Share on WhatsApp for a profile,
+   same anchored-popover-on-desktop / bottom-sheet-on-mobile pattern as the
+   reco card's share button (SharePublicPopover in Recommendations.jsx) and
+   the Circle page's share button (CircleSharePopover in Groups.jsx). ── */
+function ProfileSharePopover({ profileUrl, displayName, anchorEl, onClose }) {
+  const isMobile = useIsMobile();
+  const [copied, setCopied] = useState(false);
+  const [pos, setPos] = useState(null);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    if (!isMobile && anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    }
+    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
+    setTimeout(() => document.addEventListener('mousedown', h), 0);
+    return () => document.removeEventListener('mousedown', h);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const waText = encodeURIComponent(`Check out ${displayName}'s investment track record on myInvestorCircle:\n${profileUrl}`);
+  const copyLink = () => navigator.clipboard.writeText(profileUrl).then(() => { setCopied(true); setTimeout(() => { setCopied(false); onClose(); }, 1600); });
+
+  const content = (
+    <>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:'flex',alignItems:'center',gap:6}}><Share2 size={15} color="var(--accent)"/> Share this profile</div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        <button className="btn btn-pri btn-sm" style={{justifyContent:'center'}} onClick={copyLink}>{copied ? <><Check size={14}/> Copied!</> : <><Copy size={14}/> Copy link</>}</button>
+        <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{justifyContent:'center',textDecoration:'none'}} onClick={onClose}><span style={{fontSize:15,lineHeight:1}}>💬</span> Share on WhatsApp</a>
+      </div>
+      <button className="btn btn-ghost btn-sm" style={{width:'100%',justifyContent:'center',marginTop:10}} onClick={onClose}>Cancel</button>
+    </>
+  );
+
+  if (isMobile) return createPortal(
+    <div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
+      <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.45)'}}/>
+      <div ref={popRef} style={{position:'relative',background:'var(--surface)',borderRadius:'20px 20px 0 0',padding:'20px 20px 36px',boxShadow:'0 -8px 40px rgba(0,0,0,.28)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:36,height:4,background:'var(--line)',borderRadius:2,margin:'0 auto 18px'}}/>
+        {content}
+      </div>
+    </div>,
+    document.body
+  );
+
+  if (!pos) return null;
+  return createPortal(
+    <div ref={popRef} style={{position:'fixed',top:pos.top,right:pos.right,zIndex:9999,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,boxShadow:'0 8px 32px rgba(0,0,0,.18)',padding:'16px 18px',minWidth:270,maxWidth:320,fontFamily:'var(--font)'}} onClick={e=>e.stopPropagation()}>
+      {content}
+    </div>,
+    document.body
+  );
+}
+
 export function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, viewerIsAdmin=false, viewerForClaim=false, onClaimClick=null, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
   const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
@@ -63,6 +118,8 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   const [connecting,  setConnecting]  = useState(false);
   const [connected,   setConnected]   = useState(false);
   const [copied,      setCopied]      = useState(false);
+  const [shareOpen,   setShareOpen]   = useState(false);
+  const shareBtnRef = useRef(null);
   const [expandedId,  setExpandedId]  = useState(recoId||null);
   const expandedRef = useRef(null);
   const [tracking,    setTracking]    = useState(false);
@@ -978,10 +1035,23 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
             <div><div style={{fontWeight:800,fontSize:13,lineHeight:1.1}}>myInvestorCircle</div><div style={{fontSize:10,color:'var(--muted)'}}>Transparency Platform</div></div>
           </div>
           <div style={{flex:1}}/>
+          {data && (
+            <button ref={shareBtnRef} className="icon-btn" title="Share this profile" aria-label="Share this profile" onClick={()=>setShareOpen(true)}>
+              <Share2 size={16}/>
+            </button>
+          )}
           {viewerUser
             ?<button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
             :<a href={window.location.pathname} style={{fontSize:13,fontWeight:600,color:'var(--accent)',textDecoration:'none'}}>Sign in →</a>}
         </div>
+        {shareOpen && (
+          <ProfileSharePopover
+            profileUrl={profileUrl}
+            displayName={data?.profile?.full_name || username}
+            anchorEl={shareBtnRef.current}
+            onClose={()=>setShareOpen(false)}
+          />
+        )}
         <div style={{padding:'20px 20px 0'}}>{renderContent()}</div>
       </div>
     );

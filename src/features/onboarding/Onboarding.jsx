@@ -239,14 +239,15 @@ export function DiscoverModal({ ME, patchProfile, onClose, onDiscoverMore, markO
               <div key={p.id} style={personRowStyle}>
                 <Avatar f={{ initials: initialsOf(p.full_name || p.username || "?"), avatarUrl: p.avatar_url, color: p.avatar_color }} size={38} />
                 <div style={{ flex: 1, minWidth: 0, cursor: p.username ? "pointer" : "default" }} onClick={()=>p.username && openProfile(p.username)}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", lineHeight: 1.3, wordBreak: "break-word" }}>
                     {p.full_name || p.username}
                   </div>
-                  <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.45)" }}>
+                  <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.45)", whiteSpace: "nowrap" }}>
                     {p.username ? `@${p.username}` : ""}{p.total ? ` · ${p.total} ideas` : ""}{p.total ? ` · ICI ${ici.score}` : ""}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                {/* Stacked (not side-by-side) so the name/meta column keeps most of the row's width */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0, alignItems: "stretch" }}>
                   {isTracking ? (
                     <span style={trackedPillStyle}><Check size={12} /> Tracking</span>
                   ) : (
@@ -255,7 +256,7 @@ export function DiscoverModal({ ME, patchProfile, onClose, onDiscoverMore, markO
                     </button>
                   )}
                   {isConnected || isPending ? (
-                    <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#4ade80", fontWeight: 700 }}>
+                    <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 11, color: "#4ade80", fontWeight: 700, padding: "6px 0" }}>
                       <Check size={13} /> {isConnected ? "Connected" : "Pending"}
                     </span>
                   ) : (
@@ -451,18 +452,18 @@ const laterBtnStyle = {
 };
 const personRowStyle = { display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "rgba(255,255,255,.05)", borderRadius: 12 };
 const connectBtnStyle = {
-  display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8,
+  display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 12px", borderRadius: 8,
   background: "rgba(109,93,245,.18)", border: "1px solid rgba(109,93,245,.4)",
-  color: "#c5bcff", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+  color: "#c5bcff", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap",
 };
 const trackBtnStyle = {
-  display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8,
+  display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 12px", borderRadius: 8,
   background: "rgba(74,222,128,.14)", border: "1px solid rgba(74,222,128,.35)",
-  color: "#86efac", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+  color: "#86efac", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap",
 };
 const trackedPillStyle = {
-  display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 8,
-  fontSize: 11, color: "#86efac", fontWeight: 700, flexShrink: 0,
+  display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "6px 10px", borderRadius: 8,
+  fontSize: 11, color: "#86efac", fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap",
 };
 
 function gateBtnStyle(disabled) {

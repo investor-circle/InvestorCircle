@@ -249,18 +249,31 @@ export default function App() {
     return () => window.removeEventListener("hashchange", h);
   }, []);
 
-  // SECURITY: whenever a profile URL is active, replace the browser history entry
-  // with the clean base URL so browser session-restore / "reopen closed tab" and
-  // the back-button don't re-load a specific investor profile.
-  // We keep pageHash in React state so the profile still renders correctly.
+  // Circle URLs (#/circle/...) still get their history entry replaced with
+  // the clean base URL once loaded — unlike investor profiles below, a
+  // Circle's shareable link is the dedicated Circle page's own Share
+  // button (copy link / WhatsApp), not the address bar, so there's no
+  // product reason to keep it visible there. Stripping it also fixes a
+  // real bug: without stripping, window.location.hash stays set to this
+  // exact value after Close, so re-opening the SAME circle later sets an
+  // identical hash — which the browser does not fire a hashchange event
+  // for — leaving the page stuck until a full reload. Stripping it here
+  // means the next "Open" always assigns a hash that differs from the
+  // (now-empty) current one. We keep pageHash in React state so the page
+  // still renders correctly regardless.
+  //
+  // Investor profile URLs (#/investor/...) are DELIBERATELY left in the
+  // address bar — the whole point of a public profile is that its link is
+  // directly shareable, so the browser URL must show the real
+  // #/investor/username (or .../reco/id) link no matter how the user got
+  // there (search, Discovery, a Circle's member list, a notification,
+  // etc.). To avoid reintroducing the identical-hash-is-a-no-op bug this
+  // pattern has elsewhere, every exit from a profile page clears
+  // window.location.hash directly (not just React state) — see the
+  // onBack/onRequestConnect handlers below — so the address bar and
+  // pageHash never drift out of sync.
   useEffect(() => {
-    if (pageHash.startsWith('#/investor/') || pageHash.startsWith('#/circle/')) {
-      // Also fixes a real bug: without stripping it, window.location.hash stays
-      // set to this exact value after Close, so re-opening the SAME circle/
-      // profile later sets an identical hash — which the browser does not fire
-      // a hashchange event for — leaving the page stuck showing nothing until
-      // a full reload. Stripping it here means the next "Open" always assigns
-      // a hash that differs from the (now-empty) current one.
+    if (pageHash.startsWith('#/circle/')) {
       window.history.replaceState(
         { _micProfileHash: pageHash },
         '',
@@ -288,7 +301,7 @@ export default function App() {
     if (!pageHash.startsWith('#/investor/')) return;
     if (_profileCameFromThisSite) return;           // intentional same-site nav — allow
     if (!userIsAdmin || !viewAsAdmin) return;        // investor-view users — always allow
-    setPageHash('');                                // admin-view + stale URL → go to admin panel
+    window.location.hash = '';                      // admin-view + stale URL → go to admin panel (also keeps the address bar in sync with pageHash — see the profile-URL note above)
   }, [authLoading, user?.uid, userIsAdmin, viewAsAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Post-login/signup: auto-send connection request if user came from a public profile ─
@@ -930,6 +943,7 @@ export default function App() {
               slug={circleSlug}
               inviteCode={circleQuery.get('invite')}
               highlightIdeaId={circleQuery.get('highlight')}
+              autoOpenRequests={circleQuery.get('requests')==='1'}
               viewerUser={user}
               onBack={()=>setPageHash('')}
               onNavigateProfile={(uname)=>{ if(uname) window.location.hash = `#/investor/${uname}`; }}
@@ -956,7 +970,7 @@ export default function App() {
             recoId={pubRecoId}
             viewerUser={user}
             ME={ME}
-            onBack={()=>setPageHash('')}
+            onBack={()=>{ window.location.hash = ''; }}
             onNavigateProfile={()=>{ window.location.hash = `#/investor/${pubUsername}`; }}
           />
         </div>
@@ -974,11 +988,11 @@ export default function App() {
             viewerConnections={connections}
             viewerIsAdmin={userIsAdmin}
             mode="standalone"
-            onBack={()=>{ setPageHash(''); }}
+            onBack={()=>{ window.location.hash = ''; }}
             onRequestConnect={async(targetId)=>{
               if (!user) {
                 sessionStorage.setItem("pending_connect_username", pubUsername);
-                setPageHash('');
+                window.location.hash = '';
                 return;
               }
               await sendConnectionRequest(user.uid, targetId);
@@ -1417,6 +1431,13 @@ export default function App() {
                     if (n.type === 'circle_idea' && n.metadata?.groupSlug) {
                       const highlight = n.metadata?.recoId ? `?highlight=${encodeURIComponent(n.metadata.recoId)}` : '';
                       window.location.hash = `#/circle/${n.metadata.groupSlug}${highlight}`;
+                      return;
+                    }
+
+                    // Someone requested to join a Circle you own → the Circle
+                    // page, with the Join requests panel opened straight away.
+                    if (n.type === 'circle_join_request' && n.metadata?.groupSlug) {
+                      window.location.hash = `#/circle/${n.metadata.groupSlug}?requests=1`;
                     }
                   }}
                 />}

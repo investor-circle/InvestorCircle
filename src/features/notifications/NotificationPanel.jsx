@@ -151,7 +151,8 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
           const isNavConn = ['connection_request','connection_accepted','connection_rejected'].includes(n.type);
           const isNavTracking = n.type === 'tracking_new';
           const isNavCircleIdea = n.type === 'circle_idea';
-          const isClickable = onNavigate && (isNavReco || isNavConn || isNavTracking || isNavCircleIdea);
+          const isNavCircleJoinRequest = n.type === 'circle_join_request';
+          const isClickable = onNavigate && (isNavReco || isNavConn || isNavTracking || isNavCircleIdea || isNavCircleJoinRequest);
           return (
           <div key={n.id}
             onClick={isClickable ? () => onNavigate(n) : undefined}

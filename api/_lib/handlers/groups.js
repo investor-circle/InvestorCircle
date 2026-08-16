@@ -133,6 +133,14 @@ export default async function handleGroups(req, res) {
           myJoinRequestStatus = jr[0]?.status || null;
         }
 
+        let pendingRequestCount = 0;
+        if (isOwner && circle.circle_type === 'public') {
+          const pr = await sql`
+            SELECT COUNT(*)::int AS n FROM circle_join_requests WHERE group_id = ${circle.id} AND status = 'pending'
+          `;
+          pendingRequestCount = pr[0]?.n || 0;
+        }
+
         res.status(200).json({
           circle: {
             id: circle.id, name: circle.name, color: circle.color, description: circle.description,
@@ -148,6 +156,7 @@ export default async function handleGroups(req, res) {
             my_role: myMembership?.role || (isOwner ? 'admin' : null),
             is_member: isActiveMember,
             my_join_request_status: myJoinRequestStatus,
+            pending_request_count: pendingRequestCount,
           },
         });
         return;
@@ -430,7 +439,7 @@ export default async function handleGroups(req, res) {
       const groupId = String(body.groupId || '');
       const inviteCode = body.inviteCode ? String(body.inviteCode) : null;
       if (!groupId) { res.status(400).json({ error: 'groupId is required' }); return; }
-      const grp = await sql`SELECT id, name, created_by, circle_type, invite_code FROM ic_groups WHERE id = ${groupId} LIMIT 1`;
+      const grp = await sql`SELECT id, name, slug, created_by, circle_type, invite_code FROM ic_groups WHERE id = ${groupId} LIMIT 1`;
       const circle = grp[0];
       if (!circle) { res.status(404).json({ error: 'not_found' }); return; }
       if (circle.circle_type !== 'public') { res.status(403).json({ error: 'Not a public circle' }); return; }
@@ -470,7 +479,7 @@ export default async function handleGroups(req, res) {
       `;
       await sql`
         INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
-        VALUES (${circle.created_by}, 'circle_join_request', ${myId}, ${groupId}, ${JSON.stringify({ groupName: circle.name })})
+        VALUES (${circle.created_by}, 'circle_join_request', ${myId}, ${groupId}, ${JSON.stringify({ groupName: circle.name, groupSlug: circle.slug })})
       `;
       res.status(200).json({ request: jr[0], tracking: true });
       return;

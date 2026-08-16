@@ -443,7 +443,7 @@ function CircleSharePopover({ circle, anchorEl, onClose }) {
   );
 }
 
-export function CirclePage({ slug, inviteCode, highlightIdeaId, viewerUser, onBack, onNavigateProfile }) {
+export function CirclePage({ slug, inviteCode, highlightIdeaId, autoOpenRequests, viewerUser, onBack, onNavigateProfile }) {
   const [circle,  setCircle]  = useState(undefined); // undefined = loading, null = not found
   const [joining, setJoining] = useState(false);
   const [showAdd,      setShowAdd]      = useState(false);
@@ -461,6 +461,11 @@ export function CirclePage({ slug, inviteCode, highlightIdeaId, viewerUser, onBa
 
   const load = () => dbGetCircleBySlug(slug).then(c => setCircle(c || null));
   useEffect(()=>{ setCircle(undefined); load(); },[slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Deep-linked from a "someone requested to join your Circle" notification.
+  useEffect(()=>{
+    if(autoOpenRequests && circle?.is_owner) setShowRequests(true);
+  },[autoOpenRequests, circle?.is_owner]);
 
   // Ideas feed — only once we know the circle exists AND the viewer is
   // actually a member/owner (the server enforces this too; skipping the
@@ -576,7 +581,16 @@ export function CirclePage({ slug, inviteCode, highlightIdeaId, viewerUser, onBa
               <button ref={shareBtnRef} className="iconbtn" title="Share this circle" onClick={()=>setShareOpen(true)}><Share2 size={15}/></button>
             )}
             {circle.is_owner && <button className="iconbtn" title="Add members" onClick={()=>setShowAdd(true)}><UserPlus size={15}/></button>}
-            {circle.is_owner && isPublic && <button className="iconbtn" title="Join requests" onClick={()=>setShowRequests(true)}><Bell size={15}/></button>}
+            {circle.is_owner && isPublic && (
+              <button className="iconbtn" title="Join requests" onClick={()=>setShowRequests(true)} style={{position:'relative'}}>
+                <Bell size={15}/>
+                {circle.pending_request_count>0 && (
+                  <span style={{position:'absolute',top:-4,right:-4,background:'var(--accent)',color:'#fff',borderRadius:'50%',fontSize:10,fontWeight:800,minWidth:16,height:16,padding:'0 3px',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>
+                    {circle.pending_request_count>9?'9+':circle.pending_request_count}
+                  </span>
+                )}
+              </button>
+            )}
             {circle.is_owner && <button className="iconbtn" title="Circle settings" onClick={()=>setShowSettings(true)}><Pencil size={15}/></button>}
           </div>
         </div>
