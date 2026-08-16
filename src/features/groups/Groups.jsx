@@ -354,7 +354,8 @@ export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigatePro
       return;
     }
     setJoining(true);
-    await dbRequestJoinCircle(circle.id, inviteCode);
+    const res = await dbRequestJoinCircle(circle.id, inviteCode);
+    if (res?.error) alert("Couldn't send your request to join. Please try again.");
     await load();
     setJoining(false);
   };

@@ -436,11 +436,17 @@ export default async function handleGroups(req, res) {
       if (circle.circle_type !== 'public') { res.status(403).json({ error: 'Not a public circle' }); return; }
       if (circle.created_by === myId) { res.status(400).json({ error: 'You already own this circle' }); return; }
 
+      // No eligibility gate here: a PUBLIC circle is, by definition,
+      // subscribable by anyone who finds it (e.g. from the owner's public
+      // profile) — that's the entire discovery/growth mechanic. Requiring
+      // an existing Track/Connection first would make it impossible for a
+      // new visitor to ever subscribe, since Subscribe is what CREATES the
+      // Track relationship. isEligibleForCircle() is still used by the
+      // create/add-members actions above, for the owner's own "add
+      // eligible people directly" action, where the owner (not the person
+      // themselves) is choosing who to add — a different, intentionally
+      // narrower operation.
       const viaInvite = !!inviteCode && inviteCode === circle.invite_code;
-      if (!viaInvite) {
-        const eligible = await isEligibleForCircle(circle.created_by, myId, 'public');
-        if (!eligible) { res.status(403).json({ error: 'not_eligible' }); return; }
-      }
 
       const existingMember = await sql`
         SELECT 1 FROM group_members WHERE group_id = ${groupId} AND user_id = ${myId} AND status = 'active' LIMIT 1

@@ -222,6 +222,11 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
     if(res && !res.error){
       setTracking(true); // Subscribing always tracks the circle owner too.
       setCircles(c=>({...c, public: c.public.map(pc=>pc.id===circle.id?{...pc, _requested:true}:pc)}));
+    } else {
+      // Surface a failure instead of silently doing nothing (e.g. a
+      // dropped connection). Public Circle Subscribe itself has no
+      // eligibility gate — a 403 here would mean something else broke.
+      alert("Couldn't send your request to join. Please try again.");
     }
     setJoiningCircle(null);
   };
