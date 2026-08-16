@@ -449,10 +449,12 @@ export default async function handleGroups(req, res) {
 
       // Clicking Subscribe/Join always tracks the circle owner, regardless of
       // whether the join request itself still needs approval (product spec).
-      // Goes through the same idempotent track-and-notify path as the
-      // profile Track button so a burst of circle subscribers bundles into
-      // one tracking notification instead of spamming the owner.
-      await trackAndNotify(myId, circle.created_by);
+      // Goes through the same idempotent track path as the profile Track
+      // button, but suppressed notification (notify: false) — the
+      // 'circle_join_request' notification below already tells the owner
+      // about this exact click; a second 'tracking_new' notification for
+      // the same action would be a duplicate, not genuinely new information.
+      await trackAndNotify(myId, circle.created_by, { notify: false });
 
       const jr = await sql`
         INSERT INTO circle_join_requests (group_id, user_id, source, status)

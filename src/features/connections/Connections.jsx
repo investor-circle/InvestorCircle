@@ -91,18 +91,36 @@ export function Network({ connections, setConnections, groups, setGroups, sharin
   );
 }
 
+const SORT_OPTIONS = [
+  { value: "date_desc", label: "Newest first" },
+  { value: "date_asc",  label: "Oldest first" },
+  { value: "name_asc",  label: "Name A–Z" },
+  { value: "name_desc", label: "Name Z–A" },
+];
+
+function SortSelect({ value, onChange }) {
+  return (
+    <select className="inline-select sm" value={value} onChange={e=>onChange(e.target.value)} aria-label="Sort by">
+      {SORT_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
 /* ── Shared row card for the Tracking me / I'm tracking lists ───────────────── */
-function TrackingRow({ person, ici, connectionStatus, primaryAction, onConnect, connectBusy }) {
+function TrackingRow({ person, ici, connectionStatus, primaryAction, onConnect, connectBusy, isNew }) {
   const band = ici?.band;
   const bandColor = band==="Strong" ? "#4ade80" : band==="Good" ? "#a78bfa" : band==="Building" ? "#fbbf24" : "var(--muted)";
   return (
-    <div className="card" style={{padding:0}}>
+    <div className="card" style={isNew?{padding:0,borderColor:"var(--accent)",background:"var(--accent-soft, rgba(109,93,245,.05))"}:{padding:0}}>
       <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",flex:1,minWidth:180}}
           onClick={()=>gotoUserProfile(person.id)}>
           <Avatar f={{name:person.full_name,avatarUrl:person.avatar_url,color:person.avatar_color,initials:initialsOf(person.full_name||person.username||"?")}} size={40}/>
           <div style={{minWidth:0}}>
-            <div style={{fontWeight:700,fontSize:13.5,color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{person.full_name||person.username}</div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <div style={{fontWeight:700,fontSize:13.5,color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{person.full_name||person.username}</div>
+              {isNew && <span className="pill accent" style={{fontSize:10,padding:"2px 7px"}}>New</span>}
+            </div>
             <div className="muted small">@{person.username||"—"}</div>
           </div>
         </div>
@@ -162,16 +180,28 @@ export function TrackingMeSection({ me, setConnections, onTrackingCountsChange }
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState({});
+  const [sort, setSort] = useState("date_desc");
   const icis = useIciBatch(useMemo(()=>people.map(p=>p.id),[people]));
 
-  const loadPage = async (offset) => {
+  // "New since last visit" — a lightweight per-device cutoff (no schema
+  // change needed for a purely visual affordance). Captured ONCE at mount
+  // so highlighting stays stable for this viewing session; bumped after
+  // mount so the NEXT visit's cutoff starts from here.
+  const lastSeenKey = `mic_trackingme_seen_${myId}`;
+  const [lastSeenAt] = useState(()=> { try { return localStorage.getItem(lastSeenKey); } catch { return null; } });
+  useEffect(()=>{
+    try { localStorage.setItem(lastSeenKey, new Date().toISOString()); } catch {}
+  },[]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadPage = async (offset, sortVal) => {
     setLoading(true);
-    const { people: rows, hasMore: more } = await dbGetMyTrackers(PAGE_SIZE, offset);
+    const { people: rows, hasMore: more } = await dbGetMyTrackers(PAGE_SIZE, offset, sortVal ?? sort);
     setPeople(prev => offset===0 ? rows : [...prev, ...rows]);
     setHasMore(more);
     setLoading(false);
   };
-  useEffect(()=>{ loadPage(0); },[]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Re-fetches from the top whenever the sort changes (also covers initial mount).
+  useEffect(()=>{ loadPage(0, sort); },[sort]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doTrackBack = async (person) => {
     setBusy(b=>({...b,[person.id]:true}));
@@ -190,12 +220,17 @@ export function TrackingMeSection({ me, setConnections, onTrackingCountsChange }
     setBusy(b=>({...b,[person.id]:false}));
   };
 
+  const isNew = (p) => !!lastSeenAt && new Date(p.created_at) > new Date(lastSeenAt);
+
   if(loading && people.length===0) return <div className="card"><div className="empty"><Loader size={16} className="spin"/> Loading…</div></div>;
   if(people.length===0) return <div className="card"><div className="empty">No one is tracking you yet. Share your public profile to grow your audience.</div></div>;
 
   return (<div style={{display:"flex",flexDirection:"column",gap:8}}>
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:2}}>
+      <SortSelect value={sort} onChange={setSort}/>
+    </div>
     {people.map(p=>(
-      <TrackingRow key={p.id} person={p} ici={icis[p.id]} connectionStatus={p.connection_status} connectBusy={busy[p.id]}
+      <TrackingRow key={p.id} person={p} ici={icis[p.id]} connectionStatus={p.connection_status} connectBusy={busy[p.id]} isNew={isNew(p)}
         onConnect={()=>doConnect(p)}
         primaryAction={p.am_i_tracking
           ? <span className="pill accent" style={{fontSize:11}}><Check size={11} style={{verticalAlign:-1,marginRight:2}}/>Tracking</span>
@@ -216,16 +251,18 @@ export function ImTrackingSection({ me, setConnections, onTrackingCountsChange }
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState({});
+  const [sort, setSort] = useState("date_desc");
   const icis = useIciBatch(useMemo(()=>people.map(p=>p.id),[people]));
 
-  const loadPage = async (offset) => {
+  const loadPage = async (offset, sortVal) => {
     setLoading(true);
-    const { people: rows, hasMore: more } = await dbGetMyTrackingList(PAGE_SIZE, offset);
+    const { people: rows, hasMore: more } = await dbGetMyTrackingList(PAGE_SIZE, offset, sortVal ?? sort);
     setPeople(prev => offset===0 ? rows : [...prev, ...rows]);
     setHasMore(more);
     setLoading(false);
   };
-  useEffect(()=>{ loadPage(0); },[]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Re-fetches from the top whenever the sort changes (also covers initial mount).
+  useEffect(()=>{ loadPage(0, sort); },[sort]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doUntrack = async (person) => {
     setBusy(b=>({...b,[person.id]:true}));
@@ -248,6 +285,9 @@ export function ImTrackingSection({ me, setConnections, onTrackingCountsChange }
   if(people.length===0) return <div className="card"><div className="empty">You&apos;re not tracking anyone yet. Track an investor from their profile to see their ideas here.</div></div>;
 
   return (<div style={{display:"flex",flexDirection:"column",gap:8}}>
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:2}}>
+      <SortSelect value={sort} onChange={setSort}/>
+    </div>
     {people.map(p=>(
       <TrackingRow key={p.id} person={p} ici={icis[p.id]} connectionStatus={p.connection_status} connectBusy={busy[p.id]}
         onConnect={()=>doConnect(p)}

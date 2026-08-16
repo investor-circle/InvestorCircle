@@ -12,8 +12,9 @@
  * GET  ?resource=tracking                                   -> { tracking: [...] }  (legacy: full list of people I track, unpaginated — kept for callers that just need "am I tracking X" client-side lookups)
  * GET  ?resource=tracking&action=status&targetId=X            -> { tracking: boolean }
  * GET  ?resource=tracking&action=counts                       -> { trackersCount, trackingCount }
- * GET  ?resource=tracking&action=trackers&limit=&offset=       -> { people: [...], hasMore }  ("Tracking me" — people who track ME, newest first)
- * GET  ?resource=tracking&action=tracking-list&limit=&offset=  -> { people: [...], hasMore }  ("I'm tracking" — people I track, newest first)
+ * GET  ?resource=tracking&action=trackers&limit=&offset=&sort=       -> { people: [...], hasMore }  ("Tracking me" — people who track ME)
+ * GET  ?resource=tracking&action=tracking-list&limit=&offset=&sort=  -> { people: [...], hasMore }  ("I'm tracking" — people I track)
+ *   sort: 'date_desc' (default — newest first) | 'date_asc' | 'name_asc' | 'name_desc'
  *
  * POST ?resource=tracking
  *   Body: { action: 'track'|'untrack', targetId }
@@ -31,6 +32,12 @@ function readPaging(req) {
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(req.query?.limit, 10) || DEFAULT_PAGE_SIZE));
   const offset = Math.max(0, parseInt(req.query?.offset, 10) || 0);
   return { limit, offset };
+}
+
+const SORTS = ['date_desc', 'date_asc', 'name_asc', 'name_desc'];
+function readSort(req) {
+  const s = String(req.query?.sort || 'date_desc');
+  return SORTS.includes(s) ? s : 'date_desc';
 }
 
 export default async function handleTracking(req, res, myId) {
@@ -62,9 +69,10 @@ export default async function handleTracking(req, res, myId) {
         return;
       }
 
-      // ── "Tracking me" — people who track the caller, newest first ──
+      // ── "Tracking me" — people who track the caller ──
       if (action === 'trackers') {
         const { limit, offset } = readPaging(req);
+        const sort = readSort(req);
         const rows = await sql`
           SELECT up.id, up.username, up.full_name, up.avatar_url, up.avatar_color, ut.created_at,
                  EXISTS(
@@ -80,7 +88,12 @@ export default async function handleTracking(req, res, myId) {
           FROM user_tracking ut
           JOIN user_profiles up ON up.id = ut.tracker_id
           WHERE ut.tracked_id = ${myId}
-          ORDER BY ut.created_at DESC
+          ORDER BY
+            CASE WHEN ${sort} = 'name_asc'  THEN up.full_name END ASC NULLS LAST,
+            CASE WHEN ${sort} = 'name_desc' THEN up.full_name END DESC NULLS LAST,
+            CASE WHEN ${sort} = 'date_asc'  THEN ut.created_at END ASC,
+            CASE WHEN ${sort} = 'date_desc' THEN ut.created_at END DESC,
+            ut.created_at DESC
           LIMIT ${limit + 1} OFFSET ${offset}
         `;
         const hasMore = rows.length > limit;
@@ -88,9 +101,10 @@ export default async function handleTracking(req, res, myId) {
         return;
       }
 
-      // ── "I'm tracking" — people the caller tracks, newest first ──
+      // ── "I'm tracking" — people the caller tracks ──
       if (action === 'tracking-list') {
         const { limit, offset } = readPaging(req);
+        const sort = readSort(req);
         const rows = await sql`
           SELECT up.id, up.username, up.full_name, up.avatar_url, up.avatar_color, ut.created_at,
                  (
@@ -102,7 +116,12 @@ export default async function handleTracking(req, res, myId) {
           FROM user_tracking ut
           JOIN user_profiles up ON up.id = ut.tracked_id
           WHERE ut.tracker_id = ${myId}
-          ORDER BY ut.created_at DESC
+          ORDER BY
+            CASE WHEN ${sort} = 'name_asc'  THEN up.full_name END ASC NULLS LAST,
+            CASE WHEN ${sort} = 'name_desc' THEN up.full_name END DESC NULLS LAST,
+            CASE WHEN ${sort} = 'date_asc'  THEN ut.created_at END ASC,
+            CASE WHEN ${sort} = 'date_desc' THEN ut.created_at END DESC,
+            ut.created_at DESC
           LIMIT ${limit + 1} OFFSET ${offset}
         `;
         const hasMore = rows.length > limit;
@@ -156,10 +175,17 @@ export default async function handleTracking(req, res, myId) {
  * already have an unread one, rather than spamming one row per tracker.
  * Exported so other resources that form a tracking relationship as a side
  * effect (e.g. subscribing to a public Circle — see
- * api/_lib/handlers/groups.js) go through the exact same idempotency +
- * notification logic instead of duplicating it.
+ * api/_lib/handlers/groups.js) go through the exact same idempotency
+ * logic instead of duplicating it.
+ *
+ * opts.notify (default true) — pass false when the caller already sends
+ * its own, more specific notification for the same user action (e.g.
+ * Circle subscribe already notifies the owner via 'circle_join_request';
+ * the auto-track side effect of that click should not ALSO produce a
+ * separate 'tracking_new' notification for the same click).
  */
-export async function trackAndNotify(trackerId, targetId) {
+export async function trackAndNotify(trackerId, targetId, opts = {}) {
+  const notify = opts.notify !== false;
   if (!trackerId || !targetId || trackerId === targetId) return false; // defense-in-depth — callers should already guard this
   const inserted = await sql`
     INSERT INTO user_tracking (tracker_id, tracked_id)
@@ -168,6 +194,7 @@ export async function trackAndNotify(trackerId, targetId) {
     RETURNING tracker_id
   `;
   if (inserted.length === 0) return false; // already tracking — no notification, no duplicate
+  if (!notify) return true;
 
   const trackerRows = await sql`SELECT full_name FROM user_profiles WHERE id = ${trackerId} LIMIT 1`;
   const trackerName = trackerRows[0]?.full_name || 'Someone';
