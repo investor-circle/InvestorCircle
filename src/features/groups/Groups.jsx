@@ -196,12 +196,18 @@ export function CircleModal({ title, contacts, max, alreadyIn, onClose, onSave, 
   const [description, setDescription] = useState("");
   const [circleType, setCircleType] = useState("private");
   const [members, setMembers] = useState([]);
+  const [membersOpen,   setMembersOpen]   = useState(addOnly);
+  const [memberSearch,  setMemberSearch]  = useState("");
   const available = contacts.filter(c=>!alreadyIn.includes(c.id));
+  const filteredAvailable = memberSearch.trim()
+    ? available.filter(c=>c.name.toLowerCase().includes(memberSearch.trim().toLowerCase()))
+    : available;
   const toggle = (id) => setMembers(m=>m.includes(id)?m.filter(x=>x!==id):[...m,id]);
   const valid = (addOnly||name.trim()) && (addOnly ? members.length>0 : true);
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-head"><h3>{title}</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">
+      {!addOnly && <>
       <div className="field"><label>Circle name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Long-Term Compounders" autoFocus/></div>
       <div className="field"><label>Description (optional)</label><input value={description} onChange={e=>setDescription(e.target.value)} placeholder="What is this circle about?"/></div>
       <div className="field">
@@ -214,23 +220,60 @@ export function CircleModal({ title, contacts, max, alreadyIn, onClose, onSave, 
             <Globe size={13}/> Public
           </button>
         </div>
-        <div className="muted small" style={{marginTop:6}}>
+        <div className="muted small" style={{marginTop:6,lineHeight:1.5}}>
           {circleType==="private"
-            ? "Only you can add members, from your Connections. Not discoverable."
-            : "Anyone who Tracks you or is Connected with you can request to join. You approve requests, and can share an invite link."}
+            ? "Only you can add members, from your Connections. Not publicly discoverable — any member can post ideas here."
+            : "Anyone who Tracks or is Connected with you can request to join, or use an invite link you share. Only you (the admin) can post ideas here — and every idea posted also appears in everyone's Home feed."}
         </div>
       </div>
-      <div className="field"><label>Add from your Connections {members.length>0&&`(${members.length} selected)`}</label>
-        {available.length===0
-          ? <div className="muted small">No accepted connections available to add yet.</div>
-          : <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-              {available.map(c=><span key={c.id} className={"chip"+(members.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{members.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}
-            </div>}
+      </>}
+      <div style={{border:"1px solid var(--line)",borderRadius:11}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",cursor:addOnly?"default":"pointer"}} onClick={()=>!addOnly && setMembersOpen(o=>!o)}>
+          <div style={{flex:1}}>
+            <label style={{margin:0,display:"block"}}>Add from your Connections</label>
+            {!addOnly && <div className="muted small" style={{marginTop:2}}>{members.length>0 ? `${members.length} selected` : "Choose who to add now (optional)."}</div>}
+          </div>
+          {!addOnly && <ChevronDown size={16} className="muted" style={{transform:membersOpen?"rotate(180deg)":"none",transition:".15s",flexShrink:0}}/>}
+        </div>
+        {(membersOpen||addOnly) && (
+          <div style={{padding:"0 13px 13px"}}>
+            {available.length===0
+              ? <div className="muted small">No accepted connections available to add yet.</div>
+              : (<>
+                  <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
+                    <div className="searchbox" style={{flex:1}}>
+                      <Search size={14} color="var(--muted)"/>
+                      <input value={memberSearch} onChange={e=>setMemberSearch(e.target.value)} placeholder="Search connections…" onClick={e=>e.stopPropagation()}/>
+                    </div>
+                    {(() => {
+                      const allFilteredSelected = filteredAvailable.length>0 && filteredAvailable.every(c=>members.includes(c.id));
+                      return (
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={()=>{
+                          const filteredIds = filteredAvailable.map(c=>c.id);
+                          setMembers(m=> allFilteredSelected ? m.filter(id=>!filteredIds.includes(id)) : [...new Set([...m, ...filteredIds])]);
+                        }}>{allFilteredSelected ? "Unselect all" : "Select all"}</button>
+                      );
+                    })()}
+                  </div>
+                  <div style={{maxHeight:220,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
+                    {filteredAvailable.length===0
+                      ? <div className="muted small" style={{padding:"6px 2px"}}>No connections match &ldquo;{memberSearch}&rdquo;.</div>
+                      : filteredAvailable.map(c=>(
+                        <label key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 6px",borderRadius:8,cursor:"pointer"}}>
+                          <input type="checkbox" checked={members.includes(c.id)} onChange={()=>toggle(c.id)}
+                            style={{width:15,height:15,accentColor:"var(--accent)",flexShrink:0}}/>
+                          <span style={{fontSize:13}}>{c.name}</span>
+                        </label>
+                      ))}
+                  </div>
+                </>)}
+          </div>
+        )}
       </div>
     </div>
     <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      <button className="btn btn-pri" disabled={!valid} onClick={()=>onSave(name.trim(),members,undefined,circleType,description.trim())}>Create Circle</button>
+      <button className="btn btn-pri" disabled={!valid} onClick={()=>onSave(name.trim(),members,undefined,circleType,description.trim())}>{addOnly?"Add members":"Create Circle"}</button>
     </div></div>
   </div></div>);
 }
