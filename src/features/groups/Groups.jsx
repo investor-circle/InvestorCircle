@@ -487,6 +487,7 @@ export function CirclePage({ slug, inviteCode, highlightIdeaId, autoOpenRequests
   const handleJoin = async () => {
     if (!viewerUser) {
       sessionStorage.setItem("pending_join_circle_slug", slug);
+      if (inviteCode) sessionStorage.setItem("pending_join_circle_invite", inviteCode);
       onBack();
       return;
     }

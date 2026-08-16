@@ -56,7 +56,9 @@ import {
   getTrackingCounts as dbGetTrackingCounts
 } from "./services/api/trackingApi";
 import {
-  getMyGroups
+  getMyGroups,
+  getCircleBySlug as dbGetCircleBySlug,
+  requestJoinCircle as dbRequestJoinCircle
 } from "./services/api/groupsApi";
 import {
   getFeedConfigAndPrefs as dbGetFeedConfigAndPrefs,
@@ -324,6 +326,26 @@ export default function App() {
       })
       .catch(console.warn);
   }, [user?.uid]);
+
+  // ── Post-login/signup: auto-resume a Circle join request if the user came
+  // from a public Circle page and had to sign in first (mirrors the
+  // pending_connect_username pattern above) ──
+  useEffect(() => {
+    if (!user) return;
+    const pendingSlug = sessionStorage.getItem("pending_join_circle_slug");
+    if (!pendingSlug) return;
+    sessionStorage.removeItem("pending_join_circle_slug");
+    const pendingInvite = sessionStorage.getItem("pending_join_circle_invite");
+    sessionStorage.removeItem("pending_join_circle_invite");
+    dbGetCircleBySlug(pendingSlug)
+      .then(circle => {
+        if (!circle || circle.is_owner || circle.is_member) return;
+        return dbRequestJoinCircle(circle.id, pendingInvite || null).then(() => {
+          window.location.hash = `#/circle/${pendingSlug}`;
+        });
+      })
+      .catch(console.warn);
+  }, [user?.uid]);
   const [holdings,      setHoldings]      = useState(HOLDINGS);
 
   // PRIVACY CRITICAL: clear holdings whenever the authenticated user changes.
@@ -380,6 +402,8 @@ export default function App() {
         window.history.replaceState({}, '', window.location.pathname + window.location.search);
       }
       sessionStorage.removeItem('pending_connect_username');
+      sessionStorage.removeItem('pending_join_circle_slug');
+      sessionStorage.removeItem('pending_join_circle_invite');
       localStorage.removeItem('mic_claim_token');
     }
   }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -471,16 +471,23 @@ export default async function handleGroups(req, res) {
       // the same action would be a duplicate, not genuinely new information.
       await trackAndNotify(myId, circle.created_by, { notify: false });
 
+      const existingReq = await sql`
+        SELECT status FROM circle_join_requests WHERE group_id = ${groupId} AND user_id = ${myId} LIMIT 1
+      `;
+      const wasAlreadyPending = existingReq[0]?.status === 'pending';
+
       const jr = await sql`
         INSERT INTO circle_join_requests (group_id, user_id, source, status)
         VALUES (${groupId}, ${myId}, ${viaInvite ? 'invite_link' : 'direct'}, 'pending')
         ON CONFLICT (group_id, user_id) DO UPDATE SET status = 'pending', source = EXCLUDED.source, updated_at = now()
         RETURNING id, status
       `;
-      await sql`
-        INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
-        VALUES (${circle.created_by}, 'circle_join_request', ${myId}, ${groupId}, ${JSON.stringify({ groupName: circle.name, groupSlug: circle.slug })})
-      `;
+      if (!wasAlreadyPending) {
+        await sql`
+          INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
+          VALUES (${circle.created_by}, 'circle_join_request', ${myId}, ${groupId}, ${JSON.stringify({ groupName: circle.name, groupSlug: circle.slug })})
+        `;
+      }
       res.status(200).json({ request: jr[0], tracking: true });
       return;
     }
