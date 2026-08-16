@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   Users,
@@ -14,7 +14,9 @@ import {
   UserPlus,
   Trash2,
   Loader,
-  Copy
+  Copy,
+  Radar,
+  Eye
 } from "lucide-react";
 import {
   acceptConnection,
@@ -24,11 +26,20 @@ import {
   sendConnectionRequest
 } from "../../services/api/connectionsApi";
 import {
-  lookupUser as dbLookupUser
+  lookupUser as dbLookupUser,
+  getInvestorIciBatch as dbGetInvestorIciBatch
 } from "../../services/api/profileApi";
+import { computeIci } from "../../services/api/recommendationsApi";
 import {
   upsertSharingPref
 } from "../../services/api/sharingApi";
+import {
+  trackInvestor as dbTrackInvestor,
+  untrackInvestor as dbUntrackInvestor,
+  getTrackingCounts as dbGetTrackingCounts,
+  getMyTrackers as dbGetMyTrackers,
+  getMyTrackingList as dbGetMyTrackingList
+} from "../../services/api/trackingApi";
 import { Avatar, RecoBreakdown, SortTh, TypeTag } from "../../components/common";
 import { CONTACT_COLORS, TODAY } from "../../constants/app";
 import { GroupsSection } from "../groups/Groups";
@@ -38,35 +49,217 @@ import { fmt, fmtPct, fmtSigned, initialsOf, recoStats } from "../../utils/forma
 import { gotoUserProfile } from "../../utils/navigation";
 
 export function Network({ connections, setConnections, groups, setGroups, sharing, setSharing, configs,
-    canCreateGroups, pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me }) {
-  const [tab, setTab] = useState("contacts");
+    canCreateGroups, pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me,
+    initTab, onInitTabConsumed, trackingCounts, onTrackingCountsChange }) {
+  const [tab, setTab] = useState(initTab || "contacts");
+  useEffect(()=>{
+    if(initTab){ setTab(initTab); onInitTabConsumed && onInitTabConsumed(); }
+  },[initTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const pendingReceived = connections.filter(c=>c.status==="pending"&&c.direction==="received").length;
   return (
     <>
       <div className="page-head">
         <div><div className="eyebrow">Network</div><div className="page-title">Your network</div>
-          <div className="page-sub">Manage connections and Circles</div></div>
+          <div className="page-sub">Manage connections, tracking and Circles</div></div>
       </div>
-      <div className="seg" style={{marginBottom:20}}>
+      <div className="seg" style={{marginBottom:20,flexWrap:"wrap"}}>
         <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}>
           <Users size={15}/> Connections · {connections.filter(c=>c.status==="accepted").length}
           {pendingReceived>0 && <span className="nav-badge" style={{position:"static",marginLeft:6}}>{pendingReceived}</span>}
+        </button>
+        <button className={tab==="trackers"?"active":""} onClick={()=>setTab("trackers")}>
+          <Eye size={15}/> Tracking me · {trackingCounts?.trackersCount ?? 0}
+        </button>
+        <button className={tab==="tracking"?"active":""} onClick={()=>setTab("tracking")}>
+          <Radar size={15}/> I&apos;m tracking · {trackingCounts?.trackingCount ?? 0}
         </button>
         <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}>
           <Layers size={15}/> Circles · {groups.length}
         </button>
       </div>
-      {tab==="contacts"
-        ? <ContactsSection connections={connections} setConnections={setConnections}
+      {tab==="contacts" && <ContactsSection connections={connections} setConnections={setConnections}
             groups={groups} sharing={sharing} setSharing={setSharing} configs={configs}
             pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
-            recsReceived={recsReceived} onOpenRecos={onOpenRecos} me={me}/>
-        : <GroupsSection groups={groups} setGroups={setGroups}
+            recsReceived={recsReceived} onOpenRecos={onOpenRecos} me={me}/>}
+      {tab==="trackers" && <TrackingMeSection me={me} setConnections={setConnections} onTrackingCountsChange={onTrackingCountsChange}/>}
+      {tab==="tracking" && <ImTrackingSection me={me} setConnections={setConnections} onTrackingCountsChange={onTrackingCountsChange}/>}
+      {tab==="groups" && <GroupsSection groups={groups} setGroups={setGroups}
             contacts={connections.filter(c=>c.status==="accepted").map((c,i)=>({id:c.user_id,name:c.name,color:CONTACT_COLORS[i%CONTACT_COLORS.length],connectionId:c.connection_id}))}
             configs={configs} canCreateGroups={canCreateGroups} me={me}
             recsReceived={recsReceived} onOpenRecos={onOpenRecos}/>}
     </>
   );
+}
+
+/* ── Shared row card for the Tracking me / I'm tracking lists ───────────────── */
+function TrackingRow({ person, ici, connectionStatus, primaryAction, onConnect, connectBusy }) {
+  const band = ici?.band;
+  const bandColor = band==="Strong" ? "#4ade80" : band==="Good" ? "#a78bfa" : band==="Building" ? "#fbbf24" : "var(--muted)";
+  return (
+    <div className="card" style={{padding:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",flex:1,minWidth:180}}
+          onClick={()=>gotoUserProfile(person.id)}>
+          <Avatar f={{name:person.full_name,avatarUrl:person.avatar_url,color:person.avatar_color,initials:initialsOf(person.full_name||person.username||"?")}} size={40}/>
+          <div style={{minWidth:0}}>
+            <div style={{fontWeight:700,fontSize:13.5,color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{person.full_name||person.username}</div>
+            <div className="muted small">@{person.username||"—"}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+          {ici && <div style={{textAlign:"center"}}>
+            <div style={{fontWeight:800,fontSize:14,color:bandColor}}>{ici.score}</div>
+            <div className="muted" style={{fontSize:10,textTransform:"uppercase",letterSpacing:".04em"}}>ICI</div>
+          </div>}
+          <div style={{textAlign:"center"}}>
+            <div style={{fontWeight:800,fontSize:14}}>{ici?.total ?? "—"}</div>
+            <div className="muted" style={{fontSize:10,textTransform:"uppercase",letterSpacing:".04em"}}>Ideas</div>
+          </div>
+          {primaryAction}
+          {connectionStatus==="accepted"
+            ? <span className="pill" style={{fontSize:11,background:"var(--gain-soft)",color:"var(--gain)"}}>Connected</span>
+            : connectionStatus==="pending"
+              ? <span className="pill" style={{fontSize:11}}>Pending</span>
+              : <button className="btn btn-ghost btn-sm" disabled={connectBusy} onClick={onConnect}>
+                  {connectBusy?<Loader size={13} className="spin"/>:<><UserPlus size={13}/> Connect</>}
+                </button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Fetches ICI/Ideas stats for a page of people in ONE batched call (never per-row). */
+function useIciBatch(ids) {
+  const [icis, setIcis] = useState({});
+  useEffect(()=>{
+    if(!ids.length) return;
+    dbGetInvestorIciBatch(ids).then(rows=>{
+      const map = {};
+      rows.forEach(row=>{
+        const closed = Number(row.closed)||0;
+        const hitPct = closed>0 ? (Number(row.wins)/closed*100) : 0;
+        const riskAdj = Number(row.ret_stddev)>0 ? Math.max(Number(row.median_ret)/Number(row.ret_stddev),0) : 0;
+        const ici = computeIci({
+          years_history: Number(row.years_history)||0, total: row.total,
+          hit_rate_pct: hitPct, median_return: Number(row.median_ret)||0,
+          risk_adjusted_return: riskAdj, deleted_count: 0,
+        });
+        map[row.uid] = { ...ici, total: row.total };
+      });
+      setIcis(map);
+    }).catch(()=>{});
+  },[ids.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  return icis;
+}
+
+const PAGE_SIZE = 20;
+
+/* ── "Tracking me" — people who track the current user ──────────────────────── */
+export function TrackingMeSection({ me, setConnections, onTrackingCountsChange }) {
+  const myId = me?.id || "me";
+  const [people, setPeople] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState({});
+  const icis = useIciBatch(useMemo(()=>people.map(p=>p.id),[people]));
+
+  const loadPage = async (offset) => {
+    setLoading(true);
+    const { people: rows, hasMore: more } = await dbGetMyTrackers(PAGE_SIZE, offset);
+    setPeople(prev => offset===0 ? rows : [...prev, ...rows]);
+    setHasMore(more);
+    setLoading(false);
+  };
+  useEffect(()=>{ loadPage(0); },[]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const doTrackBack = async (person) => {
+    setBusy(b=>({...b,[person.id]:true}));
+    await dbTrackInvestor(person.id);
+    setPeople(ps=>ps.map(p=>p.id===person.id?{...p,am_i_tracking:true}:p));
+    onTrackingCountsChange && onTrackingCountsChange(c=>({...c, trackingCount:(c.trackingCount||0)+1}));
+    setBusy(b=>({...b,[person.id]:false}));
+  };
+  const doConnect = async (person) => {
+    setBusy(b=>({...b,[person.id]:true}));
+    const res = await sendConnectionRequest(myId, person.id);
+    if(res && !res.error){
+      setPeople(ps=>ps.map(p=>p.id===person.id?{...p,connection_status:"pending"}:p));
+      setConnections(await getMyConnections(myId));
+    }
+    setBusy(b=>({...b,[person.id]:false}));
+  };
+
+  if(loading && people.length===0) return <div className="card"><div className="empty"><Loader size={16} className="spin"/> Loading…</div></div>;
+  if(people.length===0) return <div className="card"><div className="empty">No one is tracking you yet. Share your public profile to grow your audience.</div></div>;
+
+  return (<div style={{display:"flex",flexDirection:"column",gap:8}}>
+    {people.map(p=>(
+      <TrackingRow key={p.id} person={p} ici={icis[p.id]} connectionStatus={p.connection_status} connectBusy={busy[p.id]}
+        onConnect={()=>doConnect(p)}
+        primaryAction={p.am_i_tracking
+          ? <span className="pill accent" style={{fontSize:11}}><Check size={11} style={{verticalAlign:-1,marginRight:2}}/>Tracking</span>
+          : <button className="btn btn-pri btn-sm" disabled={busy[p.id]} onClick={()=>doTrackBack(p)}>
+              {busy[p.id]?<Loader size={13} className="spin"/>:<><Radar size={13}/> Track back</>}
+            </button>}/>
+    ))}
+    {hasMore && <button className="btn btn-ghost" disabled={loading} onClick={()=>loadPage(people.length)}>
+      {loading?<Loader size={14} className="spin"/>:"Load more"}
+    </button>}
+  </div>);
+}
+
+/* ── "I'm tracking" — people the current user tracks ─────────────────────────── */
+export function ImTrackingSection({ me, setConnections, onTrackingCountsChange }) {
+  const myId = me?.id || "me";
+  const [people, setPeople] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState({});
+  const icis = useIciBatch(useMemo(()=>people.map(p=>p.id),[people]));
+
+  const loadPage = async (offset) => {
+    setLoading(true);
+    const { people: rows, hasMore: more } = await dbGetMyTrackingList(PAGE_SIZE, offset);
+    setPeople(prev => offset===0 ? rows : [...prev, ...rows]);
+    setHasMore(more);
+    setLoading(false);
+  };
+  useEffect(()=>{ loadPage(0); },[]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const doUntrack = async (person) => {
+    setBusy(b=>({...b,[person.id]:true}));
+    await dbUntrackInvestor(person.id);
+    setPeople(ps=>ps.filter(p=>p.id!==person.id));
+    onTrackingCountsChange && onTrackingCountsChange(c=>({...c, trackingCount:Math.max((c.trackingCount||1)-1,0)}));
+    setBusy(b=>({...b,[person.id]:false}));
+  };
+  const doConnect = async (person) => {
+    setBusy(b=>({...b,[person.id]:true}));
+    const res = await sendConnectionRequest(myId, person.id);
+    if(res && !res.error){
+      setPeople(ps=>ps.map(p=>p.id===person.id?{...p,connection_status:"pending"}:p));
+      setConnections(await getMyConnections(myId));
+    }
+    setBusy(b=>({...b,[person.id]:false}));
+  };
+
+  if(loading && people.length===0) return <div className="card"><div className="empty"><Loader size={16} className="spin"/> Loading…</div></div>;
+  if(people.length===0) return <div className="card"><div className="empty">You&apos;re not tracking anyone yet. Track an investor from their profile to see their ideas here.</div></div>;
+
+  return (<div style={{display:"flex",flexDirection:"column",gap:8}}>
+    {people.map(p=>(
+      <TrackingRow key={p.id} person={p} ici={icis[p.id]} connectionStatus={p.connection_status} connectBusy={busy[p.id]}
+        onConnect={()=>doConnect(p)}
+        primaryAction={
+          <button className="btn btn-sm" style={{background:"var(--surface-2)",border:"1px solid var(--line)"}} disabled={busy[p.id]} onClick={()=>doUntrack(p)}>
+            {busy[p.id]?<Loader size={13} className="spin"/>:<><Check size={13}/> Tracking</>}
+          </button>}/>
+    ))}
+    {hasMore && <button className="btn btn-ghost" disabled={loading} onClick={()=>loadPage(people.length)}>
+      {loading?<Loader size={14} className="spin"/>:"Load more"}
+    </button>}
+  </div>);
 }
 
 /* ── Contacts section ─────────────────────────────────────────────────────── */

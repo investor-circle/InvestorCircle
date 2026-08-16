@@ -53,6 +53,9 @@ import {
   untrackReco as dbUntrackReco
 } from "./services/api/engagementApi";
 import {
+  getTrackingCounts as dbGetTrackingCounts
+} from "./services/api/trackingApi";
+import {
   getMyGroups
 } from "./services/api/groupsApi";
 import {
@@ -213,6 +216,12 @@ export default function App() {
   const [sharing,       setSharing]       = useState({});
   const [notifications, setNotifications] = useState([]);
   const [tracked,       setTracked]       = useState(new Set()); // Set of reco IDs the user has tracked
+  // Track-an-investor relationship (distinct from the recommendation-tracking
+  // Set above): lightweight counts only — the Network page's Tracking me /
+  // I'm tracking tabs fetch their own paginated lists lazily, never the full
+  // list, so a creator with thousands of trackers doesn't load them all here.
+  const [trackingCounts,  setTrackingCounts]  = useState({ trackersCount: 0, trackingCount: 0 });
+  const [networkInitTab,  setNetworkInitTab]  = useState(null); // one-shot: which Network tab to open next (e.g. from a notification)
   // Feed configuration
   const [feedConfigOptions,       setFeedConfigOptions]       = useState([]); // admin-defined options
   const [userFeedPrefs,           setUserFeedPrefs]           = useState({}); // {key: boolean} user overrides
@@ -765,6 +774,8 @@ export default function App() {
         if (userIsAdmin) loadClaimRequests();
         // Check if this user is a creator awaiting admin approval for their claimed profile
         dbGetMyPendingClaimStatus().then(setHasPendingClaim).catch(()=>{});
+        // Network tab badge counts — cheap indexed COUNTs, never the full tracker/tracking lists
+        dbGetTrackingCounts().then(setTrackingCounts).catch(()=>{});
         // Both were already kicked off above, in parallel with the batch
         // that just resolved — just await them now.
         const [trackedResult, feedCfgResult] = await Promise.allSettled([
@@ -1366,6 +1377,14 @@ export default function App() {
                       dbLookupUser('id', n.from_user_id)
                         .then(row => { if (row?.username) window.location.hash = `#/investor/${row.username}`; })
                         .catch(()=>{});
+                      return;
+                    }
+
+                    // Tracking notifications (individual or bundled) → Network → Tracking me,
+                    // newest trackers first — never a specific record, so no lookup needed.
+                    if (n.type === 'tracking_new') {
+                      setNetworkInitTab('trackers');
+                      setPage('network');
                     }
                   }}
                 />}
@@ -1534,7 +1553,9 @@ export default function App() {
                 configs={configs} canCreateGroups={canCreateGroups}
                 pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
                 recsReceived={recsReceived} me={ME}
-                onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}/>}
+                onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}
+                initTab={networkInitTab} onInitTabConsumed={()=>setNetworkInitTab(null)}
+                trackingCounts={trackingCounts} onTrackingCountsChange={setTrackingCounts}/>}
             {isInv && page==="recs"      && <Recommendations
                 recsReceived={recsReceived} setRecsReceived={setRecsReceived}
                 recsMade={recsMade} setRecsMade={setRecsMade}

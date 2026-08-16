@@ -37,6 +37,7 @@
 
 import { sql, parseBody, requireUid, optionalUid, sendAuthError } from '../auth.js';
 import { randomUUID } from 'crypto';
+import { trackAndNotify } from './tracking.js';
 
 async function isActiveAdmin(groupId, uid) {
   const rows = await sql`
@@ -448,10 +449,10 @@ export default async function handleGroups(req, res) {
 
       // Clicking Subscribe/Join always tracks the circle owner, regardless of
       // whether the join request itself still needs approval (product spec).
-      await sql`
-        INSERT INTO user_tracking (tracker_id, tracked_id) VALUES (${myId}, ${circle.created_by})
-        ON CONFLICT (tracker_id, tracked_id) DO NOTHING
-      `;
+      // Goes through the same idempotent track-and-notify path as the
+      // profile Track button so a burst of circle subscribers bundles into
+      // one tracking notification instead of spamming the owner.
+      await trackAndNotify(myId, circle.created_by);
 
       const jr = await sql`
         INSERT INTO circle_join_requests (group_id, user_id, source, status)

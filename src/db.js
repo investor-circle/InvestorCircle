@@ -160,10 +160,28 @@ export async function getTrackingStatus(targetId) {
   return api.ok ? !!api.data.tracking : false;
 }
 
-/** List of investors the current user tracks. */
+/** List of investors the current user tracks (legacy, unpaginated — small use sites only). */
 export async function getMyTracking() {
   const api = await callApi('/data?resource=tracking');
   return api.ok ? (api.data.tracking || []) : [];
+}
+
+/** Lightweight counts for the Network page tab badges — cheap indexed COUNTs, no list payload. */
+export async function getTrackingCounts() {
+  const api = await callApi('/data?resource=tracking&action=counts');
+  return api.ok ? { trackersCount: api.data.trackersCount || 0, trackingCount: api.data.trackingCount || 0 } : { trackersCount: 0, trackingCount: 0 };
+}
+
+/** Paginated "Tracking me" list — people who track the current user, newest first. */
+export async function getMyTrackers(limit=20, offset=0) {
+  const api = await callApi(`/data?resource=tracking&action=trackers&limit=${limit}&offset=${offset}`);
+  return api.ok ? { people: api.data.people || [], hasMore: !!api.data.hasMore } : { people: [], hasMore: false };
+}
+
+/** Paginated "I'm tracking" list — people the current user tracks, newest first. */
+export async function getMyTrackingList(limit=20, offset=0) {
+  const api = await callApi(`/data?resource=tracking&action=tracking-list&limit=${limit}&offset=${offset}`);
+  return api.ok ? { people: api.data.people || [], hasMore: !!api.data.hasMore } : { people: [], hasMore: false };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

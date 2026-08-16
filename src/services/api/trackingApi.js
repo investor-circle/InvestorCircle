@@ -12,5 +12,8 @@ export {
   trackInvestor,
   untrackInvestor,
   getTrackingStatus,
-  getMyTracking
+  getMyTracking,
+  getTrackingCounts,
+  getMyTrackers,
+  getMyTrackingList
 } from "../../db";

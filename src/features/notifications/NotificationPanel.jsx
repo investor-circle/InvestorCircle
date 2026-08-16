@@ -19,6 +19,7 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
     circle_join_request:     "requested to join your Circle",
     circle_join_approved:    "approved your request to join their Circle",
     circle_join_rejected:    "declined your request to join their Circle",
+    tracking_new:            "started tracking you",
     recommendation:          "shared a recommendation with you",
     exit_signal:             "issued an exit signal",
     contact_recommendation:  "posted a new recommendation",
@@ -54,6 +55,15 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
         ? <><b>{names[0]}</b> and <b>{names[1]}</b></>
         : <><b>{names[0]}</b> and <b>{count - 1} others</b></>;
       return <>{who} liked your {ticker ? <>{ticker} </> : ''}recommendation</>;
+    }
+
+    // Smart-bundled tracking: "Rahul Sharma started tracking you" or
+    // "Ankur + 10 new investors started tracking you" once it bundles.
+    if (n.type === 'tracking_new') {
+      const count = n.metadata?.count || 1;
+      const leadName = n.metadata?.leadName || n.from_name || 'Someone';
+      if (count <= 1) return <><b>{leadName}</b> started tracking you</>;
+      return <><b>{leadName}</b> + {count - 1} new investor{count - 1 === 1 ? '' : 's'} started tracking you</>;
     }
 
     // Network: "Ankur Gupta liked INDSWFTLAB by Abhijheet"
@@ -132,7 +142,8 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
             : '#6d5df5';
           const isNavReco = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation'].includes(n.type);
           const isNavConn = ['connection_request','connection_accepted','connection_rejected'].includes(n.type);
-          const isClickable = onNavigate && (isNavReco || isNavConn);
+          const isNavTracking = n.type === 'tracking_new';
+          const isClickable = onNavigate && (isNavReco || isNavConn || isNavTracking);
           return (
           <div key={n.id}
             onClick={isClickable ? () => onNavigate(n) : undefined}
