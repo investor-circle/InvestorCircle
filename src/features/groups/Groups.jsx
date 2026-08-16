@@ -443,7 +443,7 @@ function CircleSharePopover({ circle, anchorEl, onClose }) {
   );
 }
 
-export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigateProfile }) {
+export function CirclePage({ slug, inviteCode, highlightIdeaId, viewerUser, onBack, onNavigateProfile }) {
   const [circle,  setCircle]  = useState(undefined); // undefined = loading, null = not found
   const [joining, setJoining] = useState(false);
   const [showAdd,      setShowAdd]      = useState(false);
@@ -470,6 +470,14 @@ export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigatePro
     setIdeas(null); setIdeasErr(false);
     dbGetCircleIdeas(circle.id).then(setIdeas).catch(()=>setIdeasErr(true));
   },[circle?.id, circle?.is_owner, circle?.is_member]);
+
+  // Deep-linked from a "shared an idea in this Circle" notification — scroll
+  // the specific idea into view once the feed has loaded.
+  useEffect(()=>{
+    if(!highlightIdeaId || !ideas || !ideas.length) return;
+    const el = document.getElementById(`circle-idea-${highlightIdeaId}`);
+    if (el) setTimeout(()=>el.scrollIntoView({behavior:'smooth', block:'center'}), 150);
+  },[ideas, highlightIdeaId]);
 
   const handleJoin = async () => {
     if (!viewerUser) {
@@ -637,8 +645,13 @@ export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigatePro
           {ideas===null && !ideasErr && <div className="muted small" style={{padding:'8px 0'}}><Loader size={14} className="spin"/> Loading…</div>}
           {ideasErr && <div className="muted small">Couldn&apos;t load ideas right now.</div>}
           {ideas && ideas.length===0 && <div className="empty">No ideas shared with this circle yet.</div>}
-          {ideas && ideas.map(idea=>(
-            <div key={idea.id} className="hoverable" style={{display:'flex',gap:12,padding:'12px 14px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,cursor:'pointer'}}
+          {ideas && ideas.map(idea=>{
+            const isHighlighted = String(idea.id)===String(highlightIdeaId);
+            return (
+            <div key={idea.id} id={`circle-idea-${idea.id}`} className="hoverable" style={{display:'flex',gap:12,padding:'12px 14px',
+                background: isHighlighted ? 'var(--accent-soft, rgba(109,93,245,.1))' : 'var(--surface-2)',
+                border: isHighlighted ? '1.5px solid var(--accent)' : '1px solid var(--line)',
+                borderRadius:10,cursor:'pointer',transition:'background .3s, border-color .3s'}}
               onClick={()=>{
                 const dest = idea.recommender_username ? `#/investor/${idea.recommender_username}/reco/${idea.id}` : null;
                 if (dest) window.location.hash = dest;
@@ -668,7 +681,8 @@ export function CirclePage({ slug, inviteCode, viewerUser, onBack, onNavigatePro
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     )}

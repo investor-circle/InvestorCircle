@@ -253,7 +253,13 @@ export default function App() {
   // the back-button don't re-load a specific investor profile.
   // We keep pageHash in React state so the profile still renders correctly.
   useEffect(() => {
-    if (pageHash.startsWith('#/investor/')) {
+    if (pageHash.startsWith('#/investor/') || pageHash.startsWith('#/circle/')) {
+      // Also fixes a real bug: without stripping it, window.location.hash stays
+      // set to this exact value after Close, so re-opening the SAME circle/
+      // profile later sets an identical hash — which the browser does not fire
+      // a hashchange event for — leaving the page stuck showing nothing until
+      // a full reload. Stripping it here means the next "Open" always assigns
+      // a hash that differs from the (now-empty) current one.
       window.history.replaceState(
         { _micProfileHash: pageHash },
         '',
@@ -921,6 +927,7 @@ export default function App() {
             <CirclePage
               slug={circleSlug}
               inviteCode={circleQuery.get('invite')}
+              highlightIdeaId={circleQuery.get('highlight')}
               viewerUser={user}
               onBack={()=>setPageHash('')}
               onNavigateProfile={(uname)=>{ if(uname) window.location.hash = `#/investor/${uname}`; }}
@@ -1385,6 +1392,15 @@ export default function App() {
                     if (n.type === 'tracking_new') {
                       setNetworkInitTab('trackers');
                       setPage('network');
+                      return;
+                    }
+
+                    // An idea shared to a Circle → that Circle's page, with the
+                    // idea scrolled to and highlighted (metadata carries the
+                    // slug directly — set once, server-side, at delivery time).
+                    if (n.type === 'circle_idea' && n.metadata?.groupSlug) {
+                      const highlight = n.metadata?.recoId ? `?highlight=${encodeURIComponent(n.metadata.recoId)}` : '';
+                      window.location.hash = `#/circle/${n.metadata.groupSlug}${highlight}`;
                     }
                   }}
                 />}

@@ -21,6 +21,7 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
     circle_join_rejected:    "declined your request to join their Circle",
     tracking_new:            "started tracking you",
     recommendation:          "shared a recommendation with you",
+    circle_idea:             "shared an idea in a Circle",
     exit_signal:             "issued an exit signal",
     contact_recommendation:  "posted a new recommendation",
     contact_comment:         "commented on your recommendation",
@@ -64,6 +65,12 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
       const leadName = n.metadata?.leadName || n.from_name || 'Someone';
       if (count <= 1) return <><b>{leadName}</b> started tracking you</>;
       return <><b>{leadName}</b> + {count - 1} new investor{count - 1 === 1 ? '' : 's'} started tracking you</>;
+    }
+
+    // "Vivaan Rawat shared an idea in Piggy Wealth — HFCL"
+    if (n.type === 'circle_idea') {
+      const groupName = n.metadata?.groupName;
+      return <><b>{n.from_name||'Someone'}</b> shared an idea{groupName ? <> in <b>{groupName}</b></> : ' in a Circle'}{ticker ? <> — {ticker}</> : ''}</>;
     }
 
     // Network: "Ankur Gupta liked INDSWFTLAB by Abhijheet"
@@ -143,7 +150,8 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
           const isNavReco = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation'].includes(n.type);
           const isNavConn = ['connection_request','connection_accepted','connection_rejected'].includes(n.type);
           const isNavTracking = n.type === 'tracking_new';
-          const isClickable = onNavigate && (isNavReco || isNavConn || isNavTracking);
+          const isNavCircleIdea = n.type === 'circle_idea';
+          const isClickable = onNavigate && (isNavReco || isNavConn || isNavTracking || isNavCircleIdea);
           return (
           <div key={n.id}
             onClick={isClickable ? () => onNavigate(n) : undefined}

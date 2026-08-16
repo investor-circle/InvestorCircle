@@ -249,6 +249,12 @@ async function deliverToRecipients(recId, senderId, recipients, reco, { asForwar
       `;
     } else if (r.type === 'group' && !asForward) {
       if (!authorizedGroupIds?.has(String(r.id))) continue; // not authorized to post to this circle — see authorizedCircleRecipientIds
+      const circleRows = await sql`SELECT name, slug FROM ic_groups WHERE id = ${r.id} LIMIT 1`;
+      const circleMeta = {
+        ticker: reco.ticker, assetName: reco.assetName,
+        groupName: circleRows[0]?.name || '', groupSlug: circleRows[0]?.slug || '',
+        recoId: recId,
+      };
       const members = await sql`
         SELECT user_id FROM group_members
         WHERE group_id = ${r.id} AND status = 'active' AND user_id != ${senderId}
@@ -262,10 +268,12 @@ async function deliverToRecipients(recId, senderId, recipients, reco, { asForwar
           VALUES (${recId}, ${m.user_id}, 'group', ${r.id})
           ON CONFLICT (recommendation_id, delivered_to_user_id) DO NOTHING
         `;
+        // Distinct type from a direct/1:1 share ('recommendation') so the
+        // notification can name the Circle and deep-link straight to it
+        // (see NotificationPanel.jsx + App.jsx's onNavigate handler).
         await sql`
           INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
-          VALUES (${m.user_id}, 'recommendation', ${senderId}, ${recId},
-                  ${JSON.stringify({ ticker: reco.ticker, assetName: reco.assetName })})
+          VALUES (${m.user_id}, 'circle_idea', ${senderId}, ${recId}, ${JSON.stringify(circleMeta)})
         `;
       }
     }
