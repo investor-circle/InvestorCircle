@@ -100,7 +100,7 @@ import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { InviteModal, Network } from "./features/connections/Connections";
 import { CirclePage } from "./features/groups/Groups";
 import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./features/discovery/Discovery";
-import { OnboardingGate } from "./features/onboarding/Onboarding";
+import { DiscoverModal, DiscoverPeoplePage, OnboardingGate } from "./features/onboarding/Onboarding";
 import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
 import { PortfolioIntelligencePage } from "./features/portfolio/Portfolio";
@@ -136,6 +136,7 @@ const INVESTOR_PATH_TO_PAGE = {
   "/portfolio": "portfolio",
   "/market": "market_intel",
   "/security": "sec_intel",
+  "/discover": "discover",
   "/connections": "network",
   "/recommendations": "recs",
   "/sharing": "sharing",
@@ -718,6 +719,7 @@ export default function App() {
 
   // ── Invite modal state ────────────────────────────────────────────────────────
   const [showInvite, setShowInvite] = useState(false);
+  const [showDiscover, setShowDiscover] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [searchPeople,     setSearchPeople]     = useState([]);
 
@@ -1060,6 +1062,7 @@ export default function App() {
       { id:"sec_intel",    label:"Stock Insights",  sub:"Discover stock conviction",     icon:Shield,    iconColor:"#34d399", iconBg:"rgba(52,211,153,.13)" },
     ]},
     { label:"CONNECT & GROW", items: [
+      { id:"discover",    label:"Discover",      sub:"Find new investors",                icon:Sparkles, iconColor:"#c084fc", iconBg:"rgba(192,132,252,.15)" },
       { id:"network",     label:"Network",       sub:"Connect with investors",            icon:Users,  iconColor:"#60a5fa", iconBg:"rgba(96,165,250,.13)" },
       { id:"trackrecord", label:"Track Record",  sub:"Your public investment record",    icon:Trophy, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)" },
     ]},
@@ -1279,6 +1282,19 @@ export default function App() {
                   title="Search"
                 >
                   {showMobileSearch ? <X size={18}/> : <Search size={18}/>}
+                </button>
+              )}
+
+              {/* ── Discover people — permanent, deliberately eye-catching entry point
+                   into DiscoverModal (same modal used for onboarding) ── */}
+              {isInv && (
+                <button
+                  className="icon-btn discover-icon-btn"
+                  onClick={()=>setShowDiscover(true)}
+                  title="Discover investors to Track or Connect with"
+                  aria-label="Discover investors"
+                >
+                  <Sparkles size={18}/>
                 </button>
               )}
 
@@ -1559,9 +1575,11 @@ export default function App() {
             )}
             {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading}/>}
             {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
+            {isInv && showDiscover && <DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
             {isInv && page==="market_intel" && <MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
             {isInv && page==="sec_intel"    && <SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
+            {isInv && page==="discover"     && <DiscoverPeoplePage ME={ME}/>}
             {isInv && page==="network"   && <Network
                 connections={connections} setConnections={setConnections}
                 groups={groups} setGroups={setGroups}

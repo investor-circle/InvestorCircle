@@ -281,6 +281,11 @@ tr.hiddenrow > td{opacity:.55;}
 .tab-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px rgba(109,93,245,.8);flex-shrink:0;animation:pulse-dot 2.2s ease-in-out infinite;}
 @keyframes pulse-dot{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.35);opacity:.7;}}
 
+/* Discover-people top-nav icon — deliberately stands out (lavender, glowing ring) to draw the eye and invite a click */
+.discover-icon-btn{background:linear-gradient(135deg,#6d5df5,#cf52d8);border:none;color:#fff;box-shadow:0 0 0 0 rgba(139,92,246,.55);animation:discover-glow 2.4s ease-in-out infinite;}
+.discover-icon-btn:hover{background:linear-gradient(135deg,#7a6bff,#dd63e8);}
+@keyframes discover-glow{0%,100%{box-shadow:0 0 0 0 rgba(139,92,246,.5);}50%{box-shadow:0 0 0 7px rgba(139,92,246,0);}}
+
 /* Utility: hides an element on mobile only (no-op on desktop) */
 .mob-hidden{}
 

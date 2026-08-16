@@ -879,6 +879,12 @@ export async function getSuggestedPeople() {
   return api.ok ? (api.data.people || []) : [];
 }
 
+/** Fuller candidate list for the dedicated Discovery page — excludes people already Tracked or Connected, same as getSuggestedPeople. */
+export async function getDiscoverMore() {
+  const api = await callApi('/data?resource=lookups&action=discover-more');
+  return api.ok ? (api.data.people || []) : [];
+}
+
 /** Upload a profile picture (client-compressed data: URI — see src/utils/image.js). */
 export async function uploadAvatar(dataUrl) {
   const api = await callApi('/data?resource=lookups', { method: 'POST', body: { action: 'avatar-upload', dataUrl } });
