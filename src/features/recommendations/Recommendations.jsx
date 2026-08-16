@@ -1627,6 +1627,12 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
   };
 
   const toggle  = (id) => setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
+  const [peopleOpen,   setPeopleOpen]   = useState(false);
+  const [peopleSearch, setPeopleSearch] = useState("");
+  const selectedContactsCount = contacts.filter(c=>targets.includes(c.id)).length;
+  const filteredContacts = peopleSearch.trim()
+    ? contacts.filter(c=>c.name.toLowerCase().includes(peopleSearch.trim().toLowerCase()))
+    : contacts;
 
   // A public Circle is, by definition, discoverable by anyone — so an idea
   // shared to one can never be marked non-public. Forcing (not just
@@ -1864,13 +1870,6 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
         </label>
 
         <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11,marginBottom:8}}>
-          <div style={{fontWeight:700,fontSize:13.5}}>👥 People</div>
-          <div className="muted small" style={{marginTop:2,marginBottom:8}}>Select specific people.</div>
-          {contacts.length===0 ? <div className="muted small">No contacts yet.</div> :
-          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{contacts.map(c=><span key={c.id} className={"chip"+(targets.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{targets.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}</div>}
-        </div>
-
-        <div style={{padding:"11px 13px",border:"1px solid var(--line)",borderRadius:11}}>
           <div style={{fontWeight:700,fontSize:13.5}}>⭕ Circles</div>
           <div className="muted small" style={{marginTop:2,marginBottom:8}}>Select one or more Circles.</div>
           {myGroups.length===0 ? <div className="muted small">No Circles yet — Circles you belong to (or own) will appear here.</div> :
@@ -1880,6 +1879,43 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
               {g.circle_type==="public" ? <Globe size={13}/> : <Lock size={13}/>}
               {g.name}
             </span>)}</div>}
+          <div className="muted small" style={{marginTop:8,display:"flex",gap:5,alignItems:"flex-start"}}>
+            <span style={{flexShrink:0}}>ℹ️</span>
+            <span>You can share to any Private Circle you belong to, or a Public Circle you own (only its admin can post there).</span>
+          </div>
+        </div>
+
+        <div style={{border:"1px solid var(--line)",borderRadius:11}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",cursor:"pointer"}} onClick={()=>setPeopleOpen(o=>!o)}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700,fontSize:13.5}}>👥 People</div>
+              <div className="muted small" style={{marginTop:2}}>
+                {selectedContactsCount>0 ? `${selectedContactsCount} selected` : "Select specific people."}
+              </div>
+            </div>
+            <ChevronDown size={16} className="muted" style={{transform:peopleOpen?"rotate(180deg)":"none",transition:".15s",flexShrink:0}}/>
+          </div>
+          {peopleOpen && (
+            <div style={{padding:"0 13px 13px"}}>
+              {contacts.length===0 ? <div className="muted small">No contacts yet.</div> : (<>
+                <div className="searchbox" style={{marginBottom:8}}>
+                  <Search size={14} color="var(--muted)"/>
+                  <input value={peopleSearch} onChange={e=>setPeopleSearch(e.target.value)} placeholder="Search people…" onClick={e=>e.stopPropagation()}/>
+                </div>
+                <div style={{maxHeight:220,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
+                  {filteredContacts.length===0
+                    ? <div className="muted small" style={{padding:"6px 2px"}}>No people match &ldquo;{peopleSearch}&rdquo;.</div>
+                    : filteredContacts.map(c=>(
+                      <label key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 6px",borderRadius:8,cursor:"pointer"}}>
+                        <input type="checkbox" checked={targets.includes(c.id)} onChange={()=>toggle(c.id)}
+                          style={{width:15,height:15,accentColor:"var(--accent)",flexShrink:0}}/>
+                        <span style={{fontSize:13}}>{c.name}</span>
+                      </label>
+                    ))}
+                </div>
+              </>)}
+            </div>
+          )}
         </div>
       </div>
     </div>
