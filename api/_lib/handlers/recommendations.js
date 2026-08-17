@@ -57,6 +57,11 @@ function mapReceivedRow(r) {
     hidden:        r.is_hidden,
     likes:         Number(r.likes || 0),
     recoActed:     Number(r.reco_acted || 0),
+    isPublic:      r.is_public !== false,
+    recType:       r.recommendation_type || 'Buy',
+    stopLoss:      r.stop_loss  ? Number(r.stop_loss)  : null,
+    conviction:    r.conviction || null,
+    sector:        r.sector     || null,
   };
 }
 
