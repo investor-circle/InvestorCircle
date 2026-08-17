@@ -3,7 +3,6 @@ import {
   Users,
   Lightbulb,
   Search,
-  Bell,
   TrendingUp,
   TrendingDown,
   X,
@@ -23,7 +22,8 @@ import {
   Activity,
   Zap,
   Target,
-  Clock
+  Clock,
+  Share2
 } from "lucide-react";
 import {
   getInvestorIciBatch as dbGetInvestorIciBatch
@@ -31,43 +31,252 @@ import {
 import {
   computeIci,
   getConsensusRecosPublic as dbGetConsensusRecosPublic,
-  getTickerRecos as dbGetTickerRecos
+  getTickerRecos as dbGetTickerRecos,
+  updateDelivery as dbUpdateDelivery
 } from "../../services/api/recommendationsApi";
+import {
+  reactToReco as dbReactToReco,
+  trackReco as dbTrackReco
+} from "../../services/api/engagementApi";
 import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
-import { FeedCard, MakeRecoModal, RecoCardModal } from "../recommendations/Recommendations";
+import { FeedCard, InvestedToggle, MakeRecoModal, ReceivedSharePopover, RecoCardModal } from "../recommendations/Recommendations";
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
+import { fetchPublicProfileInfo } from "../../utils/navigation";
 
-export function FreshWidget({ recsReceived, contacts, setPage }) {
-  const fresh = [...recsReceived].filter(r=>!r.hidden)
-    .sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,4);
-  const [modal, setModal] = useState(null);
-  const cf = (r) => { const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName,color:'#8d90ad'}:{name:'?',color:'#8d90ad'}); };
+// A recommendation counts as "fresh" while it's inside this window — same
+// created_at ordering the rest of the feed already uses (r.date), just
+// thresholded for the "New" badge. No separate unseen/last-viewed concept
+// exists in the data model, so we don't invent one here.
+const FRESH_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+/* ─── Compact "daily briefing" card for a single fresh idea ─────────────
+   Distinct from the full FeedCard: no % return, tighter layout, and the
+   whole card is a real navigable link to the recommendation's dedicated,
+   shareable page (#/investor/:username/reco/:id — reused, not reinvented).
+   Like / Bookmark / Mark-invested / Share all call the same handlers and
+   API functions FeedCard uses; Comment is a lightweight entry point that
+   opens the same detail page (where the comment thread lives). ── */
+function FreshIdeaCard({ r, contacts, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, ici }) {
+  const [recommenderInfo, setRecommenderInfo] = useState(null); // { username, isSebiApproved }
+  const [shareAnchor, setShareAnchor] = useState(null);
+  const [showShare, setShowShare] = useState(false);
+
+  useEffect(() => { if (r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo); }, [r.from]);
+
+  const cf = useMemo(() => {
+    const found = contacts.find(x => x.id === r.from);
+    if (found) return found;
+    const name = r.byName || 'Someone';
+    return { name, initials: initialsOf(name), color: '#8d90ad' };
+  }, [r.from, contacts]);
+
+  const username  = r.from_username || recommenderInfo?.username || null;
+  const isFresh   = r.date ? (Date.now() - new Date(r.date).getTime()) < FRESH_WINDOW_MS : false;
+  const isBuy     = (r.recommendation_type || r.recType || 'Buy') === 'Buy';
+  const isTracked = tracked?.has(r.id);
+  const thesisPreview = getThesisText(r.thesis);
+  const sourceLabel = r.feedSource === 'public' ? 'Public'
+    : r.shareType === 'group' ? 'Circle' : null;
+  // Most useful 2-3 of horizon / target / sector / circle-source — horizon and
+  // target win first (most decision-relevant for a fresh idea), sector and
+  // the circle/public source tag fill remaining slots up to 3.
+  const contextPills = useMemo(() => {
+    const candidates = [
+      r.horizon && { key:'horizon', label:r.horizon },
+      r.targetPrice && { key:'target', label:`Target ₹${Number(r.targetPrice).toLocaleString('en-IN')}` },
+      r.sector && { key:'sector', label:r.sector },
+      sourceLabel && { key:'source', label:sourceLabel, accent:true },
+    ].filter(Boolean);
+    return candidates.slice(0, 3);
+  }, [r.horizon, r.targetPrice, r.sector, sourceLabel]);
+
+  // Same routing FeedCard/notifications already use — extended nowhere,
+  // just consumed here.
+  const goToDetail = async () => {
+    let uname = username;
+    if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
+    if (uname) window.location.hash = `#/investor/${uname}/reco/${r.id}`;
+  };
+
+  // ── Mutation helpers — mirror FeedCard's react()/patch() so Like/Track/
+  // Invested go through the same underlying API calls, just routed to
+  // whichever of the three feed arrays this reco actually lives in. ──
+  const patch = (updates) => {
+    if (r.feedSource === 'public' && setPublicFeedRecos) {
+      setPublicFeedRecos(rs => rs.map(x => x.id === r.id ? { ...x, ...updates } : x));
+    } else if (r.feedSource === 'network_engagement' && setNetworkEngagementRecos) {
+      setNetworkEngagementRecos(rs => rs.map(x => x.id === r.id ? { ...x, ...updates } : x));
+    } else if (setRecsReceived) {
+      setRecsReceived(rs => rs.map(x => x.deliveryId === r.deliveryId ? { ...x, ...updates } : x));
+      if (r.deliveryId) { try { dbUpdateDelivery(r.deliveryId, updates, me?.id); } catch (_) {} }
+    }
+  };
+
+  const react = (val) => {
+    if (!me?.id) return;
+    const next = r.reaction === val ? 'none' : val;
+    let likes = r.likes || 0;
+    if (r.reaction === 'like') likes = Math.max(0, likes - 1);
+    if (next === 'like') likes++;
+    patch({ reaction: next, likes });
+    dbReactToReco(r.id, next === 'like' ? 'like' : null, next === 'like' ? { likerName: me.name || 'Someone' } : null)
+      .catch(e => console.error('[like] ✗ failed:', e?.message));
+  };
+
+  const handleShareClick = (e) => {
+    e.stopPropagation();
+    if (showShare) { setShowShare(false); setShareAnchor(null); return; }
+    setShareAnchor(e.currentTarget); setShowShare(true);
+  };
+
+  return (
+    <div
+      onClick={goToDetail}
+      style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',marginBottom:10,cursor:'pointer',transition:'.12s'}}
+      onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
+      onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}
+    >
+      {/* WHO — creator, ICI, fresh badge, recency */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+        <div className="av" style={{width:26,height:26,background:cf.color||'var(--grad)',fontSize:10,flexShrink:0}}>
+          {cf.initials||initialsOf(cf.name)}
+        </div>
+        <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+          <span style={{fontWeight:700,fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:110}}>{cf.name.split(' ')[0]}</span>
+          {ici && (
+            <span style={{fontSize:9,fontWeight:800,padding:'1px 6px',borderRadius:999,
+              background: ici.score>=70?'rgba(74,222,128,.15)':ici.score>=50?'rgba(124,92,252,.15)':'rgba(251,191,36,.15)',
+              color:      ici.score>=70?'#22863a':ici.score>=50?'#6d4fc7':'#b07a00'}}>
+              ICI {Math.round(ici.score)}
+            </span>
+          )}
+          {isFresh && (
+            <span style={{fontSize:9,fontWeight:800,padding:'1px 6px',borderRadius:999,background:'var(--grad)',color:'#fff',letterSpacing:'.3px',textTransform:'uppercase'}}>
+              New
+            </span>
+          )}
+        </div>
+        <span style={{fontSize:10,color:'var(--muted)',flexShrink:0}}>{fmtDate(r.date)}</span>
+      </div>
+
+      {/* WHAT — instrument, action, entry price */}
+      <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:6,flexWrap:'wrap'}}>
+        <span style={{fontWeight:800,fontSize:13.5,letterSpacing:'-.2px'}}>{r.assetName}</span>
+        <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:5,
+          background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
+          {isBuy?'Buy':'Sell'}
+        </span>
+        {r.priceAt>0 && <span style={{fontSize:11,color:'var(--muted)'}}>Entry ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
+      </div>
+
+      {/* WHY — truncated thesis */}
+      {thesisPreview && (
+        <div style={{fontSize:12,lineHeight:1.5,color:'var(--ink-soft)',marginBottom:8,
+          overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',wordBreak:'break-word'}}>
+          {thesisPreview}
+        </div>
+      )}
+
+      {/* Useful context — pick the 2-3 most useful of horizon / target / sector / circle */}
+      {contextPills.length > 0 && (
+        <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:9}}>
+          {contextPills.map(p => (
+            <span key={p.key} className={"pill"+(p.accent?' accent':'')} style={{fontSize:10,padding:'2px 8px'}}>{p.label}</span>
+          ))}
+        </div>
+      )}
+
+      {/* Lightweight interactions — reuse existing handlers; never bubble to the card click */}
+      <div style={{display:'flex',alignItems:'center',gap:4,paddingTop:8,borderTop:'1px solid var(--line)'}} onClick={e=>e.stopPropagation()}>
+        <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={()=>react('like')} style={{width:26,height:26}}><ThumbsUp size={12}/></button>
+        <span style={{fontSize:10,fontWeight:700,color:'var(--muted)',minWidth:12}}>{r.likes||0}</span>
+        <button className="iconbtn" title="Comment" onClick={goToDetail} style={{width:26,height:26}}><MessageSquare size={12}/></button>
+        {(r.commentCount||0)>0 && <span style={{fontSize:10,fontWeight:700,color:'var(--muted)'}}>{r.commentCount}</span>}
+        <div style={{position:'relative'}}>
+          <button className="iconbtn" title="Share" onClick={handleShareClick} style={{width:26,height:26}}><Share2 size={12}/></button>
+          {showShare && <ReceivedSharePopover reco={r} fromUsername={username} anchorEl={shareAnchor}
+            onForward={()=>setShowShare(false)} onClose={()=>{ setShowShare(false); setShareAnchor(null); }}/>}
+        </div>
+        <button className={"iconbtn"+(isTracked?' on-like':'')} title={isTracked?'Remove from tracked':'Track'}
+          onClick={()=>toggleTrack?.(r.id)}
+          style={isTracked?{width:26,height:26,background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{width:26,height:26}}>
+          <Bookmark size={12}/>
+        </button>
+        <div style={{marginLeft:'auto'}}>
+          <InvestedToggle
+            invested={r.invested} investedPrice={r.investedPrice||r.invested_price}
+            reco={{...r,price:r.price,ticker:r.ticker,assetName:r.assetName,priceAt:r.priceAt}}
+            onMark={(price)=>{
+              patch({isInvested:true,investedPrice:price,invested:true});
+              if(me?.id){
+                dbTrackReco(r.id, true, price)
+                  .then(()=>{ if(toggleTrack&&tracked&&!tracked.has(r.id)) toggleTrack(r.id); })
+                  .catch(()=>{ if(toggleTrack&&tracked&&!tracked.has(r.id)) toggleTrack(r.id); });
+              } else if(toggleTrack&&tracked&&!tracked.has(r.id)) toggleTrack(r.id);
+            }}
+            onUnmark={()=>{
+              patch({isInvested:false,investedPrice:null,invested:false});
+              if(me?.id) dbTrackReco(r.id, false).catch(console.warn);
+            }}
+            stopProp={true}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onViewAll, setPage }) {
+  const fresh = useMemo(() => [...recsReceived].filter(r=>!r.hidden)
+    .sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5), [recsReceived]);
+
+  // Batch-fetch real ICI scores for the creators shown, same pattern already
+  // used for Stock Insights (SecurityIntelligencePage) — no new scoring logic.
+  const [iciScores, setIciScores] = useState({});
+  useEffect(() => {
+    const uids = [...new Set(fresh.map(r=>r.from).filter(Boolean))];
+    if (!uids.length) { setIciScores({}); return; }
+    dbGetInvestorIciBatch(uids).then(rows => {
+      const scores = {};
+      rows.forEach(row => {
+        const hitPct  = row.closed > 0 ? (row.wins / row.closed * 100) : 0;
+        const riskAdj = Number(row.ret_stddev) > 0 ? Math.max(Number(row.median_ret) / Number(row.ret_stddev), 0) : 0;
+        scores[row.uid] = computeIci({
+          years_history: Number(row.years_history) || 0, total: row.total, hit_rate_pct: hitPct,
+          median_return: Number(row.median_ret) || 0, risk_adjusted_return: riskAdj, deleted_count: 0,
+        });
+      });
+      setIciScores(scores);
+    }).catch(()=>{});
+  }, [fresh]);
+
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <WidgetHeader icon={Bell} label="Fresh Ideas" action="View all" onAction={()=>setPage('recs')}/>
-      {fresh.length===0
-        ? <div className="muted small" style={{padding:'10px 14px 12px',fontStyle:'italic'}}>No new recommendations yet.</div>
-        : fresh.map(r=>{
-          const perf=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
-          const c=cf(r);
-          return (
-            <div key={r.id} onClick={()=>setModal(r)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
-              onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
-              onMouseLeave={e=>e.currentTarget.style.background=''}>
-              <div className="av" style={{width:30,height:30,background:c.color||'var(--grad)',fontSize:10,flexShrink:0}}>{initialsOf(c.name)}</div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:600,fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.assetName}</div>
-                <div style={{fontSize:10,color:'var(--muted)'}}>{c.name.split(' ')[0]} · {fmtDate(r.date)}</div>
-              </div>
-              <div style={{textAlign:'right',flexShrink:0}}>
-                <div style={{fontSize:12,fontWeight:700,color:perf>=0?'var(--gain)':'var(--loss)'}}>{perf>=0?'+':''}{(perf*100).toFixed(1)}%</div>
-                <div style={{fontSize:10,color:'var(--muted)'}}>{r.horizon||''}</div>
-              </div>
+      <WidgetHeader icon={Sparkles} label="Fresh Ideas from your Circle" action="View all" onAction={onViewAll}/>
+      <div style={{padding:'10px 12px 4px'}}>
+        {fresh.length===0 ? (
+          <div style={{padding:'14px 4px 16px',textAlign:'center'}}>
+            <div style={{fontSize:24,marginBottom:8}}>🌱</div>
+            <div style={{fontWeight:700,fontSize:12.5,marginBottom:4}}>Your circle's ideas will land here</div>
+            <div className="muted small" style={{lineHeight:1.5,marginBottom:10}}>
+              As soon as someone in your circle posts a recommendation, it'll show up here first.
             </div>
-          );
-        })}
-      {modal && <RecoCardModal r={modal} me={null} contacts={contacts} groups={[]} setRecsReceived={()=>{}} tracked={new Set()} toggleTrack={()=>{}} onClose={()=>setModal(null)}/>}
+            <button className="btn btn-soft btn-sm" onClick={()=>setPage?.('network')}><Users size={13}/> Grow your circle</button>
+          </div>
+        ) : (<>
+          {fresh.map(r => (
+            <FreshIdeaCard key={r.id} r={r} contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+              setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
+              ici={iciScores[r.from]}/>
+          ))}
+          {fresh.length < 3 && (
+            <div className="muted small" style={{padding:'0 2px 10px',lineHeight:1.5}}>
+              More ideas will show up here as your circle keeps posting.
+            </div>
+          )}
+        </>)}
+      </div>
     </div>
   );
 }
@@ -450,7 +659,10 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         display: isMobile && mobileFeedTab==='feed' ? 'none' : undefined,
       }}>
         {/* Widget #7 — Fresh Ideas (network + public platform) */}
-        <FreshWidget recsReceived={allFeedRecos} contacts={contacts} setPage={setPage}/>
+        <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+          setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
+          setPage={setPage}
+          onViewAll={()=>{ if (isMobile) setMobileFeedTab('feed'); }}/>
 
         {/* Widget #6 — Tracked Summary Donut */}
         <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit}/>
