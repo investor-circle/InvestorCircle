@@ -43,6 +43,7 @@ import { FeedCard, InvestedToggle, MakeRecoModal, ReceivedSharePopover, RecoCard
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
 import { fetchPublicProfileInfo } from "../../utils/navigation";
+import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
 
 // A recommendation counts as "fresh" while it's inside this window — same
 // created_at ordering the rest of the feed already uses (r.date), just
@@ -341,38 +342,77 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
   );
 }
 
-/* ─── Sidebar Widget: Missed Opportunities (#5) ─── */
+/* ─── Sidebar Widget: What You Missed (#5) ───────────────────────────────
+   Formerly "Missed Opportunities" — a plain return-sorted leaderboard.
+   Ranking now lives entirely in src/utils/whatYouMissed.js (candidate
+   generation -> scoring -> ranked output); this component only renders
+   the {idea, creator, movement, relevance, reason}-shaped results it gets
+   back. Deliberately NOT phrased as a stock-gainer leaderboard: framing is
+   "an idea from your Circle moved, here's what happened," never "you
+   should have bought this." ── */
 
-export function MissedOppsWidget({ recsReceived, tracked, contacts }) {
-  const [modal, setModal] = useState(null);
-  const missed = recsReceived
-    .filter(r=>!tracked.has(r.id)&&!r.hidden&&r.priceAt>0)
-    .map(r=>({...r, ret:(r.price-r.priceAt)/r.priceAt}))
-    .filter(r=>r.ret>0.03)
-    .sort((a,b)=>b.ret-a.ret)
-    .slice(0,3);
-  if(!missed.length) return null;
-  const cf=(r)=>{ const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName}:{name:'?'}); };
+function WhatYouMissedCard({ item }) {
+  const { idea: r, creator, movement, reason } = item;
+  const [recommenderInfo, setRecommenderInfo] = useState(null);
+  useEffect(() => { if (r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo); }, [r.from]);
+
+  // Same #/investor/:username/reco/:id deep link FreshIdeaCard already uses.
+  const goToDetail = async () => {
+    let uname = r.from_username || recommenderInfo?.username;
+    if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
+    if (uname) window.location.hash = `#/investor/${uname}/reco/${r.id}`;
+  };
+
+  const isGain = movement.direction === 'up';
+  return (
+    <div onClick={goToDetail} style={{padding:'10px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
+      onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
+      onMouseLeave={e=>e.currentTarget.style.background=''}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontWeight:700,fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.assetName}</div>
+          <div style={{fontSize:10,color:'var(--muted)',marginTop:1}}>{creator.name.split(' ')[0]} · {fmtDate(r.date)}</div>
+        </div>
+        <div style={{textAlign:'right',flexShrink:0}}>
+          <div style={{fontSize:13,fontWeight:800,color:isGain?'var(--gain)':'var(--loss)'}}>
+            {isGain?'+':''}{(movement.pct*100).toFixed(1)}%
+          </div>
+          <div style={{fontSize:9,color:'var(--muted)'}}>since shared</div>
+        </div>
+      </div>
+      <div style={{fontSize:10,color:'var(--muted)',marginTop:4}}>{reason}</div>
+    </div>
+  );
+}
+
+export function WhatYouMissedWidget({ recsReceived, tracked, contacts, me, trackedCreatorIds }) {
+  const contactIds = useMemo(() => new Set((contacts||[]).map(c=>c.id)), [contacts]);
+  const resolveCreatorName = (r) => contacts.find(x=>x.id===r.from)?.name;
+
+  const results = useMemo(() => rankWhatYouMissed(recsReceived, {
+    tracked,
+    contactIds,
+    trackedCreatorIds,
+    seenIds: getSeenIds(me?.id),
+    resolveCreatorName,
+  }), [recsReceived, tracked, contactIds, trackedCreatorIds, me?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mark whatever we actually surfaced as seen — one write per widget
+  // mount/refresh, not per card. Next visit these decay substantially
+  // instead of dominating the widget again.
+  useEffect(() => {
+    if (results.length) markSeen(me?.id, results.map(x=>x.idea.id));
+  }, [results, me?.id]);
+
+  if (!results.length) return null;
+
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <WidgetHeader emoji="💸" label="Missed Opportunities"/>
-      {missed.map(r=>(
-        <div key={r.id} onClick={()=>setModal(r)} style={{padding:'9px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
-          onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
-          onMouseLeave={e=>e.currentTarget.style.background=''}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-            <div>
-              <div style={{fontWeight:700,fontSize:12}}>{r.assetName}</div>
-              <div style={{fontSize:10,color:'var(--muted)',marginTop:1}}>from {cf(r).name.split(' ')[0]} · Reco ₹{Number(r.priceAt).toLocaleString('en-IN')}</div>
-            </div>
-            <div style={{textAlign:'right',flexShrink:0}}>
-              <div style={{fontSize:13,fontWeight:800,color:'var(--gain)'}}>+{(r.ret*100).toFixed(1)}%</div>
-              <div style={{fontSize:10,color:'var(--muted)'}}>₹{Number(r.price).toLocaleString('en-IN')} now</div>
-            </div>
-          </div>
-        </div>
-      ))}
-      {modal && <RecoCardModal r={modal} me={null} contacts={contacts} groups={[]} setRecsReceived={()=>{}} tracked={new Set()} toggleTrack={()=>{}} onClose={()=>setModal(null)}/>}
+      <WidgetHeader emoji="👀" label="What You Missed"/>
+      <div style={{padding:'8px 14px 2px',fontSize:10.5,color:'var(--muted)',lineHeight:1.4}}>
+        Ideas from your Circle that moved recently
+      </div>
+      {results.map(item => <WhatYouMissedCard key={item.idea.id} item={item}/>)}
     </div>
   );
 }
@@ -443,7 +483,7 @@ function FeedBrewingState() {
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
 
-export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false }) {
+export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
@@ -674,8 +714,8 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         {/* Widget #6 — Tracked Summary Donut */}
         <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit}/>
 
-        {/* Widget #5 — Missed Opportunities */}
-        <MissedOppsWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts}/>
+        {/* Widget #5 — What You Missed */}
+        <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds}/>
 
         {/* Widget #4 — Trending on Platform */}
         <TrendingWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts}/>
