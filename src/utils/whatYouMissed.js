@@ -37,18 +37,28 @@
  */
 
 // Hard shelf-life cutoff — beyond this many days old, an idea is not a
-// candidate at all, no matter how large its move. Three weeks: long enough
-// that an idea posted a few days before someone's last visit still has a
-// chance to surface, short enough that this never turns into a permanent
-// leaderboard of old winners.
-export const CANDIDATE_WINDOW_DAYS = 21;
+// candidate at all, no matter how large its move. Four weeks: long enough
+// that an idea posted a couple of weeks before someone's last visit still
+// has a chance to surface on a low-volume, early-stage platform, short
+// enough that this never turns into a permanent leaderboard of old winners.
+export const CANDIDATE_WINDOW_DAYS = 28;
 
 // Exponential half-life for the recency factor within that window: an idea
-// loses half its scoring weight every N days. At the 21-day cutoff a
-// half-life of 5 days leaves a candidate at ~1/16th of its day-0 weight —
-// effectively gone well before the hard cutoff removes it outright, so the
-// cutoff is a backstop, not the primary decay mechanism.
-export const RECENCY_HALFLIFE_DAYS = 5;
+// loses half its scoring weight every N days.
+//
+// v1 shipped this at 5 days, calibrated only against the main Feed's own
+// ~29-day recency fade (see module header) since no live data was available
+// to check against. In practice that made the recency factor decay so hard
+// that only ideas a few days old (public tier) or under ~2 weeks (tracked
+// tier) could ever clear MIN_SCORE_TO_SHOW — on a low-volume platform where
+// most existing recommendations are already older than that, the widget had
+// no candidates left and disappeared outright instead of degrading
+// gracefully. 8 days keeps the same "recency beats magnitude" ordering
+// (verified: an 18-day-old +100% tracked idea still scores below a 2-day-old
+// +15% connection idea — 23.1 vs 31.1) while giving real, slightly-older
+// content an actual chance to surface. Revisit alongside CANDIDATE_WINDOW_DAYS
+// once real usage data exists.
+export const RECENCY_HALFLIFE_DAYS = 8;
 
 // Minimum |return| since the recommendation for a move to count as
 // "meaningful" rather than noise — keeps the widget from manufacturing
@@ -71,8 +81,11 @@ const RELEVANCE_POINTS = { tracked: 40, circle: 22, connection: 22, public: 6 };
 const SEEN_DECAY_MULTIPLIER = 0.3;
 
 // Below this score a candidate isn't worth a slot even if nothing else is
-// competing — an empty widget reads better than a padded, weak one.
-const MIN_SCORE_TO_SHOW = 5;
+// competing — an empty widget reads better than a padded, weak one. Lowered
+// from 5 alongside the half-life change above, for the same reason: 5 was
+// tuned assuming a faster decay than the widget can realistically get real
+// candidates through on a low-volume platform.
+const MIN_SCORE_TO_SHOW = 4;
 
 const MAX_RESULTS = 3;
 
