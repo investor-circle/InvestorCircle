@@ -408,7 +408,7 @@ export function WhatYouMissedWidget({ recsReceived, tracked, contacts, me, track
 
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <WidgetHeader emoji="👀" label="What You Missed"/>
+      <WidgetHeader icon={Zap} label="What You Missed"/>
       <div style={{padding:'8px 14px 2px',fontSize:10.5,color:'var(--muted)',lineHeight:1.4}}>
         Ideas from your Circle that moved recently
       </div>
@@ -711,11 +711,11 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
           setPage={setPage}
           onViewAll={()=>{ if (isMobile) setMobileFeedTab('feed'); }}/>
 
-        {/* Widget #6 — Tracked Summary Donut */}
-        <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit}/>
-
         {/* Widget #5 — What You Missed */}
         <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds}/>
+
+        {/* Widget #6 — Tracked Summary Donut */}
+        <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit}/>
 
         {/* Widget #4 — Trending on Platform */}
         <TrendingWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts}/>
