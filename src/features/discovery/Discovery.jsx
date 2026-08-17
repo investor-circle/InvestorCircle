@@ -44,6 +44,7 @@ import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
 import { fetchPublicProfileInfo } from "../../utils/navigation";
 import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
+import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
 
 // A recommendation counts as "fresh" while it's inside this window — same
 // created_at ordering the rest of the feed already uses (r.date), just
@@ -289,24 +290,99 @@ export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTr
   );
 }
 
-/* ─── Sidebar Widget: Tracked Summary Donut (#6) ─── */
+/* ─── Sidebar Widget: Tracked Summary Donut (#6) ─────────────────────────
+   Enhanced with a compact "what's happened lately" activity section below
+   the existing donut. Activity itself is derived entirely in
+   src/utils/trackedActivity.js — see that file's header for exactly which
+   categories are implemented, which were deliberately skipped because the
+   data model can't honestly support them, and how the "Since yesterday" /
+   "Since tracking" toggle works given there's no daily price-history
+   table to diff against. This component only renders that module's
+   output. ── */
 
-export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoInit }) {
-  const trackedList = recsReceived.filter(r=>tracked.has(r.id));
+const TRACKED_ACTIVITY_ICON = { exit: Target, mover: TrendingUp, comment: MessageSquare, reinforced: Users };
+
+function TrackedActivityRow({ item, contacts }) {
+  const { idea: r } = item;
+  const [recommenderInfo, setRecommenderInfo] = useState(null);
+  useEffect(() => { if (r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo); }, [r.from]);
+
+  const goToDetail = async () => {
+    let uname = r.from_username || recommenderInfo?.username;
+    if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
+    if (uname) window.location.hash = `#/investor/${uname}/reco/${r.id}`;
+  };
+
+  const Icon = TRACKED_ACTIVITY_ICON[item.type] || Activity;
+  const isDownMover = item.type === 'mover' && item.direction === 'down';
+  const iconColor = item.type === 'exit' ? 'var(--loss)' : isDownMover ? 'var(--loss)' : item.type === 'mover' ? 'var(--gain)' : 'var(--accent-ink)';
+  const iconBg = item.type === 'exit' ? 'var(--loss-soft)' : isDownMover ? 'var(--loss-soft)' : item.type === 'mover' ? 'var(--gain-soft)' : 'var(--accent-soft)';
+
+  return (
+    <div onClick={goToDetail} style={{display:'flex',alignItems:'flex-start',gap:8,padding:'8px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
+      onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
+      onMouseLeave={e=>e.currentTarget.style.background=''}>
+      <div style={{width:22,height:22,borderRadius:'50%',background:iconBg,color:iconColor,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>
+        <Icon size={11}/>
+      </div>
+      <div style={{minWidth:0,flex:1}}>
+        <div style={{fontSize:11.5,fontWeight:600,lineHeight:1.35,color:'var(--ink)'}}>{item.headline}</div>
+        {item.date && <div style={{fontSize:9.5,color:'var(--muted)',marginTop:1}}>{fmtDate(item.date)}</div>}
+      </div>
+    </div>
+  );
+}
+
+export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoInit, me, contacts }) {
+  const [mode, setMode] = useState('yesterday'); // 'yesterday' | 'tracking' — default "Since yesterday" per spec
+
+  const trackedList = useMemo(() => recsReceived.filter(r=>tracked.has(r.id)), [recsReceived, tracked]);
   const total = trackedList.length;
   const inM = trackedList.filter(r=>r.priceAt&&r.price>r.priceAt).length;
   const outM = total - inM;
+
+  // Snapshot current commentCount for every tracked idea once per mount/
+  // refresh (one write, not per-card) so next visit's newCommentItems can
+  // diff against it — same "seen state" pattern whatYouMissed.js uses.
+  useEffect(() => {
+    if (trackedList.length) saveSeenCommentCounts(me?.id, trackedList);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackedList.map(r=>`${r.id}:${r.commentCount}`).join(','), me?.id]);
+
+  const activity = useMemo(() => deriveTrackedActivity(trackedList, recsReceived, {
+    mode,
+    seenCommentCounts: getSeenCommentCounts(me?.id),
+  }), [trackedList, recsReceived, mode, me?.id]);
+
   if(total===0) return null;
 
   // SVG donut
   const R=32, cx=40, cy=40, stroke=9, circum=2*Math.PI*R;
   const inDash=circum*(inM/total), outDash=circum*(outM/total);
   const navTo=(filter)=>{ setRecoInit({tab:'tracked',moneyFilter:filter}); setPage('recs'); };
+  const viewAll=()=>{ setRecoInit({tab:'tracked'}); setPage('recs'); };
 
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
       <WidgetHeader icon={TrendingUp} label="My Tracked"/>
-      <div style={{padding:'12px 14px'}}>
+      <div style={{padding:'8px 14px 2px',fontSize:10.5,color:'var(--muted)',lineHeight:1.4}}>
+        See what's happening with the ideas you're tracking
+      </div>
+      <div style={{padding:'10px 14px 12px'}}>
+      {/* Since yesterday / Since tracking toggle */}
+      <div style={{display:'flex',gap:4,marginBottom:10,background:'var(--surface-2)',borderRadius:8,padding:3}}>
+        {[{k:'yesterday',label:'Since yesterday'},{k:'tracking',label:'Since tracking'}].map(o=>(
+          <button key={o.k} onClick={()=>setMode(o.k)}
+            style={{flex:1,border:'none',borderRadius:6,padding:'5px 4px',fontFamily:'var(--font)',fontSize:10,fontWeight:700,
+              cursor:'pointer',transition:'.12s',
+              background:mode===o.k?'var(--surface)':'transparent',
+              color:mode===o.k?'var(--accent-ink)':'var(--muted)',
+              boxShadow:mode===o.k?'0 1px 3px rgba(20,20,50,.1)':'none'}}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+
       <div style={{display:'flex',alignItems:'center',gap:14}}>
         <svg width={80} height={80} style={{flexShrink:0}}>
           {/* background */}
@@ -325,18 +401,44 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
           <text x={cx} y={cy+14} textAnchor="middle" dominantBaseline="middle" style={{fontSize:8,fill:'var(--muted)'}}>tracked</text>
         </svg>
         <div style={{flex:1}}>
-          <div onClick={()=>navTo('in')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,marginBottom:5,background:'var(--gain-soft)',transition:'.12s'}}
-            onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-            <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>In the money</span>
-            <span style={{fontSize:15,fontWeight:800,color:'var(--gain)'}}>{inM}</span>
-          </div>
-          <div onClick={()=>navTo('out')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,background:'var(--loss-soft)',transition:'.12s'}}
-            onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-            <span style={{fontSize:12,fontWeight:600,color:'var(--loss)'}}>Out of money</span>
-            <span style={{fontSize:15,fontWeight:800,color:'var(--loss)'}}>{outM}</span>
-          </div>
+          {mode==='tracking' ? (<>
+            <div onClick={()=>navTo('in')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,marginBottom:5,background:'var(--gain-soft)',transition:'.12s'}}
+              onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+              <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>In the money</span>
+              <span style={{fontSize:15,fontWeight:800,color:'var(--gain)'}}>{inM}</span>
+            </div>
+            <div onClick={()=>navTo('out')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,background:'var(--loss-soft)',transition:'.12s'}}
+              onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+              <span style={{fontSize:12,fontWeight:600,color:'var(--loss)'}}>Out of money</span>
+              <span style={{fontSize:15,fontWeight:800,color:'var(--loss)'}}>{outM}</span>
+            </div>
+          </>) : (
+            // No daily price-history table exists to compute an honest
+            // "% change since yesterday" per idea (see trackedActivity.js
+            // header) — so "Since yesterday" shows a live activity count
+            // instead of a fabricated price delta.
+            <div style={{padding:'6px 10px',borderRadius:8,background:'var(--accent-soft)'}}>
+              <div style={{fontSize:15,fontWeight:800,color:'var(--accent-ink)'}}>
+                {activity.length>0 ? `${activity.length} update${activity.length>1?'s':''}` : 'No new updates'}
+              </div>
+              <div style={{fontSize:10.5,color:'var(--muted)',marginTop:1}}>since yesterday</div>
+            </div>
+          )}
         </div>
       </div>
+      </div>
+
+      {/* Compact activity section — capped list, no empty/padded rows */}
+      {activity.length > 0 && activity.map(item => (
+        <TrackedActivityRow key={`${item.type}:${item.idea.id}`} item={item} contacts={contacts}/>
+      ))}
+
+      <div style={{padding:'10px 14px 12px'}}>
+        <button onClick={viewAll} className="btn"
+          style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+            background:'var(--surface)',border:'1px solid var(--accent-line)',color:'var(--accent-ink)'}}>
+          View all tracked <ChevronRight size={14}/>
+        </button>
       </div>
     </div>
   );
@@ -715,7 +817,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds}/>
 
         {/* Widget #6 — Tracked Summary Donut */}
-        <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit}/>
+        <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
 
         {/* Widget #4 — Trending on Platform */}
         <TrendingWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts}/>
