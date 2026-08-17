@@ -283,7 +283,6 @@ export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTr
             background:'var(--surface)',border:'1px solid var(--accent-line)',color:'var(--accent-ink)'}}>
           View all fresh ideas <ChevronRight size={14}/>
         </button>
-        <div className="muted small" style={{textAlign:'center',marginTop:6}}>See all ideas from your network</div>
       </div>
     </div>
   );
