@@ -875,6 +875,9 @@ export default function App() {
                 byName:r.by_name, from:r.from_id, feedSource:'network_engagement',
                 reaction:'none', hidden:false, invested:false, deliveryId:null,
                 commentCount: r.comment_count || 0,
+                targetPrice: r.target_price ? Number(r.target_price) : null,
+                stopLoss:    r.stop_loss    ? Number(r.stop_loss)    : null,
+                recType:     r.recommendation_type || 'Buy',
               }));
               setNetworkEngagementRecos(engMapped);
               // Hydrate existing reactions separately — safe if table doesn't exist yet
