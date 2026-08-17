@@ -253,7 +253,7 @@ export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTr
 
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <WidgetHeader icon={Sparkles} label="Fresh Ideas from your Circle" action="View all" onAction={onViewAll}/>
+      <WidgetHeader icon={Sparkles} label="Fresh Ideas from your Circle"/>
       <div style={{padding:'10px 12px 4px'}}>
         {fresh.length===0 ? (
           <div style={{padding:'14px 4px 16px',textAlign:'center'}}>
@@ -276,6 +276,14 @@ export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTr
             </div>
           )}
         </>)}
+      </div>
+      <div style={{padding:'2px 12px 12px'}}>
+        <button onClick={onViewAll} className="btn"
+          style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+            background:'var(--surface)',border:'1px solid var(--accent-line)',color:'var(--accent-ink)'}}>
+          View all fresh ideas <ChevronRight size={14}/>
+        </button>
+        <div className="muted small" style={{textAlign:'center',marginTop:6}}>See all ideas from your network</div>
       </div>
     </div>
   );
