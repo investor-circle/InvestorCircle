@@ -48,29 +48,48 @@
  * is skipped entirely rather than approximated.
  *
  * ── The "since yesterday" / "since tracking" toggle ─────────────────────
- * There is no daily price-history/snapshot table anywhere in this schema
- * (verified: no price_history/prev_close/snapshot table or column exists).
- * `price` is a single live "current price" field with no "as of" time-
- * series behind it, so a per-idea "% change since yesterday" cannot be
- * honestly computed — there is no yesterday price to diff against.
+ * `mode: 'tracking'` is the cumulative view: every category above,
+ * unbounded by recency beyond each category's own natural window.
  *
- * Rather than fabricate that number, `mode: 'yesterday'` changes what the
- * activity list is filtered to, not how it's computed:
- *   - 'tracking' (default-adjacent, cumulative): every category above,
- *     unbounded by recency beyond each category's own natural window.
- *   - 'yesterday': movers are dropped entirely (a cumulative since-shared
- *     move can't be honestly relabeled "since yesterday"), and every
- *     remaining category is filtered to items whose own real date field
- *     (exitDate, the reinforcing idea's post date) falls inside the last
- *     ~1 day. newComment entries have no per-comment timestamp available
- *     client-side (only an aggregate count), so they're treated as
- *     "new since you last opened this widget" (see getSeenCommentCounts
- *     below) in both modes — which for a daily-checking user approximates
- *     "since yesterday" honestly without pretending to a literal calendar
- *     boundary it can't measure.
- * The widget surfaces this as two different summary shapes (a live
- * activity count for 'yesterday', the existing in/out-of-money composition
- * for 'tracking') rather than presenting a single number under both labels.
+ * `mode: 'yesterday'` is the daily view. Historically this mode could NOT
+ * show a real per-idea daily price delta — `price` was a single live
+ * "current price" field with no time series behind it, so there was no
+ * yesterday price to diff against, and rather than fabricate one this
+ * module dropped movers from the mode entirely.
+ *
+ * As of Phase 9 there IS a daily price history: `instruments` /
+ * `instrument_daily_prices` (supabase/phase9_instrument_pricing.sql),
+ * populated once a day per instrument by the collector in
+ * api/_lib/handlers/pricing.js and read via getDailyPrices() /
+ * byTicker() in src/services/api/pricingApi.js. So `mode: 'yesterday'`
+ * now shows a REAL delta — but only when the caller actually supplies
+ * `ctx.dailyPrices`, and only for instruments the snapshot covers. With
+ * no snapshot (pricing not yet collected, provider had no data for that
+ * instrument, or the caller didn't fetch), the honest old behaviour
+ * stands: no mover item for that idea. Nothing here ever falls back to
+ * relabelling the cumulative since-shared move as a daily one.
+ *
+ * Two properties of the daily delta are worth being explicit about:
+ *   - It is "since the previous TRADING day", not "since 24h ago". The
+ *     snapshot carries the provider-reported prevDate, so on a Monday it
+ *     is genuinely Friday->Monday, and exchange holidays are skipped,
+ *     with no market-calendar table needed on this side.
+ *   - It is a close-to-close move on the INSTRUMENT, independent of when
+ *     the idea was shared or by whom — which is exactly why it can be
+ *     computed once per instrument and reused by every idea, user and
+ *     feature referencing it.
+ *
+ * Remaining date-bearing categories are still filtered to items whose own
+ * real date field (exitDate, the reinforcing idea's post date) falls
+ * inside the last ~1 day. newComment entries have no per-comment timestamp
+ * available client-side (only an aggregate count), so they're treated as
+ * "new since you last opened this widget" (see getSeenCommentCounts below)
+ * in both modes — which for a daily-checking user approximates "since
+ * yesterday" honestly without pretending to a literal calendar boundary it
+ * can't measure. Daily movers are likewise exempt from that recency
+ * filter, because they are already bounded by construction (a Monday
+ * snapshot legitimately reports a Friday->Monday move that is older than
+ * 30 hours).
  */
 
 // A tracked idea's cumulative move since it was shared must clear this to
@@ -79,6 +98,11 @@
 // threshold since this is a tracked idea the user already committed to,
 // not a "look what you missed" prompt — small wiggles aren't news here.
 export const MOVER_THRESHOLD_PCT = 0.08;
+
+// The same idea for a SINGLE trading day's move, which is a different order
+// of magnitude — an 8% one-day move is an event, not a filter. 2% is the
+// "worth a line in a daily digest" bar for a single session.
+export const DAILY_MOVER_THRESHOLD_PCT = 0.02;
 
 // How many days back a *different* creator's post on a ticker you track
 // still counts as "reinforced by your circle" in 'tracking' mode.
@@ -108,6 +132,45 @@ function moverItems(trackedRecos) {
       pct: retPct,
       headline: `${r.assetName} ${retPct >= 0 ? '+' : ''}${(retPct * 100).toFixed(1)}% since shared`,
     }));
+}
+
+/**
+ * Daily movers — a REAL close-to-close move on the previous trading day,
+ * read from the Phase 9 instrument daily-price snapshots.
+ *
+ * `dailyPrices` is a ticker-keyed map of snapshot records as produced by
+ * byTicker(getDailyPrices(...)) — see src/services/api/pricingApi.js. The
+ * percentage is NOT recomputed here: `changePct` was precomputed once per
+ * instrument during collection, so this is a lookup and a threshold test,
+ * not arithmetic over a price series.
+ *
+ * Ideas whose instrument has no snapshot, or whose snapshot has no previous
+ * close (a brand-new instrument's first collection), yield nothing.
+ */
+function dailyMoverItems(trackedRecos, dailyPrices) {
+  if (!dailyPrices) return [];
+  const seen = new Set();
+  const items = [];
+  for (const r of trackedRecos) {
+    const key = (r.ticker || '').trim().toUpperCase();
+    if (!key || seen.has(r.id)) continue;
+    const snap = dailyPrices[key];
+    if (!snap || snap.changePct == null || snap.prevClose == null) continue;
+    const retPct = snap.changePct / 100; // API reports a percentage; keep this module's fraction convention
+    if (Math.abs(retPct) < DAILY_MOVER_THRESHOLD_PCT) continue;
+    seen.add(r.id);
+    items.push({
+      type: 'mover',
+      idea: r,
+      date: snap.date,
+      direction: retPct >= 0 ? 'up' : 'down',
+      pct: retPct,
+      daily: true,
+      prevDate: snap.prevDate,
+      headline: `${r.assetName} ${retPct >= 0 ? '+' : ''}${(retPct * 100).toFixed(1)}% since previous close`,
+    });
+  }
+  return items.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
 }
 
 /** Exit signals — recommender flagged an exit on a tracked idea. */
@@ -175,12 +238,13 @@ function newCommentItems(trackedRecos, seenCommentCounts) {
  * header for what each honestly can and can't show).
  */
 export function deriveTrackedActivity(trackedRecos, allRecos, ctx = {}) {
-  const { mode = 'tracking', seenCommentCounts = {}, now = Date.now(), max = MAX_ACTIVITY_ITEMS } = ctx;
+  const { mode = 'tracking', seenCommentCounts = {}, dailyPrices = null,
+          now = Date.now(), max = MAX_ACTIVITY_ITEMS } = ctx;
   const isYesterday = mode === 'yesterday';
 
   let items = [
     ...exitSignalItems(trackedRecos),
-    ...(isYesterday ? [] : moverItems(trackedRecos)),
+    ...(isYesterday ? dailyMoverItems(trackedRecos, dailyPrices) : moverItems(trackedRecos)),
     ...newCommentItems(trackedRecos, seenCommentCounts),
     ...reinforcedItems(trackedRecos, allRecos, { now, windowDays: isYesterday ? 1.25 : REINFORCED_WINDOW_DAYS }),
   ];
@@ -188,6 +252,7 @@ export function deriveTrackedActivity(trackedRecos, allRecos, ctx = {}) {
   if (isYesterday) {
     items = items.filter(it =>
       it.type === 'comment' || // no per-comment timestamp; already delta-based, see header
+      it.daily ||              // already bounded to one trading day by construction, see header
       (it.date && (now - new Date(it.date).getTime()) <= YESTERDAY_WINDOW_MS)
     );
   }

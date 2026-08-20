@@ -45,6 +45,7 @@ import { computeConsensus, computeTrend, fmtDate, getThesisText, initialsOf, sco
 import { fetchPublicProfileInfo } from "../../utils/navigation";
 import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
 import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
+import { getDailyPrices, byTicker } from "../../services/api/pricingApi";
 
 // A recommendation counts as "fresh" while it's inside this window — same
 // created_at ordering the rest of the feed already uses (r.date), just
@@ -337,6 +338,30 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
   const [mode, setMode] = useState('yesterday'); // 'yesterday' | 'tracking' — default "Since yesterday" per spec
 
   const trackedList = useMemo(() => recsReceived.filter(r=>tracked.has(r.id)), [recsReceived, tracked]);
+
+  // Phase 9: real "since yesterday" price deltas, read from the persisted
+  // instrument daily-price snapshots (never from a market-data provider).
+  //
+  // Deliberately fetched HERE, inside the widget, and not added to
+  // App.jsx's post-login load: the Home Feed's critical path is untouched,
+  // the widget renders immediately from data already in memory, and this
+  // one small request resolves alongside (not before) that first paint.
+  // It only fires in 'yesterday' mode — 'tracking' mode has no use for it
+  // — and asks only for the DISTINCT tickers the user actually tracks, so
+  // ten tracked ideas on one ticker are one entry in the request, not ten.
+  const trackedTickerKey = useMemo(
+    () => [...new Set(trackedList.map(r=>(r.ticker||'').trim().toUpperCase()).filter(Boolean))].sort().join(','),
+    [trackedList]
+  );
+  const [dailyPrices, setDailyPrices] = useState(null);
+  useEffect(() => {
+    if (mode !== 'yesterday' || !trackedTickerKey) return;
+    let cancelled = false;
+    getDailyPrices(trackedTickerKey.split(','))
+      .then(rows => { if (!cancelled) setDailyPrices(byTicker(rows)); })
+      .catch(() => {}); // pricing unavailable degrades to the old activity-only view
+    return () => { cancelled = true; };
+  }, [mode, trackedTickerKey]);
   const total = trackedList.length;
   const inM = trackedList.filter(r=>r.priceAt&&r.price>r.priceAt).length;
   const outM = total - inM;
@@ -352,7 +377,8 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
   const activity = useMemo(() => deriveTrackedActivity(trackedList, recsReceived, {
     mode,
     seenCommentCounts: getSeenCommentCounts(me?.id),
-  }), [trackedList, recsReceived, mode, me?.id]);
+    dailyPrices,
+  }), [trackedList, recsReceived, mode, me?.id, dailyPrices]);
 
   if(total===0) return null;
 
@@ -413,10 +439,11 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
               <span style={{fontSize:15,fontWeight:800,color:'var(--loss)'}}>{outM}</span>
             </div>
           </>) : (
-            // No daily price-history table exists to compute an honest
-            // "% change since yesterday" per idea (see trackedActivity.js
-            // header) — so "Since yesterday" shows a live activity count
-            // instead of a fabricated price delta.
+            // Activity count, which as of Phase 9 includes REAL per-idea
+            // close-to-close price deltas from the instrument daily-price
+            // snapshots (see trackedActivity.js header). Still a count
+            // rather than a single blended number: these updates are not
+            // all price moves, so there is nothing honest to average.
             <div style={{padding:'6px 10px',borderRadius:8,background:'var(--accent-soft)'}}>
               <div style={{fontSize:15,fontWeight:800,color:'var(--accent-ink)'}}>
                 {activity.length>0 ? `${activity.length} update${activity.length>1?'s':''}` : 'No new updates'}

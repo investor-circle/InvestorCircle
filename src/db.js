@@ -977,3 +977,57 @@ export async function lookupUser(by, value) {
   return api.ok ? api.data.user : null;
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INSTRUMENT DAILY PRICING (Phase 9)
+//
+// The frontend's single door onto the persisted instrument-level daily
+// price history (tables `instruments` / `instrument_daily_prices`, see
+// supabase/phase9_instrument_pricing.sql; collected by the Vercel Cron job
+// in api/_lib/handlers/pricing.js).
+//
+// This is deliberately generic, NOT Pulse-shaped: it takes tickers and
+// returns snapshots. Any feature that needs "what is this instrument worth
+// and what did it do since the last trading day" — Track Record, FeedCard's
+// return display, What You Missed's movement calculation — can call it
+// without the pricing layer changing. Nothing here calls a market-data
+// provider; the browser reads snapshots only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Latest stored daily snapshot for each of `tickers`.
+ *
+ * @param {string[]} tickers
+ * @returns {Promise<Array<{ticker,exchange,assetClass,assetName,currency,
+ *          date,close,prevClose,prevDate,changeAbs,changePct,source}>>}
+ *   `date` is the trading date the close belongs to (NOT the collection
+ *   date), `prevDate` is the previous trading day, and `changePct` is a
+ *   percentage precomputed at collection time. `prevClose`/`changePct` are
+ *   null when the previous close is genuinely unknown — never faked.
+ *   Degrades to [] on any infrastructure failure, so a caller never blocks
+ *   or errors on pricing being unavailable.
+ */
+export async function getDailyPrices(tickers) {
+  const list = [...new Set((tickers || []).map(t => String(t || '').trim().toUpperCase()).filter(Boolean))];
+  if (!list.length) return [];
+  const api = await callApi(`/data?resource=pricing&action=daily&tickers=${encodeURIComponent(list.join(','))}`);
+  return api.ok ? (api.data.prices || []) : [];
+}
+
+/**
+ * Convenience: turn getDailyPrices() rows into a ticker-keyed lookup.
+ *
+ * The API deliberately does not pick a winner when one ticker is listed on
+ * more than one exchange (it echoes `exchange` on every record instead), so
+ * the collision policy lives here, at the point of use: prefer NSE, which is
+ * what ic_recommendations defaults `exchange` to.
+ */
+export function byTicker(priceRows) {
+  const map = {};
+  (priceRows || []).forEach(row => {
+    const key = row.ticker;
+    const held = map[key];
+    if (!held || (held.exchange !== 'NSE' && row.exchange === 'NSE')) map[key] = row;
+  });
+  return map;
+}
