@@ -28,16 +28,14 @@
  *                for relevance tiers.
  *  - newComment:  commentCount is present on publicFeedRecos/network-
  *                engagement items (api/_lib/handlers/lookups.js selects
- *                comment_count for both) but is NOT present on direct
- *                deliveries (api/_lib/handlers/recommendations.js's
- *                mapReceivedRow selects comments/likes only for the
- *                "made" scope, not "received" — see CLAUDE_HANDOVER note
- *                below). So this category only fires for tracked ideas
- *                that also carry a commentCount; a tracked idea that was
- *                delivered to you directly and never appeared in the
- *                public/network pool silently has no comment signal here.
- *                That's an honest gap, not a bug — flagged in the PR
- *                report rather than papered over with a fake 0.
+ *                comment_count for both) and, as of the fix in
+ *                getReceived()/mapReceivedRow() in
+ *                api/_lib/handlers/recommendations.js, also on direct/
+ *                circle deliveries (a batched per-row correlated
+ *                subquery on the existing getReceived query — no N+1,
+ *                same pattern already used there for `likes`). So this
+ *                category now fires for every tracked idea regardless
+ *                of how it was delivered.
  *
  * NOT implemented — "target/thesis updates": ic_recommendations has no
  * updated_at / edit-history column anywhere in the schema (verified via

@@ -57,6 +57,7 @@ function mapReceivedRow(r) {
     hidden:        r.is_hidden,
     likes:         Number(r.likes || 0),
     recoActed:     Number(r.reco_acted || 0),
+    commentCount:  Number(r.comment_count || 0),
     isPublic:      r.is_public !== false,
     recType:       r.recommendation_type || 'Buy',
     stopLoss:      r.stop_loss  ? Number(r.stop_loss)  : null,
@@ -88,7 +89,8 @@ async function getReceived(userId) {
       grp.name            AS via_group_name,
       (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id = r.id::text) AS likes,
       (SELECT COUNT(*) FROM recommendation_deliveries d2
-       WHERE d2.recommendation_id = r.id AND d2.is_invested = true) AS reco_acted
+       WHERE d2.recommendation_id = r.id AND d2.is_invested = true) AS reco_acted,
+      (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id = r.id)::int AS comment_count
     FROM recommendation_deliveries rd
     JOIN ic_recommendations r    ON r.id   = rd.recommendation_id
     JOIN user_profiles rec_up    ON rec_up.id = r.recommender_id
