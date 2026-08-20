@@ -49,6 +49,7 @@ import handleClaimProfile from './_lib/handlers/claim-profile.js';
 import handleAdminConfig from './_lib/handlers/admin-config.js';
 import handleLookups from './_lib/handlers/lookups.js';
 import handleTracking from './_lib/handlers/tracking.js';
+import handlePricing from './_lib/handlers/pricing.js';
 
 const RESOURCES = {
   'connections':      { handler: handleConnections,     auth: 'user'  },
@@ -72,6 +73,12 @@ const RESOURCES = {
   'claim-profile':    { handler: handleClaimProfile,     auth: 'none'  },
   'admin-config':     { handler: handleAdminConfig,      auth: 'admin' },
   'lookups':          { handler: handleLookups,          auth: 'none'  },
+  // pricing (Phase 9 instrument daily-price layer) bundles two actions with
+  // different auth needs and so authorises itself: `collect` is the Vercel
+  // Cron collector (CRON_SECRET bearer, or an admin token for a manual run)
+  // and would never carry a user token; `daily` is a normal authenticated
+  // user read. See api/_lib/handlers/pricing.js.
+  'pricing':          { handler: handlePricing,          auth: 'none'  },
 };
 
 export default async function handler(req, res) {
