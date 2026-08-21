@@ -32,15 +32,42 @@
  * the same reasoning at the top of api/data.js.
  *
  * ── Instrument identity ──────────────────────────────────────────────────
- * Canonicalised as (UPPER(TRIM(ticker)), asset_class) against the
- * `instruments` table's UNIQUE constraint — exchange is deliberately NOT
- * part of identity (this isn't a broking app; NSE- and BSE-tagged ideas on
- * the same ticker are the same instrument everywhere else in this codebase,
- * so pricing follows suit). See supabase/phase9_instrument_pricing.sql for
- * the full rationale. Each instrument still has a preferred source
- * exchange (NSE by default, BSE only as a fallback when NSE has no data)
- * used purely to decide which provider symbol to fetch — it never affects
- * whether two rows are treated as the same instrument.
+ * The canonical security identity is the PRE-EXISTING, live `instruments`
+ * table — the same one that powers the new-idea form's "Search instrument"
+ * autocomplete (lookups.js `instruments-list`) and the admin instrument
+ * browser/importer (admin-config.js). Pricing does NOT stand up a table of
+ * its own; an earlier revision of this work did, which would have silently
+ * collided with the live table.
+ *
+ * Identity is (symbol, asset_class), normalised to UPPER(TRIM(symbol)),
+ * enforced by the UNIQUE index the Phase 9 migration installs in place of
+ * the old (symbol, exchange) key. Exchange is deliberately NOT part of
+ * identity — this isn't a broking app, and NSE- and BSE-tagged ideas on the
+ * same ticker are the same instrument everywhere else in this codebase, so
+ * pricing follows suit. `instruments.exchange` survives as the preferred
+ * source exchange (informational), used only to decide which provider
+ * symbol to fetch. See supabase/phase9_instrument_pricing.sql for the full
+ * rationale and the duplicate-merge rule.
+ *
+ * ── Asset-class scoping (deliberately narrow for v1) ─────────────────────
+ * The provider chain in api/_lib/priceProvider.js only knows how to turn a
+ * ticker into an NSE/BSE Yahoo symbol (SYMBOL.NS / SYMBOL.BO). That mapping
+ * is meaningless for Crypto (a different symbol convention entirely, e.g.
+ * BTC-USD), and poorly covered for Mutual Funds (NAVs), Bonds, Metals, F&P
+ * and Others. Attempting them wouldn't merely fail — it could SILENTLY
+ * match an unrelated NSE-listed company that happens to share the ticker
+ * string, and store a confidently wrong price. So only the classes the
+ * provider can genuinely price are collected; see IN_SCOPE_ASSET_CLASSES.
+ *
+ * ── Missing instruments are the NORMAL path, not an edge case ────────────
+ * The master list came from a one-time, known-incomplete free CSV, not a
+ * live exchange feed, and the new-idea form has a free-text "Not in the
+ * list? Enter manually" fallback precisely for that. So an active idea's
+ * ticker frequently has no matching master row. The collector MINTS one
+ * (tagged source='auto') rather than skipping the idea — skipping would
+ * mean IPOs, newly-listed names and every manually-typed ticker never got
+ * priced at all, which is exactly the population the manual path exists to
+ * serve.
  *
  * ── Trading days ─────────────────────────────────────────────────────────
  * There is no market-calendar table and this deliberately does not invent
@@ -104,6 +131,28 @@ function expectedTradingDate() {
 function normTicker(t) { return String(t || '').trim().toUpperCase(); }
 
 /**
+ * The asset classes this collector will attempt to price.
+ *
+ * Compared case-insensitively against ic_recommendations.asset_class, whose
+ * vocabulary is src/constants/app.js's DEFAULT_CLASSES:
+ *   Equity, Bonds, ETF, Mutual Funds, Crypto, Metals, F&P, Others
+ * Everything not listed here is EXCLUDED from the universe and reported as
+ * `excludedAssetClasses` in the run result, so the gap is visible rather
+ * than showing up as a pile of provider failures.
+ *
+ * ADDING A CLASS LATER TAKES TWO CHANGES, NOT ONE:
+ *   1. teach api/_lib/priceProvider.js how to build that class's provider
+ *      symbol (Crypto needs BTC-USD-style symbols; Mutual Funds need a NAV
+ *      source entirely outside the current Yahoo/Twelve Data chain), AND
+ *   2. add it here.
+ * Doing only (2) reintroduces exactly the silent-wrong-price risk this list
+ * exists to prevent. This is a deliberate v1 scope, not a permanent limit.
+ */
+const IN_SCOPE_ASSET_CLASSES = ['Equity', 'ETF'];
+const IN_SCOPE_SET = new Set(IN_SCOPE_ASSET_CLASSES.map(c => c.toLowerCase()));
+function isInScope(assetClass) { return IN_SCOPE_SET.has(String(assetClass || '').trim().toLowerCase()); }
+
+/**
  * Authorise a collection run. Vercel Cron sends
  * `Authorization: Bearer $CRON_SECRET` when the CRON_SECRET env var is set,
  * which is the convention used here. An admin may also trigger a run
@@ -142,48 +191,82 @@ async function authorizeCollect(req) {
  * what makes it self-maintaining: a newly-posted idea adds its instrument on
  * the next run, and an instrument whose last active idea exits or expires
  * simply stops being returned — its history stays, no cleanup job needed.
+ *
+ * ALL asset classes are returned here, in-scope or not, in ONE query; the
+ * caller splits them (see IN_SCOPE_ASSET_CLASSES) so the out-of-scope count
+ * can be reported honestly instead of a second round-trip or a silent
+ * WHERE-clause omission.
  */
 async function getActiveInstrumentUniverse() {
   return sql`
     SELECT
-      UPPER(TRIM(ticker))                        AS ticker,
-      COALESCE(NULLIF(TRIM(asset_class), ''), 'Equity')        AS asset_class,
-      MIN(asset_name)                            AS asset_name,
-      COUNT(*)::int                              AS active_idea_count
+      UPPER(TRIM(ticker))                                AS symbol,
+      COALESCE(NULLIF(TRIM(asset_class), ''), 'Equity')  AS asset_class,
+      MIN(NULLIF(TRIM(asset_name), ''))                  AS asset_name,
+      COUNT(*)::int                                      AS active_idea_count
     FROM ic_recommendations
     WHERE ticker IS NOT NULL
       AND TRIM(ticker) <> ''
       AND exit_signal = false
       AND (target_date IS NULL OR target_date >= CURRENT_DATE)
     GROUP BY 1, 2
-    ORDER BY active_idea_count DESC, ticker ASC
+    ORDER BY active_idea_count DESC, symbol ASC
   `;
 }
 
-/** Upsert the universe into `instruments` and return the canonical rows with ids. One statement each — never per-instrument. */
-async function upsertInstruments(universe) {
+/**
+ * Resolve the universe to canonical `instruments` rows, minting rows for
+ * symbols the master list doesn't have yet.
+ *
+ * Two statements for the WHOLE batch, never one per instrument:
+ *
+ *   1. INSERT ... ON CONFLICT (symbol, asset_class) DO UPDATE. The conflict
+ *      branch deliberately does NOT overwrite curated data: it only fills a
+ *      name that is currently blank, and it never touches `source`, `type`,
+ *      `sector`, `exchange`, `currency` or `is_active`. An admin-curated row
+ *      is therefore safe from being degraded by whatever free text a user
+ *      happened to type into an idea. Newly-minted rows carry only what the
+ *      triggering idea actually knew — symbol, name (falling back to the
+ *      symbol itself), asset_class, exchange defaulted 'NSE', currency
+ *      defaulted 'INR' — with `type` and `sector` left NULL rather than
+ *      fabricated, and source='auto' so they stay distinguishable from
+ *      curated rows forever (and are reconcilable by the eventual automated
+ *      exchange-feed sync).
+ *
+ *      `is_active` is left at the column default (true) for minted rows, so
+ *      a ticker a user had to type by hand becomes available in the
+ *      instrument autocomplete for the next person — which is the whole
+ *      point of the manual-entry fallback existing.
+ *
+ *   2. SELECT the canonical rows back with their ids and newest stored
+ *      price date. Matching is by (symbol, asset_class) and ignores
+ *      is_active on purpose: an admin deactivating an instrument means
+ *      "stop offering it in pick-lists", not "stop pricing the live ideas
+ *      that still reference it".
+ */
+async function resolveInstruments(universe) {
   await sql`
-    INSERT INTO instruments (ticker, asset_class, asset_name)
-    SELECT q.ticker, q.asset_class, q.asset_name
+    INSERT INTO instruments (symbol, name, asset_class, exchange, currency, source)
+    SELECT q.symbol, COALESCE(q.asset_name, q.symbol), q.asset_class, 'NSE', 'INR', 'auto'
     FROM UNNEST(
-      ${universe.map(u => u.ticker)}::text[],
+      ${universe.map(u => u.symbol)}::text[],
       ${universe.map(u => u.asset_class)}::text[],
       ${universe.map(u => u.asset_name || null)}::text[]
-    ) AS q(ticker, asset_class, asset_name)
-    ON CONFLICT (ticker, asset_class) DO UPDATE
-      SET asset_name = COALESCE(EXCLUDED.asset_name, instruments.asset_name),
+    ) AS q(symbol, asset_class, asset_name)
+    ON CONFLICT (symbol, asset_class) DO UPDATE
+      SET name       = COALESCE(NULLIF(BTRIM(instruments.name), ''), EXCLUDED.name),
           updated_at = now()
   `;
   return sql`
-    SELECT i.id, i.ticker, i.asset_class, i.price_exchange,
+    SELECT i.id, i.symbol, i.asset_class, i.exchange,
            (SELECT MAX(p.price_date) FROM instrument_daily_prices p WHERE p.instrument_id = i.id) AS latest_price_date
     FROM instruments i
-    WHERE (i.ticker, i.asset_class) IN (
-      SELECT q.ticker, q.asset_class
+    WHERE (i.symbol, i.asset_class) IN (
+      SELECT q.symbol, q.asset_class
       FROM UNNEST(
-        ${universe.map(u => u.ticker)}::text[],
+        ${universe.map(u => u.symbol)}::text[],
         ${universe.map(u => u.asset_class)}::text[]
-      ) AS q(ticker, asset_class)
+      ) AS q(symbol, asset_class)
     )
   `;
 }
@@ -197,6 +280,22 @@ async function upsertInstruments(universe) {
 const EXCHANGE_FALLBACK_ORDER = ['NSE', 'BSE'];
 
 /**
+ * Exchanges to try for one instrument, most-preferred first: the
+ * instrument's own `exchange` (informational — where the master list says
+ * it trades, defaulted to NSE for auto-minted rows) followed by the rest of
+ * the standard order. A BSE-only listing is therefore hit on the first
+ * attempt instead of after a wasted NSE miss, while everything else still
+ * behaves as NSE-first.
+ */
+function exchangesFor(instr) {
+  const preferred = String(instr.exchange || '').trim().toUpperCase();
+  const ordered = EXCHANGE_FALLBACK_ORDER.includes(preferred)
+    ? [preferred, ...EXCHANGE_FALLBACK_ORDER.filter(e => e !== preferred)]
+    : [...EXCHANGE_FALLBACK_ORDER];
+  return ordered;
+}
+
+/**
  * Fetch one instrument's recent daily closes and derive today's snapshot
  * plus the precomputed previous-trading-day delta.
  *
@@ -208,9 +307,10 @@ const EXCHANGE_FALLBACK_ORDER = ['NSE', 'BSE'];
  */
 async function collectOne(instr) {
   let lastErr;
-  for (const exch of EXCHANGE_FALLBACK_ORDER) {
+  const exchanges = exchangesFor(instr);
+  for (const exch of exchanges) {
     try {
-      const { series } = await fetchDailySeries(instr.ticker, exch, SERIES_RANGE);
+      const { series } = await fetchDailySeries(instr.symbol, exch, SERIES_RANGE);
       const latest = series[series.length - 1];
       const prev   = series.length > 1 ? series[series.length - 2] : null;
       return { date: latest.date, close: latest.close, currency: 'INR', source: 'yahoo_finance', sourceExchange: exch, prev };
@@ -221,9 +321,9 @@ async function collectOne(instr) {
   // Series form failed on every exchange. Fall back to the shared provider
   // chain's single-price form (also reaches Twelve Data). That yields a
   // close with no previous close — recorded honestly as a NULL delta.
-  for (const exch of EXCHANGE_FALLBACK_ORDER) {
+  for (const exch of exchanges) {
     try {
-      const p = await fetchPrice(instr.ticker, exch);
+      const p = await fetchPrice(instr.symbol, exch);
       return { date: p.date, close: p.price, currency: p.currency, source: p.source, sourceExchange: exch, prev: null };
     } catch (priceErr) {
       lastErr = priceErr;
@@ -300,11 +400,26 @@ async function persistSnapshots(rows) {
 /** The full collection run. */
 async function runCollection({ force = false } = {}) {
   const startedAt = Date.now();
-  const universe  = await getActiveInstrumentUniverse();
+  const allGroups = await getActiveInstrumentUniverse();
   const cutoff    = expectedTradingDate();
 
+  // Split by asset class BEFORE anything else, so an out-of-scope class is
+  // never handed to the NSE/BSE provider chain at all. Reported as a count
+  // (plus the distinct class names) rather than dropped quietly.
+  const universe = allGroups.filter(g => isInScope(g.asset_class));
+  const excluded = allGroups.filter(g => !isInScope(g.asset_class));
+  const excludedAssetClasses = excluded.length;
+  const excludedClassNames = [...new Set(excluded.map(g => g.asset_class))].sort();
+  if (excluded.length) {
+    console.log(`[pricing] excluded ${excluded.length} instrument(s) in unsupported asset classes: ${excludedClassNames.join(', ')} (in scope: ${IN_SCOPE_ASSET_CLASSES.join(', ')})`);
+  }
+
   if (!universe.length) {
-    return { ok: true, universe: 0, fetched: 0, stored: 0, skipped: 0, failed: 0, cutoff, ms: Date.now() - startedAt };
+    return {
+      ok: true, universe: 0, collected: 0, stored: 0, skipped: 0, failed: 0,
+      excludedAssetClasses, excludedClassNames, inScopeAssetClasses: IN_SCOPE_ASSET_CLASSES,
+      cutoff, ms: Date.now() - startedAt,
+    };
   }
 
   const truncated = universe.length > MAX_INSTRUMENTS_PER_RUN;
@@ -313,7 +428,7 @@ async function runCollection({ force = false } = {}) {
     console.warn(`[pricing] universe ${universe.length} exceeds MAX_INSTRUMENTS_PER_RUN=${MAX_INSTRUMENTS_PER_RUN}; collecting the ${MAX_INSTRUMENTS_PER_RUN} most-referenced instruments this run`);
   }
 
-  const canonical = await upsertInstruments(batch);
+  const canonical = await resolveInstruments(batch);
 
   // Skip anything already priced for the latest possible trading day — this
   // is what makes a second run on the same day cost ~zero provider calls.
@@ -331,7 +446,7 @@ async function runCollection({ force = false } = {}) {
     if (!outcome) continue;
     const { item, value, error } = outcome;
     if (error || !value || !(value.close > 0)) {
-      failures.push({ ticker: item.ticker, assetClass: item.asset_class, reason: error?.message || 'no usable price' });
+      failures.push({ ticker: item.symbol, assetClass: item.asset_class, reason: error?.message || 'no usable price' });
       continue;
     }
     rows.push({
@@ -360,6 +475,9 @@ async function runCollection({ force = false } = {}) {
     skipped,
     failed: failures.length,
     failures: failures.slice(0, 20),
+    excludedAssetClasses,
+    excludedClassNames,
+    inScopeAssetClasses: IN_SCOPE_ASSET_CLASSES,
     truncated,
     cutoff,
     ms: Date.now() - startedAt,
@@ -375,30 +493,36 @@ async function runCollection({ force = false } = {}) {
  * because collection already computed them.
  *
  * Keyed by ticker on the way IN, and — since instruments are keyed on
- * (ticker, asset_class) only, not exchange — at most ONE row comes back per
+ * (symbol, asset_class) only, not exchange — at most ONE row comes back per
  * ticker (per asset class), so the caller never has to pick a winner
  * between an NSE and a BSE snapshot. `sourceExchange` is included purely as
  * provenance (which exchange that day's close actually came from).
+ *
+ * The response deliberately keeps speaking `ticker`/`assetName`, which is
+ * the vocabulary ic_recommendations and the whole frontend use; the
+ * master-list columns are `symbol`/`name`. The translation happens here,
+ * once, so no frontend code had to change when pricing moved onto the live
+ * instruments table.
  */
 async function getDailyPrices(tickers) {
   const wanted = [...new Set(tickers.map(normTicker).filter(Boolean))].slice(0, MAX_TICKERS_PER_READ);
   if (!wanted.length) return [];
   const rows = await sql`
     SELECT DISTINCT ON (i.id)
-      i.ticker, i.asset_class, i.asset_name, i.price_exchange,
+      i.symbol, i.asset_class, i.name, i.exchange,
       p.price_date, p.close_price, p.currency,
       p.prev_close_price, p.prev_price_date,
       p.change_abs, p.change_pct, p.source, p.source_exchange, p.collected_at
     FROM instruments i
     JOIN instrument_daily_prices p ON p.instrument_id = i.id
-    WHERE i.ticker = ANY(${wanted}::text[])
+    WHERE i.symbol = ANY(${wanted}::text[])
     ORDER BY i.id, p.price_date DESC
   `;
   const asDate = (v) => (v ? (v.toISOString?.().slice(0, 10) ?? String(v)) : null);
   return rows.map(r => ({
-    ticker:         r.ticker,
+    ticker:         r.symbol,
     assetClass:     r.asset_class,
-    assetName:      r.asset_name,
+    assetName:      r.name,
     currency:       r.currency || 'INR',
     date:           asDate(r.price_date),
     close:          r.close_price      != null ? Number(r.close_price)      : null,
@@ -407,7 +531,7 @@ async function getDailyPrices(tickers) {
     changeAbs:      r.change_abs != null ? Number(r.change_abs) : null,
     changePct:      r.change_pct != null ? Number(r.change_pct) : null,
     source:         r.source || null,
-    sourceExchange: r.source_exchange || r.price_exchange || null,
+    sourceExchange: r.source_exchange || r.exchange || null,
   }));
 }
 

@@ -982,9 +982,16 @@ export async function lookupUser(by, value) {
 // INSTRUMENT DAILY PRICING (Phase 9)
 //
 // The frontend's single door onto the persisted instrument-level daily
-// price history (tables `instruments` / `instrument_daily_prices`, see
+// price history (the EXISTING `instruments` master table — the same one
+// behind the new-idea form's instrument autocomplete and the admin
+// instrument browser — plus `instrument_daily_prices`; see
 // supabase/phase9_instrument_pricing.sql; collected by the Vercel Cron job
 // in api/_lib/handlers/pricing.js).
+//
+// The API speaks `ticker`/`assetName` here even though the master table's
+// columns are `symbol`/`name`: `ticker` is the vocabulary
+// ic_recommendations and the rest of the frontend use, and the server
+// translates once so this layer never had to change.
 //
 // This is deliberately generic, NOT Pulse-shaped: it takes tickers and
 // returns snapshots. Any feature that needs "what is this instrument worth
@@ -1004,7 +1011,7 @@ export async function lookupUser(by, value) {
  *   date), `prevDate` is the previous trading day, and `changePct` is a
  *   percentage precomputed at collection time. `prevClose`/`changePct` are
  *   null when the previous close is genuinely unknown — never faked.
- *   Instruments are keyed on (ticker, assetClass) only — NOT exchange (this
+ *   Instruments are keyed on (symbol, assetClass) only — NOT exchange (this
  *   isn't a broking app; see supabase/phase9_instrument_pricing.sql) — so
  *   at most one row comes back per ticker/asset-class; `sourceExchange` is
  *   included purely as provenance, not as a second identity to resolve.
