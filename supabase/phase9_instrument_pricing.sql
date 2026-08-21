@@ -329,8 +329,14 @@ CREATE INDEX IF NOT EXISTS idx_instruments_source ON instruments (source);
 -- guard: two collection runs on the same day cannot produce two rows for the
 -- same instrument+date. The collector upserts (ON CONFLICT DO UPDATE), so a
 -- re-run refreshes the row in place instead of failing or duplicating.
+-- instrument_id's type MUST match instruments.id's real type — this table
+-- was originally created outside any tracked migration, so its id column's
+-- type could not be assumed and is INTEGER (a plain auto-incrementing
+-- integer), not UUID like every other table added in this phase. Verified
+-- directly against the live database (SQLSTATE 42804 on a first attempt
+-- that assumed UUID — a FK's column types must match exactly).
 CREATE TABLE IF NOT EXISTS instrument_daily_prices (
-  instrument_id     UUID NOT NULL REFERENCES instruments(id) ON DELETE CASCADE,
+  instrument_id     INTEGER NOT NULL REFERENCES instruments(id) ON DELETE CASCADE,
   price_date        DATE NOT NULL,
   close_price       NUMERIC(20,6) NOT NULL,
   currency          TEXT NOT NULL DEFAULT 'INR',

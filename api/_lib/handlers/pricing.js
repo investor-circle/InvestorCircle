@@ -344,7 +344,7 @@ async function backfillPrevFromDb(rows) {
     SELECT DISTINCT ON (p.instrument_id)
            p.instrument_id, p.price_date, p.close_price
     FROM instrument_daily_prices p
-    JOIN UNNEST(${needy.map(r => r.instrumentId)}::uuid[], ${needy.map(r => r.date)}::date[]) AS q(instrument_id, before_date)
+    JOIN UNNEST(${needy.map(r => r.instrumentId)}::int[], ${needy.map(r => r.date)}::date[]) AS q(instrument_id, before_date)
       ON q.instrument_id = p.instrument_id
     WHERE p.price_date < q.before_date
     ORDER BY p.instrument_id, p.price_date DESC
@@ -374,7 +374,7 @@ async function persistSnapshots(rows) {
            THEN (q.close_price - q.prev_close_price) / q.prev_close_price * 100 END,
       q.source, q.source_exchange, now()
     FROM UNNEST(
-      ${rows.map(r => r.instrumentId)}::uuid[],
+      ${rows.map(r => r.instrumentId)}::int[],
       ${rows.map(r => r.date)}::date[],
       ${rows.map(r => r.close)}::numeric[],
       ${rows.map(r => r.currency || 'INR')}::text[],
