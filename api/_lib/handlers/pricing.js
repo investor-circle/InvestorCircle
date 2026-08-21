@@ -32,11 +32,15 @@
  * the same reasoning at the top of api/data.js.
  *
  * ── Instrument identity ──────────────────────────────────────────────────
- * Canonicalised as (UPPER(TRIM(ticker)), UPPER(TRIM(exchange)),
- * asset_class) against the `instruments` table's UNIQUE constraint. See
- * supabase/phase9_instrument_pricing.sql for why a canonical table was
- * needed rather than keying prices off ic_recommendations' free-text
- * columns.
+ * Canonicalised as (UPPER(TRIM(ticker)), asset_class) against the
+ * `instruments` table's UNIQUE constraint — exchange is deliberately NOT
+ * part of identity (this isn't a broking app; NSE- and BSE-tagged ideas on
+ * the same ticker are the same instrument everywhere else in this codebase,
+ * so pricing follows suit). See supabase/phase9_instrument_pricing.sql for
+ * the full rationale. Each instrument still has a preferred source
+ * exchange (NSE by default, BSE only as a fallback when NSE has no data)
+ * used purely to decide which provider symbol to fetch — it never affects
+ * whether two rows are treated as the same instrument.
  *
  * ── Trading days ─────────────────────────────────────────────────────────
  * There is no market-calendar table and this deliberately does not invent
@@ -131,8 +135,9 @@ async function authorizeCollect(req) {
  *     Active = NOT exit_signal AND (target_date IS NULL OR target_date >= CURRENT_DATE)
  * No new lifecycle concept is introduced.
  *
- * Dedup happens in SQL (GROUP BY on the normalised key), so an instrument
- * referenced by 50 ideas or tracked by 500 users appears exactly ONCE in the
+ * Dedup happens in SQL (GROUP BY on ticker + asset_class — NOT exchange, see
+ * this file's header note), so an instrument referenced by 50 ideas across
+ * both NSE and BSE, or tracked by 500 users, appears exactly ONCE in the
  * returned list. The universe is recomputed from scratch every run, which is
  * what makes it self-maintaining: a newly-posted idea adds its instrument on
  * the next run, and an instrument whose last active idea exits or expires
@@ -142,7 +147,6 @@ async function getActiveInstrumentUniverse() {
   return sql`
     SELECT
       UPPER(TRIM(ticker))                        AS ticker,
-      UPPER(TRIM(COALESCE(NULLIF(TRIM(exchange), ''), 'NSE'))) AS exchange,
       COALESCE(NULLIF(TRIM(asset_class), ''), 'Equity')        AS asset_class,
       MIN(asset_name)                            AS asset_name,
       COUNT(*)::int                              AS active_idea_count
@@ -151,7 +155,7 @@ async function getActiveInstrumentUniverse() {
       AND TRIM(ticker) <> ''
       AND exit_signal = false
       AND (target_date IS NULL OR target_date >= CURRENT_DATE)
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2
     ORDER BY active_idea_count DESC, ticker ASC
   `;
 }
@@ -159,60 +163,73 @@ async function getActiveInstrumentUniverse() {
 /** Upsert the universe into `instruments` and return the canonical rows with ids. One statement each — never per-instrument. */
 async function upsertInstruments(universe) {
   await sql`
-    INSERT INTO instruments (ticker, exchange, asset_class, asset_name)
-    SELECT q.ticker, q.exchange, q.asset_class, q.asset_name
+    INSERT INTO instruments (ticker, asset_class, asset_name)
+    SELECT q.ticker, q.asset_class, q.asset_name
     FROM UNNEST(
       ${universe.map(u => u.ticker)}::text[],
-      ${universe.map(u => u.exchange)}::text[],
       ${universe.map(u => u.asset_class)}::text[],
       ${universe.map(u => u.asset_name || null)}::text[]
-    ) AS q(ticker, exchange, asset_class, asset_name)
-    ON CONFLICT (ticker, exchange, asset_class) DO UPDATE
+    ) AS q(ticker, asset_class, asset_name)
+    ON CONFLICT (ticker, asset_class) DO UPDATE
       SET asset_name = COALESCE(EXCLUDED.asset_name, instruments.asset_name),
           updated_at = now()
   `;
   return sql`
-    SELECT i.id, i.ticker, i.exchange, i.asset_class,
+    SELECT i.id, i.ticker, i.asset_class, i.price_exchange,
            (SELECT MAX(p.price_date) FROM instrument_daily_prices p WHERE p.instrument_id = i.id) AS latest_price_date
     FROM instruments i
-    WHERE (i.ticker, i.exchange, i.asset_class) IN (
-      SELECT q.ticker, q.exchange, q.asset_class
+    WHERE (i.ticker, i.asset_class) IN (
+      SELECT q.ticker, q.asset_class
       FROM UNNEST(
         ${universe.map(u => u.ticker)}::text[],
-        ${universe.map(u => u.exchange)}::text[],
         ${universe.map(u => u.asset_class)}::text[]
-      ) AS q(ticker, exchange, asset_class)
+      ) AS q(ticker, asset_class)
     )
   `;
 }
+
+// Exchange fallback order for sourcing a price: NSE is deeper/more liquid
+// and is this app's default everywhere else, so it's tried first for every
+// instrument regardless of which exchange any individual idea was tagged
+// with. BSE is only used when NSE genuinely has no data for that ticker
+// (e.g. a BSE-only listing). See this file's header note for why exchange
+// is not part of instrument identity in the first place.
+const EXCHANGE_FALLBACK_ORDER = ['NSE', 'BSE'];
 
 /**
  * Fetch one instrument's recent daily closes and derive today's snapshot
  * plus the precomputed previous-trading-day delta.
  *
- * Returns null when the provider has no usable data — the caller stores
- * NOTHING for that instrument rather than carrying a stale price forward or
- * inventing one.
+ * Tries NSE then BSE, series form then single-price form (which also
+ * reaches Twelve Data) — four attempts at most, stopping at the first
+ * success. Returns null when NO exchange/provider combination has usable
+ * data — the caller stores NOTHING for that instrument rather than
+ * carrying a stale price forward or inventing one.
  */
 async function collectOne(instr) {
-  let series;
-  try {
-    ({ series } = await fetchDailySeries(instr.ticker, instr.exchange, SERIES_RANGE));
-  } catch (seriesErr) {
-    // Series unavailable (e.g. Yahoo has no chart for this symbol). Fall
-    // back to the shared provider chain's single-price form, which also
-    // reaches Twelve Data. That yields a close with no previous close —
-    // recorded honestly as a snapshot with a NULL delta.
+  let lastErr;
+  for (const exch of EXCHANGE_FALLBACK_ORDER) {
     try {
-      const p = await fetchPrice(instr.ticker, instr.exchange);
-      return { date: p.date, close: p.price, currency: p.currency, source: p.source, prev: null };
-    } catch {
-      throw seriesErr;
+      const { series } = await fetchDailySeries(instr.ticker, exch, SERIES_RANGE);
+      const latest = series[series.length - 1];
+      const prev   = series.length > 1 ? series[series.length - 2] : null;
+      return { date: latest.date, close: latest.close, currency: 'INR', source: 'yahoo_finance', sourceExchange: exch, prev };
+    } catch (seriesErr) {
+      lastErr = seriesErr;
     }
   }
-  const latest = series[series.length - 1];
-  const prev   = series.length > 1 ? series[series.length - 2] : null;
-  return { date: latest.date, close: latest.close, currency: 'INR', source: 'yahoo_finance', prev };
+  // Series form failed on every exchange. Fall back to the shared provider
+  // chain's single-price form (also reaches Twelve Data). That yields a
+  // close with no previous close — recorded honestly as a NULL delta.
+  for (const exch of EXCHANGE_FALLBACK_ORDER) {
+    try {
+      const p = await fetchPrice(instr.ticker, exch);
+      return { date: p.date, close: p.price, currency: p.currency, source: p.source, sourceExchange: exch, prev: null };
+    } catch (priceErr) {
+      lastErr = priceErr;
+    }
+  }
+  throw lastErr;
 }
 
 /**
@@ -247,7 +264,7 @@ async function persistSnapshots(rows) {
   await sql`
     INSERT INTO instrument_daily_prices
       (instrument_id, price_date, close_price, currency,
-       prev_close_price, prev_price_date, change_abs, change_pct, source, collected_at)
+       prev_close_price, prev_price_date, change_abs, change_pct, source, source_exchange, collected_at)
     SELECT
       q.instrument_id, q.price_date, q.close_price, q.currency,
       q.prev_close_price, q.prev_price_date,
@@ -255,7 +272,7 @@ async function persistSnapshots(rows) {
            THEN q.close_price - q.prev_close_price END,
       CASE WHEN q.prev_close_price IS NOT NULL AND q.prev_close_price <> 0
            THEN (q.close_price - q.prev_close_price) / q.prev_close_price * 100 END,
-      q.source, now()
+      q.source, q.source_exchange, now()
     FROM UNNEST(
       ${rows.map(r => r.instrumentId)}::uuid[],
       ${rows.map(r => r.date)}::date[],
@@ -263,8 +280,9 @@ async function persistSnapshots(rows) {
       ${rows.map(r => r.currency || 'INR')}::text[],
       ${rows.map(r => r.prevClose)}::numeric[],
       ${rows.map(r => r.prevDate)}::date[],
-      ${rows.map(r => r.source || null)}::text[]
-    ) AS q(instrument_id, price_date, close_price, currency, prev_close_price, prev_price_date, source)
+      ${rows.map(r => r.source || null)}::text[],
+      ${rows.map(r => r.sourceExchange || null)}::text[]
+    ) AS q(instrument_id, price_date, close_price, currency, prev_close_price, prev_price_date, source, source_exchange)
     ON CONFLICT (instrument_id, price_date) DO UPDATE
       SET close_price      = EXCLUDED.close_price,
           currency         = EXCLUDED.currency,
@@ -273,6 +291,7 @@ async function persistSnapshots(rows) {
           change_abs       = COALESCE(EXCLUDED.change_abs,       instrument_daily_prices.change_abs),
           change_pct       = COALESCE(EXCLUDED.change_pct,       instrument_daily_prices.change_pct),
           source           = EXCLUDED.source,
+          source_exchange  = EXCLUDED.source_exchange,
           collected_at     = now()
   `;
   return rows.length;
@@ -312,17 +331,18 @@ async function runCollection({ force = false } = {}) {
     if (!outcome) continue;
     const { item, value, error } = outcome;
     if (error || !value || !(value.close > 0)) {
-      failures.push({ ticker: item.ticker, exchange: item.exchange, reason: error?.message || 'no usable price' });
+      failures.push({ ticker: item.ticker, assetClass: item.asset_class, reason: error?.message || 'no usable price' });
       continue;
     }
     rows.push({
-      instrumentId: item.id,
-      date:      value.date,
-      close:     value.close,
-      currency:  value.currency || 'INR',
-      source:    value.source,
-      prevClose: value.prev ? value.prev.close : null,
-      prevDate:  value.prev ? value.prev.date  : null,
+      instrumentId:   item.id,
+      date:           value.date,
+      close:          value.close,
+      currency:       value.currency || 'INR',
+      source:         value.source,
+      sourceExchange: value.sourceExchange || null,
+      prevClose:      value.prev ? value.prev.close : null,
+      prevDate:       value.prev ? value.prev.date  : null,
     });
   }
 
@@ -354,19 +374,21 @@ async function runCollection({ force = false } = {}) {
  * function, no per-ticker query. Deltas are read straight off the row
  * because collection already computed them.
  *
- * Keyed by ticker on the way IN, but each record echoes its exchange and
- * asset_class so the caller can disambiguate a ticker listed on more than
- * one exchange — the API deliberately does not pick a winner for you.
+ * Keyed by ticker on the way IN, and — since instruments are keyed on
+ * (ticker, asset_class) only, not exchange — at most ONE row comes back per
+ * ticker (per asset class), so the caller never has to pick a winner
+ * between an NSE and a BSE snapshot. `sourceExchange` is included purely as
+ * provenance (which exchange that day's close actually came from).
  */
 async function getDailyPrices(tickers) {
   const wanted = [...new Set(tickers.map(normTicker).filter(Boolean))].slice(0, MAX_TICKERS_PER_READ);
   if (!wanted.length) return [];
   const rows = await sql`
     SELECT DISTINCT ON (i.id)
-      i.ticker, i.exchange, i.asset_class, i.asset_name,
+      i.ticker, i.asset_class, i.asset_name, i.price_exchange,
       p.price_date, p.close_price, p.currency,
       p.prev_close_price, p.prev_price_date,
-      p.change_abs, p.change_pct, p.source, p.collected_at
+      p.change_abs, p.change_pct, p.source, p.source_exchange, p.collected_at
     FROM instruments i
     JOIN instrument_daily_prices p ON p.instrument_id = i.id
     WHERE i.ticker = ANY(${wanted}::text[])
@@ -374,18 +396,18 @@ async function getDailyPrices(tickers) {
   `;
   const asDate = (v) => (v ? (v.toISOString?.().slice(0, 10) ?? String(v)) : null);
   return rows.map(r => ({
-    ticker:     r.ticker,
-    exchange:   r.exchange,
-    assetClass: r.asset_class,
-    assetName:  r.asset_name,
-    currency:   r.currency || 'INR',
-    date:       asDate(r.price_date),
-    close:      r.close_price      != null ? Number(r.close_price)      : null,
-    prevClose:  r.prev_close_price != null ? Number(r.prev_close_price) : null,
-    prevDate:   asDate(r.prev_price_date),
-    changeAbs:  r.change_abs != null ? Number(r.change_abs) : null,
-    changePct:  r.change_pct != null ? Number(r.change_pct) : null,
-    source:     r.source || null,
+    ticker:         r.ticker,
+    assetClass:     r.asset_class,
+    assetName:      r.asset_name,
+    currency:       r.currency || 'INR',
+    date:           asDate(r.price_date),
+    close:          r.close_price      != null ? Number(r.close_price)      : null,
+    prevClose:      r.prev_close_price != null ? Number(r.prev_close_price) : null,
+    prevDate:       asDate(r.prev_price_date),
+    changeAbs:      r.change_abs != null ? Number(r.change_abs) : null,
+    changePct:      r.change_pct != null ? Number(r.change_pct) : null,
+    source:         r.source || null,
+    sourceExchange: r.source_exchange || r.price_exchange || null,
   }));
 }
 

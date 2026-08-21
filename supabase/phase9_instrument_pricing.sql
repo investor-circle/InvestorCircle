@@ -25,30 +25,51 @@
 -- ic_recommendations is deliberately NOT given an instrument_id FK here —
 -- that would be a change to an existing hot table. Resolution happens in
 -- the collector via the normalised key.
+--
+-- ── Why `exchange` is NOT part of instrument identity ─────────────────────
+-- This is not a broking app: no feature anywhere else in the codebase
+-- treats "the same ticker on NSE" and "the same ticker on BSE" as different
+-- things. Security Intelligence, ticker consensus, "reinforced by your
+-- Circle", and tracking dedup all key purely on ticker — exchange plays no
+-- role. Making pricing exchange-aware would have been the ONE place in the
+-- app that split a stock into two identities, which would have meant: (a)
+-- fetching and storing two near-duplicate price series for any dual-listed
+-- ticker, and (b) every reader having to pick a "winner" between them
+-- (which the read API previously punted to the caller, and src/db.js's
+-- byTicker() resolved with an arbitrary NSE-preference rule). Keying
+-- instruments on (ticker, asset_class) alone removes both problems: one
+-- row, one price, one number every feature reads the same way.
+--
+-- `exchange` is kept, but only as an INFORMATIONAL field: `instruments.
+-- price_exchange` is which exchange the collector prefers to source from
+-- (defaults NSE — deeper and more liquid, and already this app's default
+-- everywhere else), and `instrument_daily_prices.source_exchange` is which
+-- exchange a given day's close actually came from (NSE normally, BSE only
+-- when NSE has no data for that ticker that day, e.g. a BSE-only listing).
+-- Neither column affects whether two rows are "the same instrument."
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ── INSTRUMENTS ────────────────────────────────────────────────────────────
 -- One row per tradable security. Populated (upserted) by the daily pricing
 -- collector from the currently-active idea universe; nothing else writes it.
 --
--- Canonical key = (ticker, exchange, asset_class), all normalised by the
--- collector to UPPER(TRIM(...)) for ticker/exchange before insert. The
--- UNIQUE constraint is what makes "same instrument" a database-level fact
--- rather than a convention.
+-- Canonical key = (ticker, asset_class), normalised by the collector to
+-- UPPER(TRIM(ticker)) before insert. The UNIQUE constraint is what makes
+-- "same instrument" a database-level fact rather than a convention.
 CREATE TABLE IF NOT EXISTS instruments (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  ticker        TEXT NOT NULL,
-  exchange      TEXT NOT NULL DEFAULT 'NSE',
-  asset_class   TEXT NOT NULL DEFAULT 'Equity',
-  asset_name    TEXT,                                   -- best-known display name, refreshed by the collector
-  currency      TEXT NOT NULL DEFAULT 'INR',
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (ticker, exchange, asset_class)
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticker         TEXT NOT NULL,
+  asset_class    TEXT NOT NULL DEFAULT 'Equity',
+  asset_name     TEXT,                                  -- best-known display name, refreshed by the collector
+  currency       TEXT NOT NULL DEFAULT 'INR',
+  price_exchange TEXT NOT NULL DEFAULT 'NSE',            -- informational only — see header note above
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (ticker, asset_class)
 );
 
--- Read path: consumers look instruments up by ticker (optionally narrowing
--- by exchange), never by uuid — they don't have the uuid.
+-- Read path: consumers look instruments up by ticker, never by uuid — they
+-- don't have the uuid. Also serves the UNIQUE constraint's lookup.
 CREATE INDEX IF NOT EXISTS idx_instruments_ticker ON instruments(ticker);
 
 -- ── INSTRUMENT DAILY PRICES ────────────────────────────────────────────────
@@ -77,6 +98,7 @@ CREATE TABLE IF NOT EXISTS instrument_daily_prices (
   change_abs        NUMERIC(20,6),        -- close_price - prev_close_price
   change_pct        NUMERIC(12,6),        -- (close_price - prev_close_price) / prev_close_price * 100
   source            TEXT,                 -- 'yahoo_finance' | 'twelve_data' | ...
+  source_exchange   TEXT,                 -- 'NSE' | 'BSE' — which exchange THIS close actually came from (informational)
   collected_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (instrument_id, price_date)
 );

@@ -998,12 +998,16 @@ export async function lookupUser(by, value) {
  * Latest stored daily snapshot for each of `tickers`.
  *
  * @param {string[]} tickers
- * @returns {Promise<Array<{ticker,exchange,assetClass,assetName,currency,
- *          date,close,prevClose,prevDate,changeAbs,changePct,source}>>}
+ * @returns {Promise<Array<{ticker,assetClass,assetName,currency,
+ *          date,close,prevClose,prevDate,changeAbs,changePct,source,sourceExchange}>>}
  *   `date` is the trading date the close belongs to (NOT the collection
  *   date), `prevDate` is the previous trading day, and `changePct` is a
  *   percentage precomputed at collection time. `prevClose`/`changePct` are
  *   null when the previous close is genuinely unknown — never faked.
+ *   Instruments are keyed on (ticker, assetClass) only — NOT exchange (this
+ *   isn't a broking app; see supabase/phase9_instrument_pricing.sql) — so
+ *   at most one row comes back per ticker/asset-class; `sourceExchange` is
+ *   included purely as provenance, not as a second identity to resolve.
  *   Degrades to [] on any infrastructure failure, so a caller never blocks
  *   or errors on pricing being unavailable.
  */
@@ -1017,17 +1021,12 @@ export async function getDailyPrices(tickers) {
 /**
  * Convenience: turn getDailyPrices() rows into a ticker-keyed lookup.
  *
- * The API deliberately does not pick a winner when one ticker is listed on
- * more than one exchange (it echoes `exchange` on every record instead), so
- * the collision policy lives here, at the point of use: prefer NSE, which is
- * what ic_recommendations defaults `exchange` to.
+ * A plain re-key, not a collision resolver — the read API already
+ * guarantees at most one row per ticker (per asset class), so there is
+ * nothing to pick a winner between.
  */
 export function byTicker(priceRows) {
   const map = {};
-  (priceRows || []).forEach(row => {
-    const key = row.ticker;
-    const held = map[key];
-    if (!held || (held.exchange !== 'NSE' && row.exchange === 'NSE')) map[key] = row;
-  });
+  (priceRows || []).forEach(row => { map[row.ticker] = row; });
   return map;
 }
