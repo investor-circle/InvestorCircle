@@ -1369,8 +1369,36 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
     return hit || null;
   };
 
-  // Directional AGREEMENT (bull% vs bear%) — how one-sided the community is.
-  const strongest = pick([...allTickers].sort((a,b)=>b.tabCons.strength-a.tabCons.strength));
+  // RECENCY — a gentle multiplier, not a hard filter or a heavy decay like
+  // Pulse's Trending/What You Missed widgets. This page answers "what does
+  // the platform generally think," not "what just happened" — a stock the
+  // whole community has debated for weeks is still meaningfully "strongest
+  // consensus" even if today happened to be quiet. A 30-day half-life lets
+  // genuinely fresh activity float a ticker up without blanking out
+  // legitimate historical consensus, which matters at today's low traffic:
+  // a handful of recos a month apart is still the entire dataset for a
+  // ticker, and an aggressive decay would empty most of these cards rather
+  // than reorder them.
+  const RECENCY_HALFLIFE_DAYS = 30;
+  const daysSinceLastActivity = (recos) => {
+    if (!recos.length) return Infinity;
+    const latest = Math.max(...recos.map(r=>new Date(r.created_at).getTime()));
+    return (Date.now() - latest) / 86400000;
+  };
+  const recencyFactor = (recos) => Math.pow(0.5, daysSinceLastActivity(recos) / RECENCY_HALFLIFE_DAYS);
+  const lastActiveLabel = (recos) => {
+    if (!recos.length) return null;
+    const latest = new Date(Math.max(...recos.map(r=>new Date(r.created_at).getTime())));
+    return fmtDate(latest);
+  };
+
+  // Directional AGREEMENT (bull% vs bear%) — how one-sided the community is,
+  // nudged by recency so a ticker with the same split but more current
+  // discussion edges out a dormant one.
+  const strongest = pick(
+    [...allTickers].sort((a,b)=>
+      (b.tabCons.strength*recencyFactor(b.filteredRecos)) - (a.tabCons.strength*recencyFactor(a.filteredRecos)))
+  );
 
   // Investor CONVICTION — a distinct signal from agreement direction: how
   // strongly the recommenders themselves rated their confidence (the
@@ -1389,20 +1417,32 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
     [...allTickers]
       .map(t=>({...t, avgConv:avgConviction(t.filteredRecos)}))
       .filter(t=>t.avgConv>0)
-      .sort((a,b)=>b.avgConv-a.avgConv || b.filteredRecos.length-a.filteredRecos.length)
+      .sort((a,b)=>
+        (b.avgConv*recencyFactor(b.filteredRecos)) - (a.avgConv*recencyFactor(a.filteredRecos))
+        || b.filteredRecos.length-a.filteredRecos.length)
   );
 
-  // Raw DISCUSSION VOLUME — most recommendations, regardless of direction.
-  const mostDiscussed = pick([...allTickers].sort((a,b)=>b.filteredRecos.length-a.filteredRecos.length));
+  // Raw DISCUSSION VOLUME — most recommendations, regardless of direction,
+  // recency-weighted so a ticker that was chatty once but has gone quiet
+  // for months doesn't permanently outrank one people are discussing now.
+  const mostDiscussed = pick(
+    [...allTickers].sort((a,b)=>
+      (b.filteredRecos.length*recencyFactor(b.filteredRecos)) - (a.filteredRecos.length*recencyFactor(a.filteredRecos)))
+  );
 
   // Most DIVIDED — closest to a 50/50 bull/bear split among tickers with a
-  // meaningful sample. Ascending distance-from-50 puts the most-balanced
-  // (most disagreement) ticker first; the previous descending sort put the
-  // LEAST divided ticker first instead, so a unanimous 100%-bullish stock
-  // was winning "Most Divided" — the exact inverse of the label's meaning.
+  // meaningful sample. `closeness` is 50 minus the distance from 50%, so
+  // higher = more balanced/divided; ascending distance (the original fix)
+  // is equivalent to descending closeness, just expressed so it can be
+  // recency-weighted the same way as the other three cards. The previous
+  // descending-distance sort put the LEAST divided ticker first instead, so
+  // a unanimous 100%-bullish stock was winning "Most Divided" — the exact
+  // inverse of the label's meaning.
   const mostDivided = pick(
     [...allTickers].filter(t=>t.tabCons.total>=3)
-      .sort((a,b)=>Math.abs(50-a.tabCons.bullPct)-Math.abs(50-b.tabCons.bullPct))
+      .map(t=>({...t, closeness: 50-Math.abs(50-t.tabCons.bullPct)}))
+      .sort((a,b)=>
+        (b.closeness*recencyFactor(b.filteredRecos)) - (a.closeness*recencyFactor(a.filteredRecos)))
   );
 
   const sectors = ['all',...[...new Set(recos.map(r=>r.sector).filter(Boolean))]];
@@ -1441,7 +1481,10 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
               color={item.tabCons.bullPct>=55?'var(--gain)':item.tabCons.bearPct>=55?'var(--loss)':'#8d90ad'}
               height={26}
             />
-            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:3}}>{item.filteredRecos.length} investor{item.filteredRecos.length!==1?'s':''}</div>
+            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:3}}>
+              {item.filteredRecos.length} investor{item.filteredRecos.length!==1?'s':''}
+              {lastActiveLabel(item.filteredRecos) && ` · ${lastActiveLabel(item.filteredRecos)}`}
+            </div>
           </div>
         ):null)}
       </div>
