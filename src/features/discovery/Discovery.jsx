@@ -1210,8 +1210,8 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
               <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:6}}>{label}</div>
               {c.total>0?(
                 <>
-                  <div style={{fontSize:24,fontWeight:900,lineHeight:1,color:c.bullPct>=55?'var(--gain)':c.bearPct>=55?'var(--loss)':'var(--muted)'}}>{c.bullPct}%</div>
-                  <div style={{fontSize:11,fontWeight:700,color:c.bullPct>=55?'var(--gain)':c.bearPct>=55?'var(--loss)':'var(--muted)',marginTop:2}}>{c.label}</div>
+                  <div style={{fontSize:24,fontWeight:900,lineHeight:1,color:consensusStrengthColor(c)}}>{c.bullPct}%</div>
+                  <div style={{fontSize:11,fontWeight:700,color:consensusStrengthColor(c),marginTop:2}}>{c.label}</div>
                   <div style={{fontSize:10,color:'var(--muted)',marginTop:2}}>{count} investor{count!==1?'s':''}</div>
                 </>
               ):<div style={{fontSize:12,color:'var(--muted)',paddingTop:4}}>No data</div>}
@@ -1265,9 +1265,9 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
           <div>
             <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:4,display:'flex',justifyContent:'space-between'}}>
               <span>Consensus Trend {circleRecos.length>=2?'(My Circle)':'(Community)'}</span>
-              <span style={{fontWeight:900,color:circle.bullPct>=55?'var(--gain)':circle.bearPct>=55?'var(--loss)':'var(--muted)'}}>{trend[trend.length-1]}%</span>
+              <span style={{fontWeight:900,color:consensusStrengthColor(circle)}}>{trend[trend.length-1]}%</span>
             </div>
-            <SparkLine data={trend} color={circle.bullPct>=55?'var(--gain)':circle.bearPct>=55?'var(--loss)':'#8d90ad'} height={55}/>
+            <SparkLine data={trend} color={consensusStrengthColor(circle)} height={55}/>
           </div>
         )}
 
@@ -1491,12 +1491,12 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
               <span style={{fontSize:9.5,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)'}}>{label}</span>
             </div>
             <div style={{fontWeight:900,fontSize:16,marginBottom:2}}>{item.ticker}</div>
-            <div style={{fontSize:11.5,color:item.tabCons.bullPct>=55?'var(--gain)':item.tabCons.bearPct>=55?'var(--loss)':'var(--muted)',fontWeight:700,marginBottom:5}}>
-              {item.tabCons.bullPct>=55?'+':''}{item.tabCons.bullPct}% {item.tabCons.label}
+            <div style={{fontSize:11.5,color:consensusStrengthColor(item.tabCons),fontWeight:700,marginBottom:5}}>
+              {item.tabCons.bullPct>item.tabCons.bearPct?'+':''}{item.tabCons.bullPct}% {item.tabCons.label}
             </div>
             <SparkLine
               data={computeTrend(item.filteredRecos)}
-              color={item.tabCons.bullPct>=55?'var(--gain)':item.tabCons.bearPct>=55?'var(--loss)':'#8d90ad'}
+              color={consensusStrengthColor(item.tabCons)}
               height={26}
             />
             <div style={{fontSize:10.5,color:'var(--muted)',marginTop:3}}>
@@ -1551,8 +1551,8 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                       {t.sector&&<div style={{fontSize:10,color:'var(--muted)'}}>{t.sector}</div>}
                     </div>
                     <div style={{textAlign:'right',flexShrink:0,marginLeft:10}}>
-                      <span style={{fontSize:12,color:t.community.bullPct>=55?'var(--gain)':t.community.bearPct>=55?'var(--loss)':'var(--muted)',fontWeight:700}}>
-                        {t.community.bullPct>=55?'↑ Bullish':t.community.bearPct>=55?'↓ Bearish':'→ Neutral'}
+                      <span style={{fontSize:12,color:consensusStrengthColor(t.community),fontWeight:700}}>
+                        {t.community.bullPct>t.community.bearPct?'↑ ':t.community.bearPct>t.community.bullPct?'↓ ':'→ '}{t.community.label}
                       </span>
                       <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{t.filteredRecos.length} investor{t.filteredRecos.length!==1?'s':''}</div>
                       <div style={{display:'flex',alignItems:'center',gap:4,marginTop:4,justifyContent:'flex-end'}} title={`Consensus strength: ${t.tabCons.strength}/100`}>
@@ -1629,9 +1629,9 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                         <td style={{padding:'12px 14px',textAlign:'center',minWidth:130}}><ConsensusBar cons={t.circle} width={110}/></td>
                         <td style={{padding:'12px 14px',textAlign:'center',minWidth:130}}><ConsensusBar cons={t.community} width={110}/></td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}>
-                          <span style={{fontSize:12,color:t.community.bullPct>=55?'var(--gain)':t.community.bearPct>=55?'var(--loss)':'var(--muted)',fontWeight:700}}>
-                            {t.community.bullPct>=55?'↑':t.community.bearPct>=55?'↓':'→'}
-                            {' '}{t.community.bullPct>=55?'Bullish':t.community.bearPct>=55?'Bearish':'Neutral'}
+                          <span style={{fontSize:12,color:consensusStrengthColor(t.community),fontWeight:700}}>
+                            {t.community.bullPct>t.community.bearPct?'↑':t.community.bearPct>t.community.bullPct?'↓':'→'}
+                            {' '}{t.community.label}
                           </span>
                         </td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}>
@@ -1855,7 +1855,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
       const bullThemes = bullR.slice(0,3).map(r=>getThesisText(r.thesis)||null).filter(Boolean);
       const bearThemes = bearR.slice(0,3).map(r=>getThesisText(r.thesis)||null).filter(Boolean);
       const community  = computeConsensus(activeR);
-      const sentiment  = community.bullPct>=70?'strongly bullish':community.bullPct>=55?'moderately bullish':community.bearPct>=70?'strongly bearish':community.bearPct>=55?'cautious':'divided';
+      const sentiment  = community.label==='Strong Bullish'?'strongly bullish':community.label==='Bullish'?'moderately bullish':community.label==='Strong Bearish'?'strongly bearish':community.label==='Bearish'?'cautious':'divided';
       setAiSummary({
         sentiment, community,
         bullThemes: bullThemes.length ? bullThemes : (bullR.length ? [`${bullR.length} investor${bullR.length>1?'s':''} tracking as a Buy opportunity`] : []),
@@ -1971,7 +1971,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                 <div key={l}>
                   <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
                     <span style={{fontSize:13,fontWeight:600}}>{l}</span>
-                    <span style={{fontSize:13,fontWeight:700,color:c.bullPct>=55?'var(--gain)':c.bearPct>=55?'var(--loss)':'var(--muted)'}}>{c.label}</span>
+                    <span style={{fontSize:13,fontWeight:700,color:consensusStrengthColor(c)}}>{c.label}</span>
                   </div>
                   <ConsensusBar cons={c} width={'100%'}/>
                   <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{c.total} investor{c.total!==1?'s':''}</div>
@@ -2242,8 +2242,8 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                     <RefreshCw size={12}/> Refresh
                   </button>
                 </div>
-                <div style={{padding:'12px 16px',background: aiSummary.community.bullPct>=55?'var(--gain-soft)':aiSummary.community.bearPct>=55?'var(--loss-soft)':'var(--surface-2)',
-                  borderRadius:10,borderLeft:`3px solid ${aiSummary.community.bullPct>=55?'var(--gain)':aiSummary.community.bearPct>=55?'var(--loss)':'var(--muted)'}`}}>
+                <div style={{padding:'12px 16px',background: aiSummary.community.bullPct>aiSummary.community.bearPct?'var(--gain-soft)':aiSummary.community.bearPct>aiSummary.community.bullPct?'var(--loss-soft)':'var(--surface-2)',
+                  borderRadius:10,borderLeft:`3px solid ${consensusStrengthColor(aiSummary.community)}`}}>
                   <div style={{fontWeight:700,fontSize:15,textTransform:'capitalize',marginBottom:4}}>
                     {aiSummary.sentiment}
                   </div>
