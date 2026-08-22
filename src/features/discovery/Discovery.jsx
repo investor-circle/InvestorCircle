@@ -1327,6 +1327,8 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
   const [search, setSearch] = useState('');
   const [selectedTicker, setSelectedTicker] = useState(null);
   const [expandedTicker, setExpandedTicker] = useState(null); // inline row expansion
+  const [sortBy, setSortBy] = useState('strength'); // strength | recent | investors | alpha
+  const [visibleCount, setVisibleCount] = useState(15); // "Load more" pagination for the full list
 
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
 
@@ -1354,11 +1356,23 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
     const community  = computeConsensus(t.recos);
     const circle     = computeConsensus(t.recos.filter(r=>circleIds.includes(r.from)));
     const tabCons    = computeConsensus(filtered);
-    return {...t, community, circle, tabCons, filteredRecos:filtered};
+    const lastActive = filtered.length ? Math.max(...filtered.map(r=>new Date(r.created_at).getTime())) : 0;
+    return {...t, community, circle, tabCons, filteredRecos:filtered, lastActive};
   }).filter(t=>t.filteredRecos.length>0
     && (sector==='all'||t.sector===sector)
     && (!search||t.ticker.includes(search.toUpperCase())||t.name.toLowerCase().includes(search.toLowerCase()))
-  ).sort((a,b)=>b.filteredRecos.length-a.filteredRecos.length),[tickerMap,tab,circleIds,sector,search]);
+  ).sort((a,b)=>{
+    if (sortBy==='recent')    return b.lastActive-a.lastActive;
+    if (sortBy==='investors') return b.filteredRecos.length-a.filteredRecos.length;
+    if (sortBy==='alpha')     return a.ticker.localeCompare(b.ticker);
+    // 'strength' (default) — this page's stated purpose is sentiment/conviction,
+    // so lead with how strongly one-sided each stock's consensus is; investor
+    // count breaks ties between equally one-sided stocks.
+    return (b.tabCons.strength-a.tabCons.strength) || (b.filteredRecos.length-a.filteredRecos.length);
+  }),[tickerMap,tab,circleIds,sector,search,sortBy]);
+
+  // Reset pagination whenever the result set changes shape
+  useEffect(()=>{ setVisibleCount(15); },[tab,sector,search,sortBy]);
 
   // Discovery cards — each one highlights a DIFFERENT signal. Already-
   // featured tickers are excluded from later cards (`pick`) so all four
@@ -1503,6 +1517,12 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
         <select className="rte-select" value={sector} onChange={e=>setSector(e.target.value)} style={{height:32}}>
           {sectors.map(s=><option key={s} value={s}>{s==='all'?'All Sectors':s}</option>)}
         </select>
+        <select className="rte-select" value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{height:32}} title="Sort by">
+          <option value="strength">Sort: Consensus Strength</option>
+          <option value="recent">Sort: Most Recent</option>
+          <option value="investors">Sort: Most Investors</option>
+          <option value="alpha">Sort: Alphabetical</option>
+        </select>
         <div style={{position:'relative',flex:1,maxWidth:220}}>
           <Search size={14} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--muted)'}}/>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search stocks…"
@@ -1510,12 +1530,18 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
         </div>
       </div>
 
+      {!loading&&allTickers.length>0&&(
+        <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>
+          Showing {Math.min(visibleCount,allTickers.length)} of {allTickers.length} stock{allTickers.length!==1?'s':''}
+        </div>
+      )}
+
       <div style={{display:'grid',gridTemplateColumns:selData&&!isMobile?'1fr 340px':'1fr',gap:16,alignItems:'start'}}>
         <div className="card">
           {isMobile ? (
             /* ── Mobile: asset card list ── */
             <div style={{display:'flex',flexDirection:'column',gap:0}}>
-              {allTickers.slice(0,30).map(t=>(
+              {allTickers.slice(0,visibleCount).map(t=>(
                 <div key={t.ticker} onClick={()=>setSelectedTicker(prev=>prev===t.ticker?null:t.ticker)}
                   style={{padding:'13px 16px',borderBottom:'1px solid var(--line)',cursor:'pointer',background:selectedTicker===t.ticker?'var(--accent-soft)':'transparent',transition:'background .12s'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
@@ -1529,29 +1555,46 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                         {t.community.bullPct>=55?'↑ Bullish':t.community.bearPct>=55?'↓ Bearish':'→ Neutral'}
                       </span>
                       <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{t.filteredRecos.length} investor{t.filteredRecos.length!==1?'s':''}</div>
+                      <div style={{display:'flex',alignItems:'center',gap:4,marginTop:4,justifyContent:'flex-end'}} title={`Consensus strength: ${t.tabCons.strength}/100`}>
+                        <div style={{width:38,height:5,borderRadius:3,background:'var(--line)',overflow:'hidden'}}>
+                          <div style={{height:'100%',width:`${t.tabCons.strength}%`,background:t.tabCons.strength>=65?'var(--gain)':t.tabCons.strength>=40?'#fbbf24':'var(--muted)'}}/>
+                        </div>
+                        <span style={{fontSize:9.5,fontWeight:700,color:'var(--muted)'}}>{t.tabCons.strength}</span>
+                      </div>
                     </div>
                   </div>
-                  {t.community.total>0&&(
-                    <div style={{marginBottom:4}}>
-                      <div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>Community</div>
-                      <ConsensusBar cons={t.community} width={'100%'} mini/>
-                    </div>
-                  )}
-                  {t.circle.total>0&&(
-                    <div style={{marginBottom:4}}>
-                      <div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>My circle</div>
-                      <ConsensusBar cons={t.circle} width={'100%'} mini/>
+                  {(t.community.total>0||t.circle.total>0)&&(
+                    <div style={{display:'flex',gap:10,marginBottom:4}}>
+                      {t.community.total>0&&(
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:9.5,color:'var(--muted)',marginBottom:3,textTransform:'uppercase',letterSpacing:'.03em'}}>Community</div>
+                          <ConsensusBar cons={t.community} width={'100%'} mini/>
+                        </div>
+                      )}
+                      {t.circle.total>0&&(
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:9.5,color:'var(--muted)',marginBottom:3,textTransform:'uppercase',letterSpacing:'.03em'}}>My Circle</div>
+                          <ConsensusBar cons={t.circle} width={'100%'} mini/>
+                        </div>
+                      )}
                     </div>
                   )}
                   {t.community.total===0&&t.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No recommendations yet</div>)}
                   <div style={{display:'flex',justifyContent:'flex-end',marginTop:6}}>
                     <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={e=>{e.stopPropagation();onOpenSecurity(t.ticker,t.name);}}>
-                      <ChevronRight size={13}/> Security Intel
+                      <ChevronRight size={13}/> Stock Insights
                     </button>
                   </div>
                 </div>
               ))}
               {allTickers.length===0&&(<div style={{padding:'32px 16px',textAlign:'center',color:'var(--muted)',fontSize:13}}>No stocks match current filters.</div>)}
+              {allTickers.length>visibleCount&&(
+                <div style={{padding:'14px 16px',textAlign:'center'}}>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setVisibleCount(v=>v+15)}>
+                    Load more ({allTickers.length-visibleCount} remaining)
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
           <div style={{overflowX:'auto'}}>
@@ -1564,7 +1607,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                 </tr>
               </thead>
               <tbody>
-                {allTickers.slice(0,30).map(t=>{
+                {allTickers.slice(0,visibleCount).map(t=>{
                   const sel      = t.ticker===selectedTicker;
                   const expanded = t.ticker===expandedTicker;
                   const avgIci   = null; // ici_score not a confirmed DB column — show '—'
@@ -1650,6 +1693,13 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                 {allTickers.length===0&&!loading&&<tr><td colSpan={7} style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>{recos.length===0?'No recommendations on the platform yet.':'No results match your filters.'}</td></tr>}
               </tbody>
             </table>
+            {allTickers.length>visibleCount&&(
+              <div style={{padding:'14px',textAlign:'center'}}>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setVisibleCount(v=>v+15)}>
+                  Load more ({allTickers.length-visibleCount} remaining)
+                </button>
+              </div>
+            )}
           </div>
           ) /* end isMobile ternary */}
         </div>
