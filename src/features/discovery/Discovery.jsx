@@ -1081,6 +1081,12 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         flexShrink: isMobile ? 1 : 0,
         display: isMobile && mobileFeedTab==='feed' ? 'none' : undefined,
       }}>
+        {/* Same "brewing" filler the Feed column shows while the initial
+            post-login data load is in flight — shown here too now that
+            Pulse is the default tab, so whichever tab the user lands on
+            (or quickly switches to before data arrives) sees it rather
+            than a blank widget column. */}
+        {feedLoading ? <FeedBrewingState/> : (<>
         {/* Widget #1 — Fresh Ideas (network + public platform) */}
         <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
           setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
@@ -1108,6 +1114,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
 
         {/* Widget #4 — Tracked Summary Donut (My Tracked) */}
         <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
+        </>)}
 
         {/* ── Market Insights + Invite Friends — compact, side-by-side clickable
              cards, bottom of Pulse, both mobile + desktop. "Market Insights"
