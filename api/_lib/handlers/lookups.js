@@ -219,7 +219,7 @@ export default async function handleLookups(req, res) {
                  ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
                  ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                  up.full_name as by_name, up.id as from_id,
-                 0 as likes,
+                 (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text)::int as likes,
                  (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
           FROM recommendation_deliveries rd
           JOIN ic_recommendations ir ON ir.id = rd.recommendation_id
