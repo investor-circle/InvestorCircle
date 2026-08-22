@@ -53,6 +53,7 @@ import {
   untrackReco as dbUntrackReco
 } from "./services/api/engagementApi";
 import {
+  getMyTracking as dbGetMyTracking,
   getTrackingCounts as dbGetTrackingCounts
 } from "./services/api/trackingApi";
 import {
@@ -219,6 +220,7 @@ export default function App() {
   const [sharing,       setSharing]       = useState({});
   const [notifications, setNotifications] = useState([]);
   const [tracked,       setTracked]       = useState(new Set()); // Set of reco IDs the user has tracked
+  const [trackedCreatorIds, setTrackedCreatorIds] = useState(new Set()); // Set of investor/creator IDs the user tracks (Pulse "What You Missed" relevance signal)
   // Track-an-investor relationship (distinct from the recommendation-tracking
   // Set above): lightweight counts only — the Network page's Tracking me /
   // I'm tracking tabs fetch their own paginated lists lazily, never the full
@@ -386,6 +388,7 @@ export default function App() {
     setPublicFeedRecos([]);
     setNetworkEngagementRecos([]);
     setTracked(new Set());
+    setTrackedCreatorIds(new Set());
     setClaimRequests([]);
     setHasPendingClaim(false);
     setSecurityTicker(null);
@@ -821,6 +824,12 @@ export default function App() {
         dbGetMyPendingClaimStatus().then(setHasPendingClaim).catch(()=>{});
         // Network tab badge counts — cheap indexed COUNTs, never the full tracker/tracking lists
         dbGetTrackingCounts().then(setTrackingCounts).catch(()=>{});
+        // Creators this user tracks — small, indexed, unpaginated list (same
+        // "legacy: small use sites only" call TrackingMeSection-style pages
+        // use). Nothing downstream depends on it, so it's fired and forgotten
+        // here rather than added to the awaited batch below; Pulse's "What
+        // You Missed" widget uses it as a relevance signal once it resolves.
+        dbGetMyTracking().then(rows => setTrackedCreatorIds(new Set((rows||[]).map(p=>p.id)))).catch(()=>{});
         // Both were already kicked off above, in parallel with the batch
         // that just resolved — just await them now.
         const [trackedResult, feedCfgResult] = await Promise.allSettled([
@@ -866,6 +875,9 @@ export default function App() {
                 byName:r.by_name, from:r.from_id, feedSource:'network_engagement',
                 reaction:'none', hidden:false, invested:false, deliveryId:null,
                 commentCount: r.comment_count || 0,
+                targetPrice: r.target_price ? Number(r.target_price) : null,
+                stopLoss:    r.stop_loss    ? Number(r.stop_loss)    : null,
+                recType:     r.recommendation_type || 'Buy',
               }));
               setNetworkEngagementRecos(engMapped);
               // Hydrate existing reactions separately — safe if table doesn't exist yet
@@ -906,6 +918,14 @@ export default function App() {
               isPublic:     true,
               likes:        r.likes_count  || 0,
               commentCount: r.comment_count || 0,
+              // Recent-window engagement for Pulse's "Trending on MIC"
+              // ranking. Left undefined (not 0) when the API predates these
+              // columns, so src/utils/trending.js can tell "no recent
+              // activity" apart from "no velocity data" and degrade
+              // honestly instead of claiming a recency it can't support.
+              recentLikes:    r.recent_likes,
+              recentComments: r.recent_comments,
+              lastActivityAt: r.last_activity_at,
             }));
             setPublicFeedRecos(pubMapped);
             // Hydrate existing reactions separately — safe if recommendation_reactions doesn't exist yet
@@ -1079,7 +1099,7 @@ export default function App() {
   // see the useEffect that keeps investorPage/adminPage synced with the URL.)
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
   // page + setPage — setPage also closes the mobile nav drawer for investors
-  const openSecurity = (ticker, name) => { setSecurityTicker({ ticker, name }); setPage('sec_intel'); };
+  const openSecurity = (ticker, name, tab) => { setSecurityTicker({ ticker, name, tab }); setPage('sec_intel'); };
   const page    = isInv ? investorPage : adminPage;
   const setPage = isInv
     ? (p) => { setInvestorPage(p); setNavOpen(false); track('page_view', { page_name: p });
@@ -1618,7 +1638,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading}/>}
+            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}/>}
             {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
             {isInv && showDiscover && <DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}

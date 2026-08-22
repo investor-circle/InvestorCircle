@@ -10,7 +10,7 @@ import {
   Loader
 } from "lucide-react";
 import { SOCIAL_BRAND, SOCIAL_PATHS, TYPE_COLORS } from "../constants/app";
-import { classColor, fmt, fmtSigned, initialsOf } from "../utils/format";
+import { classColor, consensusStrengthColor, fmt, fmtSigned, initialsOf } from "../utils/format";
 import { loadInstruments } from "../utils/instruments";
 
 export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;
@@ -328,7 +328,7 @@ export function InstrumentSearch({ onSelect, placeholder, initialValue }) {
 
 export function ConsensusBar({cons={},width=110,mini=false}) {
   if (!cons.total) return <span style={{color:'var(--muted)',fontSize:12}}>—</span>;
-  const col = cons.bullPct>=55?'var(--gain)':cons.bearPct>=55?'var(--loss)':'var(--muted)';
+  const col = consensusStrengthColor(cons);
   return (
     <div>
       <div style={{fontSize:mini?10:12,fontWeight:700,color:col,marginBottom:2}}>{cons.label}</div>
@@ -346,9 +346,10 @@ export function ConsensusBar({cons={},width=110,mini=false}) {
   );
 }
 
-export function StrengthDot({strength=0}) {
-  const col = strength>=65?'var(--gain)':strength>=40?'#fbbf24':'var(--muted)';
-  const label = strength>=65?'Strong':strength>=40?'Moderate':'Weak';
+export function StrengthDot({cons={}}) {
+  const strength = cons.strength||0;
+  const col = consensusStrengthColor(cons);
+  const label = strength>=60?'Strong':strength>=20?'Moderate':'Weak';
   return (
     <div style={{textAlign:'center'}}>
       <div style={{fontSize:22,fontWeight:900,color:col,lineHeight:1}}>{strength}</div>

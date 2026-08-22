@@ -219,7 +219,7 @@ export default async function handleLookups(req, res) {
                  ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
                  ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                  up.full_name as by_name, up.id as from_id,
-                 0 as likes,
+                 (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text)::int as likes,
                  (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
           FROM recommendation_deliveries rd
           JOIN ic_recommendations ir ON ir.id = rd.recommendation_id
@@ -248,7 +248,22 @@ export default async function handleLookups(req, res) {
                  ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
                  up.full_name as by_name, up.id as from_id, up.username as from_username,
                  (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
-                 (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text)::int as likes_count
+                 (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text)::int as likes_count,
+                 -- Recent-window engagement + last activity, for Pulse's
+                 -- "Trending on MIC" ranking (src/utils/trending.js). Added
+                 -- as extra columns on this already-executed query rather
+                 -- than a separate endpoint so trending costs zero
+                 -- additional round-trips. The 7-day interval must stay in
+                 -- sync with VELOCITY_WINDOW_DAYS in src/utils/trending.js.
+                 (SELECT COUNT(*) FROM recommendation_comments rc
+                   WHERE rc.reco_id=ir.id AND rc.created_at > now() - interval '7 days')::int as recent_comments,
+                 (SELECT COUNT(*) FROM recommendation_reactions rx
+                   WHERE rx.reco_id=ir.id::text AND rx.created_at > now() - interval '7 days')::int as recent_likes,
+                 GREATEST(
+                   ir.created_at,
+                   COALESCE((SELECT MAX(rc.created_at) FROM recommendation_comments rc WHERE rc.reco_id=ir.id), ir.created_at),
+                   COALESCE((SELECT MAX(rx.created_at) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text), ir.created_at)
+                 ) as last_activity_at
           FROM ic_recommendations ir
           JOIN user_profiles up ON up.id = ir.recommender_id
           WHERE ir.is_public = true
@@ -306,6 +321,7 @@ export default async function handleLookups(req, res) {
           FROM ic_recommendations r
           LEFT JOIN user_profiles up ON r.recommender_id = up.id
           WHERE r.ticker = ${ticker}
+            AND r.is_public = true
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
           ORDER BY r.created_at DESC

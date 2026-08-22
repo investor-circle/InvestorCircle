@@ -645,10 +645,17 @@ export function InstrumentBrowser() {
     {loading && <div className="muted small" style={{padding:20,textAlign:"center"}}><Loader size={18} className="spin"/></div>}
     {!loading && rows.length>0 && (<>
       <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid">
-        <thead><tr><th>Symbol</th><th>Name</th><th>Exchange</th><th>Type</th><th>Asset Class</th><th>Currency</th><th></th></tr></thead>
+        <thead><tr><th>Symbol</th><th>Name</th><th>Source</th><th>Exchange</th><th>Type</th><th>Asset Class</th><th>Currency</th><th></th></tr></thead>
         <tbody>{rows.map(r=>(<tr key={r.id} className="hoverable">
           <td className="sym">{r.symbol}</td>
           <td>{r.name}</td>
+          {/* 'auto' rows were minted by the nightly price batch because an
+              active idea referenced a ticker missing from the master list —
+              they carry only symbol/name/asset class and are worth reviewing
+              (add the real type and sector) rather than trusting as curated. */}
+          <td>{r.source === "auto"
+            ? <span className="pill" title="Created automatically by the nightly price batch — not yet curated">Auto</span>
+            : <span className="muted small">Admin</span>}</td>
           <td><span className="pill">{r.exchange}</span></td>
           <td><span className="pill accent">{r.type}</span></td>
           <td>{r.asset_class}</td>
@@ -719,7 +726,7 @@ export function InstrumentUploader() {
     <div className="note info" style={{marginBottom:16}}><Database size={16}/><div>
       Accepts <b>Zerodha instruments CSV</b> (tradingsymbol, name, exchange, instrument_type, Currency) or a <b>custom Excel/CSV</b> (symbol, name, exchange, asset_class, currency, sector).
       A <b>sector</b> column is optional but recommended — enables auto-fill in the recommendation modal.
-      Duplicate (symbol + exchange) pairs are updated in place.
+      Duplicate (symbol + asset class) pairs are updated in place — an instrument is identified by its symbol and asset class, not by exchange, so an NSE and a BSE row for the same symbol collapse into one.
     </div></div>
     <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{display:"none"}} onChange={onFile}/>
     <button className="btn btn-pri" onClick={()=>fileRef.current?.click()}><Upload size={15}/> Choose file (CSV or Excel)</button>

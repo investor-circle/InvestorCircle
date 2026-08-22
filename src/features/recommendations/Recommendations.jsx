@@ -34,6 +34,7 @@ import {
   Image as ImageIcon
 } from "lucide-react";
 import { getPreviousClose, getTodayClose, sourceName } from "../../services/marketData";
+import { getDailyPrices, byTicker, priceKey } from "../../services/api/pricingApi";
 import { track } from "../../firebase";
 import {
   commentOnReco as dbCommentOnReco,
@@ -154,6 +155,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
   const [fHorizon,setFHorizon]= useState("all");
   const [fMoney,  setFMoney]  = useState(initMoneyFilter||"all");
   const [fInv,    setFInv]    = useState("all");
+  const [dailyPrices, setDailyPrices] = useState(null);
 
   // Sync global search into local filter
   useEffect(()=>{ setQ(globalSearch||""); },[globalSearch]);
@@ -165,6 +167,26 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
       .then(rows=>{ setRecos(rows); setLoading(false); })
       .catch(e=>{ console.error('TrackedSection load failed:', e); setLoading(false); });
   },[me?.id, tracked.size]);
+
+  // "Since yesterday" daily change, shown alongside the existing cumulative
+  // returns rather than behind a toggle — this is the full list page, not
+  // the compact Pulse widget, so there's room to show both at once instead
+  // of making the user pick a lens. One batched request for the DISTINCT
+  // tickers in the whole tracked list (not per-row), same pattern as the
+  // Pulse "My Tracked" widget.
+  const trackedTickerKey = useMemo(
+    () => [...new Set(recos.map(r=>(r.ticker||'').trim().toUpperCase()).filter(Boolean))].sort().join(','),
+    [recos]
+  );
+  useEffect(() => {
+    if (!trackedTickerKey) { setDailyPrices(null); return; }
+    let cancelled = false;
+    getDailyPrices(trackedTickerKey.split(','))
+      .then(rows => { if (!cancelled) setDailyPrices(byTicker(rows)); })
+      .catch(() => {}); // pricing unavailable degrades to '—' cells, not an error
+    return () => { cancelled = true; };
+  }, [trackedTickerKey]);
+  const dailyChangeFor = (r) => dailyPrices?.[priceKey(r.ticker, r.assetClass)]?.changePct ?? null;
 
   // Patch invested status locally + persist to recommendation_tracking
   const patchInvested=(r, updates)=>{
@@ -224,6 +246,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
     if(sort.key==="reco")    return ((a.reco_price||0)-(b.reco_price||0))*dir;
     if(sort.key==="cur")     return ((a.current_price||0)-(b.current_price||0))*dir;
     if(sort.key==="entry")   return ((a.invested_price||0)-(b.invested_price||0))*dir;
+    if(sort.key==="sinceyday") return ((dailyChangeFor(a)??0)-(dailyChangeFor(b)??0))*dir;
     if(sort.key==="recret"){
       const ra=a.reco_price?(a.current_price-a.reco_price)/a.reco_price:0;
       const rb=b.reco_price?(b.current_price-b.reco_price)/b.reco_price:0;
@@ -280,11 +303,14 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
                   </div>
                   <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-                  {[['Reco Price',r.reco_price?fmt(r.reco_price,cur):'—'],['Current',r.current_price?fmt(r.current_price,cur):'—'],['Return',r.reco_price?fmtPct(recoRet):'—']].map(([label,val],i)=>(
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:8,marginBottom:12}}>
+                  {[['Reco Price',r.reco_price?fmt(r.reco_price,cur):'—',null],
+                    ['Current',r.current_price?fmt(r.current_price,cur):'—',null],
+                    ['Since Yday', dailyChangeFor(r)!=null?`${dailyChangeFor(r)>=0?'+':''}${dailyChangeFor(r).toFixed(1)}%`:'—', dailyChangeFor(r)!=null?(dailyChangeFor(r)>=0):null],
+                    ['Return',r.reco_price?fmtPct(recoRet):'—', recoRet>=0]].map(([label,val,isGain],i)=>(
                     <div key={i} style={{background:'var(--surface-2)',borderRadius:8,padding:'8px 10px'}}>
                       <div style={{fontSize:10,color:'var(--muted)',marginBottom:2}}>{label}</div>
-                      <div style={{fontWeight:700,fontSize:13,color:i===2?(recoRet>=0?'var(--gain)':'var(--loss)'):'var(--ink)'}}>{val}</div>
+                      <div style={{fontWeight:700,fontSize:13,color:isGain==null?'var(--ink)':isGain?'var(--gain)':'var(--loss)'}}>{val}</div>
                     </div>
                   ))}
                 </div>
@@ -317,6 +343,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
                 <SortTh label="Reco Price"   k="reco"    sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Entry Price"  k="entry"   sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current"      k="cur"     sort={sort} setSort={setSort} align="right"/>
+                <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:64,cursor:"pointer"}} title="Change since the previous trading day's close" onClick={()=>setSort(s=>({key:"sinceyday",dir:s.key==="sinceyday"&&s.dir==="asc"?"desc":"asc"}))}>Since<br/>Yday<span className="si">{sort.key==="sinceyday"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:72,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"recret",dir:s.key==="recret"&&s.dir==="asc"?"desc":"asc"}))}>Reco<br/>Return<span className="si">{sort.key==="recret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:64,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"myret",dir:s.key==="myret"&&s.dir==="asc"?"desc":"asc"}))}>My<br/>Return<span className="si">{sort.key==="myret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th>Status</th>
@@ -364,6 +391,9 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
                         : <span className="muted">—</span>}
                     </td>
                     <td style={{textAlign:'right'}} className="tnum">{r.current_price?fmt(r.current_price,r.currency||'INR'):' —'}</td>
+                    <td style={{textAlign:'right',fontWeight:700}} className={"tnum "+(dailyChangeFor(r)==null?"":dailyChangeFor(r)>=0?"pos":"neg")}>
+                      {dailyChangeFor(r)!=null ? `${dailyChangeFor(r)>=0?'+':''}${dailyChangeFor(r).toFixed(1)}%` : <span className="muted">—</span>}
+                    </td>
                     <td style={{textAlign:'right',fontWeight:700}} className={"tnum "+(itm?"pos":"neg")}>{r.reco_price?`${itm?'+':''}${(recoRet*100).toFixed(1)}%`:'—'}</td>
                     <td style={{textAlign:'right',fontWeight:700}}>
                       {myRet!==null

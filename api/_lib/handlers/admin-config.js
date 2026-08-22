@@ -72,14 +72,14 @@ async function getInstruments(search, page, pageSize) {
   const [instruments, countRows] = await Promise.all([
     search
       ? sql`
-          SELECT id, symbol, name, exchange, type, asset_class, currency, sector
+          SELECT id, symbol, name, exchange, type, asset_class, currency, sector, source
           FROM instruments
           WHERE is_active = true AND (symbol ILIKE ${like} OR name ILIKE ${like})
           ORDER BY symbol
           LIMIT ${pageSize} OFFSET ${offset}
         `
       : sql`
-          SELECT id, symbol, name, exchange, type, asset_class, currency, sector
+          SELECT id, symbol, name, exchange, type, asset_class, currency, sector, source
           FROM instruments
           WHERE is_active = true
           ORDER BY symbol
@@ -94,7 +94,7 @@ async function getInstruments(search, page, pageSize) {
 
 async function getInstrumentsExport() {
   return sql`
-    SELECT symbol, name, exchange, type, asset_class AS "Asset Class", currency
+    SELECT symbol, name, exchange, type, asset_class AS "Asset Class", currency, source
     FROM instruments
     WHERE is_active = true
     ORDER BY symbol
@@ -194,14 +194,34 @@ export default async function handleAdminConfig(req, res, userId) {
         res.status(400).json({ error: 'symbol, name, exchange, type, assetClass and currency are required' });
         return;
       }
+      // Instrument identity is (symbol, asset_class) as of the Phase 9
+      // migration — NOT (symbol, exchange). Exchange is informational: this
+      // app never treats the NSE and BSE listings of one company as
+      // different instruments, so re-importing a CSV that lists both now
+      // updates the single canonical row instead of creating two.
+      //
+      // The conflict branch refreshes every field the admin actually
+      // supplied. Previously it silently dropped `exchange`, `type` and
+      // `currency` — correcting a wrong exchange or type through the admin
+      // form appeared to succeed and changed nothing. It also resets
+      // `is_active` to true, so re-adding a previously deactivated symbol
+      // brings it back rather than writing an invisible row, and re-stamps
+      // `source='admin'`: a human curating a row the nightly price batch
+      // auto-minted promotes it out of 'auto', which is the intended
+      // reconciliation path for auto-created rows.
       const row = await sql`
-        INSERT INTO instruments (symbol, name, exchange, type, asset_class, currency, sector)
-        VALUES (${symbol}, ${name}, ${exchange}, ${type}, ${assetClass}, ${currency}, ${sector})
-        ON CONFLICT (symbol, exchange) DO UPDATE SET
+        INSERT INTO instruments (symbol, name, exchange, type, asset_class, currency, sector, source)
+        VALUES (${symbol}, ${name}, ${exchange}, ${type}, ${assetClass}, ${currency}, ${sector}, 'admin')
+        ON CONFLICT (symbol, asset_class) DO UPDATE SET
           name = EXCLUDED.name,
-          asset_class = EXCLUDED.asset_class,
-          sector = COALESCE(EXCLUDED.sector, instruments.sector)
-        RETURNING id, symbol, name, exchange, type, asset_class, currency, sector
+          exchange = EXCLUDED.exchange,
+          type = EXCLUDED.type,
+          currency = EXCLUDED.currency,
+          sector = COALESCE(EXCLUDED.sector, instruments.sector),
+          is_active = true,
+          source = 'admin',
+          updated_at = now()
+        RETURNING id, symbol, name, exchange, type, asset_class, currency, sector, source
       `;
       res.status(200).json({ instrument: row[0] });
       return;

@@ -49,6 +49,7 @@ import handleClaimProfile from './_lib/handlers/claim-profile.js';
 import handleAdminConfig from './_lib/handlers/admin-config.js';
 import handleLookups from './_lib/handlers/lookups.js';
 import handleTracking from './_lib/handlers/tracking.js';
+import handlePricing from './_lib/handlers/pricing.js';
 
 const RESOURCES = {
   'connections':      { handler: handleConnections,     auth: 'user'  },
@@ -72,6 +73,13 @@ const RESOURCES = {
   'claim-profile':    { handler: handleClaimProfile,     auth: 'none'  },
   'admin-config':     { handler: handleAdminConfig,      auth: 'admin' },
   'lookups':          { handler: handleLookups,          auth: 'none'  },
+  // pricing (Phase 9 instrument daily-price layer) is now READ-ONLY: its one
+  // action, `daily`, is a normal authenticated user read and calls
+  // requireUid() itself, which is why it stays registered as 'none' here.
+  // (The former `collect` write action and its Vercel Cron were retired —
+  // scripts/stamp-prices.js is the sole price writer.) See
+  // api/_lib/handlers/pricing.js.
+  'pricing':          { handler: handlePricing,          auth: 'none'  },
 };
 
 export default async function handler(req, res) {

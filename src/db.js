@@ -977,3 +977,76 @@ export async function lookupUser(by, value) {
   return api.ok ? api.data.user : null;
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INSTRUMENT DAILY PRICING (Phase 9)
+//
+// The frontend's single door onto the persisted instrument-level daily
+// price history (the EXISTING `instruments` master table — the same one
+// behind the new-idea form's instrument autocomplete and the admin
+// instrument browser — plus `instrument_daily_prices`; see
+// supabase/phase9_instrument_pricing.sql; written once a day by the nightly
+// batch scripts/stamp-prices.js, and served read-only by
+// api/_lib/handlers/pricing.js `action=daily`).
+//
+// The API speaks `ticker`/`assetName` here even though the master table's
+// columns are `symbol`/`name`: `ticker` is the vocabulary
+// ic_recommendations and the rest of the frontend use, and the server
+// translates once so this layer never had to change.
+//
+// This is deliberately generic, NOT Pulse-shaped: it takes tickers and
+// returns snapshots. Any feature that needs "what is this instrument worth
+// and what did it do since the last trading day" — Track Record, FeedCard's
+// return display, What You Missed's movement calculation — can call it
+// without the pricing layer changing. Nothing here calls a market-data
+// provider; the browser reads snapshots only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Latest stored daily snapshot for each of `tickers`.
+ *
+ * @param {string[]} tickers
+ * @returns {Promise<Array<{ticker,assetClass,assetName,currency,
+ *          date,close,prevClose,prevDate,changeAbs,changePct,source,sourceExchange}>>}
+ *   `date` is the trading date the close belongs to (NOT the collection
+ *   date), `prevDate` is the previous trading day, and `changePct` is a
+ *   percentage precomputed at collection time. `prevClose`/`changePct` are
+ *   null when the previous close is genuinely unknown — never faked.
+ *   Instruments are keyed on (symbol, assetClass) only — NOT exchange (this
+ *   isn't a broking app; see supabase/phase9_instrument_pricing.sql) — so
+ *   at most one row comes back per ticker/asset-class; `sourceExchange` is
+ *   included purely as provenance, not as a second identity to resolve.
+ *   Degrades to [] on any infrastructure failure, so a caller never blocks
+ *   or errors on pricing being unavailable.
+ */
+export async function getDailyPrices(tickers) {
+  const list = [...new Set((tickers || []).map(t => String(t || '').trim().toUpperCase()).filter(Boolean))];
+  if (!list.length) return [];
+  const api = await callApi(`/data?resource=pricing&action=daily&tickers=${encodeURIComponent(list.join(','))}`);
+  return api.ok ? (api.data.prices || []) : [];
+}
+
+/**
+ * Key used to look up a price snapshot by ticker — includes asset class
+ * because instrument identity is (symbol, asset_class), NOT symbol alone:
+ * an Equity and an ETF can legitimately share the same raw ticker string
+ * (e.g. a commodity ETF ticker that collides with an unrelated stock
+ * symbol), and without this, `byTicker()` would silently let one
+ * instrument's snapshot overwrite the other's, misattributing one idea's
+ * daily move to a completely different instrument.
+ */
+export function priceKey(ticker, assetClass) {
+  return `${String(ticker || '').trim().toUpperCase()}::${String(assetClass || '').trim().toUpperCase()}`;
+}
+
+/**
+ * Convenience: turn getDailyPrices() rows into a (ticker, assetClass)-keyed
+ * lookup. A plain re-key, not a collision resolver — the read API already
+ * guarantees at most one row per (ticker, asset class), so there is nothing
+ * to pick a winner between.
+ */
+export function byTicker(priceRows) {
+  const map = {};
+  (priceRows || []).forEach(row => { map[priceKey(row.ticker, row.assetClass)] = row; });
+  return map;
+}

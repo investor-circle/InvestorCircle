@@ -343,7 +343,7 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
                           <ConsensusBar cons={h.circle} width={120}/>
                         </td>
                         <td style={{padding:'13px 14px',textAlign:'center',minWidth:70}}>
-                          <StrengthDot strength={h.community.strength}/>
+                          <StrengthDot cons={h.community}/>
                         </td>
                         <td style={{padding:'13px 14px',textAlign:'center'}}>
                           <button className="iconbtn" title="Stock Insights"
