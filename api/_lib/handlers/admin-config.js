@@ -206,9 +206,9 @@ export default async function handleAdminConfig(req, res, userId) {
       // form appeared to succeed and changed nothing. It also resets
       // `is_active` to true, so re-adding a previously deactivated symbol
       // brings it back rather than writing an invisible row, and re-stamps
-      // `source='admin'`: a human curating a row the pricing collector
+      // `source='admin'`: a human curating a row the nightly price batch
       // auto-minted promotes it out of 'auto', which is the intended
-      // reconciliation path for collector-created rows.
+      // reconciliation path for auto-created rows.
       const row = await sql`
         INSERT INTO instruments (symbol, name, exchange, type, asset_class, currency, sector, source)
         VALUES (${symbol}, ${name}, ${exchange}, ${type}, ${assetClass}, ${currency}, ${sector}, 'admin')

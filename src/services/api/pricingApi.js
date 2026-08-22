@@ -7,7 +7,7 @@
  * api/_lib/handlers/pricing.js. The browser never connects to Neon, and
  * never calls a market-data provider, directly.
  *
- * Read-only by design: writing price history is the scheduled collector's
- * job, not the frontend's.
+ * Read-only by design: writing price history is the nightly batch's job
+ * (scripts/stamp-prices.js), not the frontend's.
  */
 export { getDailyPrices, byTicker } from "../../db";

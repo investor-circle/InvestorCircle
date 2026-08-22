@@ -649,12 +649,12 @@ export function InstrumentBrowser() {
         <tbody>{rows.map(r=>(<tr key={r.id} className="hoverable">
           <td className="sym">{r.symbol}</td>
           <td>{r.name}</td>
-          {/* 'auto' rows were minted by the daily pricing collector because an
+          {/* 'auto' rows were minted by the nightly price batch because an
               active idea referenced a ticker missing from the master list —
               they carry only symbol/name/asset class and are worth reviewing
               (add the real type and sector) rather than trusting as curated. */}
           <td>{r.source === "auto"
-            ? <span className="pill" title="Created automatically by the pricing collector — not yet curated">Auto</span>
+            ? <span className="pill" title="Created automatically by the nightly price batch — not yet curated">Auto</span>
             : <span className="muted small">Admin</span>}</td>
           <td><span className="pill">{r.exchange}</span></td>
           <td><span className="pill accent">{r.type}</span></td>

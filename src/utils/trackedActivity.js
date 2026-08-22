@@ -59,8 +59,8 @@
  *
  * As of Phase 9 there IS a daily price history: `instruments` /
  * `instrument_daily_prices` (supabase/phase9_instrument_pricing.sql),
- * populated once a day per instrument by the collector in
- * api/_lib/handlers/pricing.js and read via getDailyPrices() /
+ * populated once a day per instrument by the nightly batch
+ * scripts/stamp-prices.js and read via getDailyPrices() /
  * byTicker() in src/services/api/pricingApi.js. So `mode: 'yesterday'`
  * now shows a REAL delta — but only when the caller actually supplies
  * `ctx.dailyPrices`, and only for instruments the snapshot covers. With

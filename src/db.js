@@ -985,8 +985,9 @@ export async function lookupUser(by, value) {
 // price history (the EXISTING `instruments` master table — the same one
 // behind the new-idea form's instrument autocomplete and the admin
 // instrument browser — plus `instrument_daily_prices`; see
-// supabase/phase9_instrument_pricing.sql; collected by the Vercel Cron job
-// in api/_lib/handlers/pricing.js).
+// supabase/phase9_instrument_pricing.sql; written once a day by the nightly
+// batch scripts/stamp-prices.js, and served read-only by
+// api/_lib/handlers/pricing.js `action=daily`).
 //
 // The API speaks `ticker`/`assetName` here even though the master table's
 // columns are `symbol`/`name`: `ticker` is the vocabulary
