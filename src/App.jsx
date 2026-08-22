@@ -918,6 +918,14 @@ export default function App() {
               isPublic:     true,
               likes:        r.likes_count  || 0,
               commentCount: r.comment_count || 0,
+              // Recent-window engagement for Pulse's "Trending on MIC"
+              // ranking. Left undefined (not 0) when the API predates these
+              // columns, so src/utils/trending.js can tell "no recent
+              // activity" apart from "no velocity data" and degrade
+              // honestly instead of claiming a recency it can't support.
+              recentLikes:    r.recent_likes,
+              recentComments: r.recent_comments,
+              lastActivityAt: r.last_activity_at,
             }));
             setPublicFeedRecos(pubMapped);
             // Hydrate existing reactions separately — safe if recommendation_reactions doesn't exist yet
@@ -1630,7 +1638,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds}/>}
+            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}/>}
             {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
             {isInv && showDiscover && <DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}

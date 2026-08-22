@@ -39,11 +39,13 @@ import {
   trackReco as dbTrackReco
 } from "../../services/api/engagementApi";
 import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
-import { FeedCard, InvestedToggle, MakeRecoModal, ReceivedSharePopover, RecoCardModal } from "../recommendations/Recommendations";
+import { FeedCard, InvestedToggle, MakeRecoModal, ReceivedSharePopover } from "../recommendations/Recommendations";
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
 import { fetchPublicProfileInfo } from "../../utils/navigation";
 import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
+import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, rankTrending } from "../../utils/trending";
+import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor } from "../../services/api/trackingApi";
 import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
 import { getDailyPrices, byTicker } from "../../services/api/pricingApi";
 
@@ -597,40 +599,228 @@ export function WhatYouMissedWidget({ recsReceived, tracked, contacts, me, track
   );
 }
 
-/* ─── Sidebar Widget: Trending in Network (#4) ─── */
+/* ─── Sidebar Widget: Trending on MIC (#4) ────────────────────────────────
+   A discovery surface, not a leaderboard. All ranking, decay, diversity
+   and "why is this trending" reasoning lives in src/utils/trending.js —
+   see that module's header for the signals, the weights and the reasoning
+   behind them. This component only renders what rankTrending() returns.
 
-export function TrendingWidget({ recsReceived, tracked, contacts }) {
-  const [modal, setModal] = useState(null);
-  const trending = [...recsReceived].filter(r=>!r.hidden)
-    .map(r=>({...r, score:(r.likes||0)+(tracked.has(r.id)?2:0)}))
-    .filter(r=>r.score>0)
-    .sort((a,b)=>b.score-a.score)
-    .slice(0,3);
-  if(!trending.length) return null;
-  const cf=(r)=>{ const f=contacts.find(x=>x.id===r.from); return f||(r.byName?{name:r.byName,color:'#8d90ad'}:{name:'?',color:'#8d90ad'}); };
+   Two things it deliberately does differently from the widget it replaces:
+   the pool is the platform-wide public feed rather than the viewer's own
+   Pulse pool (that widget called itself "Trending on Platform" while
+   ranking the viewer's own circle), and there is no cumulative "% return
+   since recommendation" anywhere on the card — that metric belongs on the
+   idea's detail/track-record page, not on a discovery card. ── */
+
+function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedRecos, ici, isTrackingCreator, onToggleTrackCreator }) {
+  const r = item.idea;
+  const [recommenderInfo, setRecommenderInfo] = useState(null);
+  const [busyCreator, setBusyCreator] = useState(false);
+
+  useEffect(() => { if (r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo); }, [r.from]);
+
+  const cf = useMemo(() => {
+    const found = contacts.find(x => x.id === r.from);
+    if (found) return found;
+    return { name: item.creator.name, initials: initialsOf(item.creator.name), color: '#8d90ad' };
+  }, [r.from, contacts, item.creator.name]);
+
+  const username = r.from_username || recommenderInfo?.username || null;
+  const isBuy = (r.recommendation_type || r.recType || 'Buy') === 'Buy';
+  const isTracked = tracked?.has(r.id);
+  const thesisPreview = getThesisText(r.thesis);
+
+  // Same deep link every other Pulse card uses — #/investor/:username/reco/:id.
+  const goToDetail = async () => {
+    let uname = username;
+    if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
+    if (uname) window.location.hash = `#/investor/${uname}/reco/${r.id}`;
+  };
+
+  // Trending items come from the platform-wide public pool, so their local
+  // state lives in publicFeedRecos. Mirrors FreshIdeaCard's patch()/react()
+  // rather than duplicating the like logic.
+  const patch = (updates) => {
+    setPublicFeedRecos?.(rs => rs.map(x => x.id === r.id ? { ...x, ...updates } : x));
+  };
+
+  const react = (e) => {
+    e.stopPropagation();
+    if (!me?.id) return;
+    const next = r.reaction === 'like' ? 'none' : 'like';
+    let likes = r.likes || 0;
+    if (r.reaction === 'like') likes = Math.max(0, likes - 1);
+    if (next === 'like') likes++;
+    patch({ reaction: next, likes });
+    dbReactToReco(r.id, next === 'like' ? 'like' : null, next === 'like' ? { likerName: me.name || 'Someone' } : null)
+      .catch(err => console.error('[like] ✗ failed:', err?.message));
+  };
+
+  const trackCreator = async (e) => {
+    e.stopPropagation();
+    if (!r.from || busyCreator) return;
+    setBusyCreator(true);
+    try { await onToggleTrackCreator?.(r.from, !isTrackingCreator); }
+    finally { setBusyCreator(false); }
+  };
+
+  return (
+    <div
+      onClick={goToDetail}
+      style={{padding:'10px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
+      onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
+      onMouseLeave={e=>e.currentTarget.style.background=''}
+    >
+      {/* WHO — creator first, since noticing the creator is half the point */}
+      <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:6}}>
+        <div className="av" style={{width:22,height:22,background:cf.color||'var(--grad)',fontSize:9,flexShrink:0}}>
+          {cf.initials||initialsOf(cf.name)}
+        </div>
+        <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
+          <span style={{fontWeight:700,fontSize:11.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:96}}>
+            {cf.name.split(' ')[0]}
+          </span>
+          {ici && (
+            <span style={{fontSize:9,fontWeight:800,padding:'1px 5px',borderRadius:999,
+              background: ici.score>=70?'rgba(74,222,128,.15)':ici.score>=50?'rgba(124,92,252,.15)':'rgba(251,191,36,.15)',
+              color:      ici.score>=70?'#22863a':ici.score>=50?'#6d4fc7':'#b07a00'}}>
+              ICI {Math.round(ici.score)}
+            </span>
+          )}
+          {item.affiliated && (
+            <span style={{fontSize:9,fontWeight:700,color:'var(--muted)'}}>in your circle</span>
+          )}
+        </div>
+        {r.from && r.from !== me?.id && (
+          <button
+            onClick={trackCreator}
+            disabled={busyCreator}
+            title={isTrackingCreator ? 'Stop tracking this investor' : 'Track this investor'}
+            style={{flexShrink:0,fontSize:9.5,fontWeight:800,padding:'2px 8px',borderRadius:999,cursor:'pointer',
+              fontFamily:'var(--font)',transition:'.12s',opacity: busyCreator ? 0.6 : 1,
+              background: isTrackingCreator ? 'var(--accent-soft)' : 'transparent',
+              color:      isTrackingCreator ? 'var(--accent-ink)' : 'var(--accent-ink)',
+              border:     `1px solid var(--accent-line)`}}
+          >
+            {isTrackingCreator ? 'Tracking' : '+ Track'}
+          </button>
+        )}
+      </div>
+
+      {/* WHAT — instrument + direction. No cumulative % return, by design. */}
+      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4,flexWrap:'wrap'}}>
+        <span style={{fontWeight:800,fontSize:12.5,letterSpacing:'-.2px'}}>{r.assetName}</span>
+        <span style={{fontSize:9.5,fontWeight:700,padding:'1px 6px',borderRadius:5,
+          background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
+          {isBuy?'Buy':'Sell'}
+        </span>
+      </div>
+
+      {/* WHY the idea — one line of thesis */}
+      {thesisPreview && (
+        <div style={{fontSize:11,lineHeight:1.45,color:'var(--ink-soft)',marginBottom:5,
+          overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',wordBreak:'break-word'}}>
+          {thesisPreview}
+        </div>
+      )}
+
+      {/* WHY it's trending — always a real, sourced signal */}
+      <div style={{fontSize:10,fontWeight:700,color:'var(--accent-ink)',marginBottom:6,display:'flex',alignItems:'center',gap:4}}>
+        <span>{item.reason.icon}</span>{item.reason.text}
+      </div>
+
+      {/* Interactions — existing handlers, never bubbling into navigation */}
+      <div style={{display:'flex',alignItems:'center',gap:4}} onClick={e=>e.stopPropagation()}>
+        <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={react} style={{width:24,height:24}}>
+          <ThumbsUp size={11}/>
+        </button>
+        <span style={{fontSize:10,fontWeight:700,color:'var(--muted)',minWidth:10}}>{r.likes||0}</span>
+        <button className="iconbtn" title="Comment" onClick={goToDetail} style={{width:24,height:24}}><MessageSquare size={11}/></button>
+        {(r.commentCount||0)>0 && <span style={{fontSize:10,fontWeight:700,color:'var(--muted)'}}>{r.commentCount}</span>}
+        <button className={"iconbtn"+(isTracked?' on-like':'')} title={isTracked?'Remove from tracked':'Track this idea'}
+          onClick={()=>toggleTrack?.(r.id)}
+          style={isTracked?{width:24,height:24,marginLeft:'auto',background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{width:24,height:24,marginLeft:'auto'}}>
+          <Bookmark size={11}/>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function TrendingWidget({ publicFeedRecos = [], setPublicFeedRecos, contacts = [], me, tracked, toggleTrack, trackedCreatorIds, setTrackedCreatorIds, onSeeAll }) {
+  const contactIds = useMemo(() => new Set((contacts||[]).map(c=>c.id)), [contacts]);
+  const resolveCreatorName = (r) => contacts.find(x=>x.id===r.from)?.name;
+
+  // The pool is publicFeedRecos — every public recommendation on the
+  // platform — NOT the viewer's merged Pulse pool. That is the point of
+  // this widget; see src/utils/trending.js's header.
+  const results = useMemo(() => rankTrending(publicFeedRecos, {
+    contactIds,
+    trackedCreatorIds,
+    seenState: getTrendingSeenState(me?.id),
+    resolveCreatorName,
+  }), [publicFeedRecos, contactIds, trackedCreatorIds, me?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Record what we surfaced (and its engagement level at the time) so next
+  // visit shows something different unless these kept accelerating. One
+  // write per render, not per card.
+  useEffect(() => {
+    if (results.length) markTrendingSeen(me?.id, results);
+  }, [results, me?.id]);
+
+  // Real ICI for the (at most three) creators shown — one batched call,
+  // same pattern as FreshIdeasWidget. Never per-card.
+  const [iciScores, setIciScores] = useState({});
+  useEffect(() => {
+    const uids = [...new Set(results.map(x=>x.creator.id).filter(Boolean))];
+    if (!uids.length) { setIciScores({}); return; }
+    dbGetInvestorIciBatch(uids).then(rows => {
+      const scores = {};
+      rows.forEach(row => {
+        const hitPct  = row.closed > 0 ? (row.wins / row.closed * 100) : 0;
+        const riskAdj = Number(row.ret_stddev) > 0 ? Math.max(Number(row.median_ret) / Number(row.ret_stddev), 0) : 0;
+        scores[row.uid] = computeIci({
+          years_history: Number(row.years_history) || 0, total: row.total, hit_rate_pct: hitPct,
+          median_return: Number(row.median_ret) || 0, risk_adjusted_return: riskAdj, deleted_count: 0,
+        });
+      });
+      setIciScores(scores);
+    }).catch(()=>{});
+  }, [results]);
+
+  // Track/untrack the creator, reusing the existing tracking API and the
+  // creator-id Set App.jsx already maintains — no new tracking logic.
+  const toggleTrackCreator = async (creatorId, next) => {
+    setTrackedCreatorIds?.(prev => {
+      const s = new Set(prev); if (next) s.add(creatorId); else s.delete(creatorId); return s;
+    });
+    try {
+      if (next) await dbTrackInvestor(creatorId); else await dbUntrackInvestor(creatorId);
+    } catch (e) {
+      console.warn('[track creator] ✗ failed:', e?.message);
+      setTrackedCreatorIds?.(prev => {
+        const s = new Set(prev); if (next) s.delete(creatorId); else s.add(creatorId); return s;
+      });
+    }
+  };
+
+  // No candidates = nothing genuinely trending. Render nothing rather than
+  // padding the widget with ideas nobody engaged with.
+  if (!results.length) return null;
+
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <WidgetHeader icon={Flame} label="Trending on Platform"/>
-      {trending.map((r,i)=>{
-        const perf=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
-        const c=cf(r);
-        return (
-          <div key={r.id} onClick={()=>setModal(r)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
-            onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
-            onMouseLeave={e=>e.currentTarget.style.background=''}>
-            <div style={{width:22,height:22,borderRadius:'50%',background:i===0?'var(--grad)':i===1?'var(--accent-soft)':'var(--surface-2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:i===0?'#fff':'var(--accent-ink)',flexShrink:0}}>{i+1}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:600,fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.assetName}</div>
-              <div style={{fontSize:10,color:'var(--muted)',display:'flex',gap:8}}>
-                <span><ThumbsUp size={10}/> {r.likes||0}</span>
-                <span><Bookmark size={10}/> {tracked.has(r.id)?'tracked':''}</span>
-              </div>
-            </div>
-            <div style={{fontSize:12,fontWeight:700,color:perf>=0?'var(--gain)':'var(--loss)',flexShrink:0}}>{perf>=0?'+':''}{(perf*100).toFixed(1)}%</div>
-          </div>
-        );
-      })}
-      {modal && <RecoCardModal r={modal} me={null} contacts={contacts} groups={[]} setRecsReceived={()=>{}} tracked={new Set()} toggleTrack={()=>{}} onClose={()=>setModal(null)}/>}
+      <WidgetHeader icon={Flame} label="Trending on MIC" action="See all →" onAction={onSeeAll}/>
+      <div style={{padding:'8px 14px 2px',fontSize:10.5,color:'var(--muted)',lineHeight:1.4}}>
+        What the whole platform is engaging with right now
+      </div>
+      {results.map(item => (
+        <TrendingCard key={item.idea.id} item={item} contacts={contacts} me={me}
+          tracked={tracked} toggleTrack={toggleTrack} setPublicFeedRecos={setPublicFeedRecos}
+          ici={iciScores[item.creator.id]}
+          isTrackingCreator={!!trackedCreatorIds?.has(item.creator.id)}
+          onToggleTrackCreator={toggleTrackCreator}/>
+      ))}
     </div>
   );
 }
@@ -663,7 +853,7 @@ function FeedBrewingState() {
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
 
-export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds }) {
+export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds, setTrackedCreatorIds }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
@@ -897,8 +1087,20 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         {/* Widget #6 — Tracked Summary Donut */}
         <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
 
-        {/* Widget #4 — Trending on Platform */}
-        <TrendingWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts}/>
+        {/* Widget #4 — Trending on MIC.
+            Fed publicFeedRecos (the platform-wide public pool), not
+            allFeedRecos: this is a discovery surface and must be able to
+            show creators the viewer has never encountered. "See all" goes
+            to the Feed, which is where public platform ideas live — on
+            mobile that means switching tabs, on desktop the feed column
+            is already alongside, so we scroll it back to the top. */}
+        <TrendingWidget publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos}
+          contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+          trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}
+          onSeeAll={()=>{
+            if (isMobile) setMobileFeedTab('feed');
+            else window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}/>
 
         {/* ── Market Intelligence CTA — bottom of Pulse, both mobile + desktop ── */}
         <div style={{
