@@ -16,7 +16,6 @@ import {
   Loader,
   RefreshCw,
   Globe,
-  Link,
   Flame,
   BarChart2,
   Activity,
@@ -1109,48 +1108,28 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             else window.scrollTo({ top: 0, behavior: 'smooth' });
           }}/>
 
-        {/* ── Market Intelligence CTA — bottom of Pulse, both mobile + desktop ── */}
-        <div style={{
-          background:'var(--surface)', border:'1px solid var(--line)',
-          borderRadius:16, boxShadow:'var(--shadow)', padding:'16px 18px',
-          marginBottom:12,
-        }}>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-            <TrendingUp size={16} color="var(--accent-ink)"/>
-            <span style={{fontWeight:800,fontSize:13}}>Market Intelligence</span>
+        {/* ── Market Insights + Invite Friends — compact, side-by-side clickable
+             cards, bottom of Pulse, both mobile + desktop. "Market Insights"
+             matches the page's actual current name (App.jsx's nav already
+             calls it that — "Market Intelligence" was the old name, stale
+             only here). ── */}
+        <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:12}}>
+          <div onClick={()=>setPage('market_intel')}
+            style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+            <TrendingUp size={15} color="var(--accent-ink)"/>
+            <div style={{fontWeight:800,fontSize:12,marginTop:6}}>Market Insights</div>
+            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>Consensus, trends &amp; sentiment</div>
           </div>
-          <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.55,marginBottom:14}}>
-            Explore community consensus, trending stocks and sentiment across all sectors.
+          <div onClick={onShowInvite}
+            style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+            <UserPlus size={15} color="var(--accent-ink)"/>
+            <div style={{fontWeight:800,fontSize:12,marginTop:6}}>Invite Friends</div>
+            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>Share your invite link</div>
           </div>
-          <button
-            className="btn btn-pri btn-sm"
-            style={{width:'100%',justifyContent:'center'}}
-            onClick={()=>setPage('market_intel')}
-          >
-            <TrendingUp size={14}/> Explore Market Intelligence →
-          </button>
-        </div>
-
-        {/* ── Invite Friends CTA ── */}
-        <div style={{
-          background:'var(--surface)', border:'1px solid var(--line)',
-          borderRadius:16, boxShadow:'var(--shadow)', padding:'16px 18px',
-          marginBottom:12,
-        }}>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-            <UserPlus size={16} color="var(--accent-ink)"/>
-            <span style={{fontWeight:800,fontSize:13}}>Invite Friends</span>
-          </div>
-          <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.55,marginBottom:14}}>
-            Share your personal invite link. Friends who join are auto-added to your circle.
-          </div>
-          <button
-            className="btn btn-soft btn-sm"
-            style={{width:'100%',justifyContent:'center'}}
-            onClick={onShowInvite}
-          >
-            <Link size={14}/> Get My Invite Link
-          </button>
         </div>
       </div>
     </div>
