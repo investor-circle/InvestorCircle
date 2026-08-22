@@ -366,6 +366,32 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
   const inM = trackedList.filter(r=>r.priceAt&&r.price>r.priceAt).length;
   const outM = total - inM;
 
+  // "Since yesterday" in/out-of-money DELTA — how many tracked ideas flipped
+  // in or out of the money since the previous trading day's close. Computed
+  // only over tracked ideas the daily-price snapshot actually covers (real
+  // entry price + a stored previous close for that instrument); ideas
+  // outside that coverage contribute nothing to the delta rather than being
+  // guessed at, so `covered` can be smaller than `total` — that's honest,
+  // not a bug. This was the originally-specified "In the money: 6 (+2)"
+  // presentation; it fell back to a generic activity count while no daily
+  // price history existed to compute it from. That data now exists.
+  const moneyDelta = useMemo(() => {
+    if (!dailyPrices) return null;
+    let inDelta = 0, covered = 0;
+    trackedList.forEach(r => {
+      if (!(r.priceAt > 0) || !(r.price > 0)) return;
+      const snap = dailyPrices[(r.ticker || '').trim().toUpperCase()];
+      if (!snap || snap.prevClose == null) return;
+      covered++;
+      const inNow       = r.price > r.priceAt;
+      const inYesterday = snap.prevClose > r.priceAt;
+      if (inNow && !inYesterday) inDelta++;
+      else if (!inNow && inYesterday) inDelta--;
+    });
+    return covered > 0 ? { inDelta, outDelta: -inDelta, covered } : null;
+  }, [trackedList, dailyPrices]);
+  const fmtDelta = (n) => n > 0 ? ` (+${n})` : n < 0 ? ` (${n})` : '';
+
   // Snapshot current commentCount for every tracked idea once per mount/
   // refresh (one write, not per-card) so next visit's newCommentItems can
   // diff against it — same "seen state" pattern whatYouMissed.js uses.
@@ -427,28 +453,19 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
           <text x={cx} y={cy+14} textAnchor="middle" dominantBaseline="middle" style={{fontSize:8,fill:'var(--muted)'}}>tracked</text>
         </svg>
         <div style={{flex:1}}>
-          {mode==='tracking' ? (<>
-            <div onClick={()=>navTo('in')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,marginBottom:5,background:'var(--gain-soft)',transition:'.12s'}}
-              onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-              <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>In the money</span>
-              <span style={{fontSize:15,fontWeight:800,color:'var(--gain)'}}>{inM}</span>
-            </div>
-            <div onClick={()=>navTo('out')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,background:'var(--loss-soft)',transition:'.12s'}}
-              onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-              <span style={{fontSize:12,fontWeight:600,color:'var(--loss)'}}>Out of money</span>
-              <span style={{fontSize:15,fontWeight:800,color:'var(--loss)'}}>{outM}</span>
-            </div>
-          </>) : (
-            // Activity count, which as of Phase 9 includes REAL per-idea
-            // close-to-close price deltas from the instrument daily-price
-            // snapshots (see trackedActivity.js header). Still a count
-            // rather than a single blended number: these updates are not
-            // all price moves, so there is nothing honest to average.
-            <div style={{padding:'6px 10px',borderRadius:8,background:'var(--accent-soft)'}}>
-              <div style={{fontSize:15,fontWeight:800,color:'var(--accent-ink)'}}>
-                {activity.length>0 ? `${activity.length} update${activity.length>1?'s':''}` : 'No new updates'}
-              </div>
-              <div style={{fontSize:10.5,color:'var(--muted)',marginTop:1}}>since yesterday</div>
+          <div onClick={()=>navTo('in')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,marginBottom:5,background:'var(--gain-soft)',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+            <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>In the money</span>
+            <span style={{fontSize:15,fontWeight:800,color:'var(--gain)'}}>{inM}{mode==='yesterday' && moneyDelta ? fmtDelta(moneyDelta.inDelta) : ''}</span>
+          </div>
+          <div onClick={()=>navTo('out')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,background:'var(--loss-soft)',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+            <span style={{fontSize:12,fontWeight:600,color:'var(--loss)'}}>Out of money</span>
+            <span style={{fontSize:15,fontWeight:800,color:'var(--loss)'}}>{outM}{mode==='yesterday' && moneyDelta ? fmtDelta(moneyDelta.outDelta) : ''}</span>
+          </div>
+          {mode==='yesterday' && !moneyDelta && (
+            <div style={{fontSize:9.5,color:'var(--muted)',marginTop:3,paddingLeft:2}}>
+              {dailyPrices===null ? 'Loading price history…' : 'No price history yet for your tracked stocks'}
             </div>
           )}
         </div>
