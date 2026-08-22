@@ -1356,11 +1356,54 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
     && (!search||t.ticker.includes(search.toUpperCase())||t.name.toLowerCase().includes(search.toLowerCase()))
   ).sort((a,b)=>b.filteredRecos.length-a.filteredRecos.length),[tickerMap,tab,circleIds,sector,search]);
 
-  // Discovery cards
-  const strongest   = [...allTickers].sort((a,b)=>b.tabCons.strength-a.tabCons.strength)[0];
-  const emerging    = [...allTickers].filter(t=>t.filteredRecos.length>=2&&t.filteredRecos.length<=5).sort((a,b)=>b.tabCons.bullPct-a.tabCons.bullPct)[0];
-  const mostDiscussed= [...allTickers].sort((a,b)=>b.filteredRecos.length-a.filteredRecos.length)[0];
-  const mostDivided = [...allTickers].filter(t=>t.tabCons.total>=3).sort((a,b)=>Math.abs(50-b.tabCons.bullPct)-Math.abs(50-a.tabCons.bullPct))[0];
+  // Discovery cards — each one highlights a DIFFERENT signal. Already-
+  // featured tickers are excluded from later cards (`pick`) so all four
+  // don't collapse onto a single dominant stock just because the platform
+  // is early-stage and one ticker happens to lead on several axes at once;
+  // a card that genuinely has no other qualifying ticker simply doesn't
+  // render (see the `item?(...):null` guard below) rather than repeating.
+  const usedTickers = new Set();
+  const pick = (candidates) => {
+    const hit = candidates.find(t => !usedTickers.has(t.ticker));
+    if (hit) usedTickers.add(hit.ticker);
+    return hit || null;
+  };
+
+  // Directional AGREEMENT (bull% vs bear%) — how one-sided the community is.
+  const strongest = pick([...allTickers].sort((a,b)=>b.tabCons.strength-a.tabCons.strength));
+
+  // Investor CONVICTION — a distinct signal from agreement direction: how
+  // strongly the recommenders themselves rated their confidence (the
+  // conviction field each recommendation already carries), not how many
+  // agree with each other. Was previously "Biggest Conviction Increase"
+  // sorted by bullPct — the same signal as Strongest Consensus over a
+  // narrower slice, and no time-based "increase" was ever actually
+  // computed, so it near-always picked the same ticker. Renamed to match
+  // what it honestly measures.
+  const CONVICTION_SCORE = { High:3, Medium:2, Low:1 };
+  const avgConviction = (recos) => {
+    const scored = recos.map(r=>CONVICTION_SCORE[r.conviction]).filter(Boolean);
+    return scored.length ? scored.reduce((a,b)=>a+b,0)/scored.length : 0;
+  };
+  const highConviction = pick(
+    [...allTickers]
+      .map(t=>({...t, avgConv:avgConviction(t.filteredRecos)}))
+      .filter(t=>t.avgConv>0)
+      .sort((a,b)=>b.avgConv-a.avgConv || b.filteredRecos.length-a.filteredRecos.length)
+  );
+
+  // Raw DISCUSSION VOLUME — most recommendations, regardless of direction.
+  const mostDiscussed = pick([...allTickers].sort((a,b)=>b.filteredRecos.length-a.filteredRecos.length));
+
+  // Most DIVIDED — closest to a 50/50 bull/bear split among tickers with a
+  // meaningful sample. Ascending distance-from-50 puts the most-balanced
+  // (most disagreement) ticker first; the previous descending sort put the
+  // LEAST divided ticker first instead, so a unanimous 100%-bullish stock
+  // was winning "Most Divided" — the exact inverse of the label's meaning.
+  const mostDivided = pick(
+    [...allTickers].filter(t=>t.tabCons.total>=3)
+      .sort((a,b)=>Math.abs(50-a.tabCons.bullPct)-Math.abs(50-b.tabCons.bullPct))
+  );
 
   const sectors = ['all',...[...new Set(recos.map(r=>r.sector).filter(Boolean))]];
   const selData  = selectedTicker ? tickerMap[selectedTicker] : null;
@@ -1370,35 +1413,35 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
       <div className="page-head">
         <div>
           <div className="eyebrow">Intelligence</div>
-          <div className="page-title">Market Intelligence</div>
+          <div className="page-title">Market Insights</div>
           <div className="page-sub">Track market sentiment and investor conviction across stocks and sectors</div>
         </div>
         {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
       </div>
 
       {/* Discovery cards */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12,marginBottom:20}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10,marginBottom:20}}>
         {[
-          {label:'Strongest Consensus',   icon:<Target size={16}/>,      item:strongest},
-          {label:'Biggest Conviction Increase', icon:<Zap size={16}/>,  item:emerging},
-          {label:'Most Discussed',        icon:<MessageSquare size={16}/>,item:mostDiscussed},
-          {label:'Most Divided',          icon:<Activity size={16}/>,    item:mostDivided},
+          {label:'Strongest Consensus',   icon:<Target size={14}/>,      item:strongest},
+          {label:'Highest Conviction',    icon:<Zap size={14}/>,         item:highConviction},
+          {label:'Most Discussed',        icon:<MessageSquare size={14}/>,item:mostDiscussed},
+          {label:'Most Divided',          icon:<Activity size={14}/>,    item:mostDivided},
         ].map(({label,icon,item},i)=>item?(
-          <div key={i} className="card" style={{padding:'14px 16px',cursor:'pointer',minWidth:0}} onClick={()=>setSelectedTicker(item.ticker)}>
-            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+          <div key={i} className="card" style={{padding:'11px 13px',cursor:'pointer',minWidth:0}} onClick={()=>setSelectedTicker(item.ticker)}>
+            <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:5}}>
               <span style={{color:'var(--accent-ink)',opacity:.7}}>{icon}</span>
-              <span style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)'}}>{label}</span>
+              <span style={{fontSize:9.5,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)'}}>{label}</span>
             </div>
-            <div style={{fontWeight:900,fontSize:18,marginBottom:3}}>{item.ticker}</div>
-            <div style={{fontSize:12,color:item.tabCons.bullPct>=55?'var(--gain)':item.tabCons.bearPct>=55?'var(--loss)':'var(--muted)',fontWeight:700,marginBottom:6}}>
+            <div style={{fontWeight:900,fontSize:16,marginBottom:2}}>{item.ticker}</div>
+            <div style={{fontSize:11.5,color:item.tabCons.bullPct>=55?'var(--gain)':item.tabCons.bearPct>=55?'var(--loss)':'var(--muted)',fontWeight:700,marginBottom:5}}>
               {item.tabCons.bullPct>=55?'+':''}{item.tabCons.bullPct}% {item.tabCons.label}
             </div>
             <SparkLine
               data={computeTrend(item.filteredRecos)}
               color={item.tabCons.bullPct>=55?'var(--gain)':item.tabCons.bearPct>=55?'var(--loss)':'#8d90ad'}
-              height={36}
+              height={26}
             />
-            <div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>{item.filteredRecos.length} investor{item.filteredRecos.length!==1?'s':''}</div>
+            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:3}}>{item.filteredRecos.length} investor{item.filteredRecos.length!==1?'s':''}</div>
           </div>
         ):null)}
       </div>
@@ -1679,7 +1722,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           <div style={{fontSize:12,color:'var(--muted)',marginTop:16,padding:'10px 14px',background:'var(--surface-2)',borderRadius:10,lineHeight:1.6}}>
             💡 You can also arrive here by clicking the <strong>ChevronRight →</strong> or
             <strong> Full Page</strong> button on any security in
-            <strong> Portfolio Intelligence</strong> or <strong>Market Intelligence</strong>.
+            <strong> Portfolio Intelligence</strong> or <strong>Market Insights</strong>.
             Once a security is open, use the search bar above to switch to any other asset.
           </div>
         </div>
