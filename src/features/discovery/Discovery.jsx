@@ -231,6 +231,21 @@ function FreshIdeaCard({ r, contacts, me, tracked, toggleTrack, setRecsReceived,
   );
 }
 
+/* ─── Shared empty state for Pulse widgets ───────────────────────────────
+   New users hit this on every widget before their circle has any history.
+   Kept short, upbeat and action-oriented — the point is to make growing
+   your circle feel like the unlock, not to apologize for having no data. ── */
+function WidgetEmptyState({ icon, title, sub, setPage }) {
+  return (
+    <div style={{padding:'16px 16px 20px',textAlign:'center'}}>
+      <div style={{fontSize:26,marginBottom:8}}>{icon}</div>
+      <div style={{fontWeight:800,fontSize:12.5,marginBottom:4}}>{title}</div>
+      <div className="muted small" style={{lineHeight:1.55,marginBottom:12,maxWidth:230,margin:'0 auto 12px'}}>{sub}</div>
+      <button className="btn btn-soft btn-sm" onClick={()=>setPage?.('discover')}><Users size={13}/> Discover investors to follow</button>
+    </div>
+  );
+}
+
 export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onViewAll, setPage }) {
   const fresh = useMemo(() => [...recsReceived].filter(r=>!r.hidden)
     .sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5), [recsReceived]);
@@ -260,14 +275,10 @@ export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTr
       <WidgetHeader icon={Sparkles} label="Fresh Ideas from your Circle"/>
       <div style={{padding:'10px 12px 4px'}}>
         {fresh.length===0 ? (
-          <div style={{padding:'14px 4px 16px',textAlign:'center'}}>
-            <div style={{fontSize:24,marginBottom:8}}>🌱</div>
-            <div style={{fontWeight:700,fontSize:12.5,marginBottom:4}}>Your circle's ideas will land here</div>
-            <div className="muted small" style={{lineHeight:1.5,marginBottom:10}}>
-              As soon as someone in your circle posts a recommendation, it'll show up here first.
-            </div>
-            <button className="btn btn-soft btn-sm" onClick={()=>setPage?.('network')}><Users size={13}/> Grow your circle</button>
-          </div>
+          <WidgetEmptyState icon="🌱" setPage={setPage}
+            title="Fresh ideas start with your Circle"
+            sub="Follow investors you trust and their next call lands here first — before anyone else sees it."
+          />
         ) : (<>
           {fresh.map(r => (
             <FreshIdeaCard key={r.id} r={r} contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
@@ -406,7 +417,15 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
     dailyPrices,
   }), [trackedList, recsReceived, mode, me?.id, dailyPrices]);
 
-  if(total===0) return null;
+  if (total===0) return (
+    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
+      <WidgetHeader icon={TrendingUp} label="My Tracked"/>
+      <WidgetEmptyState icon="🎯" setPage={setPage}
+        title="Track ideas, watch them move"
+        sub="Tap the bookmark on any idea to track it — its daily moves show up right here, every time you visit."
+      />
+    </div>
+  );
 
   // SVG donut — 'tracking' mode is a 2-segment ring (in/out of money vs
   // entry price); 'yesterday' mode is a 3-segment ring (up/down since the
@@ -566,7 +585,7 @@ function WhatYouMissedCard({ item }) {
   );
 }
 
-export function WhatYouMissedWidget({ recsReceived, tracked, contacts, me, trackedCreatorIds }) {
+export function WhatYouMissedWidget({ recsReceived, tracked, contacts, me, trackedCreatorIds, setPage }) {
   const contactIds = useMemo(() => new Set((contacts||[]).map(c=>c.id)), [contacts]);
   const resolveCreatorName = (r) => contacts.find(x=>x.id===r.from)?.name;
 
@@ -585,7 +604,15 @@ export function WhatYouMissedWidget({ recsReceived, tracked, contacts, me, track
     if (results.length) markSeen(me?.id, results.map(x=>x.idea.id));
   }, [results, me?.id]);
 
-  if (!results.length) return null;
+  if (!results.length) return (
+    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
+      <WidgetHeader icon={Zap} label="What You Missed"/>
+      <WidgetEmptyState icon="⚡" setPage={setPage}
+        title="Never miss a big move"
+        sub="Once your Circle's ideas start moving, the biggest swings will surface here first."
+      />
+    </div>
+  );
 
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
@@ -746,7 +773,7 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
   );
 }
 
-export function TrendingWidget({ publicFeedRecos = [], setPublicFeedRecos, contacts = [], me, tracked, toggleTrack, trackedCreatorIds, setTrackedCreatorIds, onSeeAll }) {
+export function TrendingWidget({ publicFeedRecos = [], setPublicFeedRecos, contacts = [], me, tracked, toggleTrack, trackedCreatorIds, setTrackedCreatorIds, onSeeAll, setPage }) {
   const contactIds = useMemo(() => new Set((contacts||[]).map(c=>c.id)), [contacts]);
   const resolveCreatorName = (r) => contacts.find(x=>x.id===r.from)?.name;
 
@@ -803,9 +830,16 @@ export function TrendingWidget({ publicFeedRecos = [], setPublicFeedRecos, conta
     }
   };
 
-  // No candidates = nothing genuinely trending. Render nothing rather than
-  // padding the widget with ideas nobody engaged with.
-  if (!results.length) return null;
+  // No candidates = nothing genuinely trending yet.
+  if (!results.length) return (
+    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
+      <WidgetHeader icon={Flame} label="Trending on MIC"/>
+      <WidgetEmptyState icon="🔥" setPage={setPage}
+        title="The buzz is just getting started"
+        sub="As more investors join in and engage, the most talked-about calls on MIC will show up here."
+      />
+    </div>
+  );
 
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
@@ -863,7 +897,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
-  const [mobileFeedTab,  setMobileFeedTab]  = useState('feed'); // 'feed' | 'pulse'
+  const [mobileFeedTab,  setMobileFeedTab]  = useState('pulse'); // 'feed' | 'pulse' — Pulse is the default home experience
   // Merged pool for Pulse widgets: direct deliveries + public platform recommendations
   // Deduped so items already in recsReceived don't appear twice.
   const allFeedRecos = useMemo(() => {
@@ -962,9 +996,12 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
           display:'flex', alignItems:'center', justifyContent:'space-between',
           padding:'10px 16px 0', gap:10,
         }}>
-          <span style={{fontSize:17,fontWeight:800,letterSpacing:'-.3px',lineHeight:1.2}}>
-            Welcome back, {firstName}! 👋
-          </span>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:17,fontWeight:800,letterSpacing:'-.3px',lineHeight:1.2}}>
+              Welcome back, {firstName}! 👋
+            </div>
+            <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>Your daily investment dose</div>
+          </div>
           <button
             className="btn btn-pri btn-sm"
             onClick={()=>setShowNewReco(true)}
@@ -973,11 +1010,11 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             <Lightbulb size={14}/> Recommend
           </button>
         </div>
-        {/* Row 2 — Feed / Pulse tab switcher */}
+        {/* Row 2 — Pulse / Feed tab switcher — Pulse first/left, the default home experience */}
         <div role="tablist" style={{display:'flex', gap:8, padding:'8px 16px 8px'}}>
           {[
+            { id:'pulse', label:'Pulse', sub:'Your daily investment dose' },
             { id:'feed',  label:'Feed',  sub:'Ideas from your network' },
-            { id:'pulse', label:'Pulse', sub:'Your tracking & activity' },
           ].map(({id, label, sub})=>{
             const isActive = mobileFeedTab === id;
             return (
@@ -1015,14 +1052,19 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         </div>
       </div>
     )}
-    {/* Spacer = fixed header height (10+32+8+48+8+2 = 108px, +4 buffer = 112px).
-        Prevents the first feed card from hiding underneath the fixed header. */}
-    {isMobile && !showNewReco && <div aria-hidden="true" style={{height:112,flexShrink:0}}/>}
+    {/* Spacer = fixed header height. Grew by ~18px vs. the old single-line
+        greeting once the "Your daily investment dose" subtitle was added
+        below it — bumped to 130px (was 112px) so it still reserves the
+        exact height in the flow and nothing hides underneath. */}
+    {isMobile && !showNewReco && <div aria-hidden="true" style={{height:130,flexShrink:0}}/>}
 
     {/* ── Desktop: normal in-flow header ── */}
     {!isMobile && (
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
-        <span style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>Welcome back, {firstName}! 👋</span>
+        <div>
+          <div style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>Welcome back, {firstName}! 👋</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginTop:2}}>Your daily investment dose</div>
+        </div>
         <button className="btn btn-pri btn-sm" onClick={()=>setShowNewReco(true)} style={{marginLeft:'auto'}}>
           <Lightbulb size={14}/> Recommend an idea
         </button>
@@ -1030,13 +1072,73 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
     )}
     <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
 
-      {/* ── Feed column: JS-controlled visibility on mobile ── */}
+      {/* ── Pulse column (left, the default home experience): desktop = fixed
+           252px aside; mobile = full-width, shown only on the Pulse tab.
+           Rendered first so it's the left column on desktop. Widget order:
+           Fresh Ideas, Trending, What You Missed, My Tracked. ── */}
+      <div style={{
+        width: isMobile ? '100%' : 252,
+        flexShrink: isMobile ? 1 : 0,
+        display: isMobile && mobileFeedTab==='feed' ? 'none' : undefined,
+      }}>
+        {/* Widget #1 — Fresh Ideas (network + public platform) */}
+        <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+          setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
+          setPage={setPage}
+          onViewAll={()=>{ if (isMobile) setMobileFeedTab('feed'); }}/>
+
+        {/* Widget #2 — Trending on MIC.
+            Fed publicFeedRecos (the platform-wide public pool), not
+            allFeedRecos: this is a discovery surface and must be able to
+            show creators the viewer has never encountered. "See all" goes
+            to the Feed, which is where public platform ideas live — on
+            mobile that means switching tabs, on desktop the feed column
+            is now on the right, so we scroll it back to the top. */}
+        <TrendingWidget publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos}
+          contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+          trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}
+          setPage={setPage}
+          onSeeAll={()=>{
+            if (isMobile) setMobileFeedTab('feed');
+            else window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}/>
+
+        {/* Widget #3 — What You Missed */}
+        <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
+
+        {/* Widget #4 — Tracked Summary Donut (My Tracked) */}
+        <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
+
+        {/* ── Market Insights + Invite Friends — compact, side-by-side clickable
+             cards, bottom of Pulse, both mobile + desktop. "Market Insights"
+             matches the page's actual current name (App.jsx's nav already
+             calls it that — "Market Intelligence" was the old name, stale
+             only here). ── */}
+        <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:12}}>
+          <div onClick={()=>setPage('market_intel')}
+            style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+            <TrendingUp size={15} color="var(--accent-ink)"/>
+            <div style={{fontWeight:800,fontSize:12,marginTop:6}}>Market Insights</div>
+            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>Consensus, trends &amp; sentiment</div>
+          </div>
+          <div onClick={onShowInvite}
+            style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+            <UserPlus size={15} color="var(--accent-ink)"/>
+            <div style={{fontWeight:800,fontSize:12,marginTop:6}}>Invite Friends</div>
+            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>Share your invite link</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Feed column (right): JS-controlled visibility on mobile ── */}
       <div style={{
         flex:1, minWidth:0,
         display: isMobile && mobileFeedTab==='pulse' ? 'none' : undefined,
       }}>
-
-        {/* Feed cards */}
 
         {/* Feed cards — searched via top nav bar */}
         {feedLoading && !globalSearch
@@ -1073,64 +1175,6 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
                 </div>
               )}
             </>)}
-      </div>
-
-      {/* ── Pulse column: desktop = fixed 252px aside; mobile = full-width, shown only on Pulse tab ── */}
-      <div style={{
-        width: isMobile ? '100%' : 252,
-        flexShrink: isMobile ? 1 : 0,
-        display: isMobile && mobileFeedTab==='feed' ? 'none' : undefined,
-      }}>
-        {/* Widget #7 — Fresh Ideas (network + public platform) */}
-        <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
-          setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
-          setPage={setPage}
-          onViewAll={()=>{ if (isMobile) setMobileFeedTab('feed'); }}/>
-
-        {/* Widget #5 — What You Missed */}
-        <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds}/>
-
-        {/* Widget #6 — Tracked Summary Donut */}
-        <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
-
-        {/* Widget #4 — Trending on MIC.
-            Fed publicFeedRecos (the platform-wide public pool), not
-            allFeedRecos: this is a discovery surface and must be able to
-            show creators the viewer has never encountered. "See all" goes
-            to the Feed, which is where public platform ideas live — on
-            mobile that means switching tabs, on desktop the feed column
-            is already alongside, so we scroll it back to the top. */}
-        <TrendingWidget publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos}
-          contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
-          trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}
-          onSeeAll={()=>{
-            if (isMobile) setMobileFeedTab('feed');
-            else window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}/>
-
-        {/* ── Market Insights + Invite Friends — compact, side-by-side clickable
-             cards, bottom of Pulse, both mobile + desktop. "Market Insights"
-             matches the page's actual current name (App.jsx's nav already
-             calls it that — "Market Intelligence" was the old name, stale
-             only here). ── */}
-        <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:12}}>
-          <div onClick={()=>setPage('market_intel')}
-            style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
-            onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
-            onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
-            <TrendingUp size={15} color="var(--accent-ink)"/>
-            <div style={{fontWeight:800,fontSize:12,marginTop:6}}>Market Insights</div>
-            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>Consensus, trends &amp; sentiment</div>
-          </div>
-          <div onClick={onShowInvite}
-            style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
-            onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
-            onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
-            <UserPlus size={15} color="var(--accent-ink)"/>
-            <div style={{fontWeight:800,fontSize:12,marginTop:6}}>Invite Friends</div>
-            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>Share your invite link</div>
-          </div>
-        </div>
       </div>
     </div>
 
