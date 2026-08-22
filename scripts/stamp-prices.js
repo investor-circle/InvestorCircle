@@ -292,15 +292,21 @@ async function resolveInstruments(db, universe) {
  * price forward or inventing one.
  */
 async function resolveInstrumentPrice(entry, bhavMap) {
-  // Priority 1: today's official NSE settlement price.
-  if (bhavMap && bhavMap[entry.symbol] != null) {
+  const exchanges = exchangesFor(entry.exchange);
+
+  // Priority 1: today's official NSE settlement price — but only when NSE is
+  // actually this instrument's preferred/first exchange. Bhavcopy is NSE-only
+  // data; using it unconditionally would silently override a BSE-preferred
+  // instrument's exchange preference whenever the symbol also happens to be
+  // NSE-listed, defeating exchangesFor()'s ordering. Mirrors the same guard
+  // resolvePrice() (Tasks 0/2/3) already applies via `exchange !== 'BSE'`.
+  if (bhavMap && exchanges[0] === 'NSE' && bhavMap[entry.symbol] != null) {
     return {
       date: TODAY_ISO, close: +bhavMap[entry.symbol].toFixed(2), currency: 'INR',
       source: 'nse_bhavcopy', sourceExchange: 'NSE', prev: null,
     };
   }
 
-  const exchanges = exchangesFor(entry.exchange);
   let lastErr;
 
   // Priority 2: Yahoo series form — one request yields the latest close AND
