@@ -46,7 +46,7 @@ import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMiss
 import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, rankTrending } from "../../utils/trending";
 import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor } from "../../services/api/trackingApi";
 import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
-import { getDailyPrices, byTicker } from "../../services/api/pricingApi";
+import { getDailyPrices, byTicker, priceKey } from "../../services/api/pricingApi";
 
 // A recommendation counts as "fresh" while it's inside this window — same
 // created_at ordering the rest of the feed already uses (r.date), just
@@ -393,7 +393,7 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
     if (!dailyPrices) return null;
     let up = 0, down = 0, noData = 0;
     trackedList.forEach(r => {
-      const snap = dailyPrices[(r.ticker || '').trim().toUpperCase()];
+      const snap = dailyPrices[priceKey(r.ticker, r.assetClass)];
       const pct = snap?.changePct;
       if (pct == null)   noData++;
       else if (pct > 0)  up++;

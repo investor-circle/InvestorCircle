@@ -321,6 +321,7 @@ export default async function handleLookups(req, res) {
           FROM ic_recommendations r
           LEFT JOIN user_profiles up ON r.recommender_id = up.id
           WHERE r.ticker = ${ticker}
+            AND r.is_public = true
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
           ORDER BY r.created_at DESC

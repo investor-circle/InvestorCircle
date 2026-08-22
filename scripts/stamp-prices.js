@@ -524,14 +524,21 @@ async function main() {
     WHERE reco_price IS NULL OR reco_price = 0
   `);
   console.log(`  Found ${unpriced.length} recommendations without entry price`);
+  // Fetches run with the same bounded concurrency Task 1 uses (FETCH_CONCURRENCY)
+  // rather than one-at-a-time — a backlog of unpriced recs (e.g. after an
+  // outage) could otherwise run each provider round-trip sequentially and risk
+  // exceeding the job's 15-minute GitHub Actions timeout before later tasks
+  // (including Task 1) even start. Writes stay sequential, same as Task 1.
+  const rpSettled = await mapWithConcurrency(unpriced, FETCH_CONCURRENCY, rec => {
+    const isoDate = asIsoDate(rec.reco_date);
+    const dateBhav = (isoDate === TODAY_ISO) ? bhavMap : null; // bhavcopy for today's recs, Yahoo for historical
+    return resolvePrice(rec.ticker, rec.exchange || 'NSE', isoDate, dateBhav);
+  });
   let rpStamped = 0;
-  for (const rec of unpriced) {
+  for (const { item: rec, value: result, error } of rpSettled) {
+    if (error) { console.warn(`  Failed ${rec.ticker}: ${error.message}`); continue; }
+    if (!result) { console.warn(`  No price found for ${rec.ticker} on ${asIsoDate(rec.reco_date)}`); continue; }
     try {
-      const isoDate = asIsoDate(rec.reco_date);
-      // Use bhavcopy for today's recs, Yahoo for historical
-      const dateBhav = (isoDate === TODAY_ISO) ? bhavMap : null;
-      const result = await resolvePrice(rec.ticker, rec.exchange || 'NSE', isoDate, dateBhav);
-      if (!result) { console.warn(`  No price found for ${rec.ticker} on ${isoDate}`); continue; }
       await db.query(
         `UPDATE ic_recommendations
          SET reco_price = $1, price_source = $2, price_stamped_at = now(), updated_at = now()
@@ -555,12 +562,13 @@ async function main() {
     WHERE NOT exit_signal AND target_date = CURRENT_DATE AND expiry_price IS NULL
   `);
   console.log(`  Found ${expiring.length} expiring today`);
+  const expSettled = await mapWithConcurrency(expiring, FETCH_CONCURRENCY,
+    rec => resolvePrice(rec.ticker, rec.exchange || 'NSE', asIsoDate(rec.target_date), bhavMap));
   let expStamped = 0;
-  for (const rec of expiring) {
+  for (const { item: rec, value: result, error } of expSettled) {
+    if (error) { console.warn(`  Failed expiry ${rec.ticker}: ${error.message}`); continue; }
+    if (!result) continue;
     try {
-      const isoDate = asIsoDate(rec.target_date);
-      const result  = await resolvePrice(rec.ticker, rec.exchange || 'NSE', isoDate, bhavMap);
-      if (!result) continue;
       await db.query(
         'UPDATE ic_recommendations SET expiry_price=$1, expiry_price_source=$2, expiry_price_stamped_at=now(), updated_at=now() WHERE id=$3',
         [result.price, result.source, rec.id]
@@ -577,12 +585,13 @@ async function main() {
     WHERE exit_signal = true AND exit_price IS NULL AND exit_date IS NOT NULL
   `);
   console.log(`  Found ${exitsMissing.length} needing exit price`);
+  const exitSettled = await mapWithConcurrency(exitsMissing, FETCH_CONCURRENCY,
+    rec => resolvePrice(rec.ticker, rec.exchange || 'NSE', asIsoDate(rec.exit_date), null));
   let exitStamped = 0;
-  for (const rec of exitsMissing) {
+  for (const { item: rec, value: result, error } of exitSettled) {
+    if (error) { console.warn(`  Failed exit stamp ${rec.ticker}: ${error.message}`); continue; }
+    if (!result) continue;
     try {
-      const isoDate = asIsoDate(rec.exit_date);
-      const result  = await resolvePrice(rec.ticker, rec.exchange || 'NSE', isoDate, null);
-      if (!result) continue;
       await db.query(
         'UPDATE ic_recommendations SET exit_price=$1, exit_price_source=$2, exit_price_stamped_at=now(), updated_at=now() WHERE id=$3',
         [result.price, result.source, rec.id]

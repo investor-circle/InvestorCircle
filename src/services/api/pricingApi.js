@@ -10,4 +10,4 @@
  * Read-only by design: writing price history is the nightly batch's job
  * (scripts/stamp-prices.js), not the frontend's.
  */
-export { getDailyPrices, byTicker } from "../../db";
+export { getDailyPrices, byTicker, priceKey } from "../../db";

@@ -1027,14 +1027,26 @@ export async function getDailyPrices(tickers) {
 }
 
 /**
- * Convenience: turn getDailyPrices() rows into a ticker-keyed lookup.
- *
- * A plain re-key, not a collision resolver — the read API already
- * guarantees at most one row per ticker (per asset class), so there is
- * nothing to pick a winner between.
+ * Key used to look up a price snapshot by ticker — includes asset class
+ * because instrument identity is (symbol, asset_class), NOT symbol alone:
+ * an Equity and an ETF can legitimately share the same raw ticker string
+ * (e.g. a commodity ETF ticker that collides with an unrelated stock
+ * symbol), and without this, `byTicker()` would silently let one
+ * instrument's snapshot overwrite the other's, misattributing one idea's
+ * daily move to a completely different instrument.
+ */
+export function priceKey(ticker, assetClass) {
+  return `${String(ticker || '').trim().toUpperCase()}::${String(assetClass || '').trim().toUpperCase()}`;
+}
+
+/**
+ * Convenience: turn getDailyPrices() rows into a (ticker, assetClass)-keyed
+ * lookup. A plain re-key, not a collision resolver — the read API already
+ * guarantees at most one row per (ticker, asset class), so there is nothing
+ * to pick a winner between.
  */
 export function byTicker(priceRows) {
   const map = {};
-  (priceRows || []).forEach(row => { map[row.ticker] = row; });
+  (priceRows || []).forEach(row => { map[priceKey(row.ticker, row.assetClass)] = row; });
   return map;
 }

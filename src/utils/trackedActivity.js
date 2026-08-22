@@ -152,8 +152,13 @@ function dailyMoverItems(trackedRecos, dailyPrices) {
   const seen = new Set();
   const items = [];
   for (const r of trackedRecos) {
-    const key = (r.ticker || '').trim().toUpperCase();
-    if (!key || seen.has(r.id)) continue;
+    const tickerKey = (r.ticker || '').trim().toUpperCase();
+    if (!tickerKey || seen.has(r.id)) continue;
+    // Must match src/db.js's priceKey(ticker, assetClass) exactly — instrument
+    // identity is (symbol, asset_class), not symbol alone, so an Equity and an
+    // ETF can share a raw ticker string. Keying on ticker alone would let one
+    // instrument's snapshot get misattributed to the other's tracked idea.
+    const key = `${tickerKey}::${String(r.assetClass || '').trim().toUpperCase()}`;
     const snap = dailyPrices[key];
     if (!snap || snap.changePct == null || snap.prevClose == null) continue;
     const retPct = snap.changePct / 100; // API reports a percentage; keep this module's fraction convention

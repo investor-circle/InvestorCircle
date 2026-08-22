@@ -34,7 +34,7 @@ import {
   Image as ImageIcon
 } from "lucide-react";
 import { getPreviousClose, getTodayClose, sourceName } from "../../services/marketData";
-import { getDailyPrices, byTicker } from "../../services/api/pricingApi";
+import { getDailyPrices, byTicker, priceKey } from "../../services/api/pricingApi";
 import { track } from "../../firebase";
 import {
   commentOnReco as dbCommentOnReco,
@@ -186,7 +186,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
       .catch(() => {}); // pricing unavailable degrades to '—' cells, not an error
     return () => { cancelled = true; };
   }, [trackedTickerKey]);
-  const dailyChangeFor = (r) => dailyPrices?.[(r.ticker||'').trim().toUpperCase()]?.changePct ?? null;
+  const dailyChangeFor = (r) => dailyPrices?.[priceKey(r.ticker, r.assetClass)]?.changePct ?? null;
 
   // Patch invested status locally + persist to recommendation_tracking
   const patchInvested=(r, updates)=>{
