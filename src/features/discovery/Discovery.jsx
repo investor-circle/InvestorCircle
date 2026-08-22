@@ -1825,8 +1825,8 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
 
   return (
     <>
-      <div className="page-head" style={{alignItems:'flex-start'}}>
-        <div style={{flex:1}}>
+      <div className="page-head" style={{alignItems:'flex-start',flexWrap:'wrap',gap:16}}>
+        <div style={{flex:1,minWidth:200}}>
           <div className="eyebrow">Stock Insights</div>
           <div style={{display:'flex',alignItems:'baseline',gap:14,flexWrap:'wrap'}}>
             <div className="page-title">{ticker}</div>
@@ -1834,27 +1834,29 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           </div>
           <div className="page-sub">{activeRecos.length} active recommendation{activeRecos.length!==1?'s':''} · {investors.length} investor{investors.length!==1?'s':''} tracking</div>
         </div>
+
+        {/* ── Switch-security search — compact, tucked into the header's empty space ── */}
+        <div style={{
+          display:'flex', alignItems:'center', gap:8,
+          background:'var(--surface-2)', border:'1px solid var(--line)',
+          borderRadius:10, padding:'4px 8px 4px 10px',
+          width: isMobile ? '100%' : 260, flexShrink:0,
+        }}>
+          <Search size={13} color="var(--muted)" style={{flexShrink:0}}/>
+          <div style={{flex:1,fontSize:12}}>
+            <InstrumentSearch
+              onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
+              placeholder={`Switch security…`}
+            />
+          </div>
+        </div>
+
         {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
       </div>
 
-      {/* ── Switch-security search — compact bar for navigating to another asset ── */}
-      <div style={{
-        display:'flex', alignItems:'center', gap:10,
-        background:'var(--surface-2)', border:'1px solid var(--line)',
-        borderRadius:12, padding:'4px 8px 4px 12px', marginBottom:20,
-        maxWidth: isMobile ? '100%' : 420,
-      }}>
-        <Search size={14} color="var(--muted)" style={{flexShrink:0}}/>
-        <div style={{flex:1,fontSize:13}}>
-          <InstrumentSearch
-            onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
-            placeholder={`Switch security — type any stock or ETF…`}
-          />
-        </div>
-      </div>
       {/* ── Tabs — segmented control, styled to be unmistakably a multi-tab bar ── */}
       <div style={{
-        display:'flex', gap:4, marginBottom:20, overflowX:'auto', WebkitOverflowScrolling:'touch',
+        display:'flex', gap:4, marginTop:20, marginBottom:20, overflowX:'auto', WebkitOverflowScrolling:'touch',
         background:'var(--surface-2)', border:'1px solid var(--line)', borderRadius:14, padding:5,
       }}>
         {[
