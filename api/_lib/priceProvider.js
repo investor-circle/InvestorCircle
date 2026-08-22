@@ -3,9 +3,11 @@
  *
  * The ONE place in this repo that talks to an external pricing provider.
  * Extracted verbatim from api/price.js (which now imports from here) so the
- * scheduled instrument-pricing collector in
- * api/_lib/handlers/pricing.js can reuse exactly the same provider chain
- * and fallback order instead of growing a second, divergent copy.
+ * nightly instrument-pricing batch, scripts/stamp-prices.js, can reuse
+ * exactly the same provider chain and fallback order instead of growing a
+ * second, divergent copy. That script is a standalone node process run by
+ * GitHub Actions: nothing in this module touches a Vercel request/response
+ * object, so a plain relative import from scripts/ works.
  *
  * Files under api/_lib/ are excluded from Vercel's file-system routing and
  * do not count against the Hobby plan's 12-function cap (see api/data.js).
@@ -22,12 +24,12 @@
  * KNOWN PROVIDER LIMITATIONS (documented, not papered over):
  *   - Yahoo's chart endpoint is ONE SYMBOL PER REQUEST. There is no batch
  *     quote endpoint we can use without a crumb/cookie handshake, so the
- *     collector fans out with a bounded concurrency pool rather than a
- *     single batch call. `fetchDailySeries` mitigates this by returning
- *     several trading days from that one request, so the collector never
- *     needs a second call just to learn the previous close.
+ *     batch fans out with a bounded concurrency pool rather than a single
+ *     batch call. `fetchDailySeries` mitigates this by returning several
+ *     trading days from that one request, so the batch never needs a second
+ *     call just to learn the previous close.
  *   - Yahoo is unofficial and rate-limits aggressively under burst. The
- *     collector's concurrency limit exists for that reason.
+ *     batch's concurrency limit exists for that reason.
  *   - Neither provider covers every Indian mutual-fund NAV. An instrument
  *     with no provider data yields NO row rather than a fabricated one.
  */
@@ -173,8 +175,9 @@ export async function fetchFromTwelveData(symbol, exchange, date, apiKey) {
 /**
  * The shared provider chain: try Yahoo, then Twelve Data. Returns the first
  * result with a positive price, or throws the last provider error.
- * Used by api/price.js (the browser-facing proxy) and as the collector's
- * single-day fallback when a series fetch fails.
+ * Used by api/price.js (the browser-facing proxy), by the nightly batch's
+ * historical single-date lookups, and as its single-day fallback when a
+ * series fetch fails.
  */
 export async function fetchPrice(symbol, exchange = 'NSE', date) {
   const sym = String(symbol).toUpperCase();
@@ -198,9 +201,9 @@ export async function fetchPrice(symbol, exchange = 'NSE', date) {
 
 /**
  * Run `worker` over `items` with at most `limit` in flight at once.
- * Yahoo rate-limits bursts, and a serverless function has a wall-clock
- * budget — this is the middle ground between a serial loop (too slow for a
- * few hundred instruments) and Promise.all over everything (throttled).
+ * Yahoo rate-limits bursts, and the nightly job has a wall-clock budget —
+ * this is the middle ground between a serial loop (too slow for a few
+ * hundred instruments) and Promise.all over everything (throttled).
  * Never rejects: every entry resolves to { item, value } or { item, error }.
  */
 export async function mapWithConcurrency(items, limit, worker) {

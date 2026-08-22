@@ -15,8 +15,8 @@
  *   { price, currency, date, source, symbol, exchange }
  *
  * The provider chain itself now lives in api/_lib/priceProvider.js so the
- * scheduled instrument-pricing collector (api/_lib/handlers/pricing.js)
- * shares exactly one implementation with this proxy. To swap providers,
+ * nightly price batch (scripts/stamp-prices.js) shares exactly one
+ * implementation with this proxy. To swap providers,
  * edit priceProvider.js only — nothing in the app changes.
  *
  * This endpoint remains the ON-DEMAND path used at the two moments a fresh
