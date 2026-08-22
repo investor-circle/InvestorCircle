@@ -1852,48 +1852,28 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           />
         </div>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12,marginBottom:20}}>
-        {[['Community Consensus',community,'All Investors on MIC'],['My Circle Consensus',circle,`${circleIds.length} connections`]].map(([label,cons,sub])=>(
-          <div key={label} className="card" style={{padding:'20px 22px'}}>
-            <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:12}}>{label}</div>
-            {cons.total>0?(
-              <>
-                <div style={{fontSize:32,fontWeight:900,color:cons.bullPct>=55?'var(--gain)':cons.bearPct>=55?'var(--loss)':'var(--muted)',marginBottom:4}}>{cons.bullPct}%<span style={{fontSize:16,fontWeight:400,color:'var(--muted)'}}> Bullish</span></div>
-                <ConsensusBar cons={cons} width={'100%'}/>
-                <div style={{fontSize:12,color:'var(--muted)',marginTop:8}}>{sub}</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
-                  {[['Buy',cons.bull,'var(--gain)'],['Neutral',cons.neutral,'var(--muted)'],['Sell',cons.bear,'var(--loss)']].map(([l,v,c])=>(
-                    <div key={l} style={{textAlign:'center',padding:'8px',background:'var(--surface-2)',borderRadius:8}}>
-                      <div style={{fontSize:18,fontWeight:900,color:c}}>{v}</div>
-                      <div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>{l}</div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ):<div style={{fontSize:13,color:'var(--muted)',paddingTop:8}}>{sub==='All Investors on MIC'?'No recommendations on platform yet':'None of your connections have recommended this'}</div>}
-          </div>
-        ))}
-      </div>
-
-      {/* Tabs */}
-      {/* ── Tabs — prominent pill bar with icons ── */}
-      <div style={{display:'flex',gap:6,marginBottom:20,overflowX:'auto',padding:'2px 0',WebkitOverflowScrolling:'touch'}}>
+      {/* ── Tabs — segmented control, styled to be unmistakably a multi-tab bar ── */}
+      <div style={{
+        display:'flex', gap:4, marginBottom:20, overflowX:'auto', WebkitOverflowScrolling:'touch',
+        background:'var(--surface-2)', border:'1px solid var(--line)', borderRadius:14, padding:5,
+      }}>
         {[
-          ['consensus', 'Consensus',    <Activity size={14}/> ],
-          ['timeline',  'Rec. History', <Clock size={14}/>    ],
-          ['investors', 'Investors',    <Users size={14}/>    ],
-          ['stats',     'Statistics',   <BarChart2 size={14}/>],
-          ['ai',        'AI Summary',   <Sparkles size={14}/>],
+          ['consensus', 'Consensus',    <Activity size={15}/> ],
+          ['timeline',  'Rec. History', <Clock size={15}/>    ],
+          ['investors', 'Investors',    <Users size={15}/>    ],
+          ['stats',     'Statistics',   <BarChart2 size={15}/>],
+          ['ai',        'AI Summary',   <Sparkles size={15}/>],
         ].map(([v,l,icon])=>(
           <button key={v}
             onClick={()=>{ setTab(v); if(v==='ai') buildAiSummary(); }}
             style={{
-              display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap',
-              padding:'8px 14px', borderRadius:10, border:'none', cursor:'pointer',
-              fontSize:13, fontWeight:tab===v?700:500,
-              background: tab===v ? 'var(--accent)' : 'var(--surface-2)',
-              color:       tab===v ? '#fff'          : 'var(--muted)',
-              boxShadow:   tab===v ? '0 2px 8px rgba(109,93,245,.3)' : 'none',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:7, whiteSpace:'nowrap',
+              flex: isMobile ? 'none' : 1,
+              padding:'11px 18px', borderRadius:10, border:'none', cursor:'pointer',
+              fontSize:14, fontWeight:tab===v?800:600,
+              background: tab===v ? 'var(--accent)' : 'transparent',
+              color:       tab===v ? '#fff'          : 'var(--ink-soft)',
+              boxShadow:   tab===v ? '0 3px 10px rgba(109,93,245,.35)' : 'none',
               transition:'background .15s,color .15s,box-shadow .15s',
               flexShrink: 0,
             }}
