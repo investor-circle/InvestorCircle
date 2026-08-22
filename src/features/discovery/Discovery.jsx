@@ -40,7 +40,7 @@ import {
 import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
 import { FeedCard, InvestedToggle, MakeRecoModal, ReceivedSharePopover } from "../recommendations/Recommendations";
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
-import { computeConsensus, computeTrend, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
+import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
 import { fetchPublicProfileInfo, openProfile } from "../../utils/navigation";
 import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
 import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, rankTrending } from "../../utils/trending";
@@ -1557,7 +1557,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                       <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{t.filteredRecos.length} investor{t.filteredRecos.length!==1?'s':''}</div>
                       <div style={{display:'flex',alignItems:'center',gap:4,marginTop:4,justifyContent:'flex-end'}} title={`Consensus strength: ${t.tabCons.strength}/100`}>
                         <div style={{width:38,height:5,borderRadius:3,background:'var(--line)',overflow:'hidden'}}>
-                          <div style={{height:'100%',width:`${t.tabCons.strength}%`,background:t.tabCons.strength>=65?'var(--gain)':t.tabCons.strength>=40?'#fbbf24':'var(--muted)'}}/>
+                          <div style={{height:'100%',width:`${t.tabCons.strength}%`,background:consensusStrengthColor(t.tabCons)}}/>
                         </div>
                         <span style={{fontSize:9.5,fontWeight:700,color:'var(--muted)'}}>{t.tabCons.strength}</span>
                       </div>
@@ -1952,14 +1952,14 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           <div className="card">
             <div className="card-head"><Target size={15}/> Consensus Strength</div>
             <div className="card-body" style={{textAlign:'center',padding:'24px'}}>
-              <div style={{fontSize:64,fontWeight:900,color:community.strength>=65?'var(--gain)':community.strength>=40?'#fbbf24':'var(--muted)',lineHeight:1,marginBottom:8}}>
+              <div style={{fontSize:64,fontWeight:900,color:consensusStrengthColor(community),lineHeight:1,marginBottom:8}}>
                 {community.strength}
               </div>
               <div style={{fontSize:14,fontWeight:700,color:'var(--ink)',marginBottom:4}}>{community.label}</div>
               <div style={{fontSize:12,color:'var(--muted)',marginBottom:20}}>out of 100 — based on {community.total} active recommendations</div>
               <div style={{height:8,borderRadius:6,overflow:'hidden',background:'var(--line)',position:'relative'}}>
                 <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${community.strength}%`,
-                  background:`linear-gradient(90deg,var(--gain),${community.strength>=65?'var(--gain)':'#fbbf24'})`,transition:'width .6s'}}/>
+                  background:consensusStrengthColor(community),transition:'width .6s'}}/>
               </div>
             </div>
           </div>
