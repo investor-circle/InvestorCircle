@@ -1152,7 +1152,17 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
   const community  = computeConsensus(allRecos);
   const circle     = computeConsensus(circleRecos);
   const trend      = computeTrend(circleRecos.length>=2 ? circleRecos : allRecos);
-  const recent     = (circleRecos.length ? circleRecos : allRecos).slice(0,3);
+  // "Recommended by" must show ALL investors, not just circle ones — this
+  // panel is platform-wide discovery (the 4 cards it opens from already
+  // deliberately surface tickers from across MIC, not just the viewer's
+  // circle). It previously showed only circleRecos whenever the viewer had
+  // ANY circle overlap for that ticker, silently hiding every community
+  // investor from the list and from the "View All N" count below — e.g. a
+  // ticker with 5 total investors would show "2" with no indication 3 were
+  // hidden. circleIds (via circleMemberIds) is used only to badge which
+  // rows are circle members, never to filter the list.
+  const circleMemberIds = new Set(circleRecos.map(r=>r.from));
+  const recent     = allRecos.slice(0,3);
   const circleUniq = [...new Map(circleRecos.map(r=>[r.from,r])).values()].slice(0,5);
   const latestPrice= allRecos.find(r=>r.current_price||r.reco_price)?.current_price || allRecos.find(r=>r.reco_price)?.reco_price;
 
@@ -1227,20 +1237,24 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
         {recent.length>0&&(
           <div>
             <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span>Recommended by {circleRecos.length?'(My Circle)':'(Community)'}</span>
-              {(circleRecos.length||allRecos.length)>3&&(
+              <span>Recommended by</span>
+              {allRecos.length>3&&(
                 <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 8px'}} onClick={onOpenFull}>
-                  View All {circleRecos.length||allRecos.length}
+                  View All {allRecos.length}
                 </button>
               )}
             </div>
             {recent.map((r,i)=>{
               const isBuy=r.recommendation_type==='Buy';
+              const inCircle=circleMemberIds.has(r.from);
               return (
                 <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:i<recent.length-1?'1px solid var(--line)':'none'}}>
                   <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.full_name||r.username||'Investor'}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:5}}>
+                      <span style={{fontSize:12,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.full_name||r.username||'Investor'}</span>
+                      {inCircle&&<span style={{fontSize:8.5,fontWeight:800,padding:'1px 5px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.03em',flexShrink:0}}>Circle</span>}
+                    </div>
                     {r.conviction&&<div style={{fontSize:10,color:'var(--muted)'}}>{r.conviction}</div>}
                   </div>
                   <span style={{fontSize:10,color:'var(--muted)',flexShrink:0}}>
