@@ -165,7 +165,15 @@ export function computeConsensus(recos=[]) {
   const bearPct = Math.round(bear/total*100);
   const neutralPct = 100-bullPct-bearPct;
   const strength = Math.abs(bullPct-bearPct);
-  const label = bullPct>=70?'Strong Bullish':bullPct>=55?'Bullish':bearPct>=70?'Strong Bearish':bearPct>=55?'Bearish':total>0?'Neutral':'No Data';
+  // Label is derived from `strength` (the same bull/bear gap the strength
+  // gauge shows), not from bullPct/bearPct in isolation — previously a stock
+  // could be labeled "Strong Bullish" purely from clearing a 70% bullPct
+  // threshold even with a large dissenting Sell share (e.g. 75%/25%, a gap of
+  // only 50), which visibly contradicted a "moderate" strength score right
+  // next to it. Keeping one shared scale keeps the label and the gauge in
+  // agreement.
+  const leaning = bullPct>bearPct?'Bullish':bearPct>bullPct?'Bearish':'Neutral';
+  const label = leaning==='Neutral' ? 'Neutral' : strength>=60?`Strong ${leaning}`:strength>=20?leaning:'Neutral';
   return {bull,bear,neutral:total-bull-bear,bullPct,bearPct,neutralPct,strength,label,total};
 }
 
