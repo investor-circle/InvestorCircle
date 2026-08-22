@@ -41,7 +41,7 @@ import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } fr
 import { FeedCard, InvestedToggle, MakeRecoModal, ReceivedSharePopover } from "../recommendations/Recommendations";
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
-import { fetchPublicProfileInfo } from "../../utils/navigation";
+import { fetchPublicProfileInfo, openProfile } from "../../utils/navigation";
 import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
 import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, rankTrending } from "../../utils/trending";
 import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor } from "../../services/api/trackingApi";
@@ -1148,7 +1148,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
 /* =================================================================== INSTRUMENTS */
 // Module-level cache — loaded once per browser session from Neon
 
-export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,onClose,modal=false}) {
+export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,onViewAllInvestors,onClose,modal=false}) {
   const community  = computeConsensus(allRecos);
   const circle     = computeConsensus(circleRecos);
   const trend      = computeTrend(circleRecos.length>=2 ? circleRecos : allRecos);
@@ -1163,7 +1163,6 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
   // rows are circle members, never to filter the list.
   const circleMemberIds = new Set(circleRecos.map(r=>r.from));
   const recent     = allRecos.slice(0,3);
-  const circleUniq = [...new Map(circleRecos.map(r=>[r.from,r])).values()].slice(0,5);
   const latestPrice= allRecos.find(r=>r.current_price||r.reco_price)?.current_price || allRecos.find(r=>r.reco_price)?.reco_price;
 
   const content = (
@@ -1220,26 +1219,13 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
           ))}
         </div>
 
-        {/* Avatar stack of circle investors */}
-        {circleUniq.length>0&&(
-          <div style={{display:'flex',alignItems:'center',gap:2}}>
-            {circleUniq.map((r,i)=>(
-              <div key={i} className="av" style={{width:28,height:28,fontSize:10,flexShrink:0,
-                marginLeft:i?-8:0,border:'2px solid var(--surface)',background:'var(--grad)',zIndex:5-i}}>
-                {initialsOf(r.full_name||r.username||'?')}
-              </div>
-            ))}
-            {circleRecos.length>5&&<span style={{fontSize:11,color:'var(--muted)',marginLeft:12}}>+{circleRecos.length-5}</span>}
-          </div>
-        )}
-
         {/* Recommended by */}
         {recent.length>0&&(
           <div>
             <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <span>Recommended by</span>
               {allRecos.length>3&&(
-                <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 8px'}} onClick={onOpenFull}>
+                <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 8px'}} onClick={onViewAllInvestors||onOpenFull}>
                   View All {allRecos.length}
                 </button>
               )}
@@ -1247,12 +1233,16 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
             {recent.map((r,i)=>{
               const isBuy=r.recommendation_type==='Buy';
               const inCircle=circleMemberIds.has(r.from);
+              const clickable=!!r.username;
               return (
                 <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:i<recent.length-1?'1px solid var(--line)':'none'}}>
-                  <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                  <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)',cursor:clickable?'pointer':'default'}} onClick={clickable?()=>openProfile(r.username):undefined}>{initialsOf(r.full_name||r.username||'?')}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:'flex',alignItems:'center',gap:5}}>
-                      <span style={{fontSize:12,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.full_name||r.username||'Investor'}</span>
+                      <span
+                        style={{fontSize:12,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:clickable?'pointer':'default',textDecoration:clickable?'underline':'none',textDecorationColor:'var(--line)'}}
+                        onClick={clickable?()=>openProfile(r.username):undefined}
+                      >{r.full_name||r.username||'Investor'}</span>
                       {inCircle&&<span style={{fontSize:8.5,fontWeight:800,padding:'1px 5px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.03em',flexShrink:0}}>Circle</span>}
                     </div>
                     {r.conviction&&<div style={{fontSize:10,color:'var(--muted)'}}>{r.conviction}</div>}
@@ -1666,8 +1656,8 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
 
         {selData&&(
           isMobile
-            ? <SecurityQuickPanel ticker={selData.ticker} name={selData.name} allRecos={selData.recos} circleRecos={selData.recos.filter(r=>circleIds.includes(r.from))} onOpenFull={()=>onOpenSecurity(selData.ticker,selData.name)} onClose={()=>setSelectedTicker(null)} modal/>
-            : <SecurityQuickPanel ticker={selData.ticker} name={selData.name} allRecos={selData.recos} circleRecos={selData.recos.filter(r=>circleIds.includes(r.from))} onOpenFull={()=>onOpenSecurity(selData.ticker,selData.name)} onClose={()=>setSelectedTicker(null)}/>
+            ? <SecurityQuickPanel ticker={selData.ticker} name={selData.name} allRecos={selData.recos} circleRecos={selData.recos.filter(r=>circleIds.includes(r.from))} onOpenFull={()=>onOpenSecurity(selData.ticker,selData.name)} onViewAllInvestors={()=>onOpenSecurity(selData.ticker,selData.name,'investors')} onClose={()=>setSelectedTicker(null)} modal/>
+            : <SecurityQuickPanel ticker={selData.ticker} name={selData.name} allRecos={selData.recos} circleRecos={selData.recos.filter(r=>circleIds.includes(r.from))} onOpenFull={()=>onOpenSecurity(selData.ticker,selData.name)} onViewAllInvestors={()=>onOpenSecurity(selData.ticker,selData.name,'investors')} onClose={()=>setSelectedTicker(null)}/>
         )}
       </div>
     </>
@@ -1683,12 +1673,19 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
   const { ticker, name } = securityTicker || {};
   const [recos, setRecos]     = useState([]);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab]         = useState('consensus'); // consensus | timeline | investors | stats | ai
+  const [tab, setTab]         = useState(securityTicker?.tab || 'consensus'); // consensus | timeline | investors | stats | ai
   const [aiSummary, setAiSummary] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [investorIcis, setInvestorIcis] = useState({}); // uid → {score,band}
 
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
+
+  // The page can stay mounted across multiple onOpenSecurity() calls (e.g.
+  // navigating from one security's modal straight to another's insights
+  // page), so re-sync the tab whenever the caller requests a specific one.
+  useEffect(()=>{
+    if (securityTicker?.tab) setTab(securityTicker.tab);
+  }, [ticker, securityTicker?.tab]);
 
   // Fetch real ICI scores for all investors when recos loads
   useEffect(()=>{
@@ -1960,8 +1957,11 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                 <tbody>
                   {recos.map(r=>{
                     const inMyCircle = circleIds.includes(r.from);
+                    const goToReco = r.username ? ()=>{ window.location.hash = `#/investor/${r.username}/reco/${r.id}`; } : undefined;
                     return (
-                      <tr key={r.id} style={{borderBottom:'1px solid var(--line)'}}>
+                      <tr key={r.id} style={{borderBottom:'1px solid var(--line)',cursor:goToReco?'pointer':'default'}} onClick={goToReco}
+                        onMouseEnter={goToReco?(e)=>{e.currentTarget.style.background='var(--surface-2)';}:undefined}
+                        onMouseLeave={goToReco?(e)=>{e.currentTarget.style.background='';}:undefined}>
                         <td style={{padding:'12px 14px'}}>
                           <div style={{display:'flex',alignItems:'center',gap:8}}>
                             <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>

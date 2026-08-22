@@ -1099,7 +1099,7 @@ export default function App() {
   // see the useEffect that keeps investorPage/adminPage synced with the URL.)
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
   // page + setPage — setPage also closes the mobile nav drawer for investors
-  const openSecurity = (ticker, name) => { setSecurityTicker({ ticker, name }); setPage('sec_intel'); };
+  const openSecurity = (ticker, name, tab) => { setSecurityTicker({ ticker, name, tab }); setPage('sec_intel'); };
   const page    = isInv ? investorPage : adminPage;
   const setPage = isInv
     ? (p) => { setInvestorPage(p); setNavOpen(false); track('page_view', { page_name: p });
