@@ -1677,6 +1677,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
   const [aiSummary, setAiSummary] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [investorIcis, setInvestorIcis] = useState({}); // uid → {score,band}
+  const [searchOpen, setSearchOpen] = useState(false); // mobile: search starts collapsed to an icon
 
   const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
 
@@ -1835,21 +1836,32 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           <div className="page-sub">{activeRecos.length} active recommendation{activeRecos.length!==1?'s':''} · {investors.length} investor{investors.length!==1?'s':''} tracking</div>
         </div>
 
-        {/* ── Switch-security search — compact, tucked into the header's empty space ── */}
-        <div style={{
-          display:'flex', alignItems:'center', gap:8,
-          background:'var(--surface-2)', border:'1px solid var(--line)',
-          borderRadius:10, padding:'4px 8px 4px 10px',
-          width: isMobile ? '100%' : 260, flexShrink:0,
-        }}>
-          <Search size={13} color="var(--muted)" style={{flexShrink:0}}/>
-          <div style={{flex:1,fontSize:12}}>
+        {/* ── Switch-security search — compact, tucked into the header's empty space.
+             On mobile there's no spare width, so it starts collapsed to an icon. ── */}
+        {isMobile ? (
+          !searchOpen ? (
+            <button className="iconbtn" style={{width:36,height:36,flexShrink:0}} onClick={()=>setSearchOpen(true)}>
+              <Search size={15}/>
+            </button>
+          ) : (
+            <div style={{display:'flex',alignItems:'center',gap:8,width:'100%'}}>
+              <div style={{flex:1,fontSize:13}}>
+                <InstrumentSearch
+                  onSelect={inst=>{ setSearchOpen(false); if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
+                  placeholder={`Switch security…`}
+                />
+              </div>
+              <button className="iconbtn" style={{flexShrink:0}} onClick={()=>setSearchOpen(false)}><X size={15}/></button>
+            </div>
+          )
+        ) : (
+          <div style={{width:220,flexShrink:0,fontSize:12}}>
             <InstrumentSearch
               onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
               placeholder={`Switch security…`}
             />
           </div>
-        </div>
+        )}
 
         {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
       </div>
