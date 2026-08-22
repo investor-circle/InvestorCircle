@@ -366,31 +366,30 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
   const inM = trackedList.filter(r=>r.priceAt&&r.price>r.priceAt).length;
   const outM = total - inM;
 
-  // "Since yesterday" in/out-of-money DELTA — how many tracked ideas flipped
-  // in or out of the money since the previous trading day's close. Computed
-  // only over tracked ideas the daily-price snapshot actually covers (real
-  // entry price + a stored previous close for that instrument); ideas
-  // outside that coverage contribute nothing to the delta rather than being
-  // guessed at, so `covered` can be smaller than `total` — that's honest,
-  // not a bug. This was the originally-specified "In the money: 6 (+2)"
-  // presentation; it fell back to a generic activity count while no daily
-  // price history existed to compute it from. That data now exists.
-  const moneyDelta = useMemo(() => {
+  // "Since yesterday" — deliberately a DIFFERENT question from "Since
+  // tracking", not the same one with an annotation. An earlier version of
+  // this computed an in/out-of-money DELTA here (did a stock cross the
+  // entry-price line since yesterday) — but "in the money" is inherently a
+  // cumulative measure anchored to entry price, so that delta was almost
+  // always zero and the two tabs looked identical. What "since yesterday"
+  // actually means for a daily-habit surface is simpler and more useful:
+  // did each tracked stock go UP or DOWN since the previous trading day's
+  // close — independent of entry price entirely. Computed only over tracked
+  // ideas the daily-price snapshot covers; the rest count as `noData`
+  // (shown as a neutral segment) rather than being guessed at.
+  const dailyMoveSplit = useMemo(() => {
     if (!dailyPrices) return null;
-    let inDelta = 0, covered = 0;
+    let up = 0, down = 0, noData = 0;
     trackedList.forEach(r => {
-      if (!(r.priceAt > 0) || !(r.price > 0)) return;
       const snap = dailyPrices[(r.ticker || '').trim().toUpperCase()];
-      if (!snap || snap.prevClose == null) return;
-      covered++;
-      const inNow       = r.price > r.priceAt;
-      const inYesterday = snap.prevClose > r.priceAt;
-      if (inNow && !inYesterday) inDelta++;
-      else if (!inNow && inYesterday) inDelta--;
+      const pct = snap?.changePct;
+      if (pct == null)   noData++;
+      else if (pct > 0)  up++;
+      else if (pct < 0)  down++;
+      else               noData++; // flat — neither a gainer nor a loser
     });
-    return covered > 0 ? { inDelta, outDelta: -inDelta, covered } : null;
+    return { up, down, noData };
   }, [trackedList, dailyPrices]);
-  const fmtDelta = (n) => n > 0 ? ` (+${n})` : n < 0 ? ` (${n})` : '';
 
   // Snapshot current commentCount for every tracked idea once per mount/
   // refresh (one write, not per-card) so next visit's newCommentItems can
@@ -408,9 +407,14 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
 
   if(total===0) return null;
 
-  // SVG donut
+  // SVG donut — 'tracking' mode is a 2-segment ring (in/out of money vs
+  // entry price); 'yesterday' mode is a 3-segment ring (up/down since the
+  // previous close, plus a neutral segment for stocks with no snapshot yet)
+  // over the SAME total, so the center count never changes between tabs.
   const R=32, cx=40, cy=40, stroke=9, circum=2*Math.PI*R;
   const inDash=circum*(inM/total), outDash=circum*(outM/total);
+  const upDash   = dailyMoveSplit ? circum*(dailyMoveSplit.up/total)     : 0;
+  const downDash = dailyMoveSplit ? circum*(dailyMoveSplit.down/total)   : 0;
   const navTo=(filter)=>{ setRecoInit({tab:'tracked',moneyFilter:filter}); setPage('recs'); };
   const viewAll=()=>{ setRecoInit({tab:'tracked'}); setPage('recs'); };
 
@@ -439,31 +443,61 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
         <svg width={80} height={80} style={{flexShrink:0}}>
           {/* background */}
           <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--line-2)" strokeWidth={stroke}/>
-          {/* out of money — red */}
-          {outM>0&&<circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--loss)" strokeWidth={stroke}
-            strokeDasharray={`${outDash} ${circum-outDash}`}
-            strokeDashoffset={-(circum*(inM/total))}
-            strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`}/>}
-          {/* in the money — green */}
-          {inM>0&&<circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--gain)" strokeWidth={stroke}
-            strokeDasharray={`${inDash} ${circum-inDash}`}
-            strokeDashoffset={0}
-            strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`}/>}
+          {mode==='tracking' ? (<>
+            {/* out of money — red */}
+            {outM>0&&<circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--loss)" strokeWidth={stroke}
+              strokeDasharray={`${outDash} ${circum-outDash}`}
+              strokeDashoffset={-(circum*(inM/total))}
+              strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`}/>}
+            {/* in the money — green */}
+            {inM>0&&<circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--gain)" strokeWidth={stroke}
+              strokeDasharray={`${inDash} ${circum-inDash}`}
+              strokeDashoffset={0}
+              strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`}/>}
+          </>) : dailyMoveSplit && (<>
+            {/* down since yesterday's close — red */}
+            {dailyMoveSplit.down>0&&<circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--loss)" strokeWidth={stroke}
+              strokeDasharray={`${downDash} ${circum-downDash}`}
+              strokeDashoffset={-upDash}
+              strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`}/>}
+            {/* up since yesterday's close — green */}
+            {dailyMoveSplit.up>0&&<circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--gain)" strokeWidth={stroke}
+              strokeDasharray={`${upDash} ${circum-upDash}`}
+              strokeDashoffset={0}
+              strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`}/>}
+          </>)}
           <text x={cx} y={cy+1} textAnchor="middle" dominantBaseline="middle" style={{fontSize:16,fontWeight:800,fill:'var(--ink)'}}>{total}</text>
           <text x={cx} y={cy+14} textAnchor="middle" dominantBaseline="middle" style={{fontSize:8,fill:'var(--muted)'}}>tracked</text>
         </svg>
         <div style={{flex:1}}>
-          <div onClick={()=>navTo('in')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,marginBottom:5,background:'var(--gain-soft)',transition:'.12s'}}
-            onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-            <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>In the money</span>
-            <span style={{fontSize:15,fontWeight:800,color:'var(--gain)'}}>{inM}{mode==='yesterday' && moneyDelta ? fmtDelta(moneyDelta.inDelta) : ''}</span>
-          </div>
-          <div onClick={()=>navTo('out')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,background:'var(--loss-soft)',transition:'.12s'}}
-            onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-            <span style={{fontSize:12,fontWeight:600,color:'var(--loss)'}}>Out of money</span>
-            <span style={{fontSize:15,fontWeight:800,color:'var(--loss)'}}>{outM}{mode==='yesterday' && moneyDelta ? fmtDelta(moneyDelta.outDelta) : ''}</span>
-          </div>
-          {mode==='yesterday' && !moneyDelta && (
+          {mode==='tracking' ? (<>
+            <div onClick={()=>navTo('in')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,marginBottom:5,background:'var(--gain-soft)',transition:'.12s'}}
+              onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+              <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>In the money</span>
+              <span style={{fontSize:15,fontWeight:800,color:'var(--gain)'}}>{inM}</span>
+            </div>
+            <div onClick={()=>navTo('out')} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,background:'var(--loss-soft)',transition:'.12s'}}
+              onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+              <span style={{fontSize:12,fontWeight:600,color:'var(--loss)'}}>Out of money</span>
+              <span style={{fontSize:15,fontWeight:800,color:'var(--loss)'}}>{outM}</span>
+            </div>
+          </>) : dailyMoveSplit ? (<>
+            <div onClick={viewAll} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,marginBottom:5,background:'var(--gain-soft)',transition:'.12s'}}
+              onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+              <span style={{fontSize:12,fontWeight:600,color:'var(--gain)'}}>Up today</span>
+              <span style={{fontSize:15,fontWeight:800,color:'var(--gain)'}}>{dailyMoveSplit.up}</span>
+            </div>
+            <div onClick={viewAll} style={{cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:8,background:'var(--loss-soft)',transition:'.12s'}}
+              onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+              <span style={{fontSize:12,fontWeight:600,color:'var(--loss)'}}>Down today</span>
+              <span style={{fontSize:15,fontWeight:800,color:'var(--loss)'}}>{dailyMoveSplit.down}</span>
+            </div>
+            {dailyMoveSplit.noData>0 && (
+              <div style={{fontSize:9.5,color:'var(--muted)',marginTop:3,paddingLeft:2}}>
+                {dailyMoveSplit.noData} more without price history yet
+              </div>
+            )}
+          </>) : (
             <div style={{fontSize:9.5,color:'var(--muted)',marginTop:3,paddingLeft:2}}>
               {dailyPrices===null ? 'Loading price history…' : 'No price history yet for your tracked stocks'}
             </div>
