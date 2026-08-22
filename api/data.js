@@ -73,11 +73,12 @@ const RESOURCES = {
   'claim-profile':    { handler: handleClaimProfile,     auth: 'none'  },
   'admin-config':     { handler: handleAdminConfig,      auth: 'admin' },
   'lookups':          { handler: handleLookups,          auth: 'none'  },
-  // pricing (Phase 9 instrument daily-price layer) bundles two actions with
-  // different auth needs and so authorises itself: `collect` is the Vercel
-  // Cron collector (CRON_SECRET bearer, or an admin token for a manual run)
-  // and would never carry a user token; `daily` is a normal authenticated
-  // user read. See api/_lib/handlers/pricing.js.
+  // pricing (Phase 9 instrument daily-price layer) is now READ-ONLY: its one
+  // action, `daily`, is a normal authenticated user read and calls
+  // requireUid() itself, which is why it stays registered as 'none' here.
+  // (The former `collect` write action and its Vercel Cron were retired —
+  // scripts/stamp-prices.js is the sole price writer.) See
+  // api/_lib/handlers/pricing.js.
   'pricing':          { handler: handlePricing,          auth: 'none'  },
 };
 
