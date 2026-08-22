@@ -810,7 +810,7 @@ export function TrendingWidget({ publicFeedRecos = [], setPublicFeedRecos, conta
 
   return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
-      <WidgetHeader icon={Flame} label="Trending on MIC" action="See all →" onAction={onSeeAll}/>
+      <WidgetHeader icon={Flame} label="Trending on MIC"/>
       <div style={{padding:'8px 14px 2px',fontSize:10.5,color:'var(--muted)',lineHeight:1.4}}>
         What the whole platform is engaging with right now
       </div>
@@ -821,6 +821,13 @@ export function TrendingWidget({ publicFeedRecos = [], setPublicFeedRecos, conta
           isTrackingCreator={!!trackedCreatorIds?.has(item.creator.id)}
           onToggleTrackCreator={toggleTrackCreator}/>
       ))}
+      <div style={{padding:'10px 14px 12px'}}>
+        <button onClick={onSeeAll} className="btn"
+          style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+            background:'var(--surface)',border:'1px solid var(--accent-line)',color:'var(--accent-ink)'}}>
+          See all trending <ChevronRight size={14}/>
+        </button>
+      </div>
     </div>
   );
 }
