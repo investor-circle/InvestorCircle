@@ -73,6 +73,7 @@ import { fetchPublicProfileInfo, gotoUserProfile, openProfile } from "../../util
 export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
     contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack, globalSearch }) {
   const [tab, setTab] = useState(initFilter?.tab || "tracked");
+  const [showNew, setShowNew] = useState(false);
   const myId = me?.id || "me";
   const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id===myId?"You":id);
   const groupName   = (id) => groups.find(g=>g.id===id)?.name || id;
@@ -99,31 +100,35 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
     {/* ── Header + tabs ── */}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:12}}>
       <div>
-        <div className="eyebrow" style={{marginBottom:0}}>Recommendations</div>
+        <div className="eyebrow" style={{marginBottom:0}}>My Ideas</div>
         <div style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px',marginTop:2}}>Ideas worth tracking</div>
       </div>
-      {/* Tabs — Tracked first */}
-      <div style={{display:"flex",gap:6,background:"var(--surface-2)",borderRadius:14,padding:4,flexWrap:"wrap"}}>
-        {[
-          {id:"tracked",  label:"My Tracked",  count:trackedCount,  icon:Bookmark},
-          {id:"received", label:"Received",     count:receivedCount, icon:Lightbulb},
-          {id:"made",     label:"Made by me",   count:madeCount,     icon:Send},
-        ].map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{
-            display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontWeight:700,fontSize:14,transition:".15s",
-            background: tab===t.id ? "var(--surface)" : "transparent",
-            color:      tab===t.id ? "var(--accent-ink)" : "var(--ink)",
-            boxShadow:  tab===t.id ? "0 1px 6px rgba(20,20,50,.1)" : "none",
-          }}>
-            <t.icon size={15}/>
-            {t.label}
-            <span style={{
-              fontSize:12, fontWeight:800, padding:"2px 9px", borderRadius:999,
-              background: tab===t.id ? "var(--grad)" : "var(--surface-2)",
-              color:      tab===t.id ? "#fff" : "var(--ink-soft)",
-            }}>{t.count}</span>
-          </button>
-        ))}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        {/* Tabs — Tracked first */}
+        <div style={{display:"flex",gap:6,background:"var(--surface-2)",borderRadius:14,padding:4,flexWrap:"wrap"}}>
+          {[
+            {id:"tracked",  label:"Tracked",  count:trackedCount,  icon:Bookmark},
+            {id:"received", label:"Received", count:receivedCount, icon:Lightbulb},
+            {id:"made",     label:"Created",  count:madeCount,     icon:Send},
+          ].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontWeight:700,fontSize:14,transition:".15s",
+              background: tab===t.id ? "var(--surface)" : "transparent",
+              color:      tab===t.id ? "var(--accent-ink)" : "var(--ink)",
+              boxShadow:  tab===t.id ? "0 1px 6px rgba(20,20,50,.1)" : "none",
+            }}>
+              <t.icon size={15}/>
+              {t.label}
+              <span style={{
+                fontSize:12, fontWeight:800, padding:"2px 9px", borderRadius:999,
+                background: tab===t.id ? "var(--grad)" : "var(--surface-2)",
+                color:      tab===t.id ? "#fff" : "var(--ink-soft)",
+              }}>{t.count}</span>
+            </button>
+          ))}
+        </div>
+        {/* New idea — elevated so it's reachable from every tab, not just Created */}
+        <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)}><Plus size={15}/> New idea</button>
       </div>
     </div>
 
@@ -135,6 +140,8 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
     {tab==="made"     && <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName}
         reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses}
         setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload} globalSearch={globalSearch}/>}
+
+    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} me={me} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); setShowNew(false); setTab("made"); }}/>}
   </>);
 }
 
@@ -1086,7 +1093,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
   const [showExpired,setShowExpired]=useState(false);
   const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [openRow,setOpenRow]=useState(null);
-  const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
+  const [share,setShare]=useState(null);
   const [sharePopId, setSharePopId] = useState(null);
   const [shareAnchor, setShareAnchor] = useState(null);
   const [exitingId,  setExitingId]  = useState(null);
@@ -1164,7 +1171,6 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
         <span style={{fontSize:12,fontWeight:600,color:"var(--ink-soft)",whiteSpace:"nowrap"}}>Expired</span>
         {expiredCount>0 && <span className="pill loss" style={{fontSize:11,padding:"1px 6px"}}>{expiredCount}</span>}
       </div>
-      <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)}><Plus size={15}/> New idea</button>
     </div>
 
     {rows.length===0
@@ -1312,7 +1318,6 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
           </div>
         </div>}
 
-    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} me={me} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecs(rs=>[rec,...rs]); setShowNew(false); }}/>}
     {share && <ShareRecoModal reco={share} mode="share" contacts={contacts} groups={groups} onClose={()=>setShare(null)}
         onShare={(targets)=>{ reShare(share,targets); setShare(null); }}/>}
   </>);

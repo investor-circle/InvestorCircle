@@ -58,6 +58,7 @@ export const STYLES = `
 .tb-right{margin-left:auto;display:flex;align-items:center;gap:8px;}
 .icon-btn{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;}
 .icon-btn:hover{background:var(--surface-2);}
+.icon-btn.active{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-line);}
 .avatar-pill{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 8px 5px 6px;}
 .avatar-pill .gava{width:30px;height:30px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px;}
 
@@ -368,6 +369,12 @@ tr.hiddenrow > td{opacity:.55;}
   /* Modals: floating dialog → bottom sheet */
   .overlay{align-items:flex-end!important;padding:0!important;}
   .modal{border-radius:20px 20px 0 0!important;width:100%!important;max-height:88vh!important;}
+
+  /* Network tabs (Connections/Circles/Tracking me/I'm tracking): force a single
+     row on mobile — shrink padding/font and let labels wrap to 2 lines instead
+     of the row wrapping to a second line of buttons. */
+  .net-tabs{flex-wrap:nowrap!important;width:100%;}
+  .net-tabs button{flex:1 1 0;min-width:0;padding:7px 4px;font-size:11px;gap:4px;white-space:normal;text-align:center;justify-content:center;line-height:1.15;}
 }
 
 @media(max-width:480px){

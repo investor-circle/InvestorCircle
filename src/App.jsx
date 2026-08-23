@@ -26,7 +26,8 @@ import {
   Trophy,
   ExternalLink,
   Flame,
-  Info
+  Info,
+  Bookmark
 } from "lucide-react";
 import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 import { useAuth } from "./AuthContext";
@@ -1110,24 +1111,22 @@ export default function App() {
   const canCreateGroups = configs.groupCreationPolicy==="all";
 
   const navSections = isInv ? [
-    { items: [
-      { id:"home",        label:"Home",            icon:Home,       iconColor:"#b6a9ff", iconBg:"rgba(124,92,252,.22)" },
+    { label:"DISCOVER", items: [
+      { id:"home",         label:"Ideas",           icon:Lightbulb,  iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)" },
+      { id:"discover",     label:"Investors",       icon:Sparkles,   iconColor:"#c084fc", iconBg:"rgba(192,132,252,.15)" },
+      { id:"market_intel", label:"Market Insights", icon:TrendingUp, iconColor:"#4ade80", iconBg:"rgba(74,222,128,.13)" },
+      { id:"sec_intel",    label:"Stock Insights",  icon:Shield,     iconColor:"#34d399", iconBg:"rgba(52,211,153,.13)" },
     ]},
-    { label:"DISCOVER & INSIGHTS", items: [
-      ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", sub:"Track ideas & performance", icon:Lightbulb, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)", badge:newRecs }] : []),
-      { id:"portfolio",    label:"Portfolio",       sub:"Analyse your holdings",         icon:PieChart,  iconColor:"#fb923c", iconBg:"rgba(251,146,60,.13)" },
-      { id:"market_intel", label:"Market Insights", sub:"Trends, sectors & indices",     icon:TrendingUp,iconColor:"#4ade80", iconBg:"rgba(74,222,128,.13)" },
-      { id:"sec_intel",    label:"Stock Insights",  sub:"Discover stock conviction",     icon:Shield,    iconColor:"#34d399", iconBg:"rgba(52,211,153,.13)" },
+    { label:"MY CIRCLE", items: [
+      ...(configs.enableRecommendations ? [{ id:"recs", label:"My Ideas", icon:Bookmark, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)", badge:newRecs }] : []),
+      { id:"network",     label:"Network & Circles", icon:Users,  iconColor:"#60a5fa", iconBg:"rgba(96,165,250,.13)" },
+      { id:"trackrecord", label:"Track Record",      icon:Trophy, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)" },
+      { id:"portfolio",   label:"Portfolio",         icon:PieChart,iconColor:"#fb923c", iconBg:"rgba(251,146,60,.13)" },
     ]},
-    { label:"CONNECT & GROW", items: [
-      { id:"discover",    label:"Discover",      sub:"Find new investors",                icon:Sparkles, iconColor:"#c084fc", iconBg:"rgba(192,132,252,.15)" },
-      { id:"network",     label:"Network",       sub:"Connect with investors",            icon:Users,  iconColor:"#60a5fa", iconBg:"rgba(96,165,250,.13)" },
-      { id:"trackrecord", label:"Track Record",  sub:"Your public investment record",    icon:Trophy, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)" },
-    ]},
-    { label:"ACCOUNT & SETTINGS", items: [
-      { id:"sharing",  label:"Privacy & Sharing", sub:"Control your visibility",         icon:Lock,        iconColor:"#f472b6", iconBg:"rgba(244,114,182,.13)" },
-      { id:"about",    label:"About MIC",          sub:"Our mission & platform",          icon:Info,        iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
-      { id:"contact",  label:"Contact Us",         sub:"We're here to help",              icon:ExternalLink,iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
+    { label:"ACCOUNT & SUPPORT", items: [
+      { id:"sharing",  label:"Privacy & Sharing", icon:Lock,        iconColor:"#f472b6", iconBg:"rgba(244,114,182,.13)" },
+      { id:"about",    label:"About MIC",         icon:Info,        iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
+      { id:"contact",  label:"Contact Us",        icon:ExternalLink,iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
     ]},
   ] : null;
 
@@ -1261,27 +1260,35 @@ export default function App() {
 
         <div className="main">
           <div className="topbar">
-            {/* MIC logo — mobile only, left of hamburger, click → home */}
-            {isInv && isMobile && (
-              <img
-                src="/mic-logo.png"
-                alt="myInvestorCircle"
-                onClick={()=>setPage('home')}
-                style={{width:30,height:30,flexShrink:0,cursor:'pointer'}}
-                title="Home"
-              />
-            )}
-            {/* Hamburger — mobile only, opens nav drawer */}
-            {isInv && (
-              <button
-                className="hamburger"
-                style={{display: isMobile ? 'inline-flex' : 'none'}}
-                onClick={()=>setNavOpen(v=>!v)}
-                aria-label="Toggle menu"
-              >
-                {navOpen ? <X size={20}/> : <Menu size={20}/>}
-              </button>
-            )}
+            {/* Left control cluster: permanent Home icon + hamburger (mobile) — kept tight
+                together so Home always sits right next to the menu control, regardless of
+                route (see Phase: nav redesign — Home no longer occupies a full sidebar row,
+                and the mobile brand logo's job is now done by this explicit Home icon so the
+                cluster stays compact instead of stacking a logo + hamburger + icon). */}
+            <div style={{display:'flex',alignItems:'center',gap:isMobile?4:8,flexShrink:0}}>
+              {/* Permanent Home icon — always visible, desktop and mobile, works from any page */}
+              {isInv && (
+                <button
+                  className={"icon-btn"+(page==='home'?" active":"")}
+                  onClick={()=>setPage('home')}
+                  title="Home"
+                  aria-label="Home"
+                >
+                  <Home size={18}/>
+                </button>
+              )}
+              {/* Hamburger — mobile only, opens nav drawer */}
+              {isInv && (
+                <button
+                  className="hamburger"
+                  style={{display: isMobile ? 'inline-flex' : 'none'}}
+                  onClick={()=>setNavOpen(v=>!v)}
+                  aria-label="Toggle menu"
+                >
+                  {navOpen ? <X size={20}/> : <Menu size={20}/>}
+                </button>
+              )}
+            </div>
 
             {/* ── Desktop search with live people dropdown ── */}
             <div className="searchbox search-hide-mobile" style={{width:300,maxWidth:'40vw',position:'relative',flexShrink:0}}>

@@ -385,7 +385,7 @@ export function DiscoverPeoplePage({ ME }) {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Discover</div>
+          <div className="eyebrow">Investors</div>
           <div className="page-title">Grow your Investor Circle</div>
           <div className="page-sub">Find new investors to Track or Connect with — never your existing network.</div>
         </div>

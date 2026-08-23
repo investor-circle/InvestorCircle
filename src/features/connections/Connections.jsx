@@ -62,19 +62,19 @@ export function Network({ connections, setConnections, groups, setGroups, sharin
         <div><div className="eyebrow">Network</div><div className="page-title">Your network</div>
           <div className="page-sub">Manage connections, tracking and Circles</div></div>
       </div>
-      <div className="seg" style={{marginBottom:20,flexWrap:"wrap"}}>
+      <div className="seg net-tabs" style={{marginBottom:20,flexWrap:"wrap"}}>
         <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}>
           <Users size={15}/> Connections · {connections.filter(c=>c.status==="accepted").length}
           {pendingReceived>0 && <span className="nav-badge" style={{position:"static",marginLeft:6}}>{pendingReceived}</span>}
+        </button>
+        <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}>
+          <Layers size={15}/> Circles · {groups.length}
         </button>
         <button className={tab==="trackers"?"active":""} onClick={()=>setTab("trackers")}>
           <Eye size={15}/> Tracking me · {trackingCounts?.trackersCount ?? 0}
         </button>
         <button className={tab==="tracking"?"active":""} onClick={()=>setTab("tracking")}>
           <Radar size={15}/> I&apos;m tracking · {trackingCounts?.trackingCount ?? 0}
-        </button>
-        <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}>
-          <Layers size={15}/> Circles · {groups.length}
         </button>
       </div>
       {tab==="contacts" && <ContactsSection connections={connections} setConnections={setConnections}
