@@ -647,18 +647,15 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                 {showPending&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Request Pending</span>}
                 {showConnected&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Connected</span>}
                 {showJoinBtn&&<button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}><UserPlus size={13}/>Track / Connect</button>}
-              </div>
-
-              {/* Edit button */}
-              {isOwnProfile&&(
-                <div>
-                  <button onClick={startEdit} style={{fontSize:12.5,fontWeight:700,background:'rgba(139,92,246,.16)',border:'1px solid rgba(139,92,246,.35)',color:'#c4b5fd',cursor:'pointer',padding:'8px 16px',borderRadius:9,display:'inline-flex',alignItems:'center',gap:7,fontFamily:'var(--font)',transition:'.15s'}}
+                {/* Edit button — same row as social icons/actions (wraps with them on narrow screens) */}
+                {isOwnProfile&&(
+                  <button onClick={startEdit} style={{fontSize:12.5,fontWeight:700,background:'rgba(139,92,246,.16)',border:'1px solid rgba(139,92,246,.35)',color:'#c4b5fd',cursor:'pointer',padding:'8px 16px',borderRadius:9,display:'inline-flex',alignItems:'center',gap:7,fontFamily:'var(--font)',transition:'.15s',marginLeft:4}}
                     onMouseEnter={e=>e.currentTarget.style.background='rgba(139,92,246,.26)'}
                     onMouseLeave={e=>e.currentTarget.style.background='rgba(139,92,246,.16)'}>
                     <Pencil size={13}/>Edit profile
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* ── RIGHT 50%: ICI widget ── */}
@@ -999,26 +996,14 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
 
         {/* ── INVESTMENT IDEAS ── */}
         <div style={{marginBottom:14}}>
-          <div style={{marginBottom:10}}>
-            <div style={{fontSize:15,fontWeight:800}}>Investment Ideas</div>
-            <div className="muted small">Public record · Permanent &amp; immutable</div>
-          </div>
-
-          {/* Status tabs + search/filter/sort icons */}
-          <div style={{display:'flex',alignItems:'center',gap:8,borderBottom:'1px solid var(--line)',marginBottom:12,flexWrap:'wrap'}}>
-            <div style={{display:'flex',flex:1,minWidth:0,overflowX:'auto'}}>
-              {[
-                {key:'All',count:recos.length},
-                {key:'Active',count:recos.filter(r=>r.status==='Active').length},
-                {key:'Closed',count:recos.filter(r=>r.status==='Closed').length},
-                {key:'Expired',count:recos.filter(r=>r.status==='Expired').length},
-              ].map(t=>(
-                <button key={t.key} onClick={()=>setRecTab(t.key)} style={{background:'none',border:'none',cursor:'pointer',padding:'11px 14px',fontWeight:700,fontSize:13,whiteSpace:'nowrap',color:recTab===t.key?'var(--accent)':'var(--muted)',borderBottom:recTab===t.key?'2px solid var(--accent)':'2px solid transparent',marginBottom:-1,fontFamily:'inherit'}}>
-                  {t.key}{t.count>0&&<span style={{fontSize:11,marginLeft:4,opacity:.7}}>({t.count})</span>}
-                </button>
-              ))}
+          {/* Header + search/filter/sort icons — icons live in the empty space
+              beside the title so they never compete with the status tabs below. */}
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8,marginBottom:10}}>
+            <div>
+              <div style={{fontSize:15,fontWeight:800}}>Investment Ideas</div>
+              <div className="muted small">Public record · Permanent &amp; immutable</div>
             </div>
-            <div style={{display:'flex',gap:4,paddingBottom:6,flexShrink:0}}>
+            <div style={{display:'flex',gap:4,flexShrink:0}}>
               <button className={"icon-btn"+(ideaSearchOpen?" active":"")} style={{width:32,height:32}} title="Search ideas" onClick={()=>setIdeaSearchOpen(v=>!v)}><Search size={14}/></button>
               <div style={{position:'relative'}}>
                 <button ref={ideaFilterBtnRef} className={"icon-btn"+(ideaFilterCls!=='all'?" active":"")} style={{width:32,height:32}} title="Filter by asset class" onClick={()=>setIdeaFilterOpen(v=>!v)}><SlidersHorizontal size={14}/></button>
@@ -1046,6 +1031,20 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Status tabs */}
+          <div style={{display:'flex',borderBottom:'1px solid var(--line)',marginBottom:12,overflowX:'auto'}}>
+            {[
+              {key:'All',count:recos.length},
+              {key:'Active',count:recos.filter(r=>r.status==='Active').length},
+              {key:'Closed',count:recos.filter(r=>r.status==='Closed').length},
+              {key:'Expired',count:recos.filter(r=>r.status==='Expired').length},
+            ].map(t=>(
+              <button key={t.key} onClick={()=>setRecTab(t.key)} style={{background:'none',border:'none',cursor:'pointer',padding:'11px 14px',fontWeight:700,fontSize:13,whiteSpace:'nowrap',color:recTab===t.key?'var(--accent)':'var(--muted)',borderBottom:recTab===t.key?'2px solid var(--accent)':'2px solid transparent',marginBottom:-1,fontFamily:'inherit'}}>
+                {t.key}{t.count>0&&<span style={{fontSize:11,marginLeft:4,opacity:.7}}>({t.count})</span>}
+              </button>
+            ))}
           </div>
 
           {ideaSearchOpen && (
