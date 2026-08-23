@@ -109,7 +109,7 @@ export function ContactPage({ setPage }) {
 
   const FEATURES = [
     { key:'portfolio_import',  label:'Portfolio Import' },
-    { key:'ai_summaries',      label:'AI Recommendation Summaries' },
+    { key:'ai_summaries',      label:'AI Idea Summaries' },
     { key:'mutual_fund',       label:'Mutual Fund Ideas Sharing' },
     { key:'leaderboards',      label:'Investor Leaderboards' },
     { key:'overlap',           label:'Portfolio Overlap with Your Network' },
@@ -117,18 +117,18 @@ export function ContactPage({ setPage }) {
   ];
 
   const FAQS = [
-    { q:'Can I edit my recommendation after publishing?',
-      a:'No. Recommendations are immutable to maintain transparency. You can publish follow-up updates or formally close a recommendation — but the original call stays on record.' },
-    { q:'Can I delete my recommendations?',
-      a:'No. My Investor Circle is designed to maintain a permanent, transparent historical record. Once a recommendation is published it becomes part of your public track record.' },
+    { q:'Can I edit my idea after publishing?',
+      a:'No. Ideas are immutable to maintain transparency. You can publish follow-up updates or formally close an idea — but the original call stays on record.' },
+    { q:'Can I delete my ideas?',
+      a:'No. My Investor Circle is designed to maintain a permanent, transparent historical record. Once an idea is published it becomes part of your public track record.' },
     { q:'Are users on My Investor Circle verified?',
       a:'Some profiles display SEBI registration status. Unless explicitly shown on a user\'s profile, My Investor Circle does not verify that a user is registered with SEBI or any other regulatory authority.' },
     { q:'Do you provide investment advice?',
       a:'No. My Investor Circle is a technology platform where users share their own investment ideas and build public track records. We do not provide personalised investment advice or recommend any securities.' },
     { q:'How is my data used?',
-      a:'We only use your data to operate the platform and never sell it to third parties. Recommendations you mark as Public are visible to anyone. Private recommendations are visible only to the people you share them with.' },
+      a:'We only use your data to operate the platform and never sell it to third parties. Ideas you mark as Public are visible to anyone. Private ideas are visible only to the people you share them with.' },
     { q:'How do I set up my public profile?',
-      a:'Go to Track Record in the left nav. If you haven\'t set a username yet, you\'ll be prompted to do so. Once set, your recommendations and ICI score are publicly viewable at your profile URL.' },
+      a:'Go to Track Record in the left nav. If you haven\'t set a username yet, you\'ll be prompted to do so. Once set, your ideas and ICI score are publicly viewable at your profile URL.' },
   ];
 
   const pickCategory = (key) => {

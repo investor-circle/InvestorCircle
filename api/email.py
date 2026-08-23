@@ -80,7 +80,7 @@ def tpl_signup_welcome(data):
             </p>
             <p style="color:#444;margin:0 0 24px;">
               Your account is ready. Start sharing high-conviction investment ideas
-              with your trusted circle — and discover what others are recommending.
+              with your trusted circle — and discover what others are sharing.
             </p>
             <p style="margin:0 0 28px;text-align:center;">{btn("Go to myInvestorCircle →", APP_URL)}</p>
             <div style="background:#fff8ed;border:1px solid #f5c97a;border-radius:10px;
@@ -126,7 +126,7 @@ def tpl_welcome_referred(data):
             </p>
             <p style="color:#444;margin:0 0 28px;">
               You've been automatically added to each other's investment circles.
-              You can now see their recommendations, track their calls, and share ideas back.
+              You can now see their ideas, track their calls, and share your own back.
             </p>
             <p style="margin:0 0 28px;text-align:center;">{btn("Explore your feed →", APP_URL)}</p>
             <p style="font-size:13px;color:#666;">
@@ -164,7 +164,7 @@ def tpl_connection_request(data):
               <strong>{from_name}</strong> has sent you a connection request on myInvestorCircle.
             </p>
             <p style="color:#444;margin:0 0 24px;">
-              Once you accept, you'll be able to see each other's recommendations in your feed.
+              Once you accept, you'll be able to see each other's ideas in your feed.
             </p>
             <p style="margin:0 0 24px;text-align:center;">{btn("Open the app to accept →", APP_URL)}</p>
             <p style="font-size:13px;color:#888;">
@@ -186,7 +186,7 @@ def tpl_connection_accepted(data):
               <strong>{their_name}</strong> accepted your connection request on myInvestorCircle.
             </p>
             <p style="color:#444;margin:0 0 28px;">
-              You can now see each other's public recommendations in your feed.
+              You can now see each other's public ideas in your feed.
             </p>
             <p style="text-align:center;">{btn("View their profile →", profile_url)}</p>"""),
     }
@@ -199,12 +199,12 @@ def tpl_reco_comment(data):
     comment        = data.get("comment",        "")
     reco_url       = data.get("reco_url",       APP_URL)
     return {
-        "subject": f"{commenter_name} commented on your {ticker} recommendation",
+        "subject": f"{commenter_name} commented on your {ticker} idea",
         "html": layout(f"""
             <h2 style="margin:0 0 12px;font-size:20px;color:#1a1a2e;">New comment 💬</h2>
             <p style="color:#444;margin:0 0 12px;">
               <strong>{commenter_name}</strong> just commented on your
-              <strong>{ticker}{(" — " + asset_name) if asset_name else ""}</strong> recommendation:
+              <strong>{ticker}{(" — " + asset_name) if asset_name else ""}</strong> idea:
             </p>
             <div style="background:#f8f8fc;border-left:3px solid {BRAND_COLOR};border-radius:0 10px 10px 0;
                         padding:14px 18px;margin:0 0 24px;font-size:14px;
@@ -237,9 +237,9 @@ def tpl_contact_recommendation(data):
     type_color = "#22863a" if reco_type.lower() == "buy" else "#c0392b"
 
     return {
-        "subject": f"{from_name} just posted a {reco_type} recommendation — {ticker}",
+        "subject": f"{from_name} just posted a {reco_type} idea — {ticker}",
         "html": layout(f"""
-            <h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">New recommendation 💡</h2>
+            <h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">New idea 💡</h2>
             <p style="color:#888;margin:0 0 20px;font-size:13px;">
               <a href="{profile_url}" style="color:{BRAND_COLOR};font-weight:700;text-decoration:none;">{from_name}</a>
               just shared a new idea.
@@ -252,7 +252,7 @@ def tpl_contact_recommendation(data):
               </div>
               {f'<div style="font-size:14px;color:#555;margin-bottom:4px;">{asset_name}</div>' if asset_name else ""}
               {meta_html}
-              {btn("View full recommendation →", reco_url)}
+              {btn("View full idea →", reco_url)}
             </div>
             <p style="font-size:13px;color:#888;line-height:1.6;">
               You're receiving this because {from_name} is in your myInvestorCircle network.
@@ -272,7 +272,7 @@ def tpl_claim_submitted(data):
               <strong>@{username}</strong> has been submitted successfully.
             </p>
             <p style="color:#444;margin:0 0 24px;">
-              Once approved, your historical recommendations and full ICI score
+              Once approved, your historical ideas and full ICI score
               will appear on your Track Record page. We typically review within 24 hours.
             </p>
             <p style="margin:0 0 28px;text-align:center;">{btn("Visit myInvestorCircle →", APP_URL)}</p>
@@ -318,7 +318,7 @@ def tpl_claim_approved(data):
               has been approved.
             </p>
             <p style="color:#444;margin:0 0 24px;">
-              Your historical recommendations and ICI score are now visible on your
+              Your historical ideas and ICI score are now visible on your
               public Track Record page. Share it with your audience!
             </p>
             <p style="margin:0 0 20px;text-align:center;">{btn("View your Track Record →", profile_url)}</p>

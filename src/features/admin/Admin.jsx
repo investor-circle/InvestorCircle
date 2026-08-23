@@ -331,7 +331,7 @@ export function AdminSeedData() {
         <div>
           <div className="eyebrow">Admin</div>
           <div className="page-title">Seed Historical Data</div>
-          <div className="page-sub">Bootstrap the platform with realistic track records and recommendations for launch</div>
+          <div className="page-sub">Bootstrap the platform with realistic track records and ideas for launch</div>
         </div>
       </div>
 
@@ -340,7 +340,7 @@ export function AdminSeedData() {
         <div className="card-head"><span style={{display:'flex',alignItems:'center',gap:7}}><span style={{fontSize:16}}>①</span> Download Template</span></div>
         <div className="card-body">
           <p style={{margin:'0 0 14px',fontSize:13,color:'var(--muted)',lineHeight:1.6}}>
-            Download the Excel template. It includes an Instructions sheet, a Profiles sheet (to update user bios/socials), and a Recommendations sheet pre-populated with sample data for two users designed to produce an ICI score of <strong>≥80/100</strong>. Replace the sample usernames/emails with your friends' actual accounts.
+            Download the Excel template. It includes an Instructions sheet, a Profiles sheet (to update user bios/socials), and an Ideas sheet pre-populated with sample data for two users designed to produce an ICI score of <strong>≥80/100</strong>. Replace the sample usernames/emails with your friends' actual accounts.
           </p>
           <button className="btn btn-soft" onClick={downloadTemplate}><Download size={14}/> Download Excel Template</button>
           <div style={{marginTop:10,fontSize:12,color:'var(--muted)'}}>Tip: User accounts must be created first via Admin → Users. Then set their username via Edit Profile before seeding.</div>
@@ -393,7 +393,7 @@ export function AdminSeedData() {
               <div style={{display:'flex',gap:10}}>
                 {[
                   {val:'skip',    label:'Skip existing',  desc:'Insert only; skip if (user + ticker + date) already in DB — safe to re-run'},
-                  {val:'replace', label:'Replace all',    desc:'Delete ALL existing recos for each seeded user, then re-insert — use to correct data'},
+                  {val:'replace', label:'Replace all',    desc:'Delete ALL existing ideas for each seeded user, then re-insert — use to correct data'},
                 ].map(o=>(
                   <label key={o.val} style={{display:'flex',gap:8,cursor:'pointer',padding:'10px 14px',borderRadius:10,background:seedMode===o.val?'rgba(109,93,245,.1)':'var(--surface-2)',border:`1px solid ${seedMode===o.val?'rgba(109,93,245,.45)':'var(--line)'}`,flex:1,transition:'.15s'}}>
                     <input type="radio" name="seedMode" value={o.val} checked={seedMode===o.val} onChange={()=>setSeedMode(o.val)} style={{accentColor:'var(--accent)',marginTop:2,flexShrink:0}}/>
@@ -401,7 +401,7 @@ export function AdminSeedData() {
                   </label>
                 ))}
               </div>
-              {seedMode==='replace'&&<div style={{marginTop:8,fontSize:12,color:'#f59e0b',display:'flex',alignItems:'center',gap:6}}><AlertTriangle size={13}/> Replace mode permanently deletes all recommendations for the seeded users before re-inserting. Confirm before running.</div>}
+              {seedMode==='replace'&&<div style={{marginTop:8,fontSize:12,color:'#f59e0b',display:'flex',alignItems:'center',gap:6}}><AlertTriangle size={13}/> Replace mode permanently deletes all ideas for the seeded users before re-inserting. Confirm before running.</div>}
             </div>
 
             {/* Profiles preview */}
@@ -523,7 +523,7 @@ export function AdminFeedConfig({ feedConfigOptions, setFeedConfigOptions, setEf
     <div className="page-head"><div>
       <div className="eyebrow">Admin</div>
       <div className="page-title">Feed Settings</div>
-      <div className="page-sub">Control what appears in all users' recommendation feeds — changes take effect immediately</div>
+      <div className="page-sub">Control what appears in all users' idea feeds — changes take effect immediately</div>
     </div></div>
     <div className="note info" style={{marginBottom:20}}>
       <Flame size={15}/>
@@ -583,7 +583,7 @@ export function AdminInstruments() {
   return (<>
     <div className="page-head"><div><div className="eyebrow">Admin</div>
       <div className="page-title">Instruments</div>
-      <div className="page-sub">Reference data for trading symbols — used in recommendations and portfolio search</div></div></div>
+      <div className="page-sub">Reference data for trading symbols — used in ideas and portfolio search</div></div></div>
     <div className="seg" style={{marginBottom:20}}>
       <button className={tab==="browse"?"active":""} onClick={()=>setTab("browse")}><Database size={14}/> Browse</button>
       <button className={tab==="upload"?"active":""} onClick={()=>setTab("upload")}><Upload size={14}/> Upload</button>
@@ -725,7 +725,7 @@ export function InstrumentUploader() {
   return (<div style={{maxWidth:680}}>
     <div className="note info" style={{marginBottom:16}}><Database size={16}/><div>
       Accepts <b>Zerodha instruments CSV</b> (tradingsymbol, name, exchange, instrument_type, Currency) or a <b>custom Excel/CSV</b> (symbol, name, exchange, asset_class, currency, sector).
-      A <b>sector</b> column is optional but recommended — enables auto-fill in the recommendation modal.
+      A <b>sector</b> column is optional but recommended — enables auto-fill in the idea modal.
       Duplicate (symbol + asset class) pairs are updated in place — an instrument is identified by its symbol and asset class, not by exchange, so an NSE and a BSE row for the same symbol collapse into one.
     </div></div>
     <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{display:"none"}} onChange={onFile}/>
@@ -772,7 +772,7 @@ export function InstrumentAddForm({ onAdded }) {
       <div className="field"><label>Type</label><select value={f.type} onChange={e=>up("type",e.target.value)}><option>EQ</option><option>ETF</option><option>MF</option><option>Others</option></select></div>
       <div className="field"><label>Asset Class</label><select value={f.assetClass} onChange={e=>up("assetClass",e.target.value)}><option>Equity</option><option>ETF</option><option>Mutual Funds</option><option>Crypto</option><option>Bonds</option><option>Metals</option><option>Others</option></select></div>
       <div className="field"><label>Currency</label><select value={f.currency} onChange={e=>up("currency",e.target.value)}><option>INR</option><option>USD</option><option>GBP</option><option>EUR</option></select></div>
-      <div className="field" style={{gridColumn:"1 / span 2"}}><label>Sector <span className="muted small">(optional — enables auto-fill in recommendation modal)</span></label>
+      <div className="field" style={{gridColumn:"1 / span 2"}}><label>Sector <span className="muted small">(optional — enables auto-fill in idea modal)</span></label>
         <select value={f.sector} onChange={e=>up("sector",e.target.value)}>
           <option value="">— Not specified —</option>
           {["Banking & Finance","Technology","Pharmaceuticals","Energy","FMCG","Automobiles","Defence","Capital Goods","Real Estate","Chemicals","Telecom","Metals & Mining","PSU","Healthcare","Infrastructure","Media","Retail","Others"].map(s=><option key={s}>{s}</option>)}
@@ -967,7 +967,7 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
     const confirmed = window.confirm(
       `PERMANENTLY DELETE "${u.name}" (${u.email})?\n\n` +
       `This will:\n` +
-      `  • Remove all their Neon data (recommendations, connections, groups)\n` +
+      `  • Remove all their Neon data (ideas, connections, groups)\n` +
       `  • Block them from logging in again\n` +
       `  • Their Firebase login credential remains but they will be signed out immediately on next attempt\n\n` +
       `This CANNOT be undone. Click OK to confirm.`
@@ -1175,7 +1175,7 @@ export function AdminGroups({ groups, setGroups, contacts, me }) {
   const renameGroup=(gid,newName)=>setGroups(gs=>gs.map(g=>g.id===gid?{...g,name:newName}:g));
   const deleteGroup=(g)=>{ if(confirm(`Delete "${g.name}"? All members will lose access. This cannot be undone.`)) setGroups(gs=>gs.filter(x=>x.id!==g.id)); };
   return (<>
-    <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">Groups</div><div className="page-sub">All groups on the platform · used for sharing and recommendations</div></div>
+    <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">Groups</div><div className="page-sub">All groups on the platform · used for sharing and ideas</div></div>
       <button className="btn btn-pri" onClick={()=>setShowNew(true)}><Plus size={16}/> Create group</button></div>
     {groups.length===0 && <div className="card"><div className="empty">No groups yet. Create one to get started.</div></div>}
     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))", gap:16 }}>
@@ -1233,7 +1233,7 @@ export function AdminConfigs({ configs, setConfigs, providers, setProviders }) {
     <div className="page-head"><div><div className="eyebrow">Admin</div><div className="page-title">App Configuration</div><div className="page-sub">Platform-wide settings — these affect every user in real time</div></div></div>
     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:18, alignItems:"start" }}>
       <div className="card"><div className="card-head">Features</div><div className="card-body" style={{paddingTop:2,paddingBottom:2}}>
-        <Switch k="enableRecommendations" title="Recommendations" desc="Let users send and track investment ideas"/>
+        <Switch k="enableRecommendations" title="Ideas" desc="Let users send and track investment ideas"/>
         <Switch k="allowCryptoAccounts" title="Crypto accounts" desc="Permit linking crypto exchange accounts"/>
         <Switch k="publicFeed" title="Public activity feed" desc="Show network activity on the home feed" last/></div></div>
       <div className="card"><div className="card-head">Privacy defaults</div><div className="card-body" style={{paddingTop:2,paddingBottom:2}}>
@@ -1723,7 +1723,7 @@ export function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, 
         {/* ── Header ── */}
         <div className="modal-head">
           <h3><Database size={17} style={{verticalAlign:-3,color:'var(--accent)',marginRight:6}}/>
-            Seed recommendations
+            Seed ideas
             <span style={{fontSize:12,fontWeight:400,color:'var(--muted)',marginLeft:8}}>
               for <strong style={{color:'var(--ink)'}}>{creatorName}</strong> @{username}
             </span>
@@ -1737,7 +1737,7 @@ export function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, 
           {/* Success banner */}
           {inserted > 0 && (
             <div style={{display:'flex',alignItems:'center',gap:8,background:'var(--gain-soft)',border:'1px solid var(--gain)',borderRadius:10,padding:'10px 14px',marginBottom:14,color:'var(--gain)',fontWeight:700,fontSize:13}}>
-              <Check size={15}/> {inserted} recommendation{inserted!==1?'s':''} seeded.
+              <Check size={15}/> {inserted} idea{inserted!==1?'s':''} seeded.
               <span style={{fontWeight:400,color:'var(--muted)',marginLeft:4,fontSize:12}}>Add more or close when done.</span>
             </div>
           )}
@@ -1745,14 +1745,14 @@ export function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, 
           {/* Historical date (unique to seeding) */}
           <div className="field">
             <label style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span>Recommendation date <span style={{color:'var(--loss)'}}>*</span></span>
+              <span>Idea date <span style={{color:'var(--loss)'}}>*</span></span>
               <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)'}}>Historical — set the original date</span>
             </label>
             <input type="date" value={recoDate} onChange={e=>setRecoDate(e.target.value)} style={{width:'100%',boxSizing:'border-box'}}/>
           </div>
 
           {/* Reco type — Buy / Sell (same as regular modal) */}
-          <div className="field"><label>Recommendation type</label>
+          <div className="field"><label>Idea type</label>
             <div style={{display:'flex',gap:8}}>
               {['Buy','Sell'].map(t=>(
                 <button key={t} onClick={()=>setRecType(t)}
@@ -1886,7 +1886,7 @@ export function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, 
           <label style={{display:'flex',alignItems:'flex-start',gap:10,fontSize:13,fontWeight:600,cursor:'pointer',padding:'12px 0 0',borderTop:'1px solid var(--line)',marginTop:8}}>
             <input type="checkbox" checked={isPublic} onChange={e=>setIsPublic(e.target.checked)} style={{width:16,height:16,accentColor:'var(--accent)',marginTop:1,flexShrink:0}}/>
             <div>
-              Make this recommendation public
+              Make this idea public
               <div style={{fontWeight:400,color:'var(--muted)',fontSize:12,marginTop:2}}>
                 Visible on the creator's public profile page and track record. Leave ticked for seeded historical data.
               </div>
@@ -1899,7 +1899,7 @@ export function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, 
             <div>
               This position is already closed
               <div style={{fontWeight:400,color:'var(--muted)',fontSize:12,marginTop:2}}>
-                For historical recos where the horizon has already expired. The exit price is used to calculate actual returns in the ICI score — without it, return stays at 0 permanently.
+                For historical ideas where the horizon has already expired. The exit price is used to calculate actual returns in the ICI score — without it, return stays at 0 permanently.
               </div>
             </div>
           </label>
@@ -1919,7 +1919,7 @@ export function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, 
                   placeholder="0.00"/>
               </div>
               <div style={{gridColumn:'1 / -1',fontSize:11,color:'var(--muted)',marginTop:4}}>
-                Return = (exit price − reco price) ÷ reco price × 100. This feeds directly into Hit rate and Median return in the ICI score.
+                Return = (exit price − entry price) ÷ entry price × 100. This feeds directly into Hit rate and Median return in the ICI score.
               </div>
             </div>
           )}
@@ -1973,7 +1973,7 @@ export function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, 
         {/* ── Footer with batch submit ── */}
         <div className="modal-foot">
           <span className="muted small">
-            All recos seeded as {isPublic ? 'public ✓' : 'private'} · {queue.length} in queue
+            All ideas seeded as {isPublic ? 'public ✓' : 'private'} · {queue.length} in queue
           </span>
           <div style={{display:'flex',gap:10}}>
             <button className="btn btn-ghost" onClick={onClose}>Done</button>
@@ -1983,7 +1983,7 @@ export function AdminRecoSeedModal({ creatorId, creatorName, username, onClose, 
               onClick={submitAll}
               disabled={busy || !queue.length}
             >
-              {busy ? `Inserting ${queue.length}…` : <><Check size={15}/> Insert {queue.length} reco{queue.length!==1?'s':''}</>}
+              {busy ? `Inserting ${queue.length}…` : <><Check size={15}/> Insert {queue.length} idea{queue.length!==1?'s':''}</>}
             </button>
           </div>
         </div>
@@ -2122,7 +2122,7 @@ export function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
                     color:      (recoCounts[p.id]||0) > 0 ? 'var(--gain)'      : 'var(--muted)',
                     border:     `1px solid ${(recoCounts[p.id]||0) > 0 ? 'var(--gain)' : 'var(--line)'}`,
                   }}>
-                    {(recoCounts[p.id]||0) === 0 ? '0 recos seeded' : `${recoCounts[p.id]} reco${recoCounts[p.id]===1?'':'s'} seeded`}
+                    {(recoCounts[p.id]||0) === 0 ? '0 ideas seeded' : `${recoCounts[p.id]} idea${recoCounts[p.id]===1?'':'s'} seeded`}
                   </span>
                 </div>
               </div>
@@ -2135,10 +2135,10 @@ export function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
                 <button
                   className="btn btn-pri btn-sm"
                   onClick={()=>setSeedingCreator({ id:p.id, name:p.full_name, username:p.username })}
-                  title="Seed recommendations for this creator"
+                  title="Seed ideas for this creator"
                   style={{fontSize:11}}
                 >
-                  <Plus size={12}/> Seed recos
+                  <Plus size={12}/> Seed ideas
                 </button>
                 <button className="btn btn-ghost btn-sm" onClick={()=>window.open(`/#/investor/${p.username}`,'_blank')} title="View profile"><Globe size={12}/> View</button>
                 <button className="btn btn-ghost btn-sm" onClick={()=>deleteProfile(p.id)} style={{color:'var(--loss)'}} title="Delete"><Trash2 size={12}/></button>
@@ -2149,7 +2149,7 @@ export function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
       </div>
 
       <div className="note" style={{marginTop:20,fontSize:12,color:'var(--muted)'}}>
-        <strong>Workflow:</strong> 1. Create profile → 2. Seed recommendations via <strong>Seed Data</strong> tab (use the creator's username) → 3. Share claim link → 4. Creator signs up → 5. Approve claim here.
+        <strong>Workflow:</strong> 1. Create profile → 2. Seed ideas via <strong>Seed Data</strong> tab (use the creator's username) → 3. Share claim link → 4. Creator signs up → 5. Approve claim here.
       </div>
     </div>
   );

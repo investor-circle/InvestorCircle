@@ -1304,7 +1304,7 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
         {recent.length>0&&(
           <div>
             <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span>Recommended by</span>
+              <span>Posted by</span>
               {allRecos.length>3&&(
                 <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 8px'}} onClick={onViewAllInvestors||onOpenFull}>
                   View All {allRecos.length}
@@ -1372,7 +1372,7 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
         </button>
 
         {allRecos.length===0&&(
-          <div style={{textAlign:'center',padding:'8px 0',color:'var(--muted)',fontSize:13}}>No recommendations for {ticker} yet.</div>
+          <div style={{textAlign:'center',padding:'8px 0',color:'var(--muted)',fontSize:13}}>No ideas for {ticker} yet.</div>
         )}
       </div>
     </div>
@@ -1660,7 +1660,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                       )}
                     </div>
                   )}
-                  {t.community.total===0&&t.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No recommendations yet</div>)}
+                  {t.community.total===0&&t.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No ideas yet</div>)}
                   <div style={{display:'flex',justifyContent:'flex-end',marginTop:6}}>
                     <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={e=>{e.stopPropagation();onOpenSecurity(t.ticker,t.name);}}>
                       <ChevronRight size={13}/> Stock Insights
@@ -1725,7 +1725,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                         </td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}>
                           <div style={{display:'flex',gap:4,justifyContent:'center'}}>
-                            <button className="iconbtn" title={expanded?'Collapse':'Who recommended'} onClick={toggleExpand}
+                            <button className="iconbtn" title={expanded?'Collapse':'Who posted'} onClick={toggleExpand}
                               style={{color:expanded?'var(--accent-ink)':'var(--muted)'}}>
                               <ChevronDown size={15} style={{transform:expanded?'rotate(180deg)':'none',transition:'transform .2s'}}/>
                             </button>
@@ -1737,7 +1737,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                         <tr style={{borderBottom:'1px solid var(--line)',background:'var(--surface-2)'}}>
                           <td colSpan={7} style={{padding:'0 14px 14px 60px'}}>
                             <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',margin:'10px 0 8px'}}>
-                              Who recommended — {t.filteredRecos.length} investor{t.filteredRecos.length!==1?'s':''}
+                              Who posted — {t.filteredRecos.length} investor{t.filteredRecos.length!==1?'s':''}
                             </div>
                             <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                               {t.filteredRecos.map((r,i)=>{
@@ -1771,7 +1771,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                     </React.Fragment>
                   );
                 })}
-                {allTickers.length===0&&!loading&&<tr><td colSpan={7} style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>{recos.length===0?'No recommendations on the platform yet.':'No results match your filters.'}</td></tr>}
+                {allTickers.length===0&&!loading&&<tr><td colSpan={7} style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>{recos.length===0?'No ideas on the platform yet.':'No results match your filters.'}</td></tr>}
               </tbody>
             </table>
             {allTickers.length>visibleCount&&(
@@ -1964,7 +1964,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
             <div className="page-title">{ticker}</div>
             <div style={{fontSize:16,color:'var(--muted)',fontWeight:400}}>{name}</div>
           </div>
-          <div className="page-sub">{activeRecos.length} active recommendation{activeRecos.length!==1?'s':''} · {investors.length} investor{investors.length!==1?'s':''} tracking</div>
+          <div className="page-sub">{activeRecos.length} active idea{activeRecos.length!==1?'s':''} · {investors.length} investor{investors.length!==1?'s':''} tracking</div>
         </div>
 
         {/* ── Switch-security search — compact, tucked into the header's empty space.
@@ -2037,7 +2037,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                 {community.strength}
               </div>
               <div style={{fontSize:14,fontWeight:700,color:'var(--ink)',marginBottom:4}}>{community.label}</div>
-              <div style={{fontSize:12,color:'var(--muted)',marginBottom:20}}>out of 100 — based on {community.total} active recommendations</div>
+              <div style={{fontSize:12,color:'var(--muted)',marginBottom:20}}>out of 100 — based on {community.total} active ideas</div>
               <div style={{height:8,borderRadius:6,overflow:'hidden',background:'var(--line)',position:'relative'}}>
                 <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${community.strength}%`,
                   background:consensusStrengthColor(community),transition:'width .6s'}}/>
@@ -2066,9 +2066,9 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
       {/* Tab: Recommendation History */}
       {tab==='timeline'&&(
         <div className="card">
-          <div className="card-head"><Clock size={15}/> Recommendation History <span style={{fontSize:11,color:'var(--muted)',fontWeight:400,marginLeft:4}}>(immutable — all calls are permanent)</span></div>
+          <div className="card-head"><Clock size={15}/> Idea History <span style={{fontSize:11,color:'var(--muted)',fontWeight:400,marginLeft:4}}>(immutable — all calls are permanent)</span></div>
           {recos.length===0&&!loading?(
-            <div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>No recommendations for {ticker} yet.</div>
+            <div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>No ideas for {ticker} yet.</div>
           ):(
             <div style={{overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -2200,7 +2200,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           ))}
           {investors.length===0&&!loading&&(
             <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>
-              No investor recommendations for {ticker} yet.
+              No investor ideas for {ticker} yet.
             </div></div>
           )}
         </div>
@@ -2210,13 +2210,13 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
       {tab==='stats'&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           {!stats?(
-            <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)'}}>No recommendation history for {ticker} yet.</div></div>
+            <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)'}}>No idea history for {ticker} yet.</div></div>
           ):(
             <>
               {/* Overview stat cards */}
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12}}>
                 {[
-                  {label:'Total Recommendations', val:stats.total, icon:<Activity size={16}/>},
+                  {label:'Total Ideas', val:stats.total, icon:<Activity size={16}/>},
                   {label:'Currently Active',       val:stats.active, icon:<TrendingUp size={16}/>, color:'var(--gain)'},
                   {label:'Exited / Closed',        val:stats.exited, icon:<TrendingDown size={16}/>, color:'var(--muted)'},
                   {label:'Unique Investors',        val:new Set(recos.map(r=>r.from)).size, icon:<Users size={16}/>},
@@ -2232,7 +2232,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
               {/* Monthly recommendation trend — SVG sparkline */}
               {stats.months.length>0&&(
                 <div className="card">
-                  <div className="card-head"><Target size={15}/> Recommendation Activity by Month</div>
+                  <div className="card-head"><Target size={15}/> Idea Activity by Month</div>
                   <div className="card-body" style={{padding:'16px 20px'}}>
                     {(()=>{
                       const maxVal = Math.max(...stats.months.map(m=>m.buy+m.sell), 1);
@@ -2293,8 +2293,8 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           {aiLoading&&(
             <div className="card" style={{padding:'48px',textAlign:'center'}}>
               <Loader size={28} className="spin" style={{color:'var(--accent-ink)',marginBottom:12}}/>
-              <div style={{fontWeight:700,marginBottom:4}}>Analysing recommendations…</div>
-              <div style={{fontSize:13,color:'var(--muted)'}}>Reading {recos.length} recommendations for {ticker}</div>
+              <div style={{fontWeight:700,marginBottom:4}}>Analysing ideas…</div>
+              <div style={{fontSize:13,color:'var(--muted)'}}>Reading {recos.length} ideas for {ticker}</div>
             </div>
           )}
           {!aiLoading&&!aiSummary&&(
@@ -2302,7 +2302,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
               <Lightbulb size={32} style={{color:'var(--accent-ink)',marginBottom:12,opacity:.6}}/>
               <div style={{fontWeight:700,marginBottom:8}}>AI Investment Summary</div>
               <div style={{fontSize:13,color:'var(--muted)',marginBottom:20}}>
-                Synthesise bullish and bearish themes from {activeRecos.length} active recommendation{activeRecos.length!==1?'s':''} on {ticker}
+                Synthesise bullish and bearish themes from {activeRecos.length} active idea{activeRecos.length!==1?'s':''} on {ticker}
               </div>
               <button className="btn btn-pri" onClick={buildAiSummary} disabled={!activeRecos.length}>
                 <Lightbulb size={14}/> Generate Summary
@@ -2329,7 +2329,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                     {aiSummary.sentiment}
                   </div>
                   <div style={{fontSize:13,color:'var(--ink-soft)'}}>
-                    {aiSummary.community.bullPct}% of investors bullish · {aiSummary.community.bearPct}% bearish · {aiSummary.community.total} total active recommendations
+                    {aiSummary.community.bullPct}% of investors bullish · {aiSummary.community.bearPct}% bearish · {aiSummary.community.total} total active ideas
                   </div>
                 </div>
               </div>
@@ -2363,7 +2363,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
               </div>
 
               <div style={{fontSize:11,color:'var(--muted)',textAlign:'center',padding:'4px 0'}}>
-                Summary is generated from investor recommendations on myInvestorCircle and reflects community opinion, not financial advice.
+                Summary is generated from investor ideas on myInvestorCircle and reflects community opinion, not financial advice.
               </div>
             </div>
           )}

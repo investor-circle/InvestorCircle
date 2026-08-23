@@ -173,7 +173,7 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
         </div>
         <div style={{display:'flex',gap:10,flexWrap:'wrap',justifyContent:'flex-end'}}>
           {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)',marginRight:4}}/>}
-          <button className="btn btn-ghost btn-sm" title="Reload consensus data from latest recommendations"
+          <button className="btn btn-ghost btn-sm" title="Reload consensus data from latest ideas"
             onClick={()=>{ setRecoMap({}); setLoading(true); /* holdings.length dep triggers reload */ setHoldings(h=>[...h]); }}>
             <RefreshCw size={13}/> Refresh Intelligence
           </button>
@@ -291,7 +291,7 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
                   </div>
                   {h.community.total>0&&(<div style={{marginBottom:6}}><div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>Community</div><ConsensusBar cons={h.community} width={'100%'} mini/></div>)}
                   {h.circle.total>0&&(<div style={{marginBottom:6}}><div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>My circle</div><ConsensusBar cons={h.circle} width={'100%'} mini/></div>)}
-                  {h.community.total===0&&h.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No recommendations yet</div>)}
+                  {h.community.total===0&&h.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No ideas yet</div>)}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,paddingTop:8,borderTop:'1px solid var(--line)'}}>
                     <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={e=>{e.stopPropagation();onOpenSecurity(h.sym,h.name);}}><ChevronRight size={13}/> Security Intel</button>
                     <button style={{border:'none',background:'none',cursor:'pointer',color:'var(--loss)',opacity:.5,padding:4}}

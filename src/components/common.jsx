@@ -39,7 +39,7 @@ export function SortTh({ label, k, sort, setSort, align }) {
 export function RecoBreakdown({ stats, onPnl, pnlLabel }) {
   return (
     <div className="statgrid">
-      <div className="stat"><div className="v">{stats.count}</div><div className="l">Recommendations</div></div>
+      <div className="stat"><div className="v">{stats.count}</div><div className="l">Ideas</div></div>
       <div className="stat"><div className="v">{stats.acted}</div><div className="l">I acted on</div></div>
       <div className="stat"><div className="v">{stats.liked}</div><div className="l">I liked</div></div>
       <div className="stat"><div className="v">{stats.disliked}</div><div className="l">I disliked</div></div>

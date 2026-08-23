@@ -146,8 +146,8 @@ async function notifyLike({ recoId, userId, likerName }) {
     });
     await sql`INSERT INTO notifications (user_id, type, from_user_id, metadata) VALUES (${ownerId}, 'contact_like', ${userId}, ${meta})`;
     sendPush(ownerId, {
-      title: '👍 Someone liked your recommendation',
-      body:  `${likerName} liked your recommendation${ticker ? ' · ' + ticker : ''}`,
+      title: '👍 Someone liked your idea',
+      body:  `${likerName} liked your idea${ticker ? ' · ' + ticker : ''}`,
       url:   ownerUsername && recoId ? `https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${recoId}` : 'https://myinvestorcircle.com',
       tag:   'contact_like',
     });
@@ -184,8 +184,8 @@ async function notifyComment({ recoId, userId, commenterName, commentText }) {
   sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
       VALUES (${ownerId}, 'contact_comment', ${userId}, ${meta})`
     .then(() => sendPush(ownerId, {
-      title: '💬 New comment on your recommendation',
-      body:  `${commenterName} commented on your recommendation${ticker ? ' · ' + ticker : ''}`,
+      title: '💬 New comment on your idea',
+      body:  `${commenterName} commented on your idea${ticker ? ' · ' + ticker : ''}`,
       url:   ownerUsername && recoId ? `https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${recoId}` : 'https://myinvestorcircle.com',
       tag:   'contact_comment',
     }))

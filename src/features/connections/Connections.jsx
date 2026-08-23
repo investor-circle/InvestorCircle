@@ -428,7 +428,7 @@ export function ContactsSection({ connections, setConnections, groups, sharing, 
       </tr>
       {open && c.status==="accepted" && <tr className="expand-row"><td colSpan={7}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <b style={{fontSize:14}}>{c.name}&apos;s recommendations to you</b>
+          <b style={{fontSize:14}}>{c.name}&apos;s ideas to you</b>
           <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>
         </div>
         <RecoBreakdown stats={statsOf(c)} pnlLabel="My P&L" onPnl={()=>onOpenRecos({by:c.name})}/>
@@ -527,7 +527,7 @@ export function AddConnectionModal({ existing, me, onClose, onAddExisting, onInv
     <div className="modal-body">
       <div className="field"><label>Email address</label>
         <input value={email} onChange={e=>{setEmail(e.target.value);setResult(null);}} placeholder="name@example.com" onKeyDown={e=>e.key==="Enter"&&!busy&&submit()} autoFocus/></div>
-      <div className="muted small" style={{marginBottom:result?14:0}}>If they have a My Investor Circle account a connection request is sent. They must accept before you can share recommendations.</div>
+      <div className="muted small" style={{marginBottom:result?14:0}}>If they have a My Investor Circle account a connection request is sent. They must accept before you can share ideas.</div>
       {result && <div className={"note "+result.type}>{result.type==="ok"?<Check size={16}/>:<Mail size={16}/>}<div>{result.msg}</div></div>}
     </div>
     <div className="modal-foot"><span/>
@@ -586,7 +586,7 @@ export function InviteModal({ username, referralCount=0, onClose }) {
     <div style={{padding: isMobile?'20px 20px 36px':'28px 28px 24px'}}>
       {!isMobile && <div style={{fontWeight:900,fontSize:20,marginBottom:4}}>Invite Friends to myInvestorCircle</div>}
       <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.55,marginBottom:20}}>
-        Share your personal invite link. Anyone who signs up through it is automatically added to your investment circle — you can see each other's recommendations right away.
+        Share your personal invite link. Anyone who signs up through it is automatically added to your investment circle — you can see each other's ideas right away.
       </div>
 
       {/* Referral stats */}

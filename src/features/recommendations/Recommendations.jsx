@@ -227,7 +227,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
     <div className="card"><div className="card-body" style={{textAlign:'center',padding:'48px 32px'}}>
       <Bookmark size={36} color="var(--muted)" style={{marginBottom:14}}/>
       <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>Nothing tracked yet</div>
-      <div className="muted small">Click the bookmark icon on any recommendation to save it here for easy reference.</div>
+      <div className="muted small">Click the bookmark icon on any idea to save it here for easy reference.</div>
     </div></div>
   );
 
@@ -283,7 +283,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
         <Search size={15} color="var(--muted)"/>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search asset or ticker…"/>
       </div>
-      <select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)} title="Filter by recommender">
+      <select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)} title="Filter by ideator">
         <option value="all">All people</option>{byOptions.map(b=><option key={b}>{b}</option>)}
       </select>
       <select className="inline-select sm" value={fHorizon} onChange={e=>setFHorizon(e.target.value)} title="Filter by horizon">
@@ -298,7 +298,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
     </div>
 
     {sorted.length===0
-      ? <div className="card"><div className="empty">No tracked recommendations match your filters.</div></div>
+      ? <div className="card"><div className="empty">No tracked ideas match your filters.</div></div>
       : isMobile
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {sorted.map(r=>{
@@ -321,7 +321,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
                   <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:8,marginBottom:12}}>
-                  {[['Reco Price',r.reco_price?fmt(r.reco_price,cur):'—',null],
+                  {[['Entry Price',r.reco_price?fmt(r.reco_price,cur):'—',null],
                     ['Current',r.current_price?fmt(r.current_price,cur):'—',null],
                     ['Since Yday', dailyChangeFor(r)!=null?`${dailyChangeFor(r)>=0?'+':''}${dailyChangeFor(r).toFixed(1)}%`:'—', dailyChangeFor(r)!=null?(dailyChangeFor(r)>=0):null],
                     ['Return',r.reco_price?fmtPct(recoRet):'—', recoRet>=0]].map(([label,val,isGain],i)=>(
@@ -365,13 +365,13 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
             <table className="grid" style={{width:"100%"}}>
               <thead><tr>
                 <SortTh label="Asset"        k="asset"   sort={sort} setSort={setSort}/>
-                <th style={{whiteSpace:"normal",lineHeight:1.3,minWidth:60}}>Reco By</th>
+                <th style={{whiteSpace:"normal",lineHeight:1.3,minWidth:60}}>Idea By</th>
                 <th style={{textAlign:"left",whiteSpace:"normal",lineHeight:1.3,minWidth:60,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"tracked",dir:s.key==="tracked"&&s.dir==="asc"?"desc":"asc"}))}>Tracked<br/>On<span className="si">{sort.key==="tracked"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
-                <SortTh label="Reco Price"   k="reco"    sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Entry Price"   k="reco"    sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Entry Price"  k="entry"   sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current"      k="cur"     sort={sort} setSort={setSort} align="right"/>
                 <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:64,cursor:"pointer"}} title="Change since the previous trading day's close" onClick={()=>setSort(s=>({key:"sinceyday",dir:s.key==="sinceyday"&&s.dir==="asc"?"desc":"asc"}))}>Since<br/>Yday<span className="si">{sort.key==="sinceyday"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
-                <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:72,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"recret",dir:s.key==="recret"&&s.dir==="asc"?"desc":"asc"}))}>Reco<br/>Return<span className="si">{sort.key==="recret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
+                <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:72,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"recret",dir:s.key==="recret"&&s.dir==="asc"?"desc":"asc"}))}>Idea<br/>Return<span className="si">{sort.key==="recret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:64,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"myret",dir:s.key==="myret"&&s.dir==="asc"?"desc":"asc"}))}>My<br/>Return<span className="si">{sort.key==="myret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th>Status</th>
                 <SortTh label="Horizon"      k="horizon" sort={sort} setSort={setSort}/>
@@ -473,7 +473,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
                         {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">{fmt(r.stop_loss,r.currency||'INR')}</b></div>}
                         {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
                         {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
-                        <div><div className="cap">Reco Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
+                        <div><div className="cap">Idea Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
                         {myRet!==null&&<div><div className="cap">My Return</div><b className={"tnum "+(myRet>=0?"pos":"neg")}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</b></div>}
                       </div>
                       {r.thesis&&r.thesis!=='—'&&(
@@ -550,7 +550,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
   };
   const toggleHide=(r)=>patch(r,{isHidden:!r.hidden,hidden:!r.hidden});
   const del=async(r)=>{
-    if(!confirm("Remove this recommendation from your received list?")) return;
+    if(!confirm("Remove this idea from your received list?")) return;
     setRecs(rs=>rs.filter(x=>x.deliveryId!==r.deliveryId));
     await dbDeleteDelivery(r.deliveryId, myId);
   };
@@ -588,7 +588,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
         <Search size={15} color="var(--muted)"/>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search asset or contact…"/>
       </div>
-      <select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)} title="Filter by recommender">
+      <select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)} title="Filter by ideator">
         <option value="all">All people</option>{byOptions.map(b=><option key={b}>{b}</option>)}
       </select>
       <select className="inline-select sm" value={fCls} onChange={e=>setFCls(e.target.value)} title="Filter by class">
@@ -623,11 +623,11 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
       </div>
     )}
     {recs.some(r=>r.exitSignal&&(showHidden||!r.hidden)) && (
-      <div className="note warn" style={{marginBottom:10,padding:"8px 12px",fontSize:12}}><AlertTriangle size={14}/><div>A recommender has issued an <b>exit signal</b> on a recommendation below.</div></div>
+      <div className="note warn" style={{marginBottom:10,padding:"8px 12px",fontSize:12}}><AlertTriangle size={14}/><div>An ideator has issued an <b>exit signal</b> on an idea below.</div></div>
     )}
 
     {rows.length===0
-      ? <div className="card"><div className="empty">No recommendations match your filters.</div></div>
+      ? <div className="card"><div className="empty">No ideas match your filters.</div></div>
       : isMobile
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {rows.map(r=>{
@@ -646,7 +646,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                   <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-                  {[['Reco Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
+                  {[['Entry Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
                     <div key={i} style={{background:'var(--surface-2)',borderRadius:8,padding:'8px 10px'}}>
                       <div style={{fontSize:10,color:'var(--muted)',marginBottom:2}}>{label}</div>
                       <div style={{fontWeight:700,fontSize:13,color:i===2?(recoRet>=0?'var(--gain)':'var(--loss)'):'var(--ink)'}}>{val}</div>
@@ -684,7 +684,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                 <SortTh label="Asset" k="assetName" sort={sort} setSort={setSort}/>
                 <SortTh label="By" k="by" sort={sort} setSort={setSort}/>
                 <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
-                <SortTh label="Reco ₹" k="reco" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Entry ₹" k="reco" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current ₹" k="cur" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
                 <th>Status</th>
@@ -773,7 +773,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                         {/* Track / bookmark button */}
                         <button
                           className={"iconbtn"+(tracked?.has(r.id)?" on-like":"")}
-                          title={tracked?.has(r.id)?"Remove from tracked":"Track this recommendation"}
+                          title={tracked?.has(r.id)?"Remove from tracked":"Track this idea"}
                           onClick={()=>toggleTrack?.(r.id)}
                           style={tracked?.has(r.id)?{background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{}}>
                           <Bookmark size={13}/>
@@ -835,7 +835,7 @@ export function InvestPriceModal({ reco, onClose, onConfirm }) {
     <div className="modal-body">
       <div className="muted small" style={{marginBottom:14}}>What price did you invest at for <b style={{color:"var(--ink)"}}>{reco.ticker}</b> — {reco.assetName}?</div>
       <div style={{display:"flex",gap:18,marginBottom:16}}>
-        <div><div className="muted small">Reco price</div><div className="tnum" style={{fontWeight:700}}>{fmt(reco.priceAt)}</div></div>
+        <div><div className="muted small">Entry price</div><div className="tnum" style={{fontWeight:700}}>{fmt(reco.priceAt)}</div></div>
         <div><div className="muted small">Current price</div><div className="tnum" style={{fontWeight:700}}>{fmt(reco.price)}</div></div></div>
       <div className="field"><label>Your entry price</label><input type="number" value={price} autoFocus onChange={e=>setPrice(e.target.value)} onKeyDown={e=>e.key==="Enter"&&valid&&onConfirm(+price)} placeholder="0"/></div>
     </div>
@@ -1110,14 +1110,14 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
   const [exitingId,  setExitingId]  = useState(null);
 
   const del=async(r)=>{
-    if(!confirm("Delete this recommendation? This will remove it from all recipients\' lists too.")) return;
+    if(!confirm("Delete this idea? This will remove it from all recipients\' lists too.")) return;
     setRecs(rs=>rs.filter(x=>x.id!==r.id));
     await dbDeleteReco(r.id, me?.id);
   };
 
   const toggleExit=async(r)=>{
     if (r.exit) {
-      if(!confirm("Cancel the exit signal for this recommendation?")) return;
+      if(!confirm("Cancel the exit signal for this idea?")) return;
       setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:false,exitDate:null,exitPrice:null}:x));
       if(me?.id) { try { await dbCancelExit(r.id,me.id); await onReload(); } catch(_){} }
     } else {
@@ -1128,7 +1128,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
       const priceLabel = exitPriceData
         ? `₹${Number(exitPriceData.price).toLocaleString("en-IN")} (${sourceName(exitPriceData.source)} · ${exitPriceData.date})`
         : "Price unavailable — will not be stamped (flagged on profile)";
-      const confirmed = confirm(`Exit "${r.ticker}"?\n\nExit price: ${priceLabel}\n\nThis records your exit and closes the recommendation.`);
+      const confirmed = confirm(`Exit "${r.ticker}"?\n\nExit price: ${priceLabel}\n\nThis records your exit and closes the idea.`);
       setExitingId(null);
       if (!confirmed) return;
       setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:true,exitDate:TODAY,exitPrice:exitPriceData?.price||null}:x));
@@ -1183,7 +1183,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
     </div>
 
     {rows.length===0
-      ? <div className="card"><div className="empty">No recommendations match your filters.</div></div>
+      ? <div className="card"><div className="empty">No ideas match your filters.</div></div>
       : isMobile
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {rows.map(r=>{
@@ -1202,7 +1202,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                   <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-                  {[['Reco Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
+                  {[['Entry Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
                     <div key={i} style={{background:'var(--surface-2)',borderRadius:8,padding:'8px 10px'}}>
                       <div style={{fontSize:10,color:'var(--muted)',marginBottom:2}}>{label}</div>
                       <div style={{fontWeight:700,fontSize:13,color:i===2?(recoRet>=0?'var(--gain)':'var(--loss)'):'var(--ink)'}}>{val}</div>
@@ -1240,7 +1240,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
               <thead><tr>
                 <SortTh label="Asset" k="assetName" sort={sort} setSort={setSort}/>
                 <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
-                <SortTh label="Reco Price" k="reco" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Entry Price" k="reco" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current" k="cur" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
                 <th>Status</th>
@@ -1352,18 +1352,18 @@ export function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAd
     invested:f.invested, investedPrice:f.invested?(+f.investedPrice):null, recoActed:f.invested?1:0, shareType:f.shareType, groupId:f.shareType==="group"?f.groupId:null,
     reaction:"none", likes:0, exitSignal:false, exitDate:null, hidden:false, thesis:f.thesis.trim()||null });
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-head"><h3><Plus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add a recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-head"><h3><Plus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add an idea</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">
       <div className="muted small" style={{marginBottom:14}}>Log a tip someone shared with you offline — fill in the details yourself.</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,columnGap:14}}>
         <div className="field"><label>Asset name</label><input value={f.assetName} onChange={e=>up("assetName",e.target.value)} placeholder="e.g. Apple Inc."/></div>
         <div className="field"><label>Ticker</label><input value={f.ticker} onChange={e=>up("ticker",e.target.value)} placeholder="AAPL"/></div>
-        <div className="field"><label>Recommended by</label><input value={f.by} onChange={e=>up("by",e.target.value)} placeholder="Name" list="cnames"/>
+        <div className="field"><label>Posted by</label><input value={f.by} onChange={e=>up("by",e.target.value)} placeholder="Name" list="cnames"/>
           <datalist id="cnames">{contacts.map(c=><option key={c.id} value={c.name}/>)}</datalist></div>
         <div className="field"><label>Asset class</label><select value={f.assetClass} onChange={e=>up("assetClass",e.target.value)}>{assetClasses.map(c=><option key={c}>{c}</option>)}</select></div>
         <div className="field"><label>Date</label><input type="date" value={f.date} onChange={e=>up("date",e.target.value)}/></div>
         <div className="field"><label>Shared as</label><select value={f.shareType} onChange={e=>up("shareType",e.target.value)}><option value="one">One-to-one</option><option value="group">Group</option></select></div>
-        <div className="field"><label>Reco price</label><input type="number" value={f.recoPrice} onChange={e=>up("recoPrice",e.target.value)} placeholder="0"/></div>
+        <div className="field"><label>Entry price</label><input type="number" value={f.recoPrice} onChange={e=>up("recoPrice",e.target.value)} placeholder="0"/></div>
         <div className="field"><label>Current price</label><input type="number" value={f.curPrice} onChange={e=>up("curPrice",e.target.value)} placeholder="0"/></div>
         <div className="field"><label>Target price <span className="muted small">(optional)</span></label><input type="number" value={f.targetPrice} onChange={e=>up("targetPrice",e.target.value)} placeholder="0"/></div>
         <div className="field"><label>Target horizon</label><select value={f.horizon} onChange={e=>up("horizon",e.target.value)}>{HORIZONS.map(h=><option key={h} value={h}>{h}</option>)}</select></div>
@@ -1375,7 +1375,7 @@ export function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAd
       {f.invested && <div className="field" style={{marginTop:12,maxWidth:220}}><label>My entry price</label><input type="number" value={f.investedPrice} onChange={e=>up("investedPrice",e.target.value)} placeholder="0"/></div>}
     </div>
     <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      <button className="btn btn-pri" disabled={!valid} onClick={save}>Add recommendation</button></div></div>
+      <button className="btn btn-pri" disabled={!valid} onClick={save}>Add idea</button></div></div>
   </div></div>);
 }
 
@@ -1743,8 +1743,8 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
           };
           await dbNotifyPublicContacts(newRecoId, contacts.map(c => c.id), meta);
           contacts.forEach(c => sendPush(c.id, {
-            title: '💡 New recommendation in your circle',
-            body:  `${me.name || 'Someone'} posted a new recommendation`,
+            title: '💡 New idea in your circle',
+            body:  `${me.name || 'Someone'} posted a new idea`,
             url:   recoUrl,
             tag:   'contact_recommendation',
           }));
@@ -1779,7 +1779,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
     <div className="modal-body">
 
       {/* Recommendation type — Buy / Sell */}
-      <div className="field"><label>Recommendation type</label>
+      <div className="field"><label>Idea type</label>
         <div style={{display:"flex",gap:8}}>
           {["Buy","Sell"].map(t=>(
             <button key={t} onClick={()=>setRecType(t)}
@@ -1892,7 +1892,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
           {priceError && (
             <div style={{padding:"11px 13px",border:"1px solid var(--amber)",borderRadius:11,background:"var(--amber-soft)",fontSize:12,color:"var(--amber)"}}>
               <AlertTriangle size={13}/> Price will be auto-stamped tonight by the nightly batch using closing price.
-              <div style={{marginTop:3,opacity:.8}}>Entry price is stamped using closing price of recommendation date — not manual entry.</div>
+              <div style={{marginTop:3,opacity:.8}}>Entry price is stamped using closing price of idea date — not manual entry.</div>
             </div>
           )}
         </div>
@@ -2058,7 +2058,7 @@ export function IdeaSharePopover({ reco, username, contacts=[], groups=[], ancho
           <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}><span style={{ fontSize: 14 }}>💬</span> WhatsApp</a>
         </div>
       ) : (
-        <div className="muted small" style={{ marginBottom: 14 }}>Public link unavailable — recommender hasn't set a username yet.</div>
+        <div className="muted small" style={{ marginBottom: 14 }}>Public link unavailable — ideator hasn't set a username yet.</div>
       )}
 
       {/* ── Circles ── */}
@@ -2343,7 +2343,7 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, contacts=[], gr
         {loading && (
           <div style={{textAlign:'center', padding:'72px 0', color:'var(--muted)'}}>
             <Loader size={28} className="spin" style={{marginBottom:14}}/>
-            <div>Loading recommendation…</div>
+            <div>Loading idea…</div>
           </div>
         )}
 
@@ -2351,9 +2351,9 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, contacts=[], gr
         {notFound && !loading && (
           <div style={{textAlign:'center', padding:'72px 0'}}>
             <div style={{fontSize:36, marginBottom:14}}>🔒</div>
-            <div style={{fontWeight:700, fontSize:17, marginBottom:8}}>Recommendation not found</div>
+            <div style={{fontWeight:700, fontSize:17, marginBottom:8}}>Idea not found</div>
             <div style={{fontSize:14, color:'var(--muted)', marginBottom:24}}>
-              This recommendation may be private or no longer available.
+              This idea may be private or no longer available.
             </div>
             <button className="btn btn-pri" onClick={onNavigateProfile}>
               View @{username}'s profile
@@ -2820,7 +2820,7 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
                   textDecoration:canOpenProfile?'underline':'none',textDecorationStyle:'dotted',textUnderlineOffset:3}}
                 title={canOpenProfile?`View ${cf.name}'s public profile`:''}
                 onClick={e=>{ if(canOpenProfile){ e.stopPropagation(); openProfile(recommenderInfo.username); } }}>{cf.name}</b>
-              <span style={{color:'var(--muted)',fontWeight:400}}>recommended</span>
+              <span style={{color:'var(--muted)',fontWeight:400}}>shared</span>
               <b
                 style={{
                   color: r.ticker&&onOpenSecurity ? 'var(--accent-ink)' : 'var(--ink)',
@@ -2842,12 +2842,12 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
             <div style={{fontSize:12,color:'var(--muted)',marginTop:3,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <span>{fmtDate(r.date)}</span>
               {r.assetClass&&<span style={{display:'flex',alignItems:'center',gap:4}}><span className="dot" style={{background:classColor(r.assetClass),width:7,height:7}}/>{r.assetClass}</span>}
-              {r.priceAt>0&&<span>Reco ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
+              {r.priceAt>0&&<span>Entry ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
               {r.feedSource==='public'
-                ? <span title="This recommendation is publicly visible to all investors on myInvestorCircle"
+                ? <span title="This idea is publicly visible to all investors on myInvestorCircle"
                     style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(99,102,241,.1)',color:'rgb(99,102,241)',border:'1px solid rgba(99,102,241,.25)',display:'flex',alignItems:'center',gap:3}}><Globe size={9}/> Public</span>
                 : r.isPublic
-                ? <span title="This recommendation is publicly visible to all investors"
+                ? <span title="This idea is publicly visible to all investors"
                     style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(99,102,241,.1)',color:'rgb(99,102,241)',border:'1px solid rgba(99,102,241,.25)',display:'flex',alignItems:'center',gap:3}}><Globe size={9}/> Public</span>
                 : r.shareType==='group'
                   ? <span title={`Shared with the group: ${groups?.find?.(g=>g.id===r.groupId)?.name||'your group'}`}

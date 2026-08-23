@@ -20,14 +20,14 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
     circle_join_approved:    "approved your request to join their Circle",
     circle_join_rejected:    "declined your request to join their Circle",
     tracking_new:            "started tracking you",
-    recommendation:          "shared a recommendation with you",
+    recommendation:          "shared an idea with you",
     circle_idea:             "shared an idea in a Circle",
     exit_signal:             "issued an exit signal",
-    contact_recommendation:  "posted a new recommendation",
-    contact_comment:         "commented on your recommendation",
-    contact_like:            "liked your recommendation",
-    network_like:            "liked a recommendation",
-    network_comment:         "commented on a recommendation",
+    contact_recommendation:  "posted a new idea",
+    contact_comment:         "commented on your idea",
+    contact_like:            "liked your idea",
+    network_like:            "liked an idea",
+    network_comment:         "commented on an idea",
   };
   const TYPE_ICON = {
     contact_recommendation: "💡",
@@ -55,7 +55,7 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
         : count === 2 && names.length >= 2
         ? <><b>{names[0]}</b> and <b>{names[1]}</b></>
         : <><b>{names[0]}</b> and <b>{count - 1} others</b></>;
-      return <>{who} liked your {ticker ? <>{ticker} </> : ''}recommendation</>;
+      return <>{who} liked your {ticker ? <>{ticker} </> : ''}idea</>;
     }
 
     // Smart-bundled tracking: "Rahul Sharma started tracking you" or
@@ -77,13 +77,13 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
     if (n.type === 'network_like')
       return <><b>{n.from_name||'Someone'}</b> liked {ticker}{byLine}</>;
     if (n.type === 'network_comment')
-      return <><b>{n.from_name||'Someone'}</b> commented on {ticker||'a recommendation'}{byLine}</>;
+      return <><b>{n.from_name||'Someone'}</b> commented on {ticker||'an idea'}{byLine}</>;
 
     // Other engagement types
     if (n.type === 'contact_comment')
-      return <><b>{n.from_name||'Someone'}</b> commented on your {ticker ? <>{ticker} </> : ''}recommendation</>;
+      return <><b>{n.from_name||'Someone'}</b> commented on your {ticker ? <>{ticker} </> : ''}idea</>;
     if (n.type === 'contact_recommendation')
-      return <><b>{n.from_name||'Someone'}</b> posted a new recommendation{ticker ? <> — {ticker}</> : ''}</>;
+      return <><b>{n.from_name||'Someone'}</b> posted a new idea{ticker ? <> — {ticker}</> : ''}</>;
 
     // Connection + generic types
     const label = TYPE_LABEL[n.type] || n.type;
@@ -117,7 +117,7 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
             <Bell size={16} color="var(--accent)"/>
             <div style={{flex:1,fontSize:12,lineHeight:1.5}}>
               <b style={{fontSize:13}}>Enable push notifications</b><br/>
-              <span style={{color:"var(--muted)"}}>Get notified about likes, comments and new recommendations even when the app is closed.</span>
+              <span style={{color:"var(--muted)"}}>Get notified about likes, comments and new ideas even when the app is closed.</span>
             </div>
             <div style={{display:"flex",gap:6,flexShrink:0}}>
               <button className="btn btn-pri btn-sm" onClick={onEnablePush}>Enable</button>

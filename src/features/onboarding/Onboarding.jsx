@@ -137,7 +137,7 @@ function MandatorySetupGate({ user, profile, patchProfile }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 22 }}>
           {[
             [consentTerms, setConsentTerms, "I agree to the Terms of Service and Privacy Policy"],
-            [consentData, setConsentData, "I consent to myInvestorCircle storing and publicly displaying my investment recommendations"],
+            [consentData, setConsentData, "I consent to myInvestorCircle storing and publicly displaying my investment ideas"],
           ].map(([checked, setChecked, label], i) => (
             <label key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer", fontSize: 12.5, color: "rgba(255,255,255,.75)", lineHeight: 1.5 }}>
               <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)}

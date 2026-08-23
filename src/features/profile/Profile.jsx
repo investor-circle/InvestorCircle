@@ -1665,8 +1665,8 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
                 </div>
                 {[
                   [consentTerms,setConsentTerms,'I agree to the Terms of Service and Privacy Policy *'],
-                  [consentData, setConsentData, 'I consent to myInvestorCircle storing and publicly displaying my investment recommendations *'],
-                  [consentSebi, setConsentSebi, 'My recommendations comply with SEBI regulations (if registered) or are for educational purposes only'],
+                  [consentData, setConsentData, 'I consent to myInvestorCircle storing and publicly displaying my investment ideas *'],
+                  [consentSebi, setConsentSebi, 'My ideas comply with SEBI regulations (if registered) or are for educational purposes only'],
                 ].map(([val,set,label],i)=>(
                   <label key={i} style={{display:'flex',gap:12,alignItems:'flex-start',cursor:'pointer',
                     fontSize:12,color:'rgba(255,255,255,.75)',lineHeight:1.6,userSelect:'none'}}>

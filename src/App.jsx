@@ -1183,7 +1183,7 @@ export default function App() {
           <div style={{flex:1, minWidth:0}}>
             <div style={{fontWeight:700, fontSize:13, marginBottom:2}}>Stay in the loop</div>
             <div style={{fontSize:12, color:'var(--muted)', lineHeight:1.4}}>
-              Enable push notifications so you never miss a recommendation from your circle.
+              Enable push notifications so you never miss an idea from your circle.
             </div>
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:6, flexShrink:0}}>
@@ -1680,7 +1680,7 @@ export default function App() {
                     Connection request sent to {connectConfirm.name}!
                   </div>
                   <div className="muted small">
-                    They'll receive a notification and can accept your request. Once accepted, you can share recommendations with each other.
+                    They'll receive a notification and can accept your request. Once accepted, you can share ideas with each other.
                   </div>
                 </div>
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
