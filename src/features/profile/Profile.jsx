@@ -78,7 +78,13 @@ function SmallAnchoredPopover({ anchorEl, onClose, children, width=200 }) {
       const rect = anchorEl.getBoundingClientRect();
       setPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
     }
-    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
+    // anchorEl.contains(), not a strict !== check — the anchor is usually an
+    // icon-only button, so a real click's e.target is the child <svg>/icon
+    // inside it, not the button element itself. A strict !== comparison
+    // treats that as an outside click, closes the popover on mousedown, and
+    // then the button's own onClick toggle re-opens it on the same click —
+    // the popover could only ever be dismissed by clicking elsewhere.
+    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && !anchorEl?.contains(e.target)) onClose(); };
     setTimeout(() => document.addEventListener('mousedown', h), 0);
     return () => document.removeEventListener('mousedown', h);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

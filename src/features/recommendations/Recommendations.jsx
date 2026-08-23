@@ -368,7 +368,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
                 <th style={{whiteSpace:"normal",lineHeight:1.3,minWidth:60}}>Idea By</th>
                 <th style={{textAlign:"left",whiteSpace:"normal",lineHeight:1.3,minWidth:60,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"tracked",dir:s.key==="tracked"&&s.dir==="asc"?"desc":"asc"}))}>Tracked<br/>On<span className="si">{sort.key==="tracked"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <SortTh label="Entry Price"   k="reco"    sort={sort} setSort={setSort} align="right"/>
-                <SortTh label="Entry Price"  k="entry"   sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="My Entry"      k="entry"   sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current"      k="cur"     sort={sort} setSort={setSort} align="right"/>
                 <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:64,cursor:"pointer"}} title="Change since the previous trading day's close" onClick={()=>setSort(s=>({key:"sinceyday",dir:s.key==="sinceyday"&&s.dir==="asc"?"desc":"asc"}))}>Since<br/>Yday<span className="si">{sort.key==="sinceyday"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:72,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"recret",dir:s.key==="recret"&&s.dir==="asc"?"desc":"asc"}))}>Idea<br/>Return<span className="si">{sort.key==="recret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
@@ -1221,7 +1221,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                     {!r.exit&&<button className="iconbtn" title="Mark exit" onClick={()=>toggleExit(r)} style={{color:'var(--muted)'}}><LogOut size={13}/></button>}
                     {sharePopId===r.id && (
                       <IdeaSharePopover
-                        reco={r} username={me.username} contacts={contacts} groups={groups}
+                        reco={r} username={r.isPublic?me.username:null} contacts={contacts} groups={groups}
                         anchorEl={shareAnchor}
                         onSend={(targets)=>onSendShare(r.id,targets)}
                         onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
