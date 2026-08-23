@@ -2698,8 +2698,7 @@ export function RecoComments({ recoId, me }) {
 
 /* ─── FeedCard — single recommendation card for the homepage ────────────────────── */
 
-export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onReload, tracked, toggleTrack, onOpenSecurity, initExpanded=false }) {
-  const [expanded,  setExpanded]  = useState(initExpanded);
+export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onReload, tracked, toggleTrack, onOpenSecurity }) {
   const [recommenderInfo, setRecommenderInfo] = useState(null); // { username, isSebiApproved }
   const [shareAnchor, setShareAnchor] = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
@@ -2709,6 +2708,13 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
   useEffect(()=>{
     if(r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo);
   },[r.from]);
+
+  // Click-through to the dedicated reco page — same destination every other
+  // idea card in the app navigates to.
+  const goToDetail = () => {
+    if (recommenderInfo?.username) openReco(recommenderInfo.username, r.id);
+    else if (r.from) gotoReco(r.from, r.id);
+  };
 
   const cf = useMemo(()=>{
     const found = contacts.find(x=>x.id===r.from);
@@ -2790,7 +2796,8 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
   };
 
   return (
-    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,boxShadow:'var(--shadow)',marginBottom:12,overflow:'visible',transition:'box-shadow .15s'}}
+    <div onClick={goToDetail}
+      style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,boxShadow:'var(--shadow)',marginBottom:12,overflow:'visible',transition:'box-shadow .15s',cursor:'pointer'}}
       onMouseEnter={e=>e.currentTarget.style.boxShadow='0 4px 20px rgba(20,20,50,.1)'}
       onMouseLeave={e=>e.currentTarget.style.boxShadow='var(--shadow)'}>
       <div style={{padding:'16px 18px'}}>
@@ -2802,7 +2809,7 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
           <div className="av"
             style={{width:42,height:42,background:cf.color||'var(--grad)',fontSize:15,flexShrink:0,cursor:canOpenProfile?'pointer':'default'}}
             title={canOpenProfile?`View ${cf.name}'s profile`:''}
-            onClick={()=>canOpenProfile&&openProfile(recommenderInfo.username)}>
+            onClick={e=>{ if(canOpenProfile){ e.stopPropagation(); openProfile(recommenderInfo.username); } }}>
             {cf.initials||initialsOf(cf.name)}
           </div>
 
@@ -2812,7 +2819,7 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
               <b style={{color:canOpenProfile?'var(--accent-ink)':'var(--ink)',cursor:canOpenProfile?'pointer':'default',
                   textDecoration:canOpenProfile?'underline':'none',textDecorationStyle:'dotted',textUnderlineOffset:3}}
                 title={canOpenProfile?`View ${cf.name}'s public profile`:''}
-                onClick={()=>canOpenProfile&&openProfile(recommenderInfo.username)}>{cf.name}</b>
+                onClick={e=>{ if(canOpenProfile){ e.stopPropagation(); openProfile(recommenderInfo.username); } }}>{cf.name}</b>
               <span style={{color:'var(--muted)',fontWeight:400}}>recommended</span>
               <b
                 style={{
@@ -2850,19 +2857,20 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
             </div>
           </div>
 
-          {/* Return badge — click to expand */}
-          <div style={{textAlign:'right',flexShrink:0,cursor:'pointer'}} onClick={()=>setExpanded(v=>!v)} title="Expand card">
+          {/* Return badge — display only; clicking bubbles to the card's click-through */}
+          <div style={{textAlign:'right',flexShrink:0}}>
             <div style={{fontSize:16,fontWeight:800,letterSpacing:'-.3px',color:itm?'var(--gain)':'var(--loss)'}}>
               {itm?'+':''}{(retPct*100).toFixed(1)}%
             </div>
             <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>₹{Number(r.price).toLocaleString('en-IN')} now</div>
-            <div style={{fontSize:10,color:'var(--muted)',marginTop:2}}>{expanded?'▲':'▼'}</div>
           </div>
         </div>
 
-        {/* ── Thesis — click to expand ── */}
+        {/* ── Thesis — "Read more" expands the text in place (ThesisRenderer's own
+             state); stopPropagation here so reading the thesis never triggers the
+             card's click-through navigation ── */}
         {r.thesis&&r.thesis!=='—'&&(
-          <div style={{marginBottom:10,cursor:'pointer'}} onClick={()=>setExpanded(v=>!v)}>
+          <div style={{marginBottom:10}} onClick={e=>e.stopPropagation()}>
             <ThesisRenderer thesis={r.thesis} previewLines={2}/>
           </div>
         )}
@@ -2878,18 +2886,18 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
         )}
 
         {/* ── Interaction bar — Like · Comment · Engagement · Share · Bookmark · Invested ── */}
-        <div style={{display:'flex',alignItems:'center',gap:5,paddingTop:10,borderTop:'1px solid var(--line)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:5,paddingTop:10,borderTop:'1px solid var(--line)'}} onClick={e=>e.stopPropagation()}>
           {/* Like */}
-          <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={e=>{e.stopPropagation();react('like');}} style={{width:32,height:32}}><ThumbsUp size={14}/></button>
+          <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={()=>react('like')} style={{width:32,height:32}}><ThumbsUp size={14}/></button>
           <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.likes||0}</span>
-          {/* Comment */}
-          <button className="iconbtn" title="Comment" onClick={()=>setExpanded(v=>!v)} style={{width:32,height:32}}><MessageSquare size={14}/></button>
+          {/* Comment — comments live on the reco page now */}
+          <button className="iconbtn" title="Comment" onClick={goToDetail} style={{width:32,height:32}}><MessageSquare size={14}/></button>
           {(r.commentCount||0)>0 && <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.commentCount}</span>}
           {/* Engagement */}
           {interactionCount>0&&<span style={{fontSize:11,color:'var(--muted)',display:'flex',alignItems:'center',gap:2}}>✦ {interactionCount}</span>}
           {/* Share */}
           <div style={{position:'relative'}}>
-            <button className="iconbtn" title="Share" onClick={e=>{e.stopPropagation();handleShareClick(e);}} style={{width:32,height:32}}><Share2 size={14}/></button>
+            <button className="iconbtn" title="Share" onClick={handleShareClick} style={{width:32,height:32}}><Share2 size={14}/></button>
             {showShare && (
               <IdeaSharePopover
                 reco={r} username={shareUsername} contacts={contacts} groups={groups}
@@ -2924,53 +2932,10 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
               }}
               stopProp={true}
             />
-            <button onClick={()=>setExpanded(v=>!v)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:12,color:'var(--accent-ink)',fontWeight:700,fontFamily:'var(--font)',padding:'4px 8px',borderRadius:8}}>
-              {expanded?'Less':'More'}<ChevronDown size={14} style={{transform:expanded?'rotate(180deg)':'none',transition:'.15s'}}/>
-            </button>
           </div>
         </div>
       </div>
-
-      {/* ── Expanded detail + comments ── */}
-      {expanded&&(
-        <div style={{borderTop:'1px solid var(--line)',padding:'16px 18px',background:'var(--surface-2)',borderRadius:'0 0 18px 18px'}}>
-          <div style={{display:'flex',gap:22,flexWrap:'wrap',marginBottom:14}}>
-            <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
-            {r.assetClass&&<div><div className="cap">Class</div><ClassTag c={r.assetClass}/></div>}
-            {r.priceAt>0&&<div><div className="cap">Entry price</div><b className="tnum">₹{Number(r.priceAt).toLocaleString('en-IN')}</b></div>}
-            {r.targetPrice&&<div><div className="cap">Target</div><b className="tnum pos">₹{Number(r.targetPrice).toLocaleString('en-IN')}</b></div>}
-            {r.stopLoss&&<div><div className="cap">Stop loss</div><b className="tnum neg">₹{Number(r.stopLoss).toLocaleString('en-IN')}</b></div>}
-            <div><div className="cap">Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(retPct*100).toFixed(1)}%</b></div>
-            {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
-            {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
-          </div>
-          {r.thesis&&r.thesis!=='—'&&(
-            <div style={{marginBottom:16}}>
-              <div className="cap" style={{marginBottom:5}}>Thesis</div>
-              <ThesisRenderer thesis={r.thesis} previewLines={8}/>
-            </div>
-          )}
-          <div style={{borderTop:'1px solid var(--line)',paddingTop:14}}>
-            <div className="cap" style={{marginBottom:10}}>Comments</div>
-            <RecoComments recoId={r.id} me={me}/>
-          </div>
-        </div>
-      )}
     </div>
-  );
-}
-
-export function RecoCardModal({ r, me, contacts, groups, setRecsReceived, tracked, toggleTrack, onClose }) {
-  return createPortal(
-    <div className="modal-overlay" onClick={onClose} style={{zIndex:9999}}>
-      <div style={{maxWidth:640,width:'92vw',margin:'60px auto',position:'relative'}} onClick={e=>e.stopPropagation()}>
-        <button onClick={onClose} style={{position:'absolute',top:-36,right:0,background:'rgba(255,255,255,.15)',border:'none',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:700,padding:'4px 12px',borderRadius:8}}>✕ Close</button>
-        <FeedCard r={r} me={me} contacts={contacts} groups={groups}
-          setRecsReceived={setRecsReceived} tracked={tracked} toggleTrack={toggleTrack}
-          initExpanded={true}/>
-      </div>
-    </div>,
-    document.body
   );
 }
 

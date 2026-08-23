@@ -114,6 +114,7 @@ import { useIsMobile } from "./hooks/index";
 import { VAPID_PUBLIC_KEY, sendEmail, sendPush } from "./services/notify";
 import { STYLES } from "./styles/globalStyles";
 import { initialsOf } from "./utils/format";
+import { loadInstruments } from "./utils/instruments";
 
 /* ============================================================
    InvestorCircle — social space for investors.
@@ -763,16 +764,29 @@ export default function App() {
   const [showDiscover, setShowDiscover] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [searchPeople,     setSearchPeople]     = useState([]);
+  const [searchInstruments, setSearchInstruments] = useState([]);
 
-  // Debounced people search — drives both topbar dropdown and mobile search overlay
+  // Debounced people + ticker/company search — drives both the topbar dropdown
+  // and the mobile search overlay. Instruments are matched client-side against
+  // the same cached instrument list InstrumentSearch (reco creation) uses —
+  // symbol prefix match or a name substring match — so "search investors,
+  // tickers" is actually true, not just the placeholder text.
   useEffect(() => {
     const q = globalSearch.trim();
-    if (!q || q.length < 2 || !ME?.id) { setSearchPeople([]); return; }
+    if (!q || q.length < 2 || !ME?.id) { setSearchPeople([]); setSearchInstruments([]); return; }
     const timer = setTimeout(async () => {
       try {
         const rows = await dbSearchPeople(q);
         setSearchPeople(rows);
       } catch(e) { console.warn('topbar people search:', e?.message||e); }
+      try {
+        const all = await loadInstruments();
+        const t = q.toLowerCase();
+        const hits = all.filter(i =>
+          i.symbol.toLowerCase().startsWith(t) || i.name.toLowerCase().includes(t)
+        ).slice(0, 6);
+        setSearchInstruments(hits);
+      } catch(e) { console.warn('topbar instrument search:', e?.message||e); }
     }, 280);
     return () => clearTimeout(timer);
   }, [globalSearch, ME?.id]);
@@ -1295,38 +1309,55 @@ export default function App() {
                 placeholder="Search investors, tickers…"
               />
               {globalSearch && (
-                <button onClick={()=>{setGlobalSearch('');setSearchPeople([]);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
+                <button onClick={()=>{setGlobalSearch('');setSearchPeople([]);setSearchInstruments([]);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
                   <X size={14}/>
                 </button>
               )}
-              {/* People search results dropdown */}
-              {globalSearch.trim().length >= 2 && searchPeople.length > 0 && (
-                <div style={{position:'absolute',top:'calc(100% + 8px)',left:0,right:0,zIndex:400,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,.14)',overflow:'hidden'}}>
-                  <div style={{padding:'7px 14px 3px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)'}}>Investors</div>
-                  {searchPeople.map((u,i)=>{
-                    const isConn = connections.some(c=>c.id===u.id&&c.status==='active');
-                    const isPend = connections.some(c=>c.id===u.id&&c.status!=='active');
-                    const isSebi = u.sebi_approval_status==='approved'||['sebi_ra','sebi_ria'].includes(u.registration_status||'');
-                    return (
-                      <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',borderTop:i>0?'1px solid var(--line)':'none',transition:'background .1s'}}
+              {/* Combined investors + tickers/companies search results dropdown */}
+              {globalSearch.trim().length >= 2 && (searchPeople.length > 0 || searchInstruments.length > 0) && (
+                <div style={{position:'absolute',top:'calc(100% + 8px)',left:0,right:0,zIndex:400,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,.14)',overflow:'hidden',maxHeight:420,overflowY:'auto'}}>
+                  {searchPeople.length > 0 && (<>
+                    <div style={{padding:'7px 14px 3px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)'}}>Investors</div>
+                    {searchPeople.map((u,i)=>{
+                      const isConn = connections.some(c=>c.user_id===u.id&&c.status==='accepted');
+                      const isPend = connections.some(c=>c.user_id===u.id&&c.status==='pending');
+                      const isSebi = u.sebi_approval_status==='approved'||['sebi_ra','sebi_ria'].includes(u.registration_status||'');
+                      return (
+                        <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',borderTop:i>0?'1px solid var(--line)':'none',transition:'background .1s'}}
+                          onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
+                          onMouseLeave={e=>e.currentTarget.style.background=''}
+                          onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); } }}>
+                          <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.full_name||u.username}</div>
+                            {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
+                          </div>
+                          {isSebi&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)',flexShrink:0}}>SEBI</span>}
+                          {isConn ? <span style={{fontSize:11,fontWeight:700,color:'var(--gain)',flexShrink:0}}>Connected</span>
+                           : isPend ? <span style={{fontSize:11,color:'var(--muted)',flexShrink:0}}>Pending</span>
+                           : <button className="btn btn-pri btn-sm" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
+                               onClick={e=>{e.stopPropagation();handlePeopleConnect(u.id);}}>
+                               Connect
+                             </button>}
+                        </div>
+                      );
+                    })}
+                  </>)}
+                  {searchInstruments.length > 0 && (<>
+                    <div style={{padding:'7px 14px 3px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)',borderTop:searchPeople.length>0?'1px solid var(--line)':'none'}}>Stocks</div>
+                    {searchInstruments.map((inst,i)=>(
+                      <div key={inst.symbol} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',borderTop:i>0?'1px solid var(--line)':'none',transition:'background .1s'}}
                         onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
                         onMouseLeave={e=>e.currentTarget.style.background=''}
-                        onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); } }}>
-                        <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                        onClick={()=>{ openSecurity(inst.symbol, inst.name); setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); }}>
+                        <div style={{width:30,height:30,borderRadius:9,flexShrink:0,background:'var(--surface-2)',display:'flex',alignItems:'center',justifyContent:'center'}}><TrendingUp size={14} color="var(--muted)"/></div>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.full_name||u.username}</div>
-                          {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
+                          <div style={{fontWeight:700,fontSize:13}}>{inst.symbol}</div>
+                          <div style={{fontSize:11,color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{inst.name}</div>
                         </div>
-                        {isSebi&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)',flexShrink:0}}>SEBI</span>}
-                        {isConn ? <span style={{fontSize:11,fontWeight:700,color:'var(--gain)',flexShrink:0}}>Connected</span>
-                         : isPend ? <span style={{fontSize:11,color:'var(--muted)',flexShrink:0}}>Pending</span>
-                         : <button className="btn btn-pri btn-sm" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
-                             onClick={e=>{e.stopPropagation();handlePeopleConnect(u.id);}}>
-                             Connect
-                           </button>}
                       </div>
-                    );
-                  })}
+                    ))}
+                  </>)}
                 </div>
               )}
             </div>
@@ -1581,39 +1612,54 @@ export default function App() {
                   style={{flex:1,border:'none',background:'none',fontSize:14,fontFamily:'var(--font)',color:'var(--ink)',outline:'none'}}
                 />
                 {globalSearch && (
-                  <button onClick={()=>{setGlobalSearch('');setSearchPeople([]);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
+                  <button onClick={()=>{setGlobalSearch('');setSearchPeople([]);setSearchInstruments([]);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
                     <X size={14}/>
                   </button>
                 )}
               </div>
-              {/* People results */}
-              {searchPeople.length > 0 && (
-                <div style={{marginTop:8,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,overflow:'hidden'}}>
-                  <div style={{padding:'6px 14px 2px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)'}}>Investors</div>
-                  {searchPeople.map((u,i)=>{
-                    const isConn = connections.some(c=>c.id===u.id&&c.status==='active');
-                    const isPend = connections.some(c=>c.id===u.id&&c.status!=='active');
-                    return (
-                      <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid var(--line)':'none'}}
-                        onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); setShowMobileSearch(false); } }}>
-                        <div className="av" style={{width:32,height:32,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontWeight:700,fontSize:13}}>{u.full_name||u.username}</div>
-                          {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
+              {/* Results */}
+              {(searchPeople.length > 0 || searchInstruments.length > 0) && (
+                <div style={{marginTop:8,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,overflow:'hidden',maxHeight:'60vh',overflowY:'auto'}}>
+                  {searchPeople.length > 0 && (<>
+                    <div style={{padding:'6px 14px 2px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)'}}>Investors</div>
+                    {searchPeople.map((u,i)=>{
+                      const isConn = connections.some(c=>c.user_id===u.id&&c.status==='accepted');
+                      const isPend = connections.some(c=>c.user_id===u.id&&c.status==='pending');
+                      return (
+                        <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid var(--line)':'none'}}
+                          onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); setShowMobileSearch(false); } }}>
+                          <div className="av" style={{width:32,height:32,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:700,fontSize:13}}>{u.full_name||u.username}</div>
+                            {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
+                          </div>
+                          {isConn ? <span style={{fontSize:11,fontWeight:700,color:'var(--gain)',flexShrink:0}}>Connected</span>
+                           : isPend ? <span style={{fontSize:11,color:'var(--muted)',flexShrink:0}}>Pending</span>
+                           : <button className="btn btn-pri btn-sm" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
+                               onClick={e=>{e.stopPropagation();handlePeopleConnect(u.id);}}>
+                               Connect
+                             </button>}
                         </div>
-                        {isConn ? <span style={{fontSize:11,fontWeight:700,color:'var(--gain)',flexShrink:0}}>Connected</span>
-                         : isPend ? <span style={{fontSize:11,color:'var(--muted)',flexShrink:0}}>Pending</span>
-                         : <button className="btn btn-pri btn-sm" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
-                             onClick={e=>{e.stopPropagation();handlePeopleConnect(u.id);}}>
-                             Connect
-                           </button>}
+                      );
+                    })}
+                  </>)}
+                  {searchInstruments.length > 0 && (<>
+                    <div style={{padding:'7px 14px 3px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)',borderTop:searchPeople.length>0?'1px solid var(--line)':'none'}}>Stocks</div>
+                    {searchInstruments.map((inst,i)=>(
+                      <div key={inst.symbol} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid var(--line)':'none'}}
+                        onClick={()=>{ openSecurity(inst.symbol, inst.name); setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); setShowMobileSearch(false); }}>
+                        <div style={{width:32,height:32,borderRadius:9,flexShrink:0,background:'var(--surface-2)',display:'flex',alignItems:'center',justifyContent:'center'}}><TrendingUp size={14} color="var(--muted)"/></div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:13}}>{inst.symbol}</div>
+                          <div style={{fontSize:11,color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{inst.name}</div>
+                        </div>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </>)}
                 </div>
               )}
-              {globalSearch.trim().length >= 2 && searchPeople.length === 0 && (
-                <div style={{padding:'12px 14px',textAlign:'center',fontSize:13,color:'var(--muted)'}}>No investors found for "{globalSearch.trim()}"</div>
+              {globalSearch.trim().length >= 2 && searchPeople.length === 0 && searchInstruments.length === 0 && (
+                <div style={{padding:'12px 14px',textAlign:'center',fontSize:13,color:'var(--muted)'}}>No results for "{globalSearch.trim()}"</div>
               )}
             </div>
           )}

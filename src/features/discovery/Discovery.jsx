@@ -39,7 +39,7 @@ import {
   trackReco as dbTrackReco
 } from "../../services/api/engagementApi";
 import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
-import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal } from "../recommendations/Recommendations";
+import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
 import { fetchPublicProfileInfo, openProfile } from "../../utils/navigation";
@@ -80,7 +80,6 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
   const isFresh   = r.date ? (Date.now() - new Date(r.date).getTime()) < FRESH_WINDOW_MS : false;
   const isBuy     = (r.recommendation_type || r.recType || 'Buy') === 'Buy';
   const isTracked = tracked?.has(r.id);
-  const thesisPreview = getThesisText(r.thesis);
   const sourceLabel = r.feedSource === 'public' ? 'Public'
     : r.shareType === 'group' ? 'Circle' : null;
   // Most useful 2-3 of horizon / target / sector / circle-source — horizon and
@@ -175,11 +174,11 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
         {r.priceAt>0 && <span style={{fontSize:11,color:'var(--muted)'}}>Entry ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
       </div>
 
-      {/* WHY — truncated thesis */}
-      {thesisPreview && (
-        <div style={{fontSize:12,lineHeight:1.5,color:'var(--ink-soft)',marginBottom:8,
-          overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',wordBreak:'break-word'}}>
-          {thesisPreview}
+      {/* WHY — truncated thesis, with a real "Read more" that expands in place
+           (links render as links) rather than raw markdown text */}
+      {r.thesis && r.thesis!=='—' && (
+        <div style={{fontSize:12,lineHeight:1.5,marginBottom:8}} onClick={e=>e.stopPropagation()}>
+          <ThesisRenderer thesis={r.thesis} previewLines={2}/>
         </div>
       )}
 
@@ -558,7 +557,7 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
    "an idea from your Circle moved, here's what happened," never "you
    should have bought this." ── */
 
-function WhatYouMissedCard({ item }) {
+function WhatYouMissedCard({ item, tracked, toggleTrack }) {
   const { idea: r, creator, movement, reason } = item;
   const [recommenderInfo, setRecommenderInfo] = useState(null);
   useEffect(() => { if (r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo); }, [r.from]);
@@ -571,6 +570,7 @@ function WhatYouMissedCard({ item }) {
   };
 
   const isGain = movement.direction === 'up';
+  const isTracked = tracked?.has(r.id);
   return (
     <div onClick={goToDetail} style={{padding:'10px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
       onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
@@ -587,12 +587,20 @@ function WhatYouMissedCard({ item }) {
           <div style={{fontSize:9,color:'var(--muted)'}}>since shared</div>
         </div>
       </div>
-      <div style={{fontSize:10,color:'var(--muted)',marginTop:4}}>{reason}</div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:4}}>
+        <div style={{fontSize:10,color:'var(--muted)'}}>{reason}</div>
+        {/* Same bookmark/track CTA the Trending widget's cards use */}
+        <button className={"iconbtn"+(isTracked?' on-like':'')} title={isTracked?'Remove from tracked':'Track this idea'}
+          onClick={e=>{e.stopPropagation();toggleTrack?.(r.id);}}
+          style={isTracked?{width:24,height:24,flexShrink:0,background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{width:24,height:24,flexShrink:0}}>
+          <Bookmark size={11}/>
+        </button>
+      </div>
     </div>
   );
 }
 
-export function WhatYouMissedWidget({ recsReceived, tracked, contacts, me, trackedCreatorIds, setPage }) {
+export function WhatYouMissedWidget({ recsReceived, tracked, toggleTrack, contacts, me, trackedCreatorIds, setPage }) {
   const contactIds = useMemo(() => new Set((contacts||[]).map(c=>c.id)), [contacts]);
   const resolveCreatorName = (r) => contacts.find(x=>x.id===r.from)?.name;
 
@@ -627,7 +635,7 @@ export function WhatYouMissedWidget({ recsReceived, tracked, contacts, me, track
       <div style={{padding:'8px 14px 2px',fontSize:10.5,color:'var(--muted)',lineHeight:1.4}}>
         Ideas from your Circle that moved recently
       </div>
-      {results.map(item => <WhatYouMissedCard key={item.idea.id} item={item}/>)}
+      {results.map(item => <WhatYouMissedCard key={item.idea.id} item={item} tracked={tracked} toggleTrack={toggleTrack}/>)}
     </div>
   );
 }
@@ -661,7 +669,6 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
   const username = r.from_username || recommenderInfo?.username || null;
   const isBuy = (r.recommendation_type || r.recType || 'Buy') === 'Buy';
   const isTracked = tracked?.has(r.id);
-  const thesisPreview = getThesisText(r.thesis);
 
   // Same deep link every other Pulse card uses — #/investor/:username/reco/:id.
   const goToDetail = async () => {
@@ -749,11 +756,10 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
         </span>
       </div>
 
-      {/* WHY the idea — one line of thesis */}
-      {thesisPreview && (
-        <div style={{fontSize:11,lineHeight:1.45,color:'var(--ink-soft)',marginBottom:5,
-          overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',wordBreak:'break-word'}}>
-          {thesisPreview}
+      {/* WHY the idea — thesis, with a real "Read more" (links render as links) */}
+      {r.thesis && r.thesis!=='—' && (
+        <div style={{fontSize:11,lineHeight:1.45,marginBottom:5}} onClick={e=>e.stopPropagation()}>
+          <ThesisRenderer thesis={r.thesis} previewLines={2}/>
         </div>
       )}
 
@@ -1020,7 +1026,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             onClick={()=>setShowNewReco(true)}
             style={{flexShrink:0}}
           >
-            <Lightbulb size={14}/> Recommend
+            <Lightbulb size={14}/> New idea
           </button>
         </div>
         {/* Row 2 — Pulse / Feed tab switcher — Pulse first/left, the default home experience */}
@@ -1079,7 +1085,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
           <div style={{fontSize:13,color:'var(--muted)',marginTop:2}}>Your daily investment dose</div>
         </div>
         <button className="btn btn-pri btn-sm" onClick={()=>setShowNewReco(true)} style={{marginLeft:'auto'}}>
-          <Lightbulb size={14}/> Recommend an idea
+          <Lightbulb size={14}/> New idea
         </button>
       </div>
     )}
@@ -1123,7 +1129,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
           }}/>
 
         {/* Widget #3 — What You Missed */}
-        <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
+        <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} toggleTrack={toggleTrack} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
 
         {/* Widget #4 — Tracked Summary Donut (My Tracked) */}
         <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
@@ -1170,11 +1176,11 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
                 {globalSearch?`No results for "${globalSearch}"`:'Your feed is empty'}
               </div>
               <div className="muted small" style={{marginBottom:22,maxWidth:340,margin:'0 auto 22px',lineHeight:1.6}}>
-                {globalSearch?'Try a different search term.':'Add people to your network — their recommendations will appear here.'}
+                {globalSearch?'Try a different search term.':'Add people to your network — their ideas will appear here.'}
               </div>
               {!globalSearch&&<div style={{display:'flex',gap:10,justifyContent:'center'}}>
                 <button className="btn btn-pri btn-sm" onClick={()=>setPage('network')}><Users size={14}/> Add connections</button>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setShowNewReco(true)}><Lightbulb size={14}/> Recommend an idea</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setShowNewReco(true)}><Lightbulb size={14}/> New idea</button>
               </div>}
             </div>
           : (<>
