@@ -94,7 +94,7 @@ export function GroupsSection({ groups, setGroups, contacts, configs, canCreateG
     setGroups(gs=>gs.filter(x=>x.id!==g.id));
   };
   const doExitGroup = async (g) => {
-    if(!confirm(`Exit "${g.name}"? You will stop receiving recommendations shared in this circle.`)) return;
+    if(!confirm(`Exit "${g.name}"? You will stop receiving ideas shared in this circle.`)) return;
     await dbExitGroup(g.id, myId);
     setGroups(gs=>gs.filter(x=>x.id!==g.id));
   };
@@ -117,7 +117,7 @@ export function GroupsSection({ groups, setGroups, contacts, configs, canCreateG
       <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search circles…"/></div>
       <button className="btn btn-pri btn-sm" disabled={!canCreateGroups} onClick={()=>setShowNew(true)}><Plus size={15}/> New Circle</button>
     </div>
-    {rows.length===0 ? <div className="card"><div className="empty">No circles yet. Create one to build a community around your ideas, or share recommendations with a group of connections at once.</div></div> :
+    {rows.length===0 ? <div className="card"><div className="empty">No circles yet. Create one to build a community around your ideas, or share them with a group of connections at once.</div></div> :
     <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:900}}>
       <thead><tr>
         <th>Circle</th><th>Type</th><th>Created on</th><th>Members</th><th>My role</th><th style={{textAlign:"right"}}>Actions</th>

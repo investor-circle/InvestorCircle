@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import {
   Users,
   Lightbulb,
@@ -29,6 +29,7 @@ import {
 } from "../../services/api/profileApi";
 import {
   computeIci,
+  forwardRecommendation as dbForwardReco,
   getConsensusRecosPublic as dbGetConsensusRecosPublic,
   getTickerRecos as dbGetTickerRecos,
   updateDelivery as dbUpdateDelivery
@@ -38,7 +39,7 @@ import {
   trackReco as dbTrackReco
 } from "../../services/api/engagementApi";
 import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
-import { FeedCard, InvestedToggle, MakeRecoModal, ReceivedSharePopover } from "../recommendations/Recommendations";
+import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
 import { fetchPublicProfileInfo, openProfile } from "../../utils/navigation";
@@ -61,7 +62,7 @@ const FRESH_WINDOW_MS = 48 * 60 * 60 * 1000;
    Like / Bookmark / Mark-invested / Share all call the same handlers and
    API functions FeedCard uses; Comment is a lightweight entry point that
    opens the same detail page (where the comment thread lives). ── */
-function FreshIdeaCard({ r, contacts, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, ici }) {
+function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, ici }) {
   const [recommenderInfo, setRecommenderInfo] = useState(null); // { username, isSebiApproved }
   const [shareAnchor, setShareAnchor] = useState(null);
   const [showShare, setShowShare] = useState(false);
@@ -79,7 +80,6 @@ function FreshIdeaCard({ r, contacts, me, tracked, toggleTrack, setRecsReceived,
   const isFresh   = r.date ? (Date.now() - new Date(r.date).getTime()) < FRESH_WINDOW_MS : false;
   const isBuy     = (r.recommendation_type || r.recType || 'Buy') === 'Buy';
   const isTracked = tracked?.has(r.id);
-  const thesisPreview = getThesisText(r.thesis);
   const sourceLabel = r.feedSource === 'public' ? 'Public'
     : r.shareType === 'group' ? 'Circle' : null;
   // Most useful 2-3 of horizon / target / sector / circle-source — horizon and
@@ -174,11 +174,13 @@ function FreshIdeaCard({ r, contacts, me, tracked, toggleTrack, setRecsReceived,
         {r.priceAt>0 && <span style={{fontSize:11,color:'var(--muted)'}}>Entry ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
       </div>
 
-      {/* WHY — truncated thesis */}
-      {thesisPreview && (
-        <div style={{fontSize:12,lineHeight:1.5,color:'var(--ink-soft)',marginBottom:8,
-          overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',wordBreak:'break-word'}}>
-          {thesisPreview}
+      {/* WHY — truncated thesis, with a real "Read more" that expands in place
+           (links render as links) rather than raw markdown text. Plain text/links
+           bubble to the card's click-through; Read more/Show less stop their own
+           propagation (see ThesisRenderer) so expanding never navigates away. */}
+      {r.thesis && r.thesis!=='—' && (
+        <div style={{fontSize:12,lineHeight:1.5,marginBottom:8}}>
+          <ThesisRenderer thesis={r.thesis} previewLines={2}/>
         </div>
       )}
 
@@ -199,8 +201,14 @@ function FreshIdeaCard({ r, contacts, me, tracked, toggleTrack, setRecsReceived,
         {(r.commentCount||0)>0 && <span style={{fontSize:10,fontWeight:700,color:'var(--muted)'}}>{r.commentCount}</span>}
         <div style={{position:'relative'}}>
           <button className="iconbtn" title="Share" onClick={handleShareClick} style={{width:26,height:26}}><Share2 size={12}/></button>
-          {showShare && <ReceivedSharePopover reco={r} fromUsername={username} anchorEl={shareAnchor}
-            onForward={()=>setShowShare(false)} onClose={()=>{ setShowShare(false); setShareAnchor(null); }}/>}
+          {showShare && (
+            <IdeaSharePopover
+              reco={r} username={username} contacts={contacts} groups={groups}
+              anchorEl={shareAnchor}
+              onSend={(targets)=>dbForwardReco(r.id, me?.id, targets)}
+              onClose={()=>{ setShowShare(false); setShareAnchor(null); }}
+            />
+          )}
         </div>
         <button className={"iconbtn"+(isTracked?' on-like':'')} title={isTracked?'Remove from tracked':'Track'}
           onClick={()=>toggleTrack?.(r.id)}
@@ -246,7 +254,7 @@ function WidgetEmptyState({ icon, title, sub, setPage }) {
   );
 }
 
-export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onViewAll, setPage }) {
+export function FreshIdeasWidget({ recsReceived, contacts, groups, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onViewAll, setPage }) {
   const fresh = useMemo(() => [...recsReceived].filter(r=>!r.hidden)
     .sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5), [recsReceived]);
 
@@ -281,7 +289,7 @@ export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTr
           />
         ) : (<>
           {fresh.map(r => (
-            <FreshIdeaCard key={r.id} r={r} contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+            <FreshIdeaCard key={r.id} r={r} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
               setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
               ici={iciScores[r.from]}/>
           ))}
@@ -551,7 +559,7 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
    "an idea from your Circle moved, here's what happened," never "you
    should have bought this." ── */
 
-function WhatYouMissedCard({ item }) {
+function WhatYouMissedCard({ item, tracked, toggleTrack }) {
   const { idea: r, creator, movement, reason } = item;
   const [recommenderInfo, setRecommenderInfo] = useState(null);
   useEffect(() => { if (r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo); }, [r.from]);
@@ -564,6 +572,7 @@ function WhatYouMissedCard({ item }) {
   };
 
   const isGain = movement.direction === 'up';
+  const isTracked = tracked?.has(r.id);
   return (
     <div onClick={goToDetail} style={{padding:'10px 14px',borderTop:'1px solid var(--line)',cursor:'pointer',transition:'.12s'}}
       onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
@@ -580,12 +589,20 @@ function WhatYouMissedCard({ item }) {
           <div style={{fontSize:9,color:'var(--muted)'}}>since shared</div>
         </div>
       </div>
-      <div style={{fontSize:10,color:'var(--muted)',marginTop:4}}>{reason}</div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:4}}>
+        <div style={{fontSize:10,color:'var(--muted)'}}>{reason}</div>
+        {/* Same bookmark/track CTA the Trending widget's cards use */}
+        <button className={"iconbtn"+(isTracked?' on-like':'')} title={isTracked?'Remove from tracked':'Track this idea'}
+          onClick={e=>{e.stopPropagation();toggleTrack?.(r.id);}}
+          style={isTracked?{width:24,height:24,flexShrink:0,background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{width:24,height:24,flexShrink:0}}>
+          <Bookmark size={11}/>
+        </button>
+      </div>
     </div>
   );
 }
 
-export function WhatYouMissedWidget({ recsReceived, tracked, contacts, me, trackedCreatorIds, setPage }) {
+export function WhatYouMissedWidget({ recsReceived, tracked, toggleTrack, contacts, me, trackedCreatorIds, setPage }) {
   const contactIds = useMemo(() => new Set((contacts||[]).map(c=>c.id)), [contacts]);
   const resolveCreatorName = (r) => contacts.find(x=>x.id===r.from)?.name;
 
@@ -620,7 +637,7 @@ export function WhatYouMissedWidget({ recsReceived, tracked, contacts, me, track
       <div style={{padding:'8px 14px 2px',fontSize:10.5,color:'var(--muted)',lineHeight:1.4}}>
         Ideas from your Circle that moved recently
       </div>
-      {results.map(item => <WhatYouMissedCard key={item.idea.id} item={item}/>)}
+      {results.map(item => <WhatYouMissedCard key={item.idea.id} item={item} tracked={tracked} toggleTrack={toggleTrack}/>)}
     </div>
   );
 }
@@ -654,7 +671,6 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
   const username = r.from_username || recommenderInfo?.username || null;
   const isBuy = (r.recommendation_type || r.recType || 'Buy') === 'Buy';
   const isTracked = tracked?.has(r.id);
-  const thesisPreview = getThesisText(r.thesis);
 
   // Same deep link every other Pulse card uses — #/investor/:username/reco/:id.
   const goToDetail = async () => {
@@ -742,11 +758,12 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
         </span>
       </div>
 
-      {/* WHY the idea — one line of thesis */}
-      {thesisPreview && (
-        <div style={{fontSize:11,lineHeight:1.45,color:'var(--ink-soft)',marginBottom:5,
-          overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',wordBreak:'break-word'}}>
-          {thesisPreview}
+      {/* WHY the idea — thesis, with a real "Read more" (links render as links).
+           Plain text/links bubble to the card's click-through; Read more/Show
+           less stop their own propagation (see ThesisRenderer). */}
+      {r.thesis && r.thesis!=='—' && (
+        <div style={{fontSize:11,lineHeight:1.45,marginBottom:5}}>
+          <ThesisRenderer thesis={r.thesis} previewLines={2}/>
         </div>
       )}
 
@@ -893,11 +910,17 @@ function FeedBrewingState() {
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
 
-export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds, setTrackedCreatorIds }) {
+export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds, setTrackedCreatorIds, initTab, onInitTabConsumed }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
-  const [mobileFeedTab,  setMobileFeedTab]  = useState('pulse'); // 'feed' | 'pulse' — Pulse is the default home experience
+  const [mobileFeedTab,  setMobileFeedTab]  = useState(initTab || 'pulse'); // 'feed' | 'pulse' — Pulse is the default home experience
+  // One-shot: which tab to land on next, driven by how the user navigated here —
+  // the top Home icon always requests 'pulse'; DISCOVER > Ideas in the sidebar
+  // requests 'feed' on mobile (see App.jsx's homeInitTab).
+  useEffect(() => {
+    if (initTab) { setMobileFeedTab(initTab); onInitTabConsumed && onInitTabConsumed(); }
+  }, [initTab]); // eslint-disable-line react-hooks/exhaustive-deps
   // Merged pool for Pulse widgets: direct deliveries + public platform recommendations
   // Deduped so items already in recsReceived don't appear twice.
   const allFeedRecos = useMemo(() => {
@@ -920,7 +943,26 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
   const pulseBadgeText = pulseCount >= 5 ? '5+' : pulseCount > 0 ? String(pulseCount) : null;
   const showPulseBadge = !!pulseBadgeText && mobileFeedTab !== 'pulse';
   const [loadedCount,  setLoadedCount]  = useState(20);
-  const sentinelRef = useRef(null);
+  const sentinelObsRef = useRef(null);
+  // Callback ref (not useRef+useEffect) — the sentinel div is conditionally
+  // rendered (only while there's more to load), so it mounts/unmounts
+  // repeatedly as loadedCount and feedRecs.length change. A plain useEffect
+  // keyed on a static dep array only attaches the IntersectionObserver once
+  // and never re-attaches to the new DOM node after a remount, which is what
+  // was causing "Loading more…" to spin forever once the sentinel node was
+  // replaced. A callback ref runs on every mount/unmount of the node itself,
+  // so the observer is always watching the currently-rendered sentinel.
+  const sentinelRef = useCallback((node) => {
+    if (sentinelObsRef.current) { sentinelObsRef.current.disconnect(); sentinelObsRef.current = null; }
+    if (node) {
+      const obs = new IntersectionObserver(
+        ([entry]) => { if (entry.isIntersecting) setLoadedCount(n => n + 20); },
+        { rootMargin: '300px' }
+      );
+      obs.observe(node);
+      sentinelObsRef.current = obs;
+    }
+  }, []);
 
   const feedRecs = useMemo(() => {
     const cfg = effectiveFeedConfig;
@@ -962,18 +1004,6 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
     );
   }, [feedRecs, loadedCount, globalSearch, contacts]);
 
-  // Infinite scroll — Intersection Observer on sentinel div
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting && !globalSearch) setLoadedCount(n => n + 20); },
-      { rootMargin: '300px' }
-    );
-    obs.observe(sentinel);
-    return () => obs.disconnect();
-  }, [globalSearch]);
-
   // Reset page when search changes
   useEffect(() => { setLoadedCount(20); }, [globalSearch]);
 
@@ -1007,7 +1037,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             onClick={()=>setShowNewReco(true)}
             style={{flexShrink:0}}
           >
-            <Lightbulb size={14}/> Recommend
+            <Lightbulb size={14}/> New idea
           </button>
         </div>
         {/* Row 2 — Pulse / Feed tab switcher — Pulse first/left, the default home experience */}
@@ -1066,7 +1096,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
           <div style={{fontSize:13,color:'var(--muted)',marginTop:2}}>Your daily investment dose</div>
         </div>
         <button className="btn btn-pri btn-sm" onClick={()=>setShowNewReco(true)} style={{marginLeft:'auto'}}>
-          <Lightbulb size={14}/> Recommend an idea
+          <Lightbulb size={14}/> New idea
         </button>
       </div>
     )}
@@ -1088,7 +1118,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             than a blank widget column. */}
         {feedLoading ? <FeedBrewingState/> : (<>
         {/* Widget #1 — Fresh Ideas (network + public platform) */}
-        <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+        <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
           setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
           setPage={setPage}
           onViewAll={()=>{ if (isMobile) setMobileFeedTab('feed'); }}/>
@@ -1110,7 +1140,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
           }}/>
 
         {/* Widget #3 — What You Missed */}
-        <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
+        <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} toggleTrack={toggleTrack} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
 
         {/* Widget #4 — Tracked Summary Donut (My Tracked) */}
         <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
@@ -1157,11 +1187,11 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
                 {globalSearch?`No results for "${globalSearch}"`:'Your feed is empty'}
               </div>
               <div className="muted small" style={{marginBottom:22,maxWidth:340,margin:'0 auto 22px',lineHeight:1.6}}>
-                {globalSearch?'Try a different search term.':'Add people to your network — their recommendations will appear here.'}
+                {globalSearch?'Try a different search term.':'Add people to your network — their ideas will appear here.'}
               </div>
               {!globalSearch&&<div style={{display:'flex',gap:10,justifyContent:'center'}}>
                 <button className="btn btn-pri btn-sm" onClick={()=>setPage('network')}><Users size={14}/> Add connections</button>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setShowNewReco(true)}><Lightbulb size={14}/> Recommend an idea</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setShowNewReco(true)}><Lightbulb size={14}/> New idea</button>
               </div>}
             </div>
           : (<>
@@ -1274,7 +1304,7 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
         {recent.length>0&&(
           <div>
             <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span>Recommended by</span>
+              <span>Posted by</span>
               {allRecos.length>3&&(
                 <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 8px'}} onClick={onViewAllInvestors||onOpenFull}>
                   View All {allRecos.length}
@@ -1342,7 +1372,7 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
         </button>
 
         {allRecos.length===0&&(
-          <div style={{textAlign:'center',padding:'8px 0',color:'var(--muted)',fontSize:13}}>No recommendations for {ticker} yet.</div>
+          <div style={{textAlign:'center',padding:'8px 0',color:'var(--muted)',fontSize:13}}>No ideas for {ticker} yet.</div>
         )}
       </div>
     </div>
@@ -1630,7 +1660,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                       )}
                     </div>
                   )}
-                  {t.community.total===0&&t.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No recommendations yet</div>)}
+                  {t.community.total===0&&t.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No ideas yet</div>)}
                   <div style={{display:'flex',justifyContent:'flex-end',marginTop:6}}>
                     <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={e=>{e.stopPropagation();onOpenSecurity(t.ticker,t.name);}}>
                       <ChevronRight size={13}/> Stock Insights
@@ -1695,7 +1725,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                         </td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}>
                           <div style={{display:'flex',gap:4,justifyContent:'center'}}>
-                            <button className="iconbtn" title={expanded?'Collapse':'Who recommended'} onClick={toggleExpand}
+                            <button className="iconbtn" title={expanded?'Collapse':'Who posted'} onClick={toggleExpand}
                               style={{color:expanded?'var(--accent-ink)':'var(--muted)'}}>
                               <ChevronDown size={15} style={{transform:expanded?'rotate(180deg)':'none',transition:'transform .2s'}}/>
                             </button>
@@ -1707,7 +1737,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                         <tr style={{borderBottom:'1px solid var(--line)',background:'var(--surface-2)'}}>
                           <td colSpan={7} style={{padding:'0 14px 14px 60px'}}>
                             <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',margin:'10px 0 8px'}}>
-                              Who recommended — {t.filteredRecos.length} investor{t.filteredRecos.length!==1?'s':''}
+                              Who posted — {t.filteredRecos.length} investor{t.filteredRecos.length!==1?'s':''}
                             </div>
                             <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                               {t.filteredRecos.map((r,i)=>{
@@ -1741,7 +1771,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                     </React.Fragment>
                   );
                 })}
-                {allTickers.length===0&&!loading&&<tr><td colSpan={7} style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>{recos.length===0?'No recommendations on the platform yet.':'No results match your filters.'}</td></tr>}
+                {allTickers.length===0&&!loading&&<tr><td colSpan={7} style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>{recos.length===0?'No ideas on the platform yet.':'No results match your filters.'}</td></tr>}
               </tbody>
             </table>
             {allTickers.length>visibleCount&&(
@@ -1934,7 +1964,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
             <div className="page-title">{ticker}</div>
             <div style={{fontSize:16,color:'var(--muted)',fontWeight:400}}>{name}</div>
           </div>
-          <div className="page-sub">{activeRecos.length} active recommendation{activeRecos.length!==1?'s':''} · {investors.length} investor{investors.length!==1?'s':''} tracking</div>
+          <div className="page-sub">{activeRecos.length} active idea{activeRecos.length!==1?'s':''} · {investors.length} investor{investors.length!==1?'s':''} tracking</div>
         </div>
 
         {/* ── Switch-security search — compact, tucked into the header's empty space.
@@ -2007,7 +2037,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                 {community.strength}
               </div>
               <div style={{fontSize:14,fontWeight:700,color:'var(--ink)',marginBottom:4}}>{community.label}</div>
-              <div style={{fontSize:12,color:'var(--muted)',marginBottom:20}}>out of 100 — based on {community.total} active recommendations</div>
+              <div style={{fontSize:12,color:'var(--muted)',marginBottom:20}}>out of 100 — based on {community.total} active ideas</div>
               <div style={{height:8,borderRadius:6,overflow:'hidden',background:'var(--line)',position:'relative'}}>
                 <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${community.strength}%`,
                   background:consensusStrengthColor(community),transition:'width .6s'}}/>
@@ -2036,9 +2066,9 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
       {/* Tab: Recommendation History */}
       {tab==='timeline'&&(
         <div className="card">
-          <div className="card-head"><Clock size={15}/> Recommendation History <span style={{fontSize:11,color:'var(--muted)',fontWeight:400,marginLeft:4}}>(immutable — all calls are permanent)</span></div>
+          <div className="card-head"><Clock size={15}/> Idea History <span style={{fontSize:11,color:'var(--muted)',fontWeight:400,marginLeft:4}}>(immutable — all calls are permanent)</span></div>
           {recos.length===0&&!loading?(
-            <div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>No recommendations for {ticker} yet.</div>
+            <div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>No ideas for {ticker} yet.</div>
           ):(
             <div style={{overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -2170,7 +2200,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           ))}
           {investors.length===0&&!loading&&(
             <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>
-              No investor recommendations for {ticker} yet.
+              No investor ideas for {ticker} yet.
             </div></div>
           )}
         </div>
@@ -2180,13 +2210,13 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
       {tab==='stats'&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           {!stats?(
-            <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)'}}>No recommendation history for {ticker} yet.</div></div>
+            <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)'}}>No idea history for {ticker} yet.</div></div>
           ):(
             <>
               {/* Overview stat cards */}
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12}}>
                 {[
-                  {label:'Total Recommendations', val:stats.total, icon:<Activity size={16}/>},
+                  {label:'Total Ideas', val:stats.total, icon:<Activity size={16}/>},
                   {label:'Currently Active',       val:stats.active, icon:<TrendingUp size={16}/>, color:'var(--gain)'},
                   {label:'Exited / Closed',        val:stats.exited, icon:<TrendingDown size={16}/>, color:'var(--muted)'},
                   {label:'Unique Investors',        val:new Set(recos.map(r=>r.from)).size, icon:<Users size={16}/>},
@@ -2202,7 +2232,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
               {/* Monthly recommendation trend — SVG sparkline */}
               {stats.months.length>0&&(
                 <div className="card">
-                  <div className="card-head"><Target size={15}/> Recommendation Activity by Month</div>
+                  <div className="card-head"><Target size={15}/> Idea Activity by Month</div>
                   <div className="card-body" style={{padding:'16px 20px'}}>
                     {(()=>{
                       const maxVal = Math.max(...stats.months.map(m=>m.buy+m.sell), 1);
@@ -2263,8 +2293,8 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           {aiLoading&&(
             <div className="card" style={{padding:'48px',textAlign:'center'}}>
               <Loader size={28} className="spin" style={{color:'var(--accent-ink)',marginBottom:12}}/>
-              <div style={{fontWeight:700,marginBottom:4}}>Analysing recommendations…</div>
-              <div style={{fontSize:13,color:'var(--muted)'}}>Reading {recos.length} recommendations for {ticker}</div>
+              <div style={{fontWeight:700,marginBottom:4}}>Analysing ideas…</div>
+              <div style={{fontSize:13,color:'var(--muted)'}}>Reading {recos.length} ideas for {ticker}</div>
             </div>
           )}
           {!aiLoading&&!aiSummary&&(
@@ -2272,7 +2302,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
               <Lightbulb size={32} style={{color:'var(--accent-ink)',marginBottom:12,opacity:.6}}/>
               <div style={{fontWeight:700,marginBottom:8}}>AI Investment Summary</div>
               <div style={{fontSize:13,color:'var(--muted)',marginBottom:20}}>
-                Synthesise bullish and bearish themes from {activeRecos.length} active recommendation{activeRecos.length!==1?'s':''} on {ticker}
+                Synthesise bullish and bearish themes from {activeRecos.length} active idea{activeRecos.length!==1?'s':''} on {ticker}
               </div>
               <button className="btn btn-pri" onClick={buildAiSummary} disabled={!activeRecos.length}>
                 <Lightbulb size={14}/> Generate Summary
@@ -2299,7 +2329,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                     {aiSummary.sentiment}
                   </div>
                   <div style={{fontSize:13,color:'var(--ink-soft)'}}>
-                    {aiSummary.community.bullPct}% of investors bullish · {aiSummary.community.bearPct}% bearish · {aiSummary.community.total} total active recommendations
+                    {aiSummary.community.bullPct}% of investors bullish · {aiSummary.community.bearPct}% bearish · {aiSummary.community.total} total active ideas
                   </div>
                 </div>
               </div>
@@ -2333,7 +2363,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
               </div>
 
               <div style={{fontSize:11,color:'var(--muted)',textAlign:'center',padding:'4px 0'}}>
-                Summary is generated from investor recommendations on myInvestorCircle and reflects community opinion, not financial advice.
+                Summary is generated from investor ideas on myInvestorCircle and reflects community opinion, not financial advice.
               </div>
             </div>
           )}

@@ -31,6 +31,7 @@ import {
   Copy,
   ArrowLeft,
   Link,
+  Home,
   Image as ImageIcon
 } from "lucide-react";
 import { getPreviousClose, getTodayClose, sourceName } from "../../services/marketData";
@@ -68,11 +69,13 @@ import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
 import { sendEmail, sendPush } from "../../services/notify";
 import { calcTargetDate, classColor, compressImage, fmt, fmtDate, fmtPct, getTargetDate, initialsOf, isExpired, parseThesis, ret, serializeThesis } from "../../utils/format";
-import { fetchPublicProfileInfo, gotoUserProfile, openProfile } from "../../utils/navigation";
+import { fetchPublicProfileInfo, goBackOrElse, gotoReco, gotoUserProfile, openProfile, openReco } from "../../utils/navigation";
 
 export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
     contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack, globalSearch }) {
   const [tab, setTab] = useState(initFilter?.tab || "tracked");
+  const [showNew, setShowNew] = useState(false);
+  const isMobile = useIsMobile();
   const myId = me?.id || "me";
   const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id===myId?"You":id);
   const groupName   = (id) => groups.find(g=>g.id===id)?.name || id;
@@ -85,11 +88,13 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
     });
     return s.size;
   };
-  const forwardReco = async (r, targetIds, note) => {
-    const recipients = targetIds.map(id=>({type:"user",id}));
-    await dbForwardReco(r.id, myId, recipients);
+  // Share button on an idea card (Tracked/Received/Created) — targets are
+  // already typed {type:'user'|'group', id} by IdeaSharePopover. This doesn't
+  // jump the user to the Made tab — sharing from Tracked/Received shouldn't
+  // relocate them away from the tab they were on.
+  const sendIdeaToTargets = async (recoId, targets) => {
+    await dbForwardReco(recoId, myId, targets);
     await onReload();
-    setTab("made");
   };
   const receivedCount = recsReceived.filter(r=>!r.hidden).length;
   const madeCount = recsMade.length;
@@ -99,49 +104,59 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
     {/* ── Header + tabs ── */}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:12}}>
       <div>
-        <div className="eyebrow" style={{marginBottom:0}}>Recommendations</div>
+        <div className="eyebrow" style={{marginBottom:0}}>My Ideas</div>
         <div style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px',marginTop:2}}>Ideas worth tracking</div>
       </div>
-      {/* Tabs — Tracked first */}
-      <div style={{display:"flex",gap:6,background:"var(--surface-2)",borderRadius:14,padding:4,flexWrap:"wrap"}}>
-        {[
-          {id:"tracked",  label:"My Tracked",  count:trackedCount,  icon:Bookmark},
-          {id:"received", label:"Received",     count:receivedCount, icon:Lightbulb},
-          {id:"made",     label:"Made by me",   count:madeCount,     icon:Send},
-        ].map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{
-            display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontWeight:700,fontSize:14,transition:".15s",
-            background: tab===t.id ? "var(--surface)" : "transparent",
-            color:      tab===t.id ? "var(--accent-ink)" : "var(--ink)",
-            boxShadow:  tab===t.id ? "0 1px 6px rgba(20,20,50,.1)" : "none",
-          }}>
-            <t.icon size={15}/>
-            {t.label}
-            <span style={{
-              fontSize:12, fontWeight:800, padding:"2px 9px", borderRadius:999,
-              background: tab===t.id ? "var(--grad)" : "var(--surface-2)",
-              color:      tab===t.id ? "#fff" : "var(--ink-soft)",
-            }}>{t.count}</span>
-          </button>
-        ))}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",width:isMobile?"100%":undefined}}>
+        {/* Tabs — Tracked first. Fixed to a single row (flex:1 per tab, no wrap) so
+            3 tabs never spill onto a second row on narrow screens. */}
+        <div style={{display:"flex",gap:isMobile?4:6,background:"var(--surface-2)",borderRadius:14,padding:4,flexWrap:"nowrap",width:isMobile?"100%":undefined}}>
+          {[
+            {id:"tracked",  label:"Tracked",  count:trackedCount,  icon:Bookmark},
+            {id:"received", label:"Received", count:receivedCount, icon:Lightbulb},
+            {id:"made",     label:"Created",  count:madeCount,     icon:Send},
+          ].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              display:"flex",alignItems:"center",justifyContent:isMobile?"center":undefined,gap:isMobile?4:8,
+              padding:isMobile?"9px 6px":"10px 18px",borderRadius:11,border:"none",cursor:"pointer",
+              fontFamily:"var(--font)",fontWeight:700,fontSize:isMobile?12.5:14,transition:".15s",
+              flex:isMobile?"1 1 0":undefined,minWidth:0,
+              background: tab===t.id ? "var(--surface)" : "transparent",
+              color:      tab===t.id ? "var(--accent-ink)" : "var(--ink)",
+              boxShadow:  tab===t.id ? "0 1px 6px rgba(20,20,50,.1)" : "none",
+            }}>
+              <t.icon size={isMobile?13:15}/>
+              {t.label}
+              <span style={{
+                fontSize:isMobile?10.5:12, fontWeight:800, padding:isMobile?"1px 6px":"2px 9px", borderRadius:999,
+                background: tab===t.id ? "var(--grad)" : "var(--surface-2)",
+                color:      tab===t.id ? "#fff" : "var(--ink-soft)",
+              }}>{t.count}</span>
+            </button>
+          ))}
+        </div>
+        {/* New idea — elevated so it's reachable from every tab, not just Created */}
+        <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)} style={isMobile?{width:"100%",justifyContent:"center"}:undefined}><Plus size={15}/> New idea</button>
       </div>
     </div>
 
-    {tab==="tracked"  && <TrackedSection tracked={tracked} toggleTrack={toggleTrack} me={me} contacts={contacts} initMoneyFilter={initFilter?.moneyFilter} globalSearch={globalSearch}/>}
+    {tab==="tracked"  && <TrackedSection tracked={tracked} toggleTrack={toggleTrack} me={me} contacts={contacts} groups={groups} onSendShare={sendIdeaToTargets} initMoneyFilter={initFilter?.moneyFilter} globalSearch={globalSearch}/>}
     {tab==="received" && <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} myId={myId}
         contactName={contactName} groupName={groupName} assetClasses={assetClasses}
         contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId}
-        onForward={forwardReco} onReload={onReload} me={me} tracked={tracked} toggleTrack={toggleTrack} globalSearch={globalSearch}/>}
+        onSendShare={sendIdeaToTargets} onReload={onReload} me={me} tracked={tracked} toggleTrack={toggleTrack} globalSearch={globalSearch}/>}
     {tab==="made"     && <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName}
-        reach={reach} contacts={contacts} groups={groups} assetClasses={assetClasses}
+        reach={reach} contacts={contacts} groups={groups} onSendShare={sendIdeaToTargets} assetClasses={assetClasses}
         setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload} globalSearch={globalSearch}/>}
+
+    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} me={me} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); setShowNew(false); setTab("made"); }}/>}
   </>);
 }
 
 
 /* ─── TrackedSection — My Tracked / Saved list ─────────────────────────────── */
 
-export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFilter, globalSearch }) {
+export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], onSendShare, initMoneyFilter, globalSearch }) {
   const isMobile = useIsMobile();
   const [recos,         setRecos]         = useState([]);
   const [loading,       setLoading]       = useState(true);
@@ -212,7 +227,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
     <div className="card"><div className="card-body" style={{textAlign:'center',padding:'48px 32px'}}>
       <Bookmark size={36} color="var(--muted)" style={{marginBottom:14}}/>
       <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>Nothing tracked yet</div>
-      <div className="muted small">Click the bookmark icon on any recommendation to save it here for easy reference.</div>
+      <div className="muted small">Click the bookmark icon on any idea to save it here for easy reference.</div>
     </div></div>
   );
 
@@ -268,7 +283,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
         <Search size={15} color="var(--muted)"/>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search asset or ticker…"/>
       </div>
-      <select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)} title="Filter by recommender">
+      <select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)} title="Filter by ideator">
         <option value="all">All people</option>{byOptions.map(b=><option key={b}>{b}</option>)}
       </select>
       <select className="inline-select sm" value={fHorizon} onChange={e=>setFHorizon(e.target.value)} title="Filter by horizon">
@@ -283,7 +298,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
     </div>
 
     {sorted.length===0
-      ? <div className="card"><div className="empty">No tracked recommendations match your filters.</div></div>
+      ? <div className="card"><div className="empty">No tracked ideas match your filters.</div></div>
       : isMobile
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {sorted.map(r=>{
@@ -295,7 +310,9 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
             const fn=r.first_name||''; const ln=r.last_name||'';
             const rName=fn&&ln&&fn!==ln?`${fn} ${ln}`:(fn||r.recommender_name||'Unknown');
             return (
-              <div key={r.id} className="card" style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)')}}>
+              <div key={r.id} className="card"
+                style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)'),cursor:r.recommender_username?'pointer':'default'}}
+                onClick={()=>r.recommender_username&&openReco(r.recommender_username,r.id)}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
                   <div>
                     <div style={{fontWeight:800,fontSize:15,marginBottom:2}}>{r.asset_name}</div>
@@ -304,7 +321,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
                   <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:8,marginBottom:12}}>
-                  {[['Reco Price',r.reco_price?fmt(r.reco_price,cur):'—',null],
+                  {[['Entry Price',r.reco_price?fmt(r.reco_price,cur):'—',null],
                     ['Current',r.current_price?fmt(r.current_price,cur):'—',null],
                     ['Since Yday', dailyChangeFor(r)!=null?`${dailyChangeFor(r)>=0?'+':''}${dailyChangeFor(r).toFixed(1)}%`:'—', dailyChangeFor(r)!=null?(dailyChangeFor(r)>=0):null],
                     ['Return',r.reco_price?fmtPct(recoRet):'—', recoRet>=0]].map(([label,val,isGain],i)=>(
@@ -320,12 +337,22 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
                     {isInv&&<span className="pill gain" style={{fontSize:10}}>Invested</span>}
                     <span style={{fontSize:10,color:'var(--muted)'}}>Tracked {new Date(r.tracked_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>
                   </div>
-                  <div style={{display:'flex',gap:4}}>
+                  <div style={{display:'flex',gap:4,position:'relative'}} onClick={e=>e.stopPropagation()}>
                     <InvestedToggle invested={isInv} investedPrice={r.invested_price}
                       reco={{id:r.id,price:r.current_price,ticker:r.ticker,assetName:r.asset_name,priceAt:r.reco_price}}
                       onMark={(price)=>{patchInvested(r,{is_invested:true,invested_price:price});if(!tracked?.has(r.id))toggleTrack?.(r.id);}}
                       onUnmark={()=>patchInvested(r,{is_invested:false,invested_price:null})}/>
+                    <button className="iconbtn" title="Share" onClick={(e)=>handleShare(e,r)}><Share2 size={13}/></button>
                     <button className="iconbtn" title="Remove from tracked" onClick={()=>toggleTrack(r.id)} style={{background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}}><Bookmark size={13}/></button>
+                    {sharePopId===r.id && (
+                      <IdeaSharePopover
+                        reco={{id:r.id,ticker:r.ticker,assetName:r.asset_name}}
+                        username={shareUsername} contacts={contacts} groups={groups}
+                        anchorEl={shareAnchor}
+                        onSend={(targets)=>onSendShare(r.id,targets)}
+                        onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -338,13 +365,13 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
             <table className="grid" style={{width:"100%"}}>
               <thead><tr>
                 <SortTh label="Asset"        k="asset"   sort={sort} setSort={setSort}/>
-                <th style={{whiteSpace:"normal",lineHeight:1.3,minWidth:60}}>Reco By</th>
+                <th style={{whiteSpace:"normal",lineHeight:1.3,minWidth:60}}>Idea By</th>
                 <th style={{textAlign:"left",whiteSpace:"normal",lineHeight:1.3,minWidth:60,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"tracked",dir:s.key==="tracked"&&s.dir==="asc"?"desc":"asc"}))}>Tracked<br/>On<span className="si">{sort.key==="tracked"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
-                <SortTh label="Reco Price"   k="reco"    sort={sort} setSort={setSort} align="right"/>
-                <SortTh label="Entry Price"  k="entry"   sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Entry Price"   k="reco"    sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="My Entry"      k="entry"   sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current"      k="cur"     sort={sort} setSort={setSort} align="right"/>
                 <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:64,cursor:"pointer"}} title="Change since the previous trading day's close" onClick={()=>setSort(s=>({key:"sinceyday",dir:s.key==="sinceyday"&&s.dir==="asc"?"desc":"asc"}))}>Since<br/>Yday<span className="si">{sort.key==="sinceyday"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
-                <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:72,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"recret",dir:s.key==="recret"&&s.dir==="asc"?"desc":"asc"}))}>Reco<br/>Return<span className="si">{sort.key==="recret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
+                <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:72,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"recret",dir:s.key==="recret"&&s.dir==="asc"?"desc":"asc"}))}>Idea<br/>Return<span className="si">{sort.key==="recret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th style={{textAlign:"right",whiteSpace:"normal",lineHeight:1.3,minWidth:64,cursor:"pointer"}} onClick={()=>setSort(s=>({key:"myret",dir:s.key==="myret"&&s.dir==="asc"?"desc":"asc"}))}>My<br/>Return<span className="si">{sort.key==="myret"?sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>:<ArrowUpDown size={12}/>}</span></th>
                 <th>Status</th>
                 <SortTh label="Horizon"      k="horizon" sort={sort} setSort={setSort}/>
@@ -363,11 +390,11 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
 
                 return (<React.Fragment key={r.id}>
                   <tr className="hoverable">
-                    {/* Asset — no ticker in collapsed */}
-                    <td style={{cursor:'pointer',maxWidth:200}} onClick={()=>setOpenRow(open?null:r.id)}>
+                    {/* Asset — chevron expands inline detail; asset name click-through to the dedicated reco page */}
+                    <td style={{maxWidth:200}}>
                       <div style={{display:'flex',alignItems:'center',gap:6}}>
-                        <ChevronDown size={13} color="var(--muted)" style={{transform:open?'rotate(180deg)':'none',transition:'.15s',flexShrink:0}}/>
-                        <div>
+                        <ChevronDown size={13} color="var(--muted)" style={{cursor:'pointer',transform:open?'rotate(180deg)':'none',transition:'.15s',flexShrink:0}} onClick={()=>setOpenRow(open?null:r.id)}/>
+                        <div style={r.recommender_username?{cursor:'pointer'}:{}} onClick={()=>r.recommender_username?openReco(r.recommender_username,r.id):setOpenRow(open?null:r.id)} title={r.recommender_username?'View this idea':undefined}>
                           <div style={{display:'flex',alignItems:'center',gap:6}}>
                             <span className="sym" style={{fontSize:13}}>{r.asset_name}</span>
                             <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:4,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
@@ -408,11 +435,11 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
                         <div style={{position:"relative"}}>
                           <button className="iconbtn" title="Share" onClick={e=>handleShare(e,r)}><Share2 size={13}/></button>
                           {sharePopId===r.id && (
-                            <ReceivedSharePopover
+                            <IdeaSharePopover
                               reco={{id:r.id,ticker:r.ticker,assetName:r.asset_name}}
-                              fromUsername={shareUsername}
+                              username={shareUsername} contacts={contacts} groups={groups}
                               anchorEl={shareAnchor}
-                              onForward={()=>setSharePopId(null)}
+                              onSend={(targets)=>onSendShare(r.id,targets)}
                               onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
                             />
                           )}
@@ -446,7 +473,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
                         {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">{fmt(r.stop_loss,r.currency||'INR')}</b></div>}
                         {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
                         {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
-                        <div><div className="cap">Reco Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
+                        <div><div className="cap">Idea Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
                         {myRet!==null&&<div><div className="cap">My Return</div><b className={"tnum "+(myRet>=0?"pos":"neg")}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</b></div>}
                       </div>
                       {r.thesis&&r.thesis!=='—'&&(
@@ -468,13 +495,13 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, initMoneyFi
   </>);
 }
 
-export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onReload, me, tracked, toggleTrack, globalSearch }) {
+export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onSendShare, onReload, me, tracked, toggleTrack, globalSearch }) {
   const isMobile = useIsMobile();
   const [q,setQ]=useState(globalSearch||""); const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
   const [fInv,setFInv]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
   const [showHidden,setShowHidden]=useState(false); const [showExpired,setShowExpired]=useState(false);
-  const [openRow,setOpenRow]=useState(null); const [fwd,setFwd]=useState(null);
+  const [openRow,setOpenRow]=useState(null);
   const [sharePopId,setSharePopId]=useState(null);
   const [shareAnchor,setShareAnchor]=useState(null);
   // Sync global search into local filter
@@ -523,7 +550,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
   };
   const toggleHide=(r)=>patch(r,{isHidden:!r.hidden,hidden:!r.hidden});
   const del=async(r)=>{
-    if(!confirm("Remove this recommendation from your received list?")) return;
+    if(!confirm("Remove this idea from your received list?")) return;
     setRecs(rs=>rs.filter(x=>x.deliveryId!==r.deliveryId));
     await dbDeleteDelivery(r.deliveryId, myId);
   };
@@ -561,7 +588,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
         <Search size={15} color="var(--muted)"/>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search asset or contact…"/>
       </div>
-      <select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)} title="Filter by recommender">
+      <select className="inline-select sm" value={fBy} onChange={e=>setFBy(e.target.value)} title="Filter by ideator">
         <option value="all">All people</option>{byOptions.map(b=><option key={b}>{b}</option>)}
       </select>
       <select className="inline-select sm" value={fCls} onChange={e=>setFCls(e.target.value)} title="Filter by class">
@@ -596,11 +623,11 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
       </div>
     )}
     {recs.some(r=>r.exitSignal&&(showHidden||!r.hidden)) && (
-      <div className="note warn" style={{marginBottom:10,padding:"8px 12px",fontSize:12}}><AlertTriangle size={14}/><div>A recommender has issued an <b>exit signal</b> on a recommendation below.</div></div>
+      <div className="note warn" style={{marginBottom:10,padding:"8px 12px",fontSize:12}}><AlertTriangle size={14}/><div>An ideator has issued an <b>exit signal</b> on an idea below.</div></div>
     )}
 
     {rows.length===0
-      ? <div className="card"><div className="empty">No recommendations match your filters.</div></div>
+      ? <div className="card"><div className="empty">No ideas match your filters.</div></div>
       : isMobile
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {rows.map(r=>{
@@ -609,7 +636,8 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
             const cur=r.currency||'INR';
             const fromName=r.byName||(typeof contactName==='function'?contactName(r.from):'Someone');
             return (
-              <div key={r.id} className="card" style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)')}}>
+              <div key={r.id} className="card" style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)'),cursor:r.from?'pointer':'default'}}
+                onClick={()=>r.from&&gotoReco(r.from,r.id)}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                   <div>
                     <div style={{fontWeight:800,fontSize:15,marginBottom:2}}>{r.assetName||r.asset_name}</div>
@@ -618,7 +646,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                   <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-                  {[['Reco Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
+                  {[['Entry Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
                     <div key={i} style={{background:'var(--surface-2)',borderRadius:8,padding:'8px 10px'}}>
                       <div style={{fontSize:10,color:'var(--muted)',marginBottom:2}}>{label}</div>
                       <div style={{fontWeight:700,fontSize:13,color:i===2?(recoRet>=0?'var(--gain)':'var(--loss)'):'var(--ink)'}}>{val}</div>
@@ -631,8 +659,17 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                     {r.conviction&&<ConvBadge level={r.conviction}/>}
                     <span style={{fontSize:10,color:'var(--muted)'}}>{fmtDate(r.date)}</span>
                   </div>
-                  <div style={{display:'flex',gap:4}}>
+                  <div style={{display:'flex',gap:4,position:'relative'}} onClick={e=>e.stopPropagation()}>
+                    <button className="iconbtn" title="Share" onClick={(e)=>handleReceivedShare(e,r)}><Share2 size={13}/></button>
                     <button className="iconbtn" title={tracked?.has(r.id)?'Tracked':'Track'} onClick={()=>toggleTrack?.(r.id)} style={tracked?.has(r.id)?{background:'var(--accent-soft)',color:'var(--accent-ink)'}:{}}><Bookmark size={13}/></button>
+                    {sharePopId===r.id && (
+                      <IdeaSharePopover
+                        reco={r} username={shareUsername} contacts={contacts} groups={groups}
+                        anchorEl={shareAnchor}
+                        onSend={(targets)=>onSendShare(r.id,targets)}
+                        onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -647,7 +684,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                 <SortTh label="Asset" k="assetName" sort={sort} setSort={setSort}/>
                 <SortTh label="By" k="by" sort={sort} setSort={setSort}/>
                 <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
-                <SortTh label="Reco ₹" k="reco" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Entry ₹" k="reco" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current ₹" k="cur" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
                 <th>Status</th>
@@ -659,11 +696,11 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                 const itm=ret(r)>=0; const open=openRow===r.id; const exp=isExpired(r); const td=getTargetDate(r);
                 return (<React.Fragment key={r.id}>
                   <tr className={"hoverable"+(r.exitSignal?" exit":"")+(r.hidden?" hiddenrow":"")+(exp?" expired":"")}>
-                    {/* Asset — expand on click */}
-                    <td style={{cursor:"pointer",maxWidth:200}} onClick={()=>setOpenRow(open?null:r.id)}>
+                    {/* Asset — chevron expands inline detail; name click-through to the dedicated reco page */}
+                    <td style={{maxWidth:200}}>
                       <div style={{display:"flex",alignItems:"center",gap:6}}>
-                        <ChevronDown size={13} color="var(--muted)" style={{transform:open?"rotate(180deg)":"none",transition:".15s",flexShrink:0}}/>
-                        <div>
+                        <ChevronDown size={13} color="var(--muted)" style={{cursor:"pointer",transform:open?"rotate(180deg)":"none",transition:".15s",flexShrink:0}} onClick={()=>setOpenRow(open?null:r.id)}/>
+                        <div style={r.from?{cursor:'pointer'}:{}} onClick={()=>r.from?gotoReco(r.from,r.id):setOpenRow(open?null:r.id)} title={r.from?'View this idea':undefined}>
                           <div className="sym" style={{fontSize:13}}>{r.assetName}</div>
                           <div style={{fontSize:11,color:"var(--muted)"}}>{r.assetClass&&<ClassTag c={r.assetClass}/>}</div>
                         </div>
@@ -720,15 +757,15 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                           onUnmark={()=>unInvest(r)}
                           stopProp={false}
                         />
-                        {/* Share — external public link + forward within platform */}
+                        {/* Share — public link + Circles + contacts */}
                         <div style={{position:"relative"}}>
-                          <button className="iconbtn" title="Share / forward" onClick={(e)=>handleReceivedShare(e,r)}><Share2 size={13}/></button>
+                          <button className="iconbtn" title="Share" onClick={(e)=>handleReceivedShare(e,r)}><Share2 size={13}/></button>
                           {sharePopId===r.id && (
-                            <ReceivedSharePopover
+                            <IdeaSharePopover
                               reco={r}
-                              fromUsername={shareUsername}
+                              username={shareUsername} contacts={contacts} groups={groups}
                               anchorEl={shareAnchor}
-                              onForward={()=>{ setFwd(r); setSharePopId(null); }}
+                              onSend={(targets)=>onSendShare(r.id,targets)}
                               onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
                             />
                           )}
@@ -736,7 +773,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                         {/* Track / bookmark button */}
                         <button
                           className={"iconbtn"+(tracked?.has(r.id)?" on-like":"")}
-                          title={tracked?.has(r.id)?"Remove from tracked":"Track this recommendation"}
+                          title={tracked?.has(r.id)?"Remove from tracked":"Track this idea"}
                           onClick={()=>toggleTrack?.(r.id)}
                           style={tracked?.has(r.id)?{background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{}}>
                           <Bookmark size={13}/>
@@ -764,7 +801,17 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                       <div style={{fontSize:13,lineHeight:1.7,color:"var(--ink-soft)",marginTop:4,marginBottom:12,maxWidth:720}}>
                         {r.thesis ? <ThesisRenderer thesis={r.thesis}/> : <span className="muted">No thesis shared.</span>}
                       </div>
-                      <button className="btn btn-soft btn-sm" onClick={()=>setFwd(r)}><Forward size={13}/> Forward this idea</button>
+                      <div style={{position:'relative',display:'inline-block'}}>
+                        <button className="btn btn-soft btn-sm" onClick={(e)=>{ setSharePopId(r.id); setShareAnchor(e.currentTarget); }}><Forward size={13}/> Forward this idea</button>
+                        {sharePopId===r.id && (
+                          <IdeaSharePopover
+                            reco={r} username={shareUsername} contacts={contacts} groups={groups}
+                            anchorEl={shareAnchor}
+                            onSend={(targets)=>onSendShare(r.id,targets)}
+                            onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
+                          />
+                        )}
+                      </div>
                       <div style={{marginTop:18,borderTop:'1px solid var(--line)',paddingTop:14}}>
                         <div className="cap" style={{marginBottom:10}}>Comments</div>
                         <RecoComments recoId={r.id} me={me}/>
@@ -777,9 +824,6 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
             </div>{/* /tscroll */}
           </div>
         </div>}
-
-    {fwd && <ShareRecoModal reco={fwd} mode="forward" originName={recName(fwd)} contacts={contacts} groups={groups} onClose={()=>setFwd(null)}
-        onShare={(targets,note)=>{ onForward(fwd,targets,note); setFwd(null); }}/>}
   </>);
 }
 
@@ -791,37 +835,12 @@ export function InvestPriceModal({ reco, onClose, onConfirm }) {
     <div className="modal-body">
       <div className="muted small" style={{marginBottom:14}}>What price did you invest at for <b style={{color:"var(--ink)"}}>{reco.ticker}</b> — {reco.assetName}?</div>
       <div style={{display:"flex",gap:18,marginBottom:16}}>
-        <div><div className="muted small">Reco price</div><div className="tnum" style={{fontWeight:700}}>{fmt(reco.priceAt)}</div></div>
+        <div><div className="muted small">Entry price</div><div className="tnum" style={{fontWeight:700}}>{fmt(reco.priceAt)}</div></div>
         <div><div className="muted small">Current price</div><div className="tnum" style={{fontWeight:700}}>{fmt(reco.price)}</div></div></div>
       <div className="field"><label>Your entry price</label><input type="number" value={price} autoFocus onChange={e=>setPrice(e.target.value)} onKeyDown={e=>e.key==="Enter"&&valid&&onConfirm(+price)} placeholder="0"/></div>
     </div>
     <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-pri" disabled={!valid} onClick={()=>onConfirm(+price)}><Check size={15}/> Confirm invested</button></div></div>
-  </div></div>);
-}
-
-export function ShareRecoModal({ reco, mode, originName, contacts, groups, onClose, onShare }) {
-  const [targets,setTargets]=useState([]); const [note,setNote]=useState("");
-  const toggle=(id)=>setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
-  const fwd = mode==="forward";
-  const valid = targets.length>0;
-  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-head"><h3>{fwd?<><Forward size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Forward recommendation</>:<><Share2 size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Share recommendation</>}</h3>
-      <button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
-    <div className="modal-body">
-      <div className="note info" style={{marginBottom:16}}><Lightbulb size={16}/><div>
-        <b>{reco.ticker}</b> — {reco.assetName}{fwd && originName && <> · originally recommended by <b>{originName}</b></>}.
-        {fwd && " Forwarding keeps the original recommender credited; you'll appear as the one who shared it."}</div></div>
-      <div className="field"><label>Send to contacts</label><div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-        {contacts.map(c=><span key={c.id} className={"chip"+(targets.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{targets.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}</div></div>
-      <div className="field"><label>Send to groups</label><div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-        {groups.filter(g=>g.members.includes("me")).map(g=><span key={g.id} className={"chip"+(targets.includes(g.id)?" sel":"")} onClick={()=>toggle(g.id)}>{targets.includes(g.id)&&<Check size={13}/>}<Layers size={13}/>{g.name}</span>)}</div></div>
-      <div className="field"><label>Add a note {fwd && <span className="muted small">(optional — replaces the thesis you pass on)</span>}</label>
-        <textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder={fwd?"Your take when forwarding…":"Anything to add?"}/></div>
-    </div>
-    <div className="modal-foot"><span className="muted small">{targets.length} selected</span><div style={{display:"flex",gap:10}}>
-      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      <button className="btn btn-pri" disabled={!valid} onClick={()=>onShare(targets,note)}><Send size={15}/> {fwd?"Forward":"Share"}</button></div></div>
   </div></div>);
 }
 
@@ -1079,27 +1098,26 @@ export function PanPullModal({ onClose, onApply }) {
   );
 }
 
-export function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, assetClasses, setAssetClasses, holdings, me, onReload, globalSearch }) {
+export function MadeSection({ recs, setRecs, recipientName, reach, contacts, groups, onSendShare, assetClasses, setAssetClasses, holdings, me, onReload, globalSearch }) {
   const isMobile = useIsMobile();
   const [q,setQ]=useState(""); const [fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all"),[fHorizon,setFHorizon]=useState("all");
   useEffect(()=>{ setQ(globalSearch||""); },[globalSearch]);
   const [showExpired,setShowExpired]=useState(false);
   const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [openRow,setOpenRow]=useState(null);
-  const [showNew,setShowNew]=useState(false); const [share,setShare]=useState(null);
   const [sharePopId, setSharePopId] = useState(null);
   const [shareAnchor, setShareAnchor] = useState(null);
   const [exitingId,  setExitingId]  = useState(null);
 
   const del=async(r)=>{
-    if(!confirm("Delete this recommendation? This will remove it from all recipients\' lists too.")) return;
+    if(!confirm("Delete this idea? This will remove it from all recipients\' lists too.")) return;
     setRecs(rs=>rs.filter(x=>x.id!==r.id));
     await dbDeleteReco(r.id, me?.id);
   };
 
   const toggleExit=async(r)=>{
     if (r.exit) {
-      if(!confirm("Cancel the exit signal for this recommendation?")) return;
+      if(!confirm("Cancel the exit signal for this idea?")) return;
       setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:false,exitDate:null,exitPrice:null}:x));
       if(me?.id) { try { await dbCancelExit(r.id,me.id); await onReload(); } catch(_){} }
     } else {
@@ -1110,7 +1128,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
       const priceLabel = exitPriceData
         ? `₹${Number(exitPriceData.price).toLocaleString("en-IN")} (${sourceName(exitPriceData.source)} · ${exitPriceData.date})`
         : "Price unavailable — will not be stamped (flagged on profile)";
-      const confirmed = confirm(`Exit "${r.ticker}"?\n\nExit price: ${priceLabel}\n\nThis records your exit and closes the recommendation.`);
+      const confirmed = confirm(`Exit "${r.ticker}"?\n\nExit price: ${priceLabel}\n\nThis records your exit and closes the idea.`);
       setExitingId(null);
       if (!confirmed) return;
       setRecs(rs=>rs.map(x=>x.id===r.id?{...x,exit:true,exitDate:TODAY,exitPrice:exitPriceData?.price||null}:x));
@@ -1119,8 +1137,6 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
       }
     }
   };
-  const reShare=(r,targets)=>setRecs(rs=>rs.map(x=>x.id===r.id?{...x,recipients:[...new Set([...x.recipients,...targets])]}:x));
-
   const rows = useMemo(()=>{
     let r=[...recs];
     if(!showExpired) r=r.filter(x=>!isExpired(x));
@@ -1164,11 +1180,10 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
         <span style={{fontSize:12,fontWeight:600,color:"var(--ink-soft)",whiteSpace:"nowrap"}}>Expired</span>
         {expiredCount>0 && <span className="pill loss" style={{fontSize:11,padding:"1px 6px"}}>{expiredCount}</span>}
       </div>
-      <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)}><Plus size={15}/> New idea</button>
     </div>
 
     {rows.length===0
-      ? <div className="card"><div className="empty">No recommendations match your filters.</div></div>
+      ? <div className="card"><div className="empty">No ideas match your filters.</div></div>
       : isMobile
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {rows.map(r=>{
@@ -1176,7 +1191,9 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
             const recoRet=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
             const cur=r.currency||'INR';
             return (
-              <div key={r.id} className="card" style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)')}}>
+              <div key={r.id} className="card"
+                style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)'),cursor:me?.username?'pointer':'default'}}
+                onClick={()=>me?.username&&openReco(me.username,r.id)}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                   <div>
                     <div style={{fontWeight:800,fontSize:15,marginBottom:2}}>{r.assetName}</div>
@@ -1185,7 +1202,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                   <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-                  {[['Reco Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
+                  {[['Entry Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
                     <div key={i} style={{background:'var(--surface-2)',borderRadius:8,padding:'8px 10px'}}>
                       <div style={{fontSize:10,color:'var(--muted)',marginBottom:2}}>{label}</div>
                       <div style={{fontWeight:700,fontSize:13,color:i===2?(recoRet>=0?'var(--gain)':'var(--loss)'):'var(--ink)'}}>{val}</div>
@@ -1199,9 +1216,17 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                     {(r.recipients?.length||0)>0&&<span style={{fontSize:10,color:'var(--muted)'}}>Sent to {reach(r.recipients)} people</span>}
                     {r.exit&&<span className="pill loss" style={{fontSize:10}}><LogOut size={10}/> Exited</span>}
                   </div>
-                  <div style={{display:'flex',gap:4}}>
-                    <button className="iconbtn" title="Share" onClick={()=>setShare(r)}><Share2 size={13}/></button>
+                  <div style={{display:'flex',gap:4,position:'relative'}} onClick={e=>e.stopPropagation()}>
+                    <button className="iconbtn" title="Share" onClick={(e)=>{ setSharePopId(sharePopId===r.id?null:r.id); setShareAnchor(e.currentTarget); }}><Share2 size={13}/></button>
                     {!r.exit&&<button className="iconbtn" title="Mark exit" onClick={()=>toggleExit(r)} style={{color:'var(--muted)'}}><LogOut size={13}/></button>}
+                    {sharePopId===r.id && (
+                      <IdeaSharePopover
+                        reco={r} username={r.isPublic?me.username:null} contacts={contacts} groups={groups}
+                        anchorEl={shareAnchor}
+                        onSend={(targets)=>onSendShare(r.id,targets)}
+                        onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -1215,7 +1240,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
               <thead><tr>
                 <SortTh label="Asset" k="assetName" sort={sort} setSort={setSort}/>
                 <SortTh label="Date" k="date" sort={sort} setSort={setSort}/>
-                <SortTh label="Reco Price" k="reco" sort={sort} setSort={setSort} align="right"/>
+                <SortTh label="Entry Price" k="reco" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Current" k="cur" sort={sort} setSort={setSort} align="right"/>
                 <SortTh label="Return" k="ret" sort={sort} setSort={setSort} align="right"/>
                 <th>Status</th>
@@ -1227,11 +1252,11 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                 const itm=ret(r)>=0; const open=openRow===r.id; const expired=isExpired(r); const td=getTargetDate(r);
                 return (<React.Fragment key={r.id}>
                   <tr className={"hoverable"+(r.exit?" exit":"")+(expired?" expired":"")}>
-                    {/* Asset — click to expand */}
-                    <td style={{cursor:"pointer",maxWidth:220}} onClick={()=>setOpenRow(open?null:r.id)}>
+                    {/* Asset — chevron expands inline detail; name click-through to the dedicated reco page */}
+                    <td style={{maxWidth:220}}>
                       <div style={{display:"flex",alignItems:"center",gap:6}}>
-                        <ChevronDown size={13} color="var(--muted)" style={{transform:open?"rotate(180deg)":"none",transition:".15s",flexShrink:0}}/>
-                        <div>
+                        <ChevronDown size={13} color="var(--muted)" style={{cursor:"pointer",transform:open?"rotate(180deg)":"none",transition:".15s",flexShrink:0}} onClick={()=>setOpenRow(open?null:r.id)}/>
+                        <div style={me?.username?{cursor:'pointer'}:{}} onClick={()=>me?.username?openReco(me.username,r.id):setOpenRow(open?null:r.id)} title={me?.username?'View this idea':undefined}>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
                             <span className="sym" style={{fontSize:13}}>{r.assetName}</span>
                             <span className={r.isPublic?"pill gain":"pill"} style={{fontSize:10,padding:"1px 6px"}}>{r.isPublic?"Public":"Private"}</span>
@@ -1257,13 +1282,17 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                     </td>
                     <td>
                       <div className="actions" style={{gap:4}}>
-                        {r.isPublic && (
-                          <div style={{position:"relative"}}>
-                            <button className="iconbtn" title="Copy public link" onClick={(e)=>setSharePopId(sharePopId===r.id?(setShareAnchor(null),null):(setShareAnchor(e.currentTarget),r.id))}><Link size={13}/></button>
-                            {sharePopId===r.id && <SharePublicPopover reco={r} username={me.username} anchorEl={shareAnchor} onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}/>}
-                          </div>
-                        )}
-                        <button className="iconbtn" title="Share with contacts / groups" onClick={()=>setShare(r)}><Share2 size={13}/></button>
+                        <div style={{position:"relative"}}>
+                          <button className="iconbtn" title="Share" onClick={(e)=>setSharePopId(sharePopId===r.id?(setShareAnchor(null),null):(setShareAnchor(e.currentTarget),r.id))}><Share2 size={13}/></button>
+                          {sharePopId===r.id && (
+                            <IdeaSharePopover
+                              reco={r} username={r.isPublic?me.username:null} contacts={contacts} groups={groups}
+                              anchorEl={shareAnchor}
+                              onSend={(targets)=>onSendShare(r.id,targets)}
+                              onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
+                            />
+                          )}
+                        </div>
                         <button className={"btn btn-sm "+(r.exit?"btn-ghost":"btn-soft")} style={{fontSize:11,padding:"4px 8px"}} disabled={exitingId===r.id} onClick={()=>toggleExit(r)}>
                           {exitingId===r.id?<><Loader size={12} className="spin"/> …</>:<><LogOut size={12}/> {r.exit?"Cancel exit":"Send exit"}</>}
                         </button>
@@ -1311,10 +1340,6 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
             </div>{/* /tscroll */}
           </div>
         </div>}
-
-    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} me={me} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecs(rs=>[rec,...rs]); setShowNew(false); }}/>}
-    {share && <ShareRecoModal reco={share} mode="share" contacts={contacts} groups={groups} onClose={()=>setShare(null)}
-        onShare={(targets)=>{ reShare(share,targets); setShare(null); }}/>}
   </>);
 }
 
@@ -1327,18 +1352,18 @@ export function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAd
     invested:f.invested, investedPrice:f.invested?(+f.investedPrice):null, recoActed:f.invested?1:0, shareType:f.shareType, groupId:f.shareType==="group"?f.groupId:null,
     reaction:"none", likes:0, exitSignal:false, exitDate:null, hidden:false, thesis:f.thesis.trim()||null });
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-head"><h3><Plus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add a recommendation</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-head"><h3><Plus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add an idea</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">
       <div className="muted small" style={{marginBottom:14}}>Log a tip someone shared with you offline — fill in the details yourself.</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,columnGap:14}}>
         <div className="field"><label>Asset name</label><input value={f.assetName} onChange={e=>up("assetName",e.target.value)} placeholder="e.g. Apple Inc."/></div>
         <div className="field"><label>Ticker</label><input value={f.ticker} onChange={e=>up("ticker",e.target.value)} placeholder="AAPL"/></div>
-        <div className="field"><label>Recommended by</label><input value={f.by} onChange={e=>up("by",e.target.value)} placeholder="Name" list="cnames"/>
+        <div className="field"><label>Posted by</label><input value={f.by} onChange={e=>up("by",e.target.value)} placeholder="Name" list="cnames"/>
           <datalist id="cnames">{contacts.map(c=><option key={c.id} value={c.name}/>)}</datalist></div>
         <div className="field"><label>Asset class</label><select value={f.assetClass} onChange={e=>up("assetClass",e.target.value)}>{assetClasses.map(c=><option key={c}>{c}</option>)}</select></div>
         <div className="field"><label>Date</label><input type="date" value={f.date} onChange={e=>up("date",e.target.value)}/></div>
         <div className="field"><label>Shared as</label><select value={f.shareType} onChange={e=>up("shareType",e.target.value)}><option value="one">One-to-one</option><option value="group">Group</option></select></div>
-        <div className="field"><label>Reco price</label><input type="number" value={f.recoPrice} onChange={e=>up("recoPrice",e.target.value)} placeholder="0"/></div>
+        <div className="field"><label>Entry price</label><input type="number" value={f.recoPrice} onChange={e=>up("recoPrice",e.target.value)} placeholder="0"/></div>
         <div className="field"><label>Current price</label><input type="number" value={f.curPrice} onChange={e=>up("curPrice",e.target.value)} placeholder="0"/></div>
         <div className="field"><label>Target price <span className="muted small">(optional)</span></label><input type="number" value={f.targetPrice} onChange={e=>up("targetPrice",e.target.value)} placeholder="0"/></div>
         <div className="field"><label>Target horizon</label><select value={f.horizon} onChange={e=>up("horizon",e.target.value)}>{HORIZONS.map(h=><option key={h} value={h}>{h}</option>)}</select></div>
@@ -1350,7 +1375,7 @@ export function AddReceivedModal({ assetClasses, contacts, groups, onClose, onAd
       {f.invested && <div className="field" style={{marginTop:12,maxWidth:220}}><label>My entry price</label><input type="number" value={f.investedPrice} onChange={e=>up("investedPrice",e.target.value)} placeholder="0"/></div>}
     </div>
     <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      <button className="btn btn-pri" disabled={!valid} onClick={save}>Add recommendation</button></div></div>
+      <button className="btn btn-pri" disabled={!valid} onClick={save}>Add idea</button></div></div>
   </div></div>);
 }
 
@@ -1396,7 +1421,9 @@ export function ThesisEditor({ value, onChange }) {
     const sel = text.slice(s, e);
     const url = window.prompt('Enter URL (must start with https://):');
     if (!url || !url.startsWith('http')) return;
-    const label = sel || 'read more';
+    const labelInput = window.prompt('Enter link text:', sel || 'Click for more details');
+    if (labelInput === null) return; // cancelled
+    const label = labelInput.trim() || 'Click for more details';
     const str   = `[${label}](${url})`;
     const next  = (text.slice(0, s) + str + text.slice(e)).slice(0, THESIS_MAX_CHARS);
     setText(next); emit(next, undefined);
@@ -1571,7 +1598,7 @@ export function ThesisRenderer({ thesis, previewLines=3 }) {
             <img key={i} src={src} alt="" style={{maxWidth:'100%',borderRadius:8,
               marginTop:8,display:'block',border:'1px solid var(--line)'}}/>
           ))}
-          <button onClick={()=>setExpanded(false)} style={{background:'none',border:'none',
+          <button onClick={e=>{e.stopPropagation();setExpanded(false);}} style={{background:'none',border:'none',
             cursor:'pointer',fontSize:12,color:'var(--accent-ink)',padding:'4px 0',fontWeight:600,marginTop:4}}>
             Show less ↑
           </button>
@@ -1579,7 +1606,7 @@ export function ThesisRenderer({ thesis, previewLines=3 }) {
       ) : (
         <>
           {textNode(true)}
-          <button onClick={()=>setExpanded(true)} style={{background:'none',border:'none',
+          <button onClick={e=>{e.stopPropagation();setExpanded(true);}} style={{background:'none',border:'none',
             cursor:'pointer',fontSize:12,color:'var(--accent-ink)',padding:'4px 0',fontWeight:600}}>
             Read more{imgLabel} →
           </button>
@@ -1716,8 +1743,8 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
           };
           await dbNotifyPublicContacts(newRecoId, contacts.map(c => c.id), meta);
           contacts.forEach(c => sendPush(c.id, {
-            title: '💡 New recommendation in your circle',
-            body:  `${me.name || 'Someone'} posted a new recommendation`,
+            title: '💡 New idea in your circle',
+            body:  `${me.name || 'Someone'} posted a new idea`,
             url:   recoUrl,
             tag:   'contact_recommendation',
           }));
@@ -1752,7 +1779,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
     <div className="modal-body">
 
       {/* Recommendation type — Buy / Sell */}
-      <div className="field"><label>Recommendation type</label>
+      <div className="field"><label>Idea type</label>
         <div style={{display:"flex",gap:8}}>
           {["Buy","Sell"].map(t=>(
             <button key={t} onClick={()=>setRecType(t)}
@@ -1865,7 +1892,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
           {priceError && (
             <div style={{padding:"11px 13px",border:"1px solid var(--amber)",borderRadius:11,background:"var(--amber-soft)",fontSize:12,color:"var(--amber)"}}>
               <AlertTriangle size={13}/> Price will be auto-stamped tonight by the nightly batch using closing price.
-              <div style={{marginTop:3,opacity:.8}}>Entry price is stamped using closing price of recommendation date — not manual entry.</div>
+              <div style={{marginTop:3,opacity:.8}}>Entry price is stamped using closing price of idea date — not manual entry.</div>
             </div>
           )}
         </div>
@@ -1959,84 +1986,22 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
 
 /* =================================================================== SHARING */
 
-export function ReceivedSharePopover({ reco, fromUsername, anchorEl, onForward, onClose }) {
+/* ─── IdeaSharePopover — unified share UI for My Ideas cards (Tracked / Received /
+     Created). Order: public link (copy/WhatsApp) → Circles → Contacts (expandable,
+     searchable, multi-select). "Send" delivers to the selected Circles/contacts via
+     the same forward pipeline used elsewhere, so it actually persists server-side
+     (unlike the old Made-tab "Share" which only touched local state). ───────────── */
+export function IdeaSharePopover({ reco, username, contacts=[], groups=[], anchorEl, onClose, onSend }) {
   const isMobile = useIsMobile();
-  const [copied, setCopied] = useState(false);
-  const [pos, setPos] = useState(null);
+  const [copied,   setCopied]   = useState(false);
+  const [pos,      setPos]      = useState(null);
   const popRef = useRef(null);
 
-  useEffect(() => {
-    if (!isMobile && anchorEl) {
-      const rect = anchorEl.getBoundingClientRect();
-      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
-    }
-    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
-    setTimeout(() => document.addEventListener('mousedown', h), 0);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-
-  const url = fromUsername
-    ? `${window.location.origin}${window.location.pathname}#/investor/${fromUsername}/reco/${reco.id}`
-    : null;
-  const waMsg = url ? encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) on InvestorCircle:\n${url}`) : null;
-  const copyLink = () => {
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => { setCopied(false); onClose(); }, 1600); });
-  };
-
-  const content = (
-    <>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Share2 size={15} color="var(--accent)" /> Share this idea
-      </div>
-      <button className="btn btn-ghost btn-sm" style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 8 }}
-        onClick={() => { onForward(); onClose(); }}>
-        <Forward size={14} /> Forward to your contacts
-      </button>
-      {url ? (<>
-        <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10, marginTop: 4, marginBottom: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 8 }}>Share publicly</div>
-          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 9, padding: '7px 9px', fontSize: 11, color: 'var(--muted)', marginBottom: 8, wordBreak: 'break-all', lineHeight: 1.4 }}>{url}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <button className="btn btn-pri btn-sm" style={{ justifyContent: 'center' }} onClick={copyLink}>{copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}</button>
-            <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ justifyContent: 'center', textDecoration: 'none' }} onClick={onClose}><span style={{ fontSize: 14 }}>💬</span> Share on WhatsApp</a>
-          </div>
-        </div>
-        <div className="muted small" style={{ fontSize: 11 }}>Links to the recommender's public profile.</div>
-      </>) : (
-        <div className="muted small" style={{ fontSize: 11, paddingTop: 4 }}>Public link unavailable — recommender hasn't set a username yet.</div>
-      )}
-      <button className="btn btn-ghost btn-sm" style={{ width: '100%', justifyContent: 'center', marginTop: 12 }} onClick={onClose}>Cancel</button>
-    </>
-  );
-
-  // ── Mobile: full-screen bottom sheet ──────────────────────────────────
-  if (isMobile) return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={onClose}>
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)' }}/>
-      <div ref={popRef} style={{ position: 'relative', background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '20px 20px 36px', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-        <div style={{ width: 36, height: 4, background: 'var(--line)', borderRadius: 2, margin: '0 auto 18px' }}/>
-        {content}
-      </div>
-    </div>,
-    document.body
-  );
-
-  // ── Desktop: floating popover ─────────────────────────────────────────
-  if (!pos) return null;
-  return createPortal(
-    <div ref={popRef} style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,.18)', padding: '16px 18px', minWidth: 290, maxWidth: 340, fontFamily: 'var(--font)' }} onClick={e => e.stopPropagation()}>
-      {content}
-    </div>,
-    document.body
-  );
-}
-
-export function SharePublicPopover({ reco, username, onClose, anchorEl }) {
-  const isMobile = useIsMobile();
-  const [copied, setCopied] = useState(false);
-  const [pos, setPos] = useState(null);
-  const popRef = useRef(null);
+  const [selCircles,  setSelCircles]  = useState(new Set());
+  const [selContacts, setSelContacts] = useState(new Set());
+  const [contactsOpen, setContactsOpen] = useState(false);
+  const [contactQ,     setContactQ]     = useState('');
+  const [sending,      setSending]      = useState(false);
 
   useEffect(() => {
     if (!isMobile && anchorEl) {
@@ -2051,34 +2016,109 @@ export function SharePublicPopover({ reco, username, onClose, anchorEl }) {
   const url = username
     ? `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${reco.id}`
     : null;
-  const waMsg = url ? encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) by @${username} on InvestorCircle:\n${url}`) : null;
-  const copyLink = () => { if (!url) return; navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => { setCopied(false); onClose(); }, 1600); }); };
+  const waMsg = url ? encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) on My Investor Circle:\n${url}`) : null;
+  const copyLink = () => {
+    if (!url) return;
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1600); };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(() => fallbackCopyLink(url, done));
+    else fallbackCopyLink(url, done);
+  };
 
-  const noUsername = (
-    <div ref={popRef}>
-      <div className="note warn" style={{ fontSize: 12 }}><AlertTriangle size={13} /><div>Set a username in your profile first.</div></div>
-      <button className="btn btn-ghost btn-sm" style={{ marginTop: 10, width: '100%' }} onClick={onClose}>Close</button>
-    </div>
-  );
+  const toggleCircle  = (id) => setSelCircles(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleContact = (id) => setSelContacts(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const content = username ? (
+  const filteredContacts = useMemo(() => {
+    const q = contactQ.trim().toLowerCase();
+    if (!q) return contacts;
+    return contacts.filter(c => (c.name||'').toLowerCase().includes(q));
+  }, [contacts, contactQ]);
+
+  const totalSelected = selCircles.size + selContacts.size;
+  const send = async () => {
+    if (!totalSelected || sending) return;
+    setSending(true);
+    const targets = [
+      ...[...selCircles].map(id => ({ type: 'group', id })),
+      ...[...selContacts].map(id => ({ type: 'user', id })),
+    ];
+    try { await onSend(targets); onClose(); }
+    finally { setSending(false); }
+  };
+
+  const content = (
     <>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}><Globe size={15} color="var(--accent)" /> Share publicly</div>
-      <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 9, padding: '8px 10px', fontSize: 11, color: 'var(--muted)', marginBottom: 12, wordBreak: 'break-all', lineHeight: 1.5 }}>{url}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <button className="btn btn-pri btn-sm" style={{ justifyContent: 'center' }} onClick={copyLink}>{copied ? <><Check size={14} /> Copied!</> : <><Copy size={14} /> Copy link</>}</button>
-        <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ justifyContent: 'center', textDecoration: 'none' }} onClick={onClose}><span style={{ fontSize: 15, lineHeight: 1 }}>💬</span> Share on WhatsApp</a>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Share2 size={15} color="var(--accent)" /> Share this idea
       </div>
-      <div className="muted small" style={{ marginTop: 10, fontSize: 11 }}>Anyone with this link can view — no login needed.</div>
-      <button className="btn btn-ghost btn-sm" style={{ width: '100%', justifyContent: 'center', marginTop: 12 }} onClick={onClose}>Cancel</button>
+
+      {/* ── Public link: copy + WhatsApp ── */}
+      {url ? (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <button className="btn btn-pri btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={copyLink}>{copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}</button>
+          <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}><span style={{ fontSize: 14 }}>💬</span> WhatsApp</a>
+        </div>
+      ) : (
+        <div className="muted small" style={{ marginBottom: 14 }}>Public link unavailable — ideator hasn't set a username yet.</div>
+      )}
+
+      {/* ── Circles ── */}
+      <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginBottom: 12 }}>
+        <div className="cap" style={{ marginBottom: 8 }}>Circles</div>
+        {groups.length === 0
+          ? <div className="muted small">You're not in any Circles yet.</div>
+          : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 120, overflowY: 'auto' }}>
+              {groups.map(g => (
+                <span key={g.id} className={"chip"+(selCircles.has(g.id)?" sel":"")} onClick={()=>toggleCircle(g.id)}>
+                  {selCircles.has(g.id) && <Check size={12}/>}<Layers size={12}/>{g.name}
+                </span>
+              ))}
+            </div>}
+      </div>
+
+      {/* ── Contacts — expandable, searchable, multi-select ── */}
+      <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginBottom: 14 }}>
+        <button
+          onClick={()=>setContactsOpen(v=>!v)}
+          style={{ display:'flex', alignItems:'center', gap:6, width:'100%', background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'var(--font)' }}
+        >
+          <span className="cap" style={{ marginBottom:0 }}>Contacts {selContacts.size>0 && `(${selContacts.size} selected)`}</span>
+          <ChevronDown size={13} color="var(--muted)" style={{ marginLeft:'auto', transform: contactsOpen?'rotate(180deg)':'none', transition:'.15s' }}/>
+        </button>
+        {contactsOpen && (
+          <div style={{ marginTop: 10 }}>
+            <div className="searchbox" style={{ padding: '6px 10px', marginBottom: 8 }}>
+              <Search size={13} color="var(--muted)"/>
+              <input value={contactQ} onChange={e=>setContactQ(e.target.value)} placeholder="Search contacts…" style={{ fontSize: 12.5 }}/>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:2, maxHeight:160, overflowY:'auto' }}>
+              {filteredContacts.length===0
+                ? <div className="muted small" style={{ padding: '4px 2px' }}>No contacts match.</div>
+                : filteredContacts.map(c => (
+                    <label key={c.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 4px', borderRadius:8, cursor:'pointer', fontSize:13 }}>
+                      <input type="checkbox" checked={selContacts.has(c.id)} onChange={()=>toggleContact(c.id)} style={{ accentColor:'var(--accent)' }}/>
+                      {c.name}
+                    </label>
+                  ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <span className="muted small" style={{ flex:1 }}>{totalSelected>0 ? `${totalSelected} selected` : 'Select Circles or contacts'}</span>
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+        <button className="btn btn-pri btn-sm" disabled={!totalSelected||sending} onClick={send}>
+          {sending ? <><Loader size={13} className="spin"/> Sending…</> : <><Send size={13}/> Send</>}
+        </button>
+      </div>
     </>
-  ) : noUsername;
+  );
 
   // ── Mobile: full-screen bottom sheet ──────────────────────────────────
   if (isMobile) return createPortal(
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={onClose}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)' }}/>
-      <div ref={popRef} style={{ position: 'relative', background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '20px 20px 36px', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+      <div ref={popRef} style={{ position: 'relative', background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '20px 20px 28px', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ width: 36, height: 4, background: 'var(--line)', borderRadius: 2, margin: '0 auto 18px' }}/>
         {content}
       </div>
@@ -2089,7 +2129,77 @@ export function SharePublicPopover({ reco, username, onClose, anchorEl }) {
   // ── Desktop: floating popover ─────────────────────────────────────────
   if (!pos) return null;
   return createPortal(
-    <div ref={popRef} style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,.18)', padding: '16px 18px', minWidth: 290, maxWidth: 340, fontFamily: 'var(--font)' }} onClick={e => e.stopPropagation()}>
+    <div ref={popRef} style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,.18)', padding: '16px 18px', minWidth: 300, maxWidth: 360, maxHeight: '80vh', overflowY: 'auto', fontFamily: 'var(--font)' }} onClick={e => e.stopPropagation()}>
+      {content}
+    </div>,
+    document.body
+  );
+}
+
+/* Clipboard fallback for contexts where the async Clipboard API is unavailable
+   or silently fails (older browsers, some in-app/WebView browsers) — copies
+   via a temporary offscreen textarea + execCommand instead. */
+function fallbackCopyLink(text, onDone) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    onDone();
+  } catch (_) { /* give up silently — the URL is still visible on-screen to copy by hand */ }
+}
+
+/* Small share popover for RecoPostPage's own Share button — just the public
+   link (visible + copy, with a robust fallback) and WhatsApp, since this
+   standalone page (reachable by logged-out viewers too) doesn't have the
+   viewer's Circles/contacts loaded the way IdeaSharePopover does. */
+function RecoLinkSharePopover({ url, anchorEl, copied, onCopy, onClose }) {
+  const isMobile = useIsMobile();
+  const [pos, setPos] = useState(null);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    if (!isMobile && anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    }
+    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
+    setTimeout(() => document.addEventListener('mousedown', h), 0);
+    return () => document.removeEventListener('mousedown', h);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const waMsg = encodeURIComponent(`Check out this idea on My Investor Circle:\n${url}`);
+
+  const content = (
+    <>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Share2 size={15} color="var(--accent)" /> Share this idea
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn btn-pri btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={onCopy}>{copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}</button>
+        <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}><span style={{ fontSize: 14 }}>💬</span> WhatsApp</a>
+      </div>
+    </>
+  );
+
+  if (isMobile) return createPortal(
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={onClose}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)' }}/>
+      <div ref={popRef} style={{ position: 'relative', background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '20px 20px 28px', boxShadow: '0 -8px 40px rgba(0,0,0,.28)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ width: 36, height: 4, background: 'var(--line)', borderRadius: 2, margin: '0 auto 18px' }}/>
+        {content}
+      </div>
+    </div>,
+    document.body
+  );
+
+  if (!pos) return null;
+  return createPortal(
+    <div ref={popRef} style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,.18)', padding: '16px 18px', minWidth: 280, maxWidth: 340, fontFamily: 'var(--font)' }} onClick={e => e.stopPropagation()}>
       {content}
     </div>,
     document.body
@@ -2098,7 +2208,7 @@ export function SharePublicPopover({ reco, username, onClose, anchorEl }) {
 
 /* ─── RecoPostPage — dedicated shareable post view for a single recommendation ── */
 
-export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProfile }) {
+export function RecoPostPage({ username, recoId, viewerUser, ME, contacts=[], groups=[], onBack, onNavigateProfile }) {
   const isMobile = useIsMobile();
   const [data,         setData]         = useState(null);
   const [reco,         setReco]         = useState(null);
@@ -2111,6 +2221,8 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
   const [invested,     setInvested]     = useState(false);
   const [investedPrice,setInvestedPrice]= useState(null);
   const [copied,       setCopied]       = useState(false);
+  const [shareOpen,    setShareOpen]    = useState(false);
+  const shareBtnRef = useRef(null);
 
   const recoUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${recoId}`;
 
@@ -2178,10 +2290,18 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
   };
 
   const copyLink = () => {
-    navigator.clipboard.writeText(recoUrl)
-      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2200); })
-      .catch(() => {});
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 2200); };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(recoUrl).then(done).catch(() => fallbackCopyLink(recoUrl, done));
+    } else {
+      fallbackCopyLink(recoUrl, done);
+    }
   };
+
+  // Share to Circles/contacts from this page — same forward pipeline the
+  // My Ideas cards use (IdeaSharePopover), just wired to ME.id directly
+  // since this standalone page doesn't carry the myId helper from Recommendations().
+  const sendShareTargets = async (targets) => { await dbForwardReco(recoId, ME.id, targets); };
 
   const profile  = data?.profile;
   const ici      = data?.ici;
@@ -2200,19 +2320,19 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
   return (
     <div style={{minHeight:'100vh', background:'var(--bg)', paddingBottom:56}}>
 
-      {/* ── Topbar ── */}
+      {/* ── Topbar — compact: logo + brand name, then Back / Home ── */}
       <div style={{background:'var(--surface)', borderBottom:'1px solid var(--line)',
-                   padding:'11px 20px', display:'flex', alignItems:'center', gap:12,
+                   padding:'8px 14px', display:'flex', alignItems:'center', gap:8,
                    position:'sticky', top:0, zIndex:100}}>
-        <img src="/mic-logo.png" alt="mic" style={{width:30, height:30, flexShrink:0}}/>
-        <div style={{flex:1}}>
-          <div style={{fontWeight:800, fontSize:13, lineHeight:1.1}}>myInvestorCircle</div>
-          <div style={{fontSize:10, color:'var(--muted)'}}>Transparency Platform</div>
-        </div>
+        <img src="/mic-logo.png" alt="mic" style={{width:22, height:22, flexShrink:0}}/>
+        <div style={{flex:1, minWidth:0, fontWeight:800, fontSize:13, lineHeight:1.1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>myInvestorCircle</div>
         {viewerUser
-          ? <button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
+          ? <div style={{display:'flex', gap:6, flexShrink:0}}>
+              <button className="btn btn-ghost btn-sm" style={{padding:'6px 10px'}} onClick={()=>goBackOrElse(onBack)} title="Go back"><ArrowLeft size={14}/> Back</button>
+              <button className="btn btn-ghost btn-sm" style={{padding:'6px 10px'}} onClick={onBack} title="Home"><Home size={14}/> Home</button>
+            </div>
           : <a href={window.location.pathname}
-               style={{fontSize:13, fontWeight:700, color:'var(--accent)', textDecoration:'none'}}>
+               style={{fontSize:13, fontWeight:700, color:'var(--accent)', textDecoration:'none', flexShrink:0}}>
               Sign in →
             </a>}
       </div>
@@ -2223,7 +2343,7 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
         {loading && (
           <div style={{textAlign:'center', padding:'72px 0', color:'var(--muted)'}}>
             <Loader size={28} className="spin" style={{marginBottom:14}}/>
-            <div>Loading recommendation…</div>
+            <div>Loading idea…</div>
           </div>
         )}
 
@@ -2231,9 +2351,9 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
         {notFound && !loading && (
           <div style={{textAlign:'center', padding:'72px 0'}}>
             <div style={{fontSize:36, marginBottom:14}}>🔒</div>
-            <div style={{fontWeight:700, fontSize:17, marginBottom:8}}>Recommendation not found</div>
+            <div style={{fontWeight:700, fontSize:17, marginBottom:8}}>Idea not found</div>
             <div style={{fontSize:14, color:'var(--muted)', marginBottom:24}}>
-              This recommendation may be private or no longer available.
+              This idea may be private or no longer available.
             </div>
             <button className="btn btn-pri" onClick={onNavigateProfile}>
               View @{username}'s profile
@@ -2344,7 +2464,7 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
               <div style={{background:'var(--surface-2)', borderRadius:12, padding:'14px 16px'}}>
                 <div style={{fontSize:10.5, fontWeight:700, color:'var(--muted)', textTransform:'uppercase',
                              letterSpacing:.5, marginBottom:6}}>Investment Thesis</div>
-                <div style={{fontSize:14, lineHeight:1.75, color:'var(--ink-soft)'}}>{reco.thesis}</div>
+                <ThesisRenderer thesis={reco.thesis} previewLines={8}/>
               </div>
             )}
           </div>
@@ -2378,12 +2498,25 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
             )}
             <div style={{flex:1}}/>
             {/* Share */}
-            <button onClick={copyLink} style={{display:'flex', alignItems:'center', gap:5,
-              padding:'7px 12px', borderRadius:10, border:'1px solid var(--line)',
-              background:'transparent', color:'var(--muted)',
-              cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600}}>
-              {copied ? <><Check size={14}/></> : <><Share2 size={14}/></>}
-            </button>
+            <div style={{position:'relative'}}>
+              <button ref={shareBtnRef} onClick={()=>setShareOpen(v=>!v)} title="Share this idea" style={{display:'flex', alignItems:'center', gap:5,
+                padding:'7px 12px', borderRadius:10, border:'1px solid var(--line)',
+                background: shareOpen ? 'var(--accent-soft)' : 'transparent', color: shareOpen ? 'var(--accent-ink)' : 'var(--muted)',
+                cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600}}>
+                <Share2 size={14}/> Share
+              </button>
+              {shareOpen && (viewerUser ? (
+                <IdeaSharePopover
+                  reco={{id:recoId, ticker:reco?.ticker, assetName:reco?.assetName}}
+                  username={username} contacts={contacts} groups={groups}
+                  anchorEl={shareBtnRef.current}
+                  onSend={sendShareTargets}
+                  onClose={()=>setShareOpen(false)}
+                />
+              ) : (
+                <RecoLinkSharePopover url={recoUrl} anchorEl={shareBtnRef.current} copied={copied} onCopy={copyLink} onClose={()=>setShareOpen(false)}/>
+              ))}
+            </div>
             {/* Bookmark */}
             <button onClick={viewerUser ? handleTrack : requireLogin}
               style={{display:'flex', alignItems:'center', gap:5,
@@ -2565,8 +2698,7 @@ export function RecoComments({ recoId, me }) {
 
 /* ─── FeedCard — single recommendation card for the homepage ────────────────────── */
 
-export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onReload, tracked, toggleTrack, onOpenSecurity, initExpanded=false }) {
-  const [expanded,  setExpanded]  = useState(initExpanded);
+export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onReload, tracked, toggleTrack, onOpenSecurity }) {
   const [recommenderInfo, setRecommenderInfo] = useState(null); // { username, isSebiApproved }
   const [shareAnchor, setShareAnchor] = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
@@ -2576,6 +2708,13 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
   useEffect(()=>{
     if(r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo);
   },[r.from]);
+
+  // Click-through to the dedicated reco page — same destination every other
+  // idea card in the app navigates to.
+  const goToDetail = () => {
+    if (recommenderInfo?.username) openReco(recommenderInfo.username, r.id);
+    else if (r.from) gotoReco(r.from, r.id);
+  };
 
   const cf = useMemo(()=>{
     const found = contacts.find(x=>x.id===r.from);
@@ -2657,7 +2796,8 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
   };
 
   return (
-    <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,boxShadow:'var(--shadow)',marginBottom:12,overflow:'visible',transition:'box-shadow .15s'}}
+    <div onClick={goToDetail}
+      style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:18,boxShadow:'var(--shadow)',marginBottom:12,overflow:'visible',transition:'box-shadow .15s',cursor:'pointer'}}
       onMouseEnter={e=>e.currentTarget.style.boxShadow='0 4px 20px rgba(20,20,50,.1)'}
       onMouseLeave={e=>e.currentTarget.style.boxShadow='var(--shadow)'}>
       <div style={{padding:'16px 18px'}}>
@@ -2669,7 +2809,7 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
           <div className="av"
             style={{width:42,height:42,background:cf.color||'var(--grad)',fontSize:15,flexShrink:0,cursor:canOpenProfile?'pointer':'default'}}
             title={canOpenProfile?`View ${cf.name}'s profile`:''}
-            onClick={()=>canOpenProfile&&openProfile(recommenderInfo.username)}>
+            onClick={e=>{ if(canOpenProfile){ e.stopPropagation(); openProfile(recommenderInfo.username); } }}>
             {cf.initials||initialsOf(cf.name)}
           </div>
 
@@ -2679,8 +2819,8 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
               <b style={{color:canOpenProfile?'var(--accent-ink)':'var(--ink)',cursor:canOpenProfile?'pointer':'default',
                   textDecoration:canOpenProfile?'underline':'none',textDecorationStyle:'dotted',textUnderlineOffset:3}}
                 title={canOpenProfile?`View ${cf.name}'s public profile`:''}
-                onClick={()=>canOpenProfile&&openProfile(recommenderInfo.username)}>{cf.name}</b>
-              <span style={{color:'var(--muted)',fontWeight:400}}>recommended</span>
+                onClick={e=>{ if(canOpenProfile){ e.stopPropagation(); openProfile(recommenderInfo.username); } }}>{cf.name}</b>
+              <span style={{color:'var(--muted)',fontWeight:400}}>shared</span>
               <b
                 style={{
                   color: r.ticker&&onOpenSecurity ? 'var(--accent-ink)' : 'var(--ink)',
@@ -2702,12 +2842,12 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
             <div style={{fontSize:12,color:'var(--muted)',marginTop:3,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <span>{fmtDate(r.date)}</span>
               {r.assetClass&&<span style={{display:'flex',alignItems:'center',gap:4}}><span className="dot" style={{background:classColor(r.assetClass),width:7,height:7}}/>{r.assetClass}</span>}
-              {r.priceAt>0&&<span>Reco ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
+              {r.priceAt>0&&<span>Entry ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
               {r.feedSource==='public'
-                ? <span title="This recommendation is publicly visible to all investors on myInvestorCircle"
+                ? <span title="This idea is publicly visible to all investors on myInvestorCircle"
                     style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(99,102,241,.1)',color:'rgb(99,102,241)',border:'1px solid rgba(99,102,241,.25)',display:'flex',alignItems:'center',gap:3}}><Globe size={9}/> Public</span>
                 : r.isPublic
-                ? <span title="This recommendation is publicly visible to all investors"
+                ? <span title="This idea is publicly visible to all investors"
                     style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(99,102,241,.1)',color:'rgb(99,102,241)',border:'1px solid rgba(99,102,241,.25)',display:'flex',alignItems:'center',gap:3}}><Globe size={9}/> Public</span>
                 : r.shareType==='group'
                   ? <span title={`Shared with the group: ${groups?.find?.(g=>g.id===r.groupId)?.name||'your group'}`}
@@ -2717,19 +2857,20 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
             </div>
           </div>
 
-          {/* Return badge — click to expand */}
-          <div style={{textAlign:'right',flexShrink:0,cursor:'pointer'}} onClick={()=>setExpanded(v=>!v)} title="Expand card">
+          {/* Return badge — display only; clicking bubbles to the card's click-through */}
+          <div style={{textAlign:'right',flexShrink:0}}>
             <div style={{fontSize:16,fontWeight:800,letterSpacing:'-.3px',color:itm?'var(--gain)':'var(--loss)'}}>
               {itm?'+':''}{(retPct*100).toFixed(1)}%
             </div>
             <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>₹{Number(r.price).toLocaleString('en-IN')} now</div>
-            <div style={{fontSize:10,color:'var(--muted)',marginTop:2}}>{expanded?'▲':'▼'}</div>
           </div>
         </div>
 
-        {/* ── Thesis — click to expand ── */}
+        {/* ── Thesis — plain text/links bubble up to the card's click-through like
+             the rest of the card; "Read more"/"Show less" stop their own
+             propagation (see ThesisRenderer) so expanding never navigates away ── */}
         {r.thesis&&r.thesis!=='—'&&(
-          <div style={{marginBottom:10,cursor:'pointer'}} onClick={()=>setExpanded(v=>!v)}>
+          <div style={{marginBottom:10}}>
             <ThesisRenderer thesis={r.thesis} previewLines={2}/>
           </div>
         )}
@@ -2745,21 +2886,26 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
         )}
 
         {/* ── Interaction bar — Like · Comment · Engagement · Share · Bookmark · Invested ── */}
-        <div style={{display:'flex',alignItems:'center',gap:5,paddingTop:10,borderTop:'1px solid var(--line)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:5,paddingTop:10,borderTop:'1px solid var(--line)'}} onClick={e=>e.stopPropagation()}>
           {/* Like */}
-          <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={e=>{e.stopPropagation();react('like');}} style={{width:32,height:32}}><ThumbsUp size={14}/></button>
+          <button className={"iconbtn"+(r.reaction==='like'?' on-like':'')} title="Like" onClick={()=>react('like')} style={{width:32,height:32}}><ThumbsUp size={14}/></button>
           <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.likes||0}</span>
-          {/* Comment */}
-          <button className="iconbtn" title="Comment" onClick={()=>setExpanded(v=>!v)} style={{width:32,height:32}}><MessageSquare size={14}/></button>
+          {/* Comment — comments live on the reco page now */}
+          <button className="iconbtn" title="Comment" onClick={goToDetail} style={{width:32,height:32}}><MessageSquare size={14}/></button>
           {(r.commentCount||0)>0 && <span style={{fontSize:12,fontWeight:700,color:'var(--muted)',minWidth:16}}>{r.commentCount}</span>}
           {/* Engagement */}
           {interactionCount>0&&<span style={{fontSize:11,color:'var(--muted)',display:'flex',alignItems:'center',gap:2}}>✦ {interactionCount}</span>}
           {/* Share */}
           <div style={{position:'relative'}}>
-            <button className="iconbtn" title="Share" onClick={e=>{e.stopPropagation();handleShareClick(e);}} style={{width:32,height:32}}><Share2 size={14}/></button>
-            {showShare&&<ReceivedSharePopover reco={r} fromUsername={shareUsername} anchorEl={shareAnchor}
-              onForward={()=>setShowShare(false)}
-              onClose={()=>{ setShowShare(false); setShareAnchor(null); }}/>}
+            <button className="iconbtn" title="Share" onClick={handleShareClick} style={{width:32,height:32}}><Share2 size={14}/></button>
+            {showShare && (
+              <IdeaSharePopover
+                reco={r} username={shareUsername} contacts={contacts} groups={groups}
+                anchorEl={shareAnchor}
+                onSend={(targets)=>dbForwardReco(r.id, me?.id, targets)}
+                onClose={()=>{ setShowShare(false); setShareAnchor(null); }}
+              />
+            )}
           </div>
           {/* Bookmark */}
           <button className={"iconbtn"+(isTracked?' on-like':'')} title={isTracked?'Remove from tracked':'Track'}
@@ -2786,53 +2932,10 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
               }}
               stopProp={true}
             />
-            <button onClick={()=>setExpanded(v=>!v)} style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:12,color:'var(--accent-ink)',fontWeight:700,fontFamily:'var(--font)',padding:'4px 8px',borderRadius:8}}>
-              {expanded?'Less':'More'}<ChevronDown size={14} style={{transform:expanded?'rotate(180deg)':'none',transition:'.15s'}}/>
-            </button>
           </div>
         </div>
       </div>
-
-      {/* ── Expanded detail + comments ── */}
-      {expanded&&(
-        <div style={{borderTop:'1px solid var(--line)',padding:'16px 18px',background:'var(--surface-2)',borderRadius:'0 0 18px 18px'}}>
-          <div style={{display:'flex',gap:22,flexWrap:'wrap',marginBottom:14}}>
-            <div><div className="cap">Ticker</div><b>{r.ticker}</b></div>
-            {r.assetClass&&<div><div className="cap">Class</div><ClassTag c={r.assetClass}/></div>}
-            {r.priceAt>0&&<div><div className="cap">Entry price</div><b className="tnum">₹{Number(r.priceAt).toLocaleString('en-IN')}</b></div>}
-            {r.targetPrice&&<div><div className="cap">Target</div><b className="tnum pos">₹{Number(r.targetPrice).toLocaleString('en-IN')}</b></div>}
-            {r.stopLoss&&<div><div className="cap">Stop loss</div><b className="tnum neg">₹{Number(r.stopLoss).toLocaleString('en-IN')}</b></div>}
-            <div><div className="cap">Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(retPct*100).toFixed(1)}%</b></div>
-            {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
-            {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
-          </div>
-          {r.thesis&&r.thesis!=='—'&&(
-            <div style={{marginBottom:16}}>
-              <div className="cap" style={{marginBottom:5}}>Thesis</div>
-              <ThesisRenderer thesis={r.thesis} previewLines={8}/>
-            </div>
-          )}
-          <div style={{borderTop:'1px solid var(--line)',paddingTop:14}}>
-            <div className="cap" style={{marginBottom:10}}>Comments</div>
-            <RecoComments recoId={r.id} me={me}/>
-          </div>
-        </div>
-      )}
     </div>
-  );
-}
-
-export function RecoCardModal({ r, me, contacts, groups, setRecsReceived, tracked, toggleTrack, onClose }) {
-  return createPortal(
-    <div className="modal-overlay" onClick={onClose} style={{zIndex:9999}}>
-      <div style={{maxWidth:640,width:'92vw',margin:'60px auto',position:'relative'}} onClick={e=>e.stopPropagation()}>
-        <button onClick={onClose} style={{position:'absolute',top:-36,right:0,background:'rgba(255,255,255,.15)',border:'none',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:700,padding:'4px 12px',borderRadius:8}}>✕ Close</button>
-        <FeedCard r={r} me={me} contacts={contacts} groups={groups}
-          setRecsReceived={setRecsReceived} tracked={tracked} toggleTrack={toggleTrack}
-          initExpanded={true}/>
-      </div>
-    </div>,
-    document.body
   );
 }
 

@@ -62,19 +62,19 @@ export function Network({ connections, setConnections, groups, setGroups, sharin
         <div><div className="eyebrow">Network</div><div className="page-title">Your network</div>
           <div className="page-sub">Manage connections, tracking and Circles</div></div>
       </div>
-      <div className="seg" style={{marginBottom:20,flexWrap:"wrap"}}>
+      <div className="seg net-tabs" style={{marginBottom:20,flexWrap:"wrap"}}>
         <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}>
           <Users size={15}/> Connections · {connections.filter(c=>c.status==="accepted").length}
           {pendingReceived>0 && <span className="nav-badge" style={{position:"static",marginLeft:6}}>{pendingReceived}</span>}
+        </button>
+        <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}>
+          <Layers size={15}/> Circles · {groups.length}
         </button>
         <button className={tab==="trackers"?"active":""} onClick={()=>setTab("trackers")}>
           <Eye size={15}/> Tracking me · {trackingCounts?.trackersCount ?? 0}
         </button>
         <button className={tab==="tracking"?"active":""} onClick={()=>setTab("tracking")}>
           <Radar size={15}/> I&apos;m tracking · {trackingCounts?.trackingCount ?? 0}
-        </button>
-        <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}>
-          <Layers size={15}/> Circles · {groups.length}
         </button>
       </div>
       {tab==="contacts" && <ContactsSection connections={connections} setConnections={setConnections}
@@ -428,7 +428,7 @@ export function ContactsSection({ connections, setConnections, groups, sharing, 
       </tr>
       {open && c.status==="accepted" && <tr className="expand-row"><td colSpan={7}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <b style={{fontSize:14}}>{c.name}&apos;s recommendations to you</b>
+          <b style={{fontSize:14}}>{c.name}&apos;s ideas to you</b>
           <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>
         </div>
         <RecoBreakdown stats={statsOf(c)} pnlLabel="My P&L" onPnl={()=>onOpenRecos({by:c.name})}/>
@@ -517,7 +517,7 @@ export function AddConnectionModal({ existing, me, onClose, onAddExisting, onInv
         setResult({type:"ok",msg:`Connection request sent to ${row.full_name}. They will see it in their notifications.`});
       } else {
         onInvite(e);
-        setResult({type:"info",msg:`${e} is not on InvestorCircle yet. An invitation note from ${myName} will be shared with them.`});
+        setResult({type:"info",msg:`${e} is not on My Investor Circle yet. An invitation note from ${myName} will be shared with them.`});
       }
     } catch(err) { setResult({type:"warn",msg:"Could not reach database: "+err.message}); }
     setBusy(false);
@@ -527,7 +527,7 @@ export function AddConnectionModal({ existing, me, onClose, onAddExisting, onInv
     <div className="modal-body">
       <div className="field"><label>Email address</label>
         <input value={email} onChange={e=>{setEmail(e.target.value);setResult(null);}} placeholder="name@example.com" onKeyDown={e=>e.key==="Enter"&&!busy&&submit()} autoFocus/></div>
-      <div className="muted small" style={{marginBottom:result?14:0}}>If they have an InvestorCircle account a connection request is sent. They must accept before you can share recommendations.</div>
+      <div className="muted small" style={{marginBottom:result?14:0}}>If they have a My Investor Circle account a connection request is sent. They must accept before you can share ideas.</div>
       {result && <div className={"note "+result.type}>{result.type==="ok"?<Check size={16}/>:<Mail size={16}/>}<div>{result.msg}</div></div>}
     </div>
     <div className="modal-foot"><span/>
@@ -586,7 +586,7 @@ export function InviteModal({ username, referralCount=0, onClose }) {
     <div style={{padding: isMobile?'20px 20px 36px':'28px 28px 24px'}}>
       {!isMobile && <div style={{fontWeight:900,fontSize:20,marginBottom:4}}>Invite Friends to myInvestorCircle</div>}
       <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.55,marginBottom:20}}>
-        Share your personal invite link. Anyone who signs up through it is automatically added to your investment circle — you can see each other's recommendations right away.
+        Share your personal invite link. Anyone who signs up through it is automatically added to your investment circle — you can see each other's ideas right away.
       </div>
 
       {/* Referral stats */}

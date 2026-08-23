@@ -16,7 +16,6 @@ import {
   Check,
   UserCog,
   Layers,
-  ChevronRight,
   Sparkles,
   UserPlus,
   LogOut,
@@ -26,7 +25,8 @@ import {
   Trophy,
   ExternalLink,
   Flame,
-  Info
+  Info,
+  Bookmark
 } from "lucide-react";
 import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 import { useAuth } from "./AuthContext";
@@ -114,6 +114,7 @@ import { useIsMobile } from "./hooks/index";
 import { VAPID_PUBLIC_KEY, sendEmail, sendPush } from "./services/notify";
 import { STYLES } from "./styles/globalStyles";
 import { initialsOf } from "./utils/format";
+import { loadInstruments } from "./utils/instruments";
 
 /* ============================================================
    InvestorCircle — social space for investors.
@@ -227,6 +228,7 @@ export default function App() {
   // list, so a creator with thousands of trackers doesn't load them all here.
   const [trackingCounts,  setTrackingCounts]  = useState({ trackersCount: 0, trackingCount: 0 });
   const [networkInitTab,  setNetworkInitTab]  = useState(null); // one-shot: which Network tab to open next (e.g. from a notification)
+  const [homeInitTab,     setHomeInitTab]      = useState(null); // one-shot: which HomeFeed mobile tab to open next — Pulse (top Home icon) vs Feed (DISCOVER > Ideas nav item, mobile only)
   // Feed configuration
   const [feedConfigOptions,       setFeedConfigOptions]       = useState([]); // admin-defined options
   const [userFeedPrefs,           setUserFeedPrefs]           = useState({}); // {key: boolean} user overrides
@@ -432,7 +434,7 @@ export default function App() {
         email:        c.email,
         initials:     initialsOf(c.name),
         color:        CONTACT_COLORS[i % CONTACT_COLORS.length],
-        title:        "InvestorCircle member",
+        title:        "My Investor Circle member",
         shared:       { level:"none", holdings:[] },
       })),
     [connections]
@@ -762,16 +764,29 @@ export default function App() {
   const [showDiscover, setShowDiscover] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [searchPeople,     setSearchPeople]     = useState([]);
+  const [searchInstruments, setSearchInstruments] = useState([]);
 
-  // Debounced people search — drives both topbar dropdown and mobile search overlay
+  // Debounced people + ticker/company search — drives both the topbar dropdown
+  // and the mobile search overlay. Instruments are matched client-side against
+  // the same cached instrument list InstrumentSearch (reco creation) uses —
+  // symbol prefix match or a name substring match — so "search investors,
+  // tickers" is actually true, not just the placeholder text.
   useEffect(() => {
     const q = globalSearch.trim();
-    if (!q || q.length < 2 || !ME?.id) { setSearchPeople([]); return; }
+    if (!q || q.length < 2 || !ME?.id) { setSearchPeople([]); setSearchInstruments([]); return; }
     const timer = setTimeout(async () => {
       try {
         const rows = await dbSearchPeople(q);
         setSearchPeople(rows);
       } catch(e) { console.warn('topbar people search:', e?.message||e); }
+      try {
+        const all = await loadInstruments();
+        const t = q.toLowerCase();
+        const hits = all.filter(i =>
+          i.symbol.toLowerCase().startsWith(t) || i.name.toLowerCase().includes(t)
+        ).slice(0, 6);
+        setSearchInstruments(hits);
+      } catch(e) { console.warn('topbar instrument search:', e?.message||e); }
     }, 280);
     return () => clearTimeout(timer);
   }, [globalSearch, ME?.id]);
@@ -1014,6 +1029,8 @@ export default function App() {
             recoId={pubRecoId}
             viewerUser={user}
             ME={ME}
+            contacts={contacts}
+            groups={groups}
             onBack={()=>{ window.location.hash = ''; }}
             onNavigateProfile={()=>{ window.location.hash = `#/investor/${pubUsername}`; }}
           />
@@ -1031,6 +1048,8 @@ export default function App() {
             viewerUser={user}
             viewerConnections={connections}
             viewerIsAdmin={userIsAdmin}
+            contacts={contacts}
+            groups={groups}
             mode="standalone"
             onBack={()=>{ window.location.hash = ''; }}
             onRequestConnect={async(targetId)=>{
@@ -1110,24 +1129,22 @@ export default function App() {
   const canCreateGroups = configs.groupCreationPolicy==="all";
 
   const navSections = isInv ? [
-    { items: [
-      { id:"home",        label:"Home",            icon:Home,       iconColor:"#b6a9ff", iconBg:"rgba(124,92,252,.22)" },
+    { label:"DISCOVER", items: [
+      { id:"home",         label:"Ideas",           icon:Lightbulb,  iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)" },
+      { id:"discover",     label:"Investors",       icon:Sparkles,   iconColor:"#c084fc", iconBg:"rgba(192,132,252,.15)" },
+      { id:"market_intel", label:"Market Insights", icon:TrendingUp, iconColor:"#4ade80", iconBg:"rgba(74,222,128,.13)" },
+      { id:"sec_intel",    label:"Stock Insights",  icon:Shield,     iconColor:"#34d399", iconBg:"rgba(52,211,153,.13)" },
     ]},
-    { label:"DISCOVER & INSIGHTS", items: [
-      ...(configs.enableRecommendations ? [{ id:"recs", label:"Recommendations", sub:"Track ideas & performance", icon:Lightbulb, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)", badge:newRecs }] : []),
-      { id:"portfolio",    label:"Portfolio",       sub:"Analyse your holdings",         icon:PieChart,  iconColor:"#fb923c", iconBg:"rgba(251,146,60,.13)" },
-      { id:"market_intel", label:"Market Insights", sub:"Trends, sectors & indices",     icon:TrendingUp,iconColor:"#4ade80", iconBg:"rgba(74,222,128,.13)" },
-      { id:"sec_intel",    label:"Stock Insights",  sub:"Discover stock conviction",     icon:Shield,    iconColor:"#34d399", iconBg:"rgba(52,211,153,.13)" },
+    { label:"MY CIRCLE", items: [
+      ...(configs.enableRecommendations ? [{ id:"recs", label:"My Ideas", icon:Bookmark, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)", badge:newRecs }] : []),
+      { id:"network",     label:"Network & Circles", icon:Users,  iconColor:"#60a5fa", iconBg:"rgba(96,165,250,.13)" },
+      { id:"trackrecord", label:"Track Record",      icon:Trophy, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)" },
+      { id:"portfolio",   label:"Portfolio",         icon:PieChart,iconColor:"#fb923c", iconBg:"rgba(251,146,60,.13)" },
     ]},
-    { label:"CONNECT & GROW", items: [
-      { id:"discover",    label:"Discover",      sub:"Find new investors",                icon:Sparkles, iconColor:"#c084fc", iconBg:"rgba(192,132,252,.15)" },
-      { id:"network",     label:"Network",       sub:"Connect with investors",            icon:Users,  iconColor:"#60a5fa", iconBg:"rgba(96,165,250,.13)" },
-      { id:"trackrecord", label:"Track Record",  sub:"Your public investment record",    icon:Trophy, iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)" },
-    ]},
-    { label:"ACCOUNT & SETTINGS", items: [
-      { id:"sharing",  label:"Privacy & Sharing", sub:"Control your visibility",         icon:Lock,        iconColor:"#f472b6", iconBg:"rgba(244,114,182,.13)" },
-      { id:"about",    label:"About MIC",          sub:"Our mission & platform",          icon:Info,        iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
-      { id:"contact",  label:"Contact Us",         sub:"We're here to help",              icon:ExternalLink,iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
+    { label:"ACCOUNT & SUPPORT", items: [
+      { id:"sharing",  label:"Privacy & Sharing", icon:Lock,        iconColor:"#f472b6", iconBg:"rgba(244,114,182,.13)" },
+      { id:"about",    label:"About MIC",         icon:Info,        iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
+      { id:"contact",  label:"Contact Us",        icon:ExternalLink,iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
     ]},
   ] : null;
 
@@ -1166,7 +1183,7 @@ export default function App() {
           <div style={{flex:1, minWidth:0}}>
             <div style={{fontWeight:700, fontSize:13, marginBottom:2}}>Stay in the loop</div>
             <div style={{fontSize:12, color:'var(--muted)', lineHeight:1.4}}>
-              Enable push notifications so you never miss a recommendation from your circle.
+              Enable push notifications so you never miss an idea from your circle.
             </div>
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:6, flexShrink:0}}>
@@ -1216,7 +1233,11 @@ export default function App() {
               <div key={si}>
                 {sec.label && <div className="side-section">{sec.label}</div>}
                 {sec.items.map(n=>(
-                  <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>{setPage(n.id);if(isMobile)setNavOpen(false);}}>
+                  <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>{
+                      if(n.id==='home' && isMobile) setHomeInitTab('feed'); // DISCOVER > Ideas, mobile → land on the Feed tab, not Pulse
+                      setPage(n.id);
+                      if(isMobile)setNavOpen(false);
+                    }}>
                     <div className="nav-icon" style={{background:n.iconBg}}>
                       <n.icon size={17} color={n.iconColor}/>
                     </div>
@@ -1235,24 +1256,9 @@ export default function App() {
             ))}
           </div>
 
-          {/* Footer — Connections bar for investors, stats for admin */}
-          {isInv ? (
-            <div className="side-conn">
-              <div className="side-conn-row" onClick={()=>{setPage('network');if(isMobile)setNavOpen(false);}}>
-                <div className="nav-icon" style={{width:34,height:34,borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,background:"rgba(96,165,250,.13)"}}>
-                  <Users size={17} color="#60a5fa"/>
-                </div>
-                <div style={{display:'flex',flexDirection:'column',minWidth:0,flex:1}}>
-                  <span style={{fontSize:13.5,fontWeight:600,lineHeight:1.2,color:'var(--side-text)'}}>Connections</span>
-                  <span style={{fontSize:10.5,color:'var(--side-dim)',marginTop:1}}>People in your network</span>
-                </div>
-                <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
-                  {contacts.length>0 && <span className="side-conn-badge">{contacts.length}</span>}
-                  <ChevronRight size={14} color="var(--side-dim)"/>
-                </div>
-              </div>
-            </div>
-          ) : (
+          {/* Footer — stats only for admin; investors' redundant "Connections" quick-link
+              (duplicating the Network & Circles nav item above) has been removed. */}
+          {!isInv && (
             <div className="side-foot">
               {stats.map(([l,v])=><div key={l} className="side-stat"><span>{l}</span><b>{v}</b></div>)}
             </div>
@@ -1261,27 +1267,37 @@ export default function App() {
 
         <div className="main">
           <div className="topbar">
-            {/* MIC logo — mobile only, left of hamburger, click → home */}
-            {isInv && isMobile && (
-              <img
-                src="/mic-logo.png"
-                alt="myInvestorCircle"
-                onClick={()=>setPage('home')}
-                style={{width:30,height:30,flexShrink:0,cursor:'pointer'}}
-                title="Home"
-              />
-            )}
-            {/* Hamburger — mobile only, opens nav drawer */}
-            {isInv && (
-              <button
-                className="hamburger"
-                style={{display: isMobile ? 'inline-flex' : 'none'}}
-                onClick={()=>setNavOpen(v=>!v)}
-                aria-label="Toggle menu"
-              >
-                {navOpen ? <X size={20}/> : <Menu size={20}/>}
-              </button>
-            )}
+            {/* Left control cluster: permanent Home icon + hamburger (mobile) — kept tight
+                together so Home always sits right next to the menu control, regardless of
+                route (see Phase: nav redesign — Home no longer occupies a full sidebar row,
+                and the mobile brand logo's job is now done by this explicit Home icon so the
+                cluster stays compact instead of stacking a logo + hamburger + icon). */}
+            <div style={{display:'flex',alignItems:'center',gap:isMobile?4:8,flexShrink:0}}>
+              {/* Permanent Home icon — always visible, desktop and mobile, works from any page.
+                  Always lands on the Pulse tab (the daily home experience), as opposed to
+                  DISCOVER > Ideas in the sidebar, which lands mobile users on Feed. */}
+              {isInv && (
+                <button
+                  className={"icon-btn"+(page==='home'?" active":"")}
+                  onClick={()=>{ setHomeInitTab('pulse'); setPage('home'); }}
+                  title="Home"
+                  aria-label="Home"
+                >
+                  <Home size={18}/>
+                </button>
+              )}
+              {/* Hamburger — mobile only, opens nav drawer */}
+              {isInv && (
+                <button
+                  className="hamburger"
+                  style={{display: isMobile ? 'inline-flex' : 'none'}}
+                  onClick={()=>setNavOpen(v=>!v)}
+                  aria-label="Toggle menu"
+                >
+                  {navOpen ? <X size={20}/> : <Menu size={20}/>}
+                </button>
+              )}
+            </div>
 
             {/* ── Desktop search with live people dropdown ── */}
             <div className="searchbox search-hide-mobile" style={{width:300,maxWidth:'40vw',position:'relative',flexShrink:0}}>
@@ -1293,38 +1309,55 @@ export default function App() {
                 placeholder="Search investors, tickers…"
               />
               {globalSearch && (
-                <button onClick={()=>{setGlobalSearch('');setSearchPeople([]);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
+                <button onClick={()=>{setGlobalSearch('');setSearchPeople([]);setSearchInstruments([]);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
                   <X size={14}/>
                 </button>
               )}
-              {/* People search results dropdown */}
-              {globalSearch.trim().length >= 2 && searchPeople.length > 0 && (
-                <div style={{position:'absolute',top:'calc(100% + 8px)',left:0,right:0,zIndex:400,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,.14)',overflow:'hidden'}}>
-                  <div style={{padding:'7px 14px 3px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)'}}>Investors</div>
-                  {searchPeople.map((u,i)=>{
-                    const isConn = connections.some(c=>c.id===u.id&&c.status==='active');
-                    const isPend = connections.some(c=>c.id===u.id&&c.status!=='active');
-                    const isSebi = u.sebi_approval_status==='approved'||['sebi_ra','sebi_ria'].includes(u.registration_status||'');
-                    return (
-                      <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',borderTop:i>0?'1px solid var(--line)':'none',transition:'background .1s'}}
+              {/* Combined investors + tickers/companies search results dropdown */}
+              {globalSearch.trim().length >= 2 && (searchPeople.length > 0 || searchInstruments.length > 0) && (
+                <div style={{position:'absolute',top:'calc(100% + 8px)',left:0,right:0,zIndex:400,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,.14)',overflow:'hidden',maxHeight:420,overflowY:'auto'}}>
+                  {searchPeople.length > 0 && (<>
+                    <div style={{padding:'7px 14px 3px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)'}}>Investors</div>
+                    {searchPeople.map((u,i)=>{
+                      const isConn = connections.some(c=>c.user_id===u.id&&c.status==='accepted');
+                      const isPend = connections.some(c=>c.user_id===u.id&&c.status==='pending');
+                      const isSebi = u.sebi_approval_status==='approved'||['sebi_ra','sebi_ria'].includes(u.registration_status||'');
+                      return (
+                        <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',borderTop:i>0?'1px solid var(--line)':'none',transition:'background .1s'}}
+                          onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
+                          onMouseLeave={e=>e.currentTarget.style.background=''}
+                          onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); } }}>
+                          <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.full_name||u.username}</div>
+                            {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
+                          </div>
+                          {isSebi&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)',flexShrink:0}}>SEBI</span>}
+                          {isConn ? <span style={{fontSize:11,fontWeight:700,color:'var(--gain)',flexShrink:0}}>Connected</span>
+                           : isPend ? <span style={{fontSize:11,color:'var(--muted)',flexShrink:0}}>Pending</span>
+                           : <button className="btn btn-pri btn-sm" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
+                               onClick={e=>{e.stopPropagation();handlePeopleConnect(u.id);}}>
+                               Connect
+                             </button>}
+                        </div>
+                      );
+                    })}
+                  </>)}
+                  {searchInstruments.length > 0 && (<>
+                    <div style={{padding:'7px 14px 3px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)',borderTop:searchPeople.length>0?'1px solid var(--line)':'none'}}>Stocks</div>
+                    {searchInstruments.map((inst,i)=>(
+                      <div key={inst.symbol} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',borderTop:i>0?'1px solid var(--line)':'none',transition:'background .1s'}}
                         onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
                         onMouseLeave={e=>e.currentTarget.style.background=''}
-                        onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); } }}>
-                        <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                        onClick={()=>{ openSecurity(inst.symbol, inst.name); setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); }}>
+                        <div style={{width:30,height:30,borderRadius:9,flexShrink:0,background:'var(--surface-2)',display:'flex',alignItems:'center',justifyContent:'center'}}><TrendingUp size={14} color="var(--muted)"/></div>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.full_name||u.username}</div>
-                          {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
+                          <div style={{fontWeight:700,fontSize:13}}>{inst.symbol}</div>
+                          <div style={{fontSize:11,color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{inst.name}</div>
                         </div>
-                        {isSebi&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gain-soft)',color:'var(--gain)',flexShrink:0}}>SEBI</span>}
-                        {isConn ? <span style={{fontSize:11,fontWeight:700,color:'var(--gain)',flexShrink:0}}>Connected</span>
-                         : isPend ? <span style={{fontSize:11,color:'var(--muted)',flexShrink:0}}>Pending</span>
-                         : <button className="btn btn-pri btn-sm" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
-                             onClick={e=>{e.stopPropagation();handlePeopleConnect(u.id);}}>
-                             Connect
-                           </button>}
                       </div>
-                    );
-                  })}
+                    ))}
+                  </>)}
                 </div>
               )}
             </div>
@@ -1579,39 +1612,54 @@ export default function App() {
                   style={{flex:1,border:'none',background:'none',fontSize:14,fontFamily:'var(--font)',color:'var(--ink)',outline:'none'}}
                 />
                 {globalSearch && (
-                  <button onClick={()=>{setGlobalSearch('');setSearchPeople([]);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
+                  <button onClick={()=>{setGlobalSearch('');setSearchPeople([]);setSearchInstruments([]);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:0,display:'flex'}}>
                     <X size={14}/>
                   </button>
                 )}
               </div>
-              {/* People results */}
-              {searchPeople.length > 0 && (
-                <div style={{marginTop:8,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,overflow:'hidden'}}>
-                  <div style={{padding:'6px 14px 2px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)'}}>Investors</div>
-                  {searchPeople.map((u,i)=>{
-                    const isConn = connections.some(c=>c.id===u.id&&c.status==='active');
-                    const isPend = connections.some(c=>c.id===u.id&&c.status!=='active');
-                    return (
-                      <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid var(--line)':'none'}}
-                        onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); setShowMobileSearch(false); } }}>
-                        <div className="av" style={{width:32,height:32,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontWeight:700,fontSize:13}}>{u.full_name||u.username}</div>
-                          {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
+              {/* Results */}
+              {(searchPeople.length > 0 || searchInstruments.length > 0) && (
+                <div style={{marginTop:8,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,overflow:'hidden',maxHeight:'60vh',overflowY:'auto'}}>
+                  {searchPeople.length > 0 && (<>
+                    <div style={{padding:'6px 14px 2px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)'}}>Investors</div>
+                    {searchPeople.map((u,i)=>{
+                      const isConn = connections.some(c=>c.user_id===u.id&&c.status==='accepted');
+                      const isPend = connections.some(c=>c.user_id===u.id&&c.status==='pending');
+                      return (
+                        <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid var(--line)':'none'}}
+                          onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); setShowMobileSearch(false); } }}>
+                          <div className="av" style={{width:32,height:32,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:700,fontSize:13}}>{u.full_name||u.username}</div>
+                            {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
+                          </div>
+                          {isConn ? <span style={{fontSize:11,fontWeight:700,color:'var(--gain)',flexShrink:0}}>Connected</span>
+                           : isPend ? <span style={{fontSize:11,color:'var(--muted)',flexShrink:0}}>Pending</span>
+                           : <button className="btn btn-pri btn-sm" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
+                               onClick={e=>{e.stopPropagation();handlePeopleConnect(u.id);}}>
+                               Connect
+                             </button>}
                         </div>
-                        {isConn ? <span style={{fontSize:11,fontWeight:700,color:'var(--gain)',flexShrink:0}}>Connected</span>
-                         : isPend ? <span style={{fontSize:11,color:'var(--muted)',flexShrink:0}}>Pending</span>
-                         : <button className="btn btn-pri btn-sm" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
-                             onClick={e=>{e.stopPropagation();handlePeopleConnect(u.id);}}>
-                             Connect
-                           </button>}
+                      );
+                    })}
+                  </>)}
+                  {searchInstruments.length > 0 && (<>
+                    <div style={{padding:'7px 14px 3px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)',borderTop:searchPeople.length>0?'1px solid var(--line)':'none'}}>Stocks</div>
+                    {searchInstruments.map((inst,i)=>(
+                      <div key={inst.symbol} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid var(--line)':'none'}}
+                        onClick={()=>{ openSecurity(inst.symbol, inst.name); setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); setShowMobileSearch(false); }}>
+                        <div style={{width:32,height:32,borderRadius:9,flexShrink:0,background:'var(--surface-2)',display:'flex',alignItems:'center',justifyContent:'center'}}><TrendingUp size={14} color="var(--muted)"/></div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:13}}>{inst.symbol}</div>
+                          <div style={{fontSize:11,color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{inst.name}</div>
+                        </div>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </>)}
                 </div>
               )}
-              {globalSearch.trim().length >= 2 && searchPeople.length === 0 && (
-                <div style={{padding:'12px 14px',textAlign:'center',fontSize:13,color:'var(--muted)'}}>No investors found for "{globalSearch.trim()}"</div>
+              {globalSearch.trim().length >= 2 && searchPeople.length === 0 && searchInstruments.length === 0 && (
+                <div style={{padding:'12px 14px',textAlign:'center',fontSize:13,color:'var(--muted)'}}>No results for "{globalSearch.trim()}"</div>
               )}
             </div>
           )}
@@ -1632,13 +1680,13 @@ export default function App() {
                     Connection request sent to {connectConfirm.name}!
                   </div>
                   <div className="muted small">
-                    They'll receive a notification and can accept your request. Once accepted, you can share recommendations with each other.
+                    They'll receive a notification and can accept your request. Once accepted, you can share ideas with each other.
                   </div>
                 </div>
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}/>}
+            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds} initTab={homeInitTab} onInitTabConsumed={()=>setHomeInitTab(null)}/>}
             {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
             {isInv && showDiscover && <DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
@@ -1676,6 +1724,8 @@ export default function App() {
                       viewerUser={user}
                       viewerConnections={connections}
                       viewerIsAdmin={userIsAdmin}
+                      contacts={contacts}
+                      groups={groups}
                       mode="embedded"
                       isOwnProfile
                       patchProfile={patchProfile}
@@ -1695,7 +1745,7 @@ export default function App() {
                           <div style={{fontWeight:800,fontSize:17,marginBottom:10,color:'var(--accent-ink)'}}>Awaiting admin approval</div>
                           <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.7,marginBottom:20}}>
                             You've claimed your profile and your request is with the myInvestorCircle team.
-                            Once approved, your full track record and ICI score — including all your historical recommendations — will appear here.
+                            Once approved, your full track record and ICI score — including all your historical ideas — will appear here.
                           </div>
                           <div className="note" style={{fontSize:12,textAlign:'left',background:'var(--surface-2)'}}>
                             You'll receive a confirmation email at your registered address as soon as the admin approves your profile. This usually happens within 24 hours.

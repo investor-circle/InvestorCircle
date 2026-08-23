@@ -17,9 +17,9 @@ export const CLASS_COLOR = { Equity:"#6d5df5", Bonds:"#0ea5b7", ETF:"#9a55ee", "
 export const ABOUT_DEFAULT_HTML = `
 <h2 style="font-size:24px;font-weight:800;letter-spacing:-.5px;color:#13142b;margin:0 0 24px;">About My Investor Circle (MIC)</h2>
 
-<p style="font-size:15px;line-height:1.85;color:#565a78;margin:0 0 18px;">If you've ever come across a stock recommendation on X, Instagram, Telegram or YouTube and wondered, <strong style="color:#13142b;">"Can I really trust this?"</strong> — you're not alone. We asked ourselves the same question. In a world overflowing with market opinions, it's surprisingly difficult to find one simple thing: a transparent, accountable history. What calls has this person made in the past? How did they perform? Were the bad ones still visible, or only the winning calls? We realised there was no easy way to find out.</p>
+<p style="font-size:15px;line-height:1.85;color:#565a78;margin:0 0 18px;">If you've ever come across a stock idea on X, Instagram, Telegram or YouTube and wondered, <strong style="color:#13142b;">"Can I really trust this?"</strong> — you're not alone. We asked ourselves the same question. In a world overflowing with market opinions, it's surprisingly difficult to find one simple thing: a transparent, accountable history. What calls has this person made in the past? How did they perform? Were the bad ones still visible, or only the winning calls? We realised there was no easy way to find out.</p>
 
-<p style="font-size:15px;line-height:1.85;color:#565a78;margin:0 0 18px;">That's exactly why we built My Investor Circle. We wanted a place where every investment <em>idea leaves a permanent record — no disappearing posts, no cherry-picked success stories.</em> Just a transparent history of recommendations, their outcomes, and the data that helps you decide who has genuinely earned your trust. Whether someone has 500 followers or 5 million shouldn't matter — what matters is their track record.</p>
+<p style="font-size:15px;line-height:1.85;color:#565a78;margin:0 0 18px;">That's exactly why we built My Investor Circle. We wanted a place where every investment <em>idea leaves a permanent record — no disappearing posts, no cherry-picked success stories.</em> Just a transparent history of ideas, their outcomes, and the data that helps you decide who has genuinely earned your trust. Whether someone has 500 followers or 5 million shouldn't matter — what matters is their track record.</p>
 
 <div style="background:#f5f3ff;border-left:4px solid #6d5df5;border-radius:0 12px 12px 0;padding:20px 24px;margin:24px 0;">
   <p style="font-size:15px;line-height:1.85;color:#13142b;margin:0 0 12px;"><strong>MIC is a community</strong> built for investors and market enthusiasts to share investment ideas, learn from each other, and build a transparent public track record over time. We don't tell you what to buy or sell, and we don't endorse or certify any individual, investment idea, or strategy. Our goal is simply to make it easier for everyone to see the complete picture — so you can evaluate ideas based on history, consistency, and transparency, not just popularity or follower count.</p>
@@ -128,7 +128,7 @@ export const PRIVACY_HTML = `
 <p style="font-size:14px;font-weight:700;color:#13142b;margin:0 0 8px;">Content you publish</p>
 <ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 14px;padding-left:20px;">
   <li>Investment ideas, comments, and replies</li>
-  <li>Public recommendations and associated metadata</li>
+  <li>Public ideas and associated metadata</li>
   <li>Public profile information</li>
 </ul>
 <p style="font-size:13px;line-height:1.75;color:#8d90ad;margin:0 0 14px;">Content you intentionally publish may be visible to other users based on your privacy settings.</p>
@@ -151,7 +151,7 @@ export const PRIVACY_HTML = `
 <p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">Under the <strong>Digital Personal Data Protection Act, 2023 (DPDP Act)</strong>, we process your personal data only for lawful purposes with your consent or as otherwise permitted by law. We use information to:</p>
 <ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;padding-left:20px;">
   <li>Create and maintain your account</li>
-  <li>Display your public profile and recommendation history</li>
+  <li>Display your public profile and idea history</li>
   <li>Calculate investment analytics and credibility metrics (ICI Score)</li>
   <li>Improve platform performance and develop new features</li>
   <li>Detect and prevent abuse, fraud, or manipulation</li>
@@ -166,7 +166,7 @@ export const PRIVACY_HTML = `
 <p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;">The following may be publicly visible if you choose to publish it:</p>
 <ul style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 10px;padding-left:20px;">
   <li>Username and public profile</li>
-  <li>Investment ideas and recommendation history</li>
+  <li>Investment ideas and their history</li>
   <li>Performance analytics and credibility score</li>
   <li>Public comments and replies</li>
 </ul>
@@ -174,9 +174,9 @@ export const PRIVACY_HTML = `
 
 <hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
 
-<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">4. Recommendation Record Integrity</h3>
+<h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">4. Idea Record Integrity</h3>
 <div style="background:#f5f3ff;border-left:4px solid #6d5df5;border-radius:0 10px 10px 0;padding:16px 20px;margin:0 0 14px;">
-  <p style="font-size:14px;line-height:1.8;color:#13142b;margin:0;">My Investor Circle is designed to maintain a <strong>transparent, tamper-resistant historical record</strong> of investment ideas. Once published, recommendations, timestamps, and associated performance metrics may be retained to preserve the integrity of the platform's analytics and public record. Users may update or close recommendations, but historical records may continue to be displayed as part of the platform's transparency features, subject to applicable law.</p>
+  <p style="font-size:14px;line-height:1.8;color:#13142b;margin:0;">My Investor Circle is designed to maintain a <strong>transparent, tamper-resistant historical record</strong> of investment ideas. Once published, ideas, timestamps, and associated performance metrics may be retained to preserve the integrity of the platform's analytics and public record. Users may update or close ideas, but historical records may continue to be displayed as part of the platform's transparency features, subject to applicable law.</p>
 </div>
 <p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">Requests to remove or alter historical records will be considered in accordance with legal requirements, privacy obligations, and the platform's legitimate interest in maintaining accurate historical information. Where a user establishes that a published idea infringes their rights under applicable law, we will act in accordance with our obligations as an intermediary under the <strong>Information Technology Act, 2000</strong> and the <strong>IT (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021</strong>.</p>
 
@@ -206,7 +206,7 @@ export const PRIVACY_HTML = `
   <li><strong>Right to nominate</strong> — nominate another individual to exercise rights on your behalf in the event of your death or incapacity</li>
   <li><strong>Right to withdraw consent</strong> — where processing is based on your consent, you may withdraw it at any time (this will not affect prior processing)</li>
 </ul>
-<p style="font-size:13px;line-height:1.75;color:#8d90ad;margin:0 0 24px;">Note: Certain data may be retained where required by law or where necessary to preserve the integrity of the platform's historical analytics. Erasure of account data will not automatically erase publicly-published recommendation history, which may be retained in anonymised or de-identified form.</p>
+<p style="font-size:13px;line-height:1.75;color:#8d90ad;margin:0 0 24px;">Note: Certain data may be retained where required by law or where necessary to preserve the integrity of the platform's historical analytics. Erasure of account data will not automatically erase publicly-published idea history, which may be retained in anonymised or de-identified form.</p>
 
 <hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
 
@@ -243,7 +243,7 @@ export const PRIVACY_HTML = `
 <hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
 
 <h3 style="font-size:16px;font-weight:800;color:#13142b;margin:0 0 14px;">10. Data Retention</h3>
-<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">We retain personal data only for as long as reasonably necessary to operate the platform, preserve recommendation history, resolve disputes, meet legal obligations, and protect against fraud. Certain records may be retained longer where required by Indian law or to preserve the integrity of historical analytics.</p>
+<p style="font-size:14px;line-height:1.8;color:#565a78;margin:0 0 24px;">We retain personal data only for as long as reasonably necessary to operate the platform, preserve idea history, resolve disputes, meet legal obligations, and protect against fraud. Certain records may be retained longer where required by Indian law or to preserve the integrity of historical analytics.</p>
 
 <hr style="border:none;border-top:1px solid #e8e8ef;margin:28px 0;"/>
 

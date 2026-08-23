@@ -52,7 +52,7 @@ export function Sharing({ sharing, setSharing, configs, holdings, contacts, grou
         <div className="card-head"><span style={{display:'flex',gap:8,alignItems:'center'}}><Flame size={16}/> Feed Settings</span></div>
         <div className="card-body">
           <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16,lineHeight:1.6}}>
-            Personalise what appears in your recommendation feed. Options marked 🔒 are required by the platform and cannot be turned off.
+            Personalise what appears in your idea feed. Options marked 🔒 are required by the platform and cannot be turned off.
           </p>
           {['sources','ranking','filters'].map(cat=>{
             const opts = feedConfigOptions.filter(o=>o.admin_enabled && o.category===cat);
