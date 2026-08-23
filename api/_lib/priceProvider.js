@@ -34,6 +34,12 @@
  *     with no provider data yields NO row rather than a fabricated one.
  */
 
+// How far back a historical (single-date) Yahoo request looks for the
+// requested date's close when the date itself has no trading session.
+// 10 days safely bridges any run of consecutive non-trading days this
+// market observes (long weekends, multi-day exchange holidays).
+const HISTORICAL_LOOKBACK_DAYS = 10;
+
 const YAHOO_HEADERS = {
   'User-Agent':      'Mozilla/5.0 (compatible; InvestorCircle/1.0)',
   'Accept':          'application/json',
@@ -127,12 +133,22 @@ export async function fetchFromYahoo(symbol, exchange, date) {
   let lastError;
   for (const yahooSym of yahooSymbolCandidates(symbol, exchange)) {
     try {
-      // Build URL — historical if date given, else 5-day range for latest close
+      // Build URL — historical if date given, else 5-day range for latest close.
+      //
+      // The historical window looks BACK up to HISTORICAL_LOOKBACK_DAYS from
+      // the target date, not just the target date itself. A single-day window
+      // (period1=date, period2=date+1) returns nothing at all when the target
+      // date is a non-trading day (weekend/holiday) — there's no trading data
+      // to find in a 24h slice that contains no session — so any caller asking
+      // for a price "on" a Saturday would fail outright instead of getting the
+      // preceding Friday's close. The lookback is generous enough to bridge
+      // any run of consecutive non-trading days (long weekends, multi-day
+      // exchange holidays) this market observes.
       let apiUrl;
       if (date) {
         const d       = new Date(date);
-        const period1 = Math.floor(d.getTime() / 1000);
-        const period2 = Math.floor((d.getTime() + 86400_000) / 1000);
+        const period1 = Math.floor((d.getTime() - HISTORICAL_LOOKBACK_DAYS * 86400_000) / 1000);
+        const period2 = Math.floor((d.getTime() + 86400_000) / 1000); // exclusive upper bound — includes the target day itself
         apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1d&period1=${period1}&period2=${period2}`;
       } else {
         apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1d&range=5d`;
@@ -154,16 +170,25 @@ export async function fetchFromYahoo(symbol, exchange, date) {
       let price, priceDate;
 
       if (date) {
-        // Find the close that matches the requested date
-        const target = new Date(date);
-        let bestIdx  = -1;
-        let bestDiff = Infinity;
+        // The LATEST close on or before the requested date — deliberately not
+        // "nearest by absolute time difference". A price stamped "as of
+        // <date>" must never reflect a later trading day than that date:
+        // for exit prices in particular, pulling in a subsequent day's close
+        // would attribute information the recommender couldn't have had at
+        // exit time, which is exactly the kind of after-the-fact lookback
+        // this app's exit-price rule (today's exit only, real-time-priced) is
+        // designed to prevent. Never-look-forward also means a non-trading
+        // target date (weekend/holiday) correctly resolves to the preceding
+        // trading day rather than the following one.
+        const cutoffMs = new Date(date).getTime() + 86400_000; // exclusive: end of the target day
+        let bestIdx = -1;
+        let bestTs  = -Infinity;
         timestamps.forEach((ts, i) => {
           if (closes[i] == null) return;
-          const diff = Math.abs(ts * 1000 - target.getTime());
-          if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+          const tsMs = ts * 1000;
+          if (tsMs < cutoffMs && tsMs > bestTs) { bestTs = tsMs; bestIdx = i; }
         });
-        if (bestIdx === -1) throw new Error('Yahoo: date not found in range');
+        if (bestIdx === -1) throw new Error('Yahoo: no close on or before date');
         price     = closes[bestIdx];
         priceDate = new Date(timestamps[bestIdx] * 1000).toISOString().slice(0, 10);
       } else {

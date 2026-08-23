@@ -119,6 +119,14 @@ function exchangesFor(preferredExchange) {
 
 const asIsoDate = (v) => (v ? (v.toISOString?.().slice(0, 10) ?? String(v)) : null);
 
+// Canonical (symbol, asset_class) key — must match the normalisation
+// getActiveInstrumentUniverse() and Task 1's current_price UPDATE both use
+// (COALESCE(NULLIF(TRIM(asset_class), ''), 'Equity')), so a lookup against
+// Task 1's resolved-price map hits for every row Task 1 actually priced.
+function instrumentKey(symbol, assetClass) {
+  return `${String(symbol || '').trim().toUpperCase()}::${String(assetClass || 'Equity').trim().toLowerCase()}`;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function isoToNseDate(iso) {
   const d   = new Date(iso);
@@ -424,6 +432,15 @@ async function persistSnapshots(db, rows) {
  * There is no "already collected today, skip the fetch" pre-filter (the
  * retired collector had one): skipping the fetch would also skip the
  * current_price refresh, which must happen on every run.
+ *
+ * Also returns `priceMap` — every successfully-resolved (symbol, asset_class)
+ * -> { close, currency, date, source } this run, keyed by instrumentKey().
+ * Task 0 and Task 2 run AFTER this now (see main()) and consult this map for
+ * any row whose own target date is TODAY_ISO: that's the exact same price
+ * this task just fetched for the exact same instrument, so reusing it here
+ * avoids firing a second, redundant provider call for the common case where
+ * a nightly-catch date happens to be today. It's a plain in-memory lookup,
+ * not a new query or a persisted cache.
  */
 async function runTask1(db, bhavMap) {
   const allGroups = await getActiveInstrumentUniverse(db);
@@ -458,6 +475,7 @@ async function runTask1(db, bhavMap) {
 
   let updatedRecos = 0, pricedInstruments = 0, failedInstruments = 0;
   const snapshots = [];
+  const priceMap = new Map();
 
   for (const outcome of settled) {
     if (!outcome) continue;
@@ -468,6 +486,9 @@ async function runTask1(db, bhavMap) {
       continue;
     }
     pricedInstruments++;
+    priceMap.set(instrumentKey(item.symbol, item.assetClass), {
+      close: value.close, currency: value.currency || 'INR', date: value.date, source: value.source,
+    });
 
     // (a) current_price — EVERY active idea on this instrument, EVERY asset class.
     const { rowCount } = await db.query(`
@@ -501,7 +522,7 @@ async function runTask1(db, bhavMap) {
   console.log(`  Done: ${pricedInstruments} instrument(s) priced, ${failedInstruments} failed`);
   console.log(`        ${updatedRecos} recommendation current_price value(s) updated`);
   console.log(`        ${stored} instrument_daily_prices row(s) upserted (${IN_SCOPE_ASSET_CLASSES.join('/')} only)`);
-  return { instruments: entries.length, priced: pricedInstruments, failed: failedInstruments, updatedRecos, stored };
+  return { instruments: entries.length, priced: pricedInstruments, failed: failedInstruments, updatedRecos, stored, priceMap };
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -516,25 +537,57 @@ async function main() {
   try { bhavMap = await downloadNseBhavcopy(TODAY_ISO); }
   catch (e) { console.warn(`[NSE Bhavcopy] Failed: ${e.message}. Using Yahoo for all symbols.`); }
 
+  // Task 1 runs FIRST now (was: Task 0, Task 1, Task 2, Task 3). Task 0 and
+  // Task 2 both stamp "the price on date X" for a specific idea, and for the
+  // common case X = TODAY_ISO, that is the exact same instrument price Task 1
+  // is about to fetch anyway. Running Task 1 first and having Task 0/Task 2
+  // check its priceMap before firing their own request turns that common case
+  // into a free in-memory lookup instead of a duplicate provider call. Task 0's
+  // genuinely historical rows (e.g. admin-seeded backdated ideas) and Task 2's
+  // genuinely overdue rows (e.g. a weekend expiry only just caught) still fall
+  // through to their own per-date fetch below — Task 1's fetch is scoped to
+  // "now", it cannot answer for a date that isn't today.
+  console.log('\n[Task 1] Refreshing current_price for active recommendations and collecting instrument price history…');
+  const task1 = await runTask1(db, bhavMap);
+
   // Task 0: stamp reco_price for recommendations published without a price
   console.log('\n[Task 0] Stamping reco_price for new recommendations missing entry price…');
   const { rows: unpriced } = await db.query(`
-    SELECT id, ticker, exchange, created_at::date AS reco_date
+    SELECT id, ticker, exchange, created_at::date AS reco_date,
+           COALESCE(NULLIF(TRIM(asset_class), ''), 'Equity') AS asset_class
     FROM ic_recommendations
     WHERE reco_price IS NULL OR reco_price = 0
   `);
   console.log(`  Found ${unpriced.length} recommendations without entry price`);
+  const unpricedToFetch = [];
+  let rpStamped = 0, rpFromTask1 = 0;
+  for (const rec of unpriced) {
+    const isoDate = asIsoDate(rec.reco_date);
+    const reused = isoDate === TODAY_ISO ? task1.priceMap.get(instrumentKey(rec.ticker, rec.asset_class)) : null;
+    if (reused) {
+      try {
+        await db.query(
+          `UPDATE ic_recommendations
+           SET reco_price = $1, price_source = $2, price_stamped_at = now(), updated_at = now()
+           WHERE id = $3`,
+          [reused.close, reused.source, rec.id]
+        );
+        rpStamped++; rpFromTask1++;
+      } catch (e) { console.warn(`  Failed ${rec.ticker}: ${e.message}`); }
+    } else {
+      unpricedToFetch.push(rec);
+    }
+  }
   // Fetches run with the same bounded concurrency Task 1 uses (FETCH_CONCURRENCY)
   // rather than one-at-a-time — a backlog of unpriced recs (e.g. after an
   // outage) could otherwise run each provider round-trip sequentially and risk
   // exceeding the job's 15-minute GitHub Actions timeout before later tasks
-  // (including Task 1) even start. Writes stay sequential, same as Task 1.
-  const rpSettled = await mapWithConcurrency(unpriced, FETCH_CONCURRENCY, rec => {
+  // even finish. Writes stay sequential, same as Task 1.
+  const rpSettled = await mapWithConcurrency(unpricedToFetch, FETCH_CONCURRENCY, rec => {
     const isoDate = asIsoDate(rec.reco_date);
     const dateBhav = (isoDate === TODAY_ISO) ? bhavMap : null; // bhavcopy for today's recs, Yahoo for historical
     return resolvePrice(rec.ticker, rec.exchange || 'NSE', isoDate, dateBhav);
   });
-  let rpStamped = 0;
   for (const { item: rec, value: result, error } of rpSettled) {
     if (error) { console.warn(`  Failed ${rec.ticker}: ${error.message}`); continue; }
     if (!result) { console.warn(`  No price found for ${rec.ticker} on ${asIsoDate(rec.reco_date)}`); continue; }
@@ -549,22 +602,51 @@ async function main() {
       console.log(`  Stamped ${rec.ticker}: ₹${result.price} (${result.source})`);
     } catch (e) { console.warn(`  Failed ${rec.ticker}: ${e.message}`); }
   }
-  console.log(`  Done: ${rpStamped} entry prices stamped`);
+  console.log(`  Done: ${rpStamped} entry prices stamped (${rpFromTask1} reused from Task 1, ${rpStamped - rpFromTask1} fetched)`);
 
-  // Task 1: current_price for active recommendations + instrument price history
-  console.log('\n[Task 1] Refreshing current_price for active recommendations and collecting instrument price history…');
-  const task1 = await runTask1(db, bhavMap);
-
-  // Task 2: expiry_price for recommendations expiring today
-  console.log('\n[Task 2] Stamping expiry_price for recommendations expiring today…');
+  // Task 2: expiry_price for recommendations whose expiry has arrived.
+  //
+  // WAS a same-day-only match (target_date = CURRENT_DATE), which meant an
+  // idea expiring on a day this job doesn't run (a weekend — the schedule is
+  // weekdays-only by design — or a missed/failed run) could NEVER be caught:
+  // by the next run, CURRENT_DATE has moved past target_date and the exact
+  // match no longer holds, so expiry_price stayed NULL permanently. Changed
+  // to a backfill query (target_date <= CURRENT_DATE), the same pattern
+  // Task 0/Task 3 already use, so an overdue expiry gets caught on the next
+  // run instead of being lost.
+  console.log('\n[Task 2] Stamping expiry_price for recommendations whose expiry has arrived…');
   const { rows: expiring } = await db.query(`
-    SELECT id, ticker, exchange, target_date FROM ic_recommendations
-    WHERE NOT exit_signal AND target_date = CURRENT_DATE AND expiry_price IS NULL
+    SELECT id, ticker, exchange, target_date,
+           COALESCE(NULLIF(TRIM(asset_class), ''), 'Equity') AS asset_class
+    FROM ic_recommendations
+    WHERE NOT exit_signal AND target_date <= CURRENT_DATE AND expiry_price IS NULL
   `);
-  console.log(`  Found ${expiring.length} expiring today`);
-  const expSettled = await mapWithConcurrency(expiring, FETCH_CONCURRENCY,
-    rec => resolvePrice(rec.ticker, rec.exchange || 'NSE', asIsoDate(rec.target_date), bhavMap));
-  let expStamped = 0;
+  console.log(`  Found ${expiring.length} awaiting expiry price`);
+  const expiringToFetch = [];
+  let expStamped = 0, expFromTask1 = 0;
+  for (const rec of expiring) {
+    const isoDate = asIsoDate(rec.target_date);
+    const reused = isoDate === TODAY_ISO ? task1.priceMap.get(instrumentKey(rec.ticker, rec.asset_class)) : null;
+    if (reused) {
+      try {
+        await db.query(
+          'UPDATE ic_recommendations SET expiry_price=$1, expiry_price_source=$2, expiry_price_stamped_at=now(), updated_at=now() WHERE id=$3',
+          [reused.close, reused.source, rec.id]
+        );
+        expStamped++; expFromTask1++;
+      } catch (e) { console.warn(`  Failed expiry ${rec.ticker}: ${e.message}`); }
+    } else {
+      expiringToFetch.push(rec);
+    }
+  }
+  const expSettled = await mapWithConcurrency(expiringToFetch, FETCH_CONCURRENCY, rec => {
+    const isoDate = asIsoDate(rec.target_date);
+    // Bhavcopy is TODAY_ISO's settlement file — only valid when the expiry
+    // being stamped is genuinely today's; an overdue (backfilled) expiry
+    // must not borrow today's bhavcopy price for a past date.
+    const dateBhav = (isoDate === TODAY_ISO) ? bhavMap : null;
+    return resolvePrice(rec.ticker, rec.exchange || 'NSE', isoDate, dateBhav);
+  });
   for (const { item: rec, value: result, error } of expSettled) {
     if (error) { console.warn(`  Failed expiry ${rec.ticker}: ${error.message}`); continue; }
     if (!result) continue;
@@ -576,7 +658,7 @@ async function main() {
       expStamped++;
     } catch (e) { console.warn(`  Failed expiry ${rec.ticker}: ${e.message}`); }
   }
-  console.log(`  Done: ${expStamped} expiry prices stamped`);
+  console.log(`  Done: ${expStamped} expiry prices stamped (${expFromTask1} reused from Task 1, ${expStamped - expFromTask1} fetched)`);
 
   // Task 3: backfill exit_price for exited recommendations missing it
   console.log('\n[Task 3] Backfilling missing exit prices…');
