@@ -40,9 +40,35 @@ const YAHOO_HEADERS = {
   'Accept-Language': 'en-US,en;q=0.9',
 };
 
-/** NSE/BSE symbol -> Yahoo symbol. */
-export function yahooSymbol(symbol, exchange) {
-  return `${symbol}${exchange === 'BSE' ? '.BO' : '.NS'}`;
+/**
+ * NSE/BSE symbol -> ordered list of candidate Yahoo symbols to try.
+ *
+ * Some tickers in `instruments`/`ic_recommendations` carry an NSE series
+ * suffix as part of the stored string (e.g. "CELLECOR-ST", "TAKE-BE") —
+ * `BE` (trade-to-trade), `SM` (SME platform), `ST`, etc. NSE appends these
+ * to indicate a trading segment; the base company symbol is what precedes
+ * the dash.
+ *
+ * Yahoo's own symbol mapping does NOT consistently mirror this: most
+ * instruments resolve under the bare base symbol regardless of NSE series,
+ * but a minority (mostly SME-platform or otherwise distinctly-tracked
+ * listings) only resolve with the suffix intact. There is no local rule
+ * that predicts which case a given ticker falls into — the NSE series code
+ * and Yahoo's symbol are two independently-maintained datasets that happen
+ * to agree most of the time. Rather than hardcode an incomplete list of
+ * "these series codes survive on Yahoo", try the base symbol first (the
+ * common case) and fall back to the full stored ticker (the exception
+ * case) — whichever one the provider actually has data for wins.
+ *
+ * @returns {string[]} candidate Yahoo symbols, most-likely-to-resolve first
+ */
+export function yahooSymbolCandidates(symbol, exchange) {
+  const raw    = String(symbol || '').trim().toUpperCase();
+  const suffix = exchange === 'BSE' ? '.BO' : '.NS';
+  const dash   = raw.indexOf('-');
+  const base   = dash > 0 ? raw.slice(0, dash) : raw;
+  const roots  = base !== raw ? [base, raw] : [raw];
+  return roots.map(r => `${r}${suffix}`);
 }
 
 /**
@@ -53,90 +79,108 @@ export function yahooSymbol(symbol, exchange) {
  * weekends and exchange holidays simply are not in the array. That is what
  * makes "the previous trading day" a lookup rather than a calendar guess.
  *
+ * Tries each candidate from yahooSymbolCandidates() in turn (see its doc
+ * comment for why there's more than one) and returns on the first that
+ * yields data.
+ *
  * @param {string} symbol    e.g. "RELIANCE"
  * @param {string} exchange  "NSE" | "BSE"
  * @param {string} range     Yahoo range token, e.g. "5d", "1mo"
- * @returns {Promise<{ series: Array, currency: string, source: string }>}
+ * @returns {Promise<{ series: Array, currency: string, source: string, yahooSymbol: string }>}
  */
 export async function fetchDailySeries(symbol, exchange = 'NSE', range = '5d') {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol(symbol, exchange)}?interval=1d&range=${range}`;
-  const res = await fetch(url, { headers: YAHOO_HEADERS });
-  if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
+  let lastError;
+  for (const yahooSym of yahooSymbolCandidates(symbol, exchange)) {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1d&range=${range}`;
+      const res = await fetch(url, { headers: YAHOO_HEADERS });
+      if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
 
-  const json   = await res.json();
-  const result = json?.chart?.result?.[0];
-  if (!result) throw new Error('Yahoo: no result');
+      const json   = await res.json();
+      const result = json?.chart?.result?.[0];
+      if (!result) throw new Error('Yahoo: no result');
 
-  const timestamps = result.timestamp || [];
-  const closes     = result.indicators?.quote?.[0]?.close || [];
-  const currency   = result.meta?.currency || 'INR';
+      const timestamps = result.timestamp || [];
+      const closes     = result.indicators?.quote?.[0]?.close || [];
+      const currency   = result.meta?.currency || 'INR';
 
-  const series = [];
-  timestamps.forEach((ts, i) => {
-    const close = closes[i];
-    if (close == null || !(close > 0)) return; // provider gap — skip, never interpolate
-    series.push({ date: new Date(ts * 1000).toISOString().slice(0, 10), close: +Number(close).toFixed(6) });
-  });
-  if (!series.length) throw new Error('Yahoo: empty close series');
+      const series = [];
+      timestamps.forEach((ts, i) => {
+        const close = closes[i];
+        if (close == null || !(close > 0)) return; // provider gap — skip, never interpolate
+        series.push({ date: new Date(ts * 1000).toISOString().slice(0, 10), close: +Number(close).toFixed(6) });
+      });
+      if (!series.length) throw new Error('Yahoo: empty close series');
 
-  // Yahoo returns ascending, but do not rely on it.
-  series.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  return { series, currency, source: 'yahoo_finance' };
+      // Yahoo returns ascending, but do not rely on it.
+      series.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+      return { series, currency, source: 'yahoo_finance', yahooSymbol: yahooSym };
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError || new Error('Yahoo: no candidate symbols');
 }
 
 // ── Yahoo Finance provider (single-price form used by api/price.js) ──────────
 export async function fetchFromYahoo(symbol, exchange, date) {
-  const yahooSym = yahooSymbol(symbol, exchange);
+  let lastError;
+  for (const yahooSym of yahooSymbolCandidates(symbol, exchange)) {
+    try {
+      // Build URL — historical if date given, else 5-day range for latest close
+      let apiUrl;
+      if (date) {
+        const d       = new Date(date);
+        const period1 = Math.floor(d.getTime() / 1000);
+        const period2 = Math.floor((d.getTime() + 86400_000) / 1000);
+        apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1d&period1=${period1}&period2=${period2}`;
+      } else {
+        apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1d&range=5d`;
+      }
 
-  // Build URL — historical if date given, else 5-day range for latest close
-  let apiUrl;
-  if (date) {
-    const d       = new Date(date);
-    const period1 = Math.floor(d.getTime() / 1000);
-    const period2 = Math.floor((d.getTime() + 86400_000) / 1000);
-    apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1d&period1=${period1}&period2=${period2}`;
-  } else {
-    apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1d&range=5d`;
+      const res = await fetch(apiUrl, { headers: YAHOO_HEADERS });
+      if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
+
+      const json     = await res.json();
+      const result   = json?.chart?.result?.[0];
+      if (!result)   throw new Error('Yahoo: no result');
+
+      const timestamps = result.timestamp || [];
+      const closes     = result.indicators?.quote?.[0]?.close || [];
+      const currency   = result.meta?.currency || 'INR';
+
+      if (!closes.length) throw new Error('Yahoo: empty close array');
+
+      let price, priceDate;
+
+      if (date) {
+        // Find the close that matches the requested date
+        const target = new Date(date);
+        let bestIdx  = -1;
+        let bestDiff = Infinity;
+        timestamps.forEach((ts, i) => {
+          if (closes[i] == null) return;
+          const diff = Math.abs(ts * 1000 - target.getTime());
+          if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+        });
+        if (bestIdx === -1) throw new Error('Yahoo: date not found in range');
+        price     = closes[bestIdx];
+        priceDate = new Date(timestamps[bestIdx] * 1000).toISOString().slice(0, 10);
+      } else {
+        // Latest available close (last non-null entry)
+        let idx = closes.length - 1;
+        while (idx >= 0 && closes[idx] == null) idx--;
+        if (idx < 0) throw new Error('Yahoo: no valid close found');
+        price     = closes[idx];
+        priceDate = new Date(timestamps[idx] * 1000).toISOString().slice(0, 10);
+      }
+
+      return { price: +price.toFixed(2), currency, date: priceDate, source: 'yahoo_finance', yahooSymbol: yahooSym };
+    } catch (e) {
+      lastError = e;
+    }
   }
-
-  const res = await fetch(apiUrl, { headers: YAHOO_HEADERS });
-  if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
-
-  const json     = await res.json();
-  const result   = json?.chart?.result?.[0];
-  if (!result)   throw new Error('Yahoo: no result');
-
-  const timestamps = result.timestamp || [];
-  const closes     = result.indicators?.quote?.[0]?.close || [];
-  const currency   = result.meta?.currency || 'INR';
-
-  if (!closes.length) throw new Error('Yahoo: empty close array');
-
-  let price, priceDate;
-
-  if (date) {
-    // Find the close that matches the requested date
-    const target = new Date(date);
-    let bestIdx  = -1;
-    let bestDiff = Infinity;
-    timestamps.forEach((ts, i) => {
-      if (closes[i] == null) return;
-      const diff = Math.abs(ts * 1000 - target.getTime());
-      if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
-    });
-    if (bestIdx === -1) throw new Error('Yahoo: date not found in range');
-    price     = closes[bestIdx];
-    priceDate = new Date(timestamps[bestIdx] * 1000).toISOString().slice(0, 10);
-  } else {
-    // Latest available close (last non-null entry)
-    let idx = closes.length - 1;
-    while (idx >= 0 && closes[idx] == null) idx--;
-    if (idx < 0) throw new Error('Yahoo: no valid close found');
-    price     = closes[idx];
-    priceDate = new Date(timestamps[idx] * 1000).toISOString().slice(0, 10);
-  }
-
-  return { price: +price.toFixed(2), currency, date: priceDate, source: 'yahoo_finance' };
+  throw lastError || new Error('Yahoo: no candidate symbols');
 }
 
 // ── Twelve Data provider ─────────────────────────────────────────────────────
