@@ -56,16 +56,30 @@ export const API_BASE = API_ORIGIN + "/api";
 
 export async function callApi(path, { method = "GET", body } = {}) {
   if (!auth.currentUser) return { ok: false, infra: true };
+  const doFetch = (idToken) => fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
   try {
-    const idToken = await auth.currentUser.getIdToken();
-    const res = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-        ...(body ? { "Content-Type": "application/json" } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let res = await doFetch(await auth.currentUser.getIdToken());
+    // A 401/403 right here can be a genuinely stale/soon-to-expire cached ID
+    // token rather than a real authorization decision — most visibly in the
+    // first session right after signup, where the token the SDK is holding
+    // was minted at account-creation time and can occasionally fail
+    // server-side verification for a short window even though the account
+    // is valid (a known Firebase eventual-consistency gap; logging out and
+    // back in mints a fresh token and "fixes" it, which is the tell). Retry
+    // once with a force-refreshed token before treating it as a real denial
+    // — a genuine authorization failure (e.g. non-admin calling an
+    // admin-only endpoint) fails identically on retry, so this only helps
+    // the stale-token case and costs one extra round trip otherwise.
+    if (res.status === 401 || res.status === 403) {
+      res = await doFetch(await auth.currentUser.getIdToken(true));
+    }
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
       return { ok: true, data };
