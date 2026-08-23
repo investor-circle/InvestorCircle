@@ -144,6 +144,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   const [editSebiTill,     setEditSebiTill]     = useState('');
   const [editSebiFirm,     setEditSebiFirm]     = useState('');
   const [savingEdit,       setSavingEdit]       = useState(false);
+  const [editErr,          setEditErr]          = useState('');
   const [regOptions,       setRegOptions]       = useState([]);
   const [sebiVerifyMsg,    setSebiVerifyMsg]    = useState('');
 
@@ -192,6 +193,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
     setEditSebiNum(p.sebi_reg_number||'');
     setEditSebiTill(p.sebi_reg_valid_till||'');
     setEditSebiFirm(p.sebi_firm_name||'');
+    setEditErr('');
     if(!regOptions.length) {
       try {
         const { options: opts, verifyMessage } = await dbGetRegOptions();
@@ -206,6 +208,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   const saveEdit=async()=>{
     if(!data?.profile?.id) return;
     setSavingEdit(true);
+    setEditErr('');
     const isSebi = ['sebi_ra','sebi_ria'].includes(editRegStatus);
     try {
       const fn = editFirstName.trim(); const ln = editLastName.trim();
@@ -233,9 +236,15 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
       };
       setData(d=>({...d,profile:{...d.profile,...updates}}));
       if(patchProfile) patchProfile(updates);
-    } catch(e){ console.warn('Save failed:',e); }
-    setSavingEdit(false);
-    setEditing(false);
+      setSavingEdit(false);
+      setEditing(false);
+    } catch(e){
+      console.warn('Save failed:',e);
+      setEditErr(e.message || 'Could not save your changes — please try again.');
+      setSavingEdit(false);
+      // Keep the modal open on failure — silently closing it here was the bug:
+      // the form looked like it saved, but the write never reached the server.
+    }
   };
 
   // Connection status relative to the viewer
@@ -761,8 +770,13 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                 </>)}
 
                 {/* Footer buttons */}
+                {editErr && (
+                  <div style={{background:'rgba(225,29,72,.12)',border:'1px solid rgba(225,29,72,.35)',borderRadius:10,padding:'10px 14px',marginBottom:14,fontSize:13,color:'#fca5b5'}}>
+                    {editErr}
+                  </div>
+                )}
                 <div style={{display:'flex',gap:10,justifyContent:'flex-end',borderTop:'1px solid rgba(255,255,255,.07)',paddingTop:16}}>
-                  <button onClick={()=>setEditing(false)} style={{padding:'10px 20px',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontFamily:'var(--font)'}}>
+                  <button onClick={()=>{setEditing(false);setEditErr('');}} style={{padding:'10px 20px',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontFamily:'var(--font)'}}>
                     Cancel
                   </button>
                   <button className="btn btn-pri" disabled={savingEdit} onClick={saveEdit} style={{padding:'10px 24px',fontSize:14}}>
