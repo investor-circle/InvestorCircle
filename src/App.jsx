@@ -1034,6 +1034,8 @@ export default function App() {
             viewerUser={user}
             viewerConnections={connections}
             viewerIsAdmin={userIsAdmin}
+            contacts={contacts}
+            groups={groups}
             mode="standalone"
             onBack={()=>{ window.location.hash = ''; }}
             onRequestConnect={async(targetId)=>{
@@ -1676,6 +1678,8 @@ export default function App() {
                       viewerUser={user}
                       viewerConnections={connections}
                       viewerIsAdmin={userIsAdmin}
+                      contacts={contacts}
+                      groups={groups}
                       mode="embedded"
                       isOwnProfile
                       patchProfile={patchProfile}
@@ -1695,7 +1699,7 @@ export default function App() {
                           <div style={{fontWeight:800,fontSize:17,marginBottom:10,color:'var(--accent-ink)'}}>Awaiting admin approval</div>
                           <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.7,marginBottom:20}}>
                             You've claimed your profile and your request is with the myInvestorCircle team.
-                            Once approved, your full track record and ICI score — including all your historical recommendations — will appear here.
+                            Once approved, your full track record and ICI score — including all your historical ideas — will appear here.
                           </div>
                           <div className="note" style={{fontSize:12,textAlign:'left',background:'var(--surface-2)'}}>
                             You'll receive a confirmation email at your registered address as soon as the admin approves your profile. This usually happens within 24 hours.

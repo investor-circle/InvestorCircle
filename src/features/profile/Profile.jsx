@@ -19,7 +19,11 @@ import {
   Users,
   Layers,
   Share2,
-  Home
+  Home,
+  Search,
+  SlidersHorizontal,
+  ArrowUpDown,
+  ChevronDown
 } from "lucide-react";
 import { createUserWithEmailAndPassword, updateProfile as fbUpdateProfile } from "firebase/auth";
 import { auth as primaryAuth } from "../../firebase";
@@ -45,11 +49,13 @@ import {
   untrackInvestor as dbUntrackInvestor,
   getTrackingStatus as dbGetTrackingStatus
 } from "../../services/api/trackingApi";
-import { goBackOrElse, gotoCircle } from "../../utils/navigation";
+import { goBackOrElse, gotoCircle, openReco } from "../../utils/navigation";
 import { compressAvatarFile } from "../../utils/image";
 import {
-  computeIci
+  computeIci,
+  forwardRecommendation as dbForwardReco
 } from "../../services/api/recommendationsApi";
+import { IdeaSharePopover, ThesisRenderer } from "../recommendations/Recommendations";
 import { ConvBadge, IciDonut, RetBadge, ScoreBox, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
 import { SECTOR_EMOJI } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
@@ -60,6 +66,32 @@ import { initialsOf } from "../../utils/format";
    same anchored-popover-on-desktop / bottom-sheet-on-mobile pattern as the
    reco card's share button (SharePublicPopover in Recommendations.jsx) and
    the Circle page's share button (CircleSharePopover in Groups.jsx). ── */
+/* ── SmallAnchoredPopover — lightweight floating dropdown for the Investment
+   Ideas toolbar's filter/sort controls. Portal-based so it isn't clipped by
+   the `.card` it's triggered from (overflow:hidden). ── */
+function SmallAnchoredPopover({ anchorEl, onClose, children, width=200 }) {
+  const [pos, setPos] = useState(null);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    if (anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+    }
+    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
+    setTimeout(() => document.addEventListener('mousedown', h), 0);
+    return () => document.removeEventListener('mousedown', h);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!pos) return null;
+  return createPortal(
+    <div ref={popRef} style={{position:'fixed',top:pos.top,right:pos.right,zIndex:9999,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,.18)',padding:10,minWidth:width,fontFamily:'var(--font)'}} onClick={e=>e.stopPropagation()}>
+      {children}
+    </div>,
+    document.body
+  );
+}
+
 function ProfileSharePopover({ profileUrl, displayName, anchorEl, onClose }) {
   const isMobile = useIsMobile();
   const [copied, setCopied] = useState(false);
@@ -110,7 +142,7 @@ function ProfileSharePopover({ profileUrl, displayName, anchorEl, onClose }) {
   );
 }
 
-export function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, viewerIsAdmin=false, viewerForClaim=false, onClaimClick=null, mode, isOwnProfile, patchProfile, onBack, onRequestConnect }) {
+export function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, viewerIsAdmin=false, viewerForClaim=false, onClaimClick=null, mode, isOwnProfile, patchProfile, onBack, onRequestConnect, contacts=[], groups=[] }) {
   const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -121,7 +153,6 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   const [copied,      setCopied]      = useState(false);
   const [shareOpen,   setShareOpen]   = useState(false);
   const shareBtnRef = useRef(null);
-  const [expandedId,  setExpandedId]  = useState(recoId||null);
   const expandedRef = useRef(null);
   const [tracking,    setTracking]    = useState(false);
   const [trackBusy,   setTrackBusy]   = useState(false);
@@ -148,6 +179,18 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   const [editErr,          setEditErr]          = useState('');
   const [regOptions,       setRegOptions]       = useState([]);
   const [sebiVerifyMsg,    setSebiVerifyMsg]    = useState('');
+
+  // Investment Ideas list — search / filter / sort (icon-triggered, see toolbar below)
+  const [ideaSearchOpen, setIdeaSearchOpen] = useState(false);
+  const [ideaQuery,      setIdeaQuery]      = useState('');
+  const [ideaFilterOpen, setIdeaFilterOpen] = useState(false);
+  const [ideaFilterCls,  setIdeaFilterCls]  = useState('all');
+  const [ideaSortOpen,   setIdeaSortOpen]   = useState(false);
+  const [ideaSort,       setIdeaSort]       = useState('date_desc'); // date_desc | date_asc | ret_desc | ret_asc
+  const [ideaSharePopId, setIdeaSharePopId] = useState(null);
+  const [ideaShareAnchor,setIdeaShareAnchor]= useState(null);
+  const ideaFilterBtnRef = useRef(null);
+  const ideaSortBtnRef   = useRef(null);
 
   const [claimInfo,       setClaimInfo]       = useState(null); // { is_unclaimed, claim_status, claim_token }
   const [adminLinkCopied, setAdminLinkCopied] = useState(false);
@@ -282,6 +325,11 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
     setTrackBusy(false);
   };
 
+  // Share an idea from this profile's Investment Ideas list to the viewer's
+  // own Circles/contacts — same forward pipeline IdeaSharePopover uses
+  // everywhere else in the app.
+  const sendIdeaShare = async (recoIdToShare, targets) => { await dbForwardReco(recoIdToShare, viewerUser?.uid, targets); };
+
   const handleJoinCircle = async(circle)=>{
     if(!viewerUser){ onRequestConnect && sessionStorage.setItem("pending_connect_username", username); return; }
     setJoiningCircle(circle.id);
@@ -343,7 +391,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
               </div>
               {data?.profile?.bio && <div style={{fontSize:13,marginTop:14,color:'var(--ink)',lineHeight:1.6,paddingTop:14,borderTop:'1px solid var(--line)'}}>{data.profile.bio}</div>}
             </div>
-            <div style={{fontSize:12,color:'var(--muted)',textAlign:'center'}}>The full track record and recommendations will be visible once the profile is claimed and approved.</div>
+            <div style={{fontSize:12,color:'var(--muted)',textAlign:'center'}}>The full track record and investment ideas will be visible once the profile is claimed and approved.</div>
           </div>
         );
       }
@@ -412,7 +460,19 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
       if (result) ici = { ...ici, ...result, components: Array.isArray(result.components) ? result.components : [] };
     } catch(_) {}
 
-    const filteredRecos=recTab==='All'?recos:recos.filter(r=>r.status===recTab);
+    const ideaClasses = [...new Set(recos.map(r=>r.asset_class).filter(Boolean))].sort();
+    let filteredRecos = recTab==='All' ? recos : recos.filter(r=>r.status===recTab);
+    if (ideaFilterCls!=='all') filteredRecos = filteredRecos.filter(r=>r.asset_class===ideaFilterCls);
+    if (ideaQuery.trim()) {
+      const q = ideaQuery.trim().toLowerCase();
+      filteredRecos = filteredRecos.filter(r => (r.ticker+' '+r.asset_name).toLowerCase().includes(q));
+    }
+    filteredRecos = [...filteredRecos].sort((a,b) => {
+      if (ideaSort==='date_asc')  return new Date(a.created_at)-new Date(b.created_at);
+      if (ideaSort==='ret_desc')  return Number(b.return_pct||0)-Number(a.return_pct||0);
+      if (ideaSort==='ret_asc')   return Number(a.return_pct||0)-Number(b.return_pct||0);
+      return new Date(b.created_at)-new Date(a.created_at); // date_desc — default
+    });
     const recoIdNotPublic=recoId&&data&&!recos.find(r=>r.id===recoId);
 
     const showAddBtn=!isOwnProfile&&viewerUser&&!connected&&connStatus!=='pending';
@@ -447,7 +507,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                 </div>
                 <div style={{fontSize:13,color:'rgba(255,255,255,.8)',lineHeight:1.5}}>
                   This is exactly how your profile will look once live.
-                  All seeded recommendations are linked — claim it to go live.
+                  All seeded ideas are linked — claim it to go live.
                 </div>
               </div>
               <button
@@ -487,7 +547,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                   </span>
                 </div>
                 <div style={{fontSize:12,color:'#92400e',lineHeight:1.55}}>
-                  This view is <strong>only visible to admins</strong>. The public sees a restricted version without recommendations. Review all seeded content below before sharing the claim link.
+                  This view is <strong>only visible to admins</strong>. The public sees a restricted version without ideas. Review all seeded content below before sharing the claim link.
                 </div>
               </div>
               <div style={{display:'flex',gap:8,flexShrink:0,flexWrap:'wrap',alignItems:'center'}}>
@@ -523,80 +583,82 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
           {/* ── Hero: strict 50-50 layout — left = avatar+bio, right = ICI ── */}
           <div style={{display:'flex', flexWrap:'wrap', padding:'18px 28px 0', gap:24, alignItems:'stretch'}}>
 
-            {/* ── LEFT 50%: avatar + bio ── */}
+            {/* ── LEFT 50%: identity — avatar+name row on top, bio spans the full
+                 column width below it instead of being squeezed beside the avatar ── */}
             <div style={{
               ...(isMobile ? {flex:'0 0 100%'} : {flex:'1 1 0', maxWidth:'calc(50% - 12px)'}),
-              minWidth:0, display:'flex', gap:18, alignItems:'flex-start',
+              minWidth:0, display:'flex', flexDirection:'column', gap:14,
             }}>
-              {/* Avatar */}
-              {profile.avatar_url ? (
-                <img src={profile.avatar_url} alt="" style={{width:76,height:76,borderRadius:20,objectFit:'cover',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)'}}/>
-              ) : (
-                <div style={{width:76,height:76,borderRadius:20,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
-                  {initialsOf(displayName)}
-                </div>
-              )}
-
-              {/* Bio content */}
-              <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:10}}>
-                {/* Name + badges */}
-                <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-                  <span style={{fontSize:22,fontWeight:900,color:'#fff',letterSpacing:'-.6px',lineHeight:1.1}}>{displayName}</span>
-                  {(()=>{
-                    const status=profile.registration_status||'self_directed';
-                    const approved=profile.sebi_approval_status==='approved';
-                    const isSebi=['sebi_ra','sebi_ria'].includes(status);
-                    const label=isSebi&&approved?(status==='sebi_ra'?'SEBI RA':'SEBI RIA'):(status==='enthusiast'?'Enthusiast':'Self-directed');
-                    return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.75)',border:'1px solid rgba(255,255,255,.14)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>{label}</span>;
-                  })()}
-                  {(()=>{
-                    const status=profile.registration_status||'self_directed';
-                    const approved=profile.sebi_approval_status==='approved';
-                    const isSebi=['sebi_ra','sebi_ria'].includes(status);
-                    if(isSebi&&approved) return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(21,146,78,.2)',color:'#4ade80',border:'1px solid rgba(21,146,78,.35)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>✓ SEBI{profile.sebi_reg_number?` · ${profile.sebi_reg_number}`:''}</span>;
-                    return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.3)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>Non-SEBI</span>;
-                  })()}
-                </div>
-
-                {/* Username + since */}
-                <div style={{fontSize:13,color:'rgba(255,255,255,.45)',display:'flex',alignItems:'center',gap:8}}>
-                  <span style={{fontWeight:600}}>@{username}</span>
-                  {memberSince&&<><span style={{opacity:.4}}>·</span><span>Member since {memberSince}</span></>}
-                </div>
-
-                {/* Bio */}
-                {profile.bio
-                  ? <p style={{fontSize:14,color:'rgba(255,255,255,.75)',lineHeight:1.7,margin:0}}>{profile.bio}</p>
-                  : isOwnProfile&&<p style={{fontSize:13,color:'rgba(255,255,255,.25)',fontStyle:'italic',margin:0}}>No bio yet — click Edit profile to add one.</p>}
-
-                {/* Social icons + action buttons */}
-                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-                  {['twitter','linkedin','telegram','instagram'].map(p=>(
-                    <SocialIconBtn key={p} platform={p} url={profile[`${p}_url`]}/>
-                  ))}
-                  {!isOwnProfile && viewerUser && (
-                    <button className="btn btn-sm" disabled={trackBusy} onClick={handleToggleTrack}
-                      style={tracking
-                        ? {background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.22)',color:'rgba(255,255,255,.85)',marginLeft:4}
-                        : {background:'rgba(109,93,245,.85)',border:'none',color:'#fff',marginLeft:4}}>
-                      {trackBusy?<Loader size={13} className="spin"/>:tracking?<><Check size={13}/>Tracking</>:<><Radar size={13}/>Track</>}
-                    </button>
-                  )}
-                  {showAddBtn&&<button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}>{connecting?<><Loader size={13} className="spin"/>Sending…</>:<><UserPlus size={13}/>Connect</>}</button>}
-                  {showPending&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Request Pending</span>}
-                  {showConnected&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Connected</span>}
-                  {showJoinBtn&&<button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}><UserPlus size={13}/>Track / Connect</button>}
-                </div>
-
-                {/* Edit button */}
-                {isOwnProfile&&(
-                  <div>
-                    <button onClick={startEdit} style={{fontSize:12,fontWeight:700,background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',color:'rgba(255,255,255,.7)',cursor:'pointer',padding:'6px 14px',borderRadius:8,display:'inline-flex',alignItems:'center',gap:6,fontFamily:'var(--font)'}}>
-                      <Pencil size={12}/>Edit profile
-                    </button>
+              {/* Avatar + name/badges row */}
+              <div style={{display:'flex', gap:14, alignItems:'center'}}>
+                {profile.avatar_url ? (
+                  <img src={profile.avatar_url} alt="" style={{width:64,height:64,borderRadius:18,objectFit:'cover',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)'}}/>
+                ) : (
+                  <div style={{width:64,height:64,borderRadius:18,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
+                    {initialsOf(displayName)}
                   </div>
                 )}
+                <div style={{minWidth:0,flex:1,display:'flex',flexDirection:'column',gap:6}}>
+                  {/* Name + badges */}
+                  <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                    <span style={{fontSize:21,fontWeight:900,color:'#fff',letterSpacing:'-.6px',lineHeight:1.15}}>{displayName}</span>
+                    {(()=>{
+                      const status=profile.registration_status||'self_directed';
+                      const approved=profile.sebi_approval_status==='approved';
+                      const isSebi=['sebi_ra','sebi_ria'].includes(status);
+                      const label=isSebi&&approved?(status==='sebi_ra'?'SEBI RA':'SEBI RIA'):(status==='enthusiast'?'Enthusiast':'Self-directed');
+                      return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.75)',border:'1px solid rgba(255,255,255,.14)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>{label}</span>;
+                    })()}
+                    {(()=>{
+                      const status=profile.registration_status||'self_directed';
+                      const approved=profile.sebi_approval_status==='approved';
+                      const isSebi=['sebi_ra','sebi_ria'].includes(status);
+                      if(isSebi&&approved) return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(21,146,78,.2)',color:'#4ade80',border:'1px solid rgba(21,146,78,.35)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>✓ SEBI{profile.sebi_reg_number?` · ${profile.sebi_reg_number}`:''}</span>;
+                      return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.3)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>Non-SEBI</span>;
+                    })()}
+                  </div>
+                  {/* Username + since */}
+                  <div style={{fontSize:13,color:'rgba(255,255,255,.45)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                    <span style={{fontWeight:600}}>@{username}</span>
+                    {memberSince&&<><span style={{opacity:.4}}>·</span><span>Member since {memberSince}</span></>}
+                  </div>
+                </div>
               </div>
+
+              {/* Bio — full width of this column */}
+              {profile.bio
+                ? <p style={{fontSize:14,color:'rgba(255,255,255,.75)',lineHeight:1.7,margin:0}}>{profile.bio}</p>
+                : isOwnProfile&&<p style={{fontSize:13,color:'rgba(255,255,255,.25)',fontStyle:'italic',margin:0}}>No bio yet — click Edit profile to add one.</p>}
+
+              {/* Social icons + action buttons */}
+              <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                {['twitter','linkedin','telegram','instagram'].map(p=>(
+                  <SocialIconBtn key={p} platform={p} url={profile[`${p}_url`]}/>
+                ))}
+                {!isOwnProfile && viewerUser && (
+                  <button className="btn btn-sm" disabled={trackBusy} onClick={handleToggleTrack}
+                    style={tracking
+                      ? {background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.22)',color:'rgba(255,255,255,.85)',marginLeft:4}
+                      : {background:'rgba(109,93,245,.85)',border:'none',color:'#fff',marginLeft:4}}>
+                    {trackBusy?<Loader size={13} className="spin"/>:tracking?<><Check size={13}/>Tracking</>:<><Radar size={13}/>Track</>}
+                  </button>
+                )}
+                {showAddBtn&&<button className="btn btn-pri btn-sm" disabled={connecting} onClick={handleConnect} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}>{connecting?<><Loader size={13} className="spin"/>Sending…</>:<><UserPlus size={13}/>Connect</>}</button>}
+                {showPending&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Request Pending</span>}
+                {showConnected&&<span style={{fontSize:12,color:'rgba(255,255,255,.5)',display:'flex',alignItems:'center',gap:5,marginLeft:4}}><Check size={12}/>Connected</span>}
+                {showJoinBtn&&<button className="btn btn-pri btn-sm" onClick={()=>onRequestConnect(data.profile.id)} style={{background:'rgba(109,93,245,.85)',border:'none',marginLeft:4}}><UserPlus size={13}/>Track / Connect</button>}
+              </div>
+
+              {/* Edit button */}
+              {isOwnProfile&&(
+                <div>
+                  <button onClick={startEdit} style={{fontSize:12.5,fontWeight:700,background:'rgba(139,92,246,.16)',border:'1px solid rgba(139,92,246,.35)',color:'#c4b5fd',cursor:'pointer',padding:'8px 16px',borderRadius:9,display:'inline-flex',alignItems:'center',gap:7,fontFamily:'var(--font)',transition:'.15s'}}
+                    onMouseEnter={e=>e.currentTarget.style.background='rgba(139,92,246,.26)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='rgba(139,92,246,.16)'}>
+                    <Pencil size={13}/>Edit profile
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* ── RIGHT 50%: ICI widget ── */}
@@ -800,7 +862,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
               </span>
             </div>
             <div className="card-body">
-              {live.count===0?<div className="empty" style={{padding:'20px 0'}}>No active recommendations.</div>:(<>
+              {live.count===0?<div className="empty" style={{padding:'20px 0'}}>No active ideas.</div>:(<>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginBottom:10}}>
                   <ScoreBox val={live.count} label="Active" big mobile={isMobile}/>
                   <ScoreBox val={`${live.in_profit} (${live.count?Math.round(live.in_profit/live.count*100):0}%)`} label="In Profit" col="var(--gain)" big mobile={isMobile}/>
@@ -828,7 +890,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
               </span>
             </div>
             <div className="card-body">
-              {realized.count===0?<div className="empty" style={{padding:'20px 0'}}>No closed recommendations yet.</div>:(<>
+              {realized.count===0?<div className="empty" style={{padding:'20px 0'}}>No closed ideas yet.</div>:(<>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginBottom:10}}>
                   <ScoreBox val={realized.count} label="Closed" big mobile={isMobile}/>
                   <ScoreBox val={`${realized.hit_rate_pct.toFixed(1)}%`} label="Hit Rate" col={realized.hit_rate_pct>=50?'var(--gain)':'var(--loss)'} big mobile={isMobile}/>
@@ -850,7 +912,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
         </div>
 
         <div style={{display:'flex',gap:8,alignItems:'center',padding:'9px 14px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,marginBottom:14,fontSize:12,color:'var(--muted)'}}>
-          <AlertTriangle size={13} style={{flexShrink:0}}/><span>Returns on active positions use current price and may change daily. Only closed recommendations feed the realized scorecard.</span>
+          <AlertTriangle size={13} style={{flexShrink:0}}/><span>Returns on active positions use current price and may change daily. Only closed ideas feed the realized scorecard.</span>
         </div>
 
         {/* ── CIRCLES ── */}
@@ -935,77 +997,136 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
           </div>
         )}
 
-        {/* ── RECOMMENDATION TIMELINE ── */}
-        <div className="card" style={{marginBottom:14}}>
-          <div className="card-head">
-            <span style={{fontSize:13,fontWeight:700}}>Recommendation History</span>
-            <span className="muted small">Public record · Permanent &amp; immutable</span>
+        {/* ── INVESTMENT IDEAS ── */}
+        <div style={{marginBottom:14}}>
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:15,fontWeight:800}}>Investment Ideas</div>
+            <div className="muted small">Public record · Permanent &amp; immutable</div>
           </div>
-          <div style={{display:'flex',gap:0,borderBottom:'1px solid var(--line)',padding:'0 16px'}}>
-            {[
-              {key:'All',count:recos.length},
-              {key:'Active',count:recos.filter(r=>r.status==='Active').length},
-              {key:'Closed',count:recos.filter(r=>r.status==='Closed').length},
-              {key:'Expired',count:recos.filter(r=>r.status==='Expired').length},
-            ].map(t=>(
-              <button key={t.key} onClick={()=>setRecTab(t.key)} style={{background:'none',border:'none',cursor:'pointer',padding:'11px 14px',fontWeight:700,fontSize:13,color:recTab===t.key?'var(--accent)':'var(--muted)',borderBottom:recTab===t.key?'2px solid var(--accent)':'2px solid transparent',marginBottom:-1,fontFamily:'inherit'}}>
-                {t.key}{t.count>0&&<span style={{fontSize:11,marginLeft:4,opacity:.7}}>({t.count})</span>}
-              </button>
-            ))}
+
+          {/* Status tabs + search/filter/sort icons */}
+          <div style={{display:'flex',alignItems:'center',gap:8,borderBottom:'1px solid var(--line)',marginBottom:12,flexWrap:'wrap'}}>
+            <div style={{display:'flex',flex:1,minWidth:0,overflowX:'auto'}}>
+              {[
+                {key:'All',count:recos.length},
+                {key:'Active',count:recos.filter(r=>r.status==='Active').length},
+                {key:'Closed',count:recos.filter(r=>r.status==='Closed').length},
+                {key:'Expired',count:recos.filter(r=>r.status==='Expired').length},
+              ].map(t=>(
+                <button key={t.key} onClick={()=>setRecTab(t.key)} style={{background:'none',border:'none',cursor:'pointer',padding:'11px 14px',fontWeight:700,fontSize:13,whiteSpace:'nowrap',color:recTab===t.key?'var(--accent)':'var(--muted)',borderBottom:recTab===t.key?'2px solid var(--accent)':'2px solid transparent',marginBottom:-1,fontFamily:'inherit'}}>
+                  {t.key}{t.count>0&&<span style={{fontSize:11,marginLeft:4,opacity:.7}}>({t.count})</span>}
+                </button>
+              ))}
+            </div>
+            <div style={{display:'flex',gap:4,paddingBottom:6,flexShrink:0}}>
+              <button className={"icon-btn"+(ideaSearchOpen?" active":"")} style={{width:32,height:32}} title="Search ideas" onClick={()=>setIdeaSearchOpen(v=>!v)}><Search size={14}/></button>
+              <div style={{position:'relative'}}>
+                <button ref={ideaFilterBtnRef} className={"icon-btn"+(ideaFilterCls!=='all'?" active":"")} style={{width:32,height:32}} title="Filter by asset class" onClick={()=>setIdeaFilterOpen(v=>!v)}><SlidersHorizontal size={14}/></button>
+                {ideaFilterOpen && (
+                  <SmallAnchoredPopover anchorEl={ideaFilterBtnRef.current} onClose={()=>setIdeaFilterOpen(false)}>
+                    <div className="cap" style={{marginBottom:6}}>Asset class</div>
+                    <select className="inline-select sm" style={{width:'100%'}} value={ideaFilterCls} onChange={e=>setIdeaFilterCls(e.target.value)}>
+                      <option value="all">All classes</option>
+                      {ideaClasses.map(c=><option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </SmallAnchoredPopover>
+                )}
+              </div>
+              <div style={{position:'relative'}}>
+                <button ref={ideaSortBtnRef} className={"icon-btn"+(ideaSort!=='date_desc'?" active":"")} style={{width:32,height:32}} title="Sort ideas" onClick={()=>setIdeaSortOpen(v=>!v)}><ArrowUpDown size={14}/></button>
+                {ideaSortOpen && (
+                  <SmallAnchoredPopover anchorEl={ideaSortBtnRef.current} onClose={()=>setIdeaSortOpen(false)}>
+                    {[['date_desc','Newest first'],['date_asc','Oldest first'],['ret_desc','Best return'],['ret_asc','Worst return']].map(([val,label])=>(
+                      <div key={val} onClick={()=>{setIdeaSort(val);setIdeaSortOpen(false);}}
+                        style={{padding:'8px 9px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:ideaSort===val?700:500,color:ideaSort===val?'var(--accent-ink)':'var(--ink)',background:ideaSort===val?'var(--accent-soft)':'transparent'}}>
+                        {label}
+                      </div>
+                    ))}
+                  </SmallAnchoredPopover>
+                )}
+              </div>
+            </div>
           </div>
-          {recoIdNotPublic&&(
-            <div style={{display:'flex',gap:10,alignItems:'flex-start',margin:'12px 16px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:12,padding:'12px 16px'}}>
-              <Lock size={15} color="var(--muted)"/><div><div style={{fontWeight:700,fontSize:13,marginBottom:3}}>Recommendation not publicly visible</div><div className="muted small">This recommendation is only visible to the investor's network.</div></div>
+
+          {ideaSearchOpen && (
+            <div className="searchbox" style={{padding:'7px 11px',marginBottom:12}}>
+              <Search size={13} color="var(--muted)"/>
+              <input autoFocus value={ideaQuery} onChange={e=>setIdeaQuery(e.target.value)} placeholder="Search ticker or name…" style={{fontSize:13}}/>
+              {ideaQuery && <button onClick={()=>setIdeaQuery('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',display:'flex'}}><X size={13}/></button>}
             </div>
           )}
-          <div style={{overflowX:'auto'}}>
-            {filteredRecos.length===0
-              ?<div className="empty" style={{padding:'32px 0'}}>No {recTab.toLowerCase()} recommendations.</div>
-              :<table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-                <thead><tr style={{background:'#f9fafb',borderBottom:'2px solid var(--line)'}}>
-                  {['Date','Instrument','Type','Entry ₹','Current ₹','Target','Stop Loss','Return','Status','Conviction','Holding'].map(h=>(
-                    <th key={h} style={{padding:'9px 11px',textAlign:['Return','Entry ₹','Current ₹','Target','Stop Loss'].includes(h)?'right':'left',fontSize:10.5,fontWeight:700,letterSpacing:.06,textTransform:'uppercase',color:'var(--muted)',whiteSpace:'nowrap'}}>{h}</th>
-                  ))}
-                </tr></thead>
-                <tbody>{filteredRecos.map(r=>{
-                  const isLinked=r.id===recoId, isExpanded=r.id===expandedId;
+
+          {recoIdNotPublic&&(
+            <div style={{display:'flex',gap:10,alignItems:'flex-start',marginBottom:12,background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:12,padding:'12px 16px'}}>
+              <Lock size={15} color="var(--muted)"/><div><div style={{fontWeight:700,fontSize:13,marginBottom:3}}>Idea not publicly visible</div><div className="muted small">This idea is only visible to the investor's network.</div></div>
+            </div>
+          )}
+
+          {filteredRecos.length===0
+            ? <div className="card"><div className="empty" style={{padding:'32px 0'}}>No {recTab.toLowerCase()} ideas{ideaQuery?` matching "${ideaQuery}"`:''}.</div></div>
+            : <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                {filteredRecos.map(r=>{
+                  const isLinked=r.id===recoId;
+                  const isBuy=(r.recommendation_type||'Buy')==='Buy';
                   const retPct=Number(r.return_pct||0);
-                  return(<React.Fragment key={r.id}>
-                    <tr ref={isLinked?expandedRef:null} className="hoverable"
-                        style={{cursor:'pointer',background:isLinked?'var(--accent-soft)':undefined,outline:isLinked?'2px solid var(--accent)':undefined,outlineOffset:-2}}
-                        onClick={()=>setExpandedId(isExpanded?null:r.id)}>
-                      <td style={{padding:'10px 11px',color:'var(--muted)',fontSize:12,whiteSpace:'nowrap'}}>{r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'}):'-'}</td>
-                      <td style={{padding:'10px 11px'}}><div style={{fontWeight:700}}>{r.ticker}</div><div style={{fontSize:11,color:'var(--muted)',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.asset_name}</div></td>
-                      <td style={{padding:'10px 11px'}}><TypeBadge t={r.recommendation_type}/></td>
-                      <td style={{padding:'10px 11px',textAlign:'right',fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'}</td>
-                      <td style={{padding:'10px 11px',textAlign:'right',fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{r.current_price?`₹${Number(r.current_price).toLocaleString('en-IN')}`:'—'}</td>
-                      <td style={{padding:'10px 11px',textAlign:'right',fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:'var(--muted)'}}>{r.target_price?`₹${Number(r.target_price).toLocaleString('en-IN')}`:'—'}</td>
-                      <td style={{padding:'10px 11px',textAlign:'right',fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:'var(--loss)'}}>{r.stop_loss?`₹${Number(r.stop_loss).toLocaleString('en-IN')}`:'—'}</td>
-                      <td style={{padding:'10px 11px',textAlign:'right'}}><RetBadge pct={retPct}/></td>
-                      <td style={{padding:'10px 11px'}}><StatusBadge2 status={r.status}/></td>
-                      <td style={{padding:'10px 11px'}}><ConvBadge level={r.conviction}/></td>
-                      <td style={{padding:'10px 11px',color:'var(--muted)',fontSize:12,whiteSpace:'nowrap'}}>{r.holding_days?`${r.holding_days}d`:'—'} {isExpanded?'▲':'▼'}</td>
-                    </tr>
-                    {isExpanded&&r.thesis&&r.thesis!=='—'&&(
-                      <tr><td colSpan={11} style={{padding:0}}>
-                        <div style={{background:isLinked?'var(--accent-soft)':'var(--surface-2)',padding:'11px 16px',display:'flex',gap:16,flexWrap:'wrap'}}>
-                          <div style={{flex:1}}><div style={{fontSize:10.5,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5,marginBottom:4}}>Thesis</div><div style={{fontSize:13,lineHeight:1.6,color:'var(--ink-soft)'}}>{r.thesis}</div></div>
-                          {r.sector&&<div><div style={{fontSize:10.5,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5,marginBottom:4}}>Sector</div><div style={{fontSize:13}}>{SECTOR_EMOJI[r.sector]} {r.sector}</div></div>}
+                  return (
+                    <div key={r.id} ref={isLinked?expandedRef:null} className="card"
+                      style={{padding:'14px 16px',cursor:'pointer',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)'),
+                        background:isLinked?'var(--accent-soft)':'var(--surface)',
+                        outline:isLinked?'2px solid var(--accent)':'none',outlineOffset:-2}}
+                      onClick={()=>openReco(username,r.id)}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontWeight:800,fontSize:15,marginBottom:2}}>{r.asset_name}</div>
+                          <div style={{fontSize:11,color:'var(--muted)'}}>{r.ticker} · {r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'}):'—'}</div>
                         </div>
-                      </td></tr>
-                    )}
-                  </React.Fragment>);
-                })}</tbody>
-              </table>}
-          </div>
-          <div style={{padding:'9px 16px',borderTop:'1px solid var(--line)',fontSize:11,color:'var(--muted)'}}>Returns calculated from entry price and current/exit price. Not investment advice.</div>
+                        <TypeBadge t={r.recommendation_type}/>
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
+                        {[['Entry',r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'],
+                          ['Current',r.current_price?`₹${Number(r.current_price).toLocaleString('en-IN')}`:'—'],
+                          ['Return',null]].map(([label,val],i)=>(
+                          <div key={label} style={{background:'var(--surface-2)',borderRadius:8,padding:'8px 10px'}}>
+                            <div style={{fontSize:10,color:'var(--muted)',marginBottom:2}}>{label}</div>
+                            {i===2 ? <RetBadge pct={retPct}/> : <div style={{fontWeight:700,fontSize:13,fontFamily:"'JetBrains Mono',monospace"}}>{val}</div>}
+                          </div>
+                        ))}
+                      </div>
+                      {r.thesis&&r.thesis!=='—'&&(
+                        <div style={{marginBottom:10}}><ThesisRenderer thesis={r.thesis} previewLines={2}/></div>
+                      )}
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                        <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                          <StatusBadge2 status={r.status}/>
+                          {r.conviction&&<ConvBadge level={r.conviction}/>}
+                          {r.sector&&<span className="pill" style={{fontSize:10}}>{SECTOR_EMOJI[r.sector]} {r.sector}</span>}
+                          {r.holding_days?<span className="muted small">{r.holding_days}d held</span>:null}
+                        </div>
+                        <div style={{position:'relative'}} onClick={e=>e.stopPropagation()}>
+                          <button className="iconbtn" title="Share" onClick={(e)=>{ setIdeaSharePopId(ideaSharePopId===r.id?null:r.id); setIdeaShareAnchor(e.currentTarget); }}><Share2 size={13}/></button>
+                          {ideaSharePopId===r.id && (
+                            <IdeaSharePopover
+                              reco={{id:r.id,ticker:r.ticker,assetName:r.asset_name}}
+                              username={username} contacts={contacts} groups={groups}
+                              anchorEl={ideaShareAnchor}
+                              onSend={(targets)=>sendIdeaShare(r.id,targets)}
+                              onClose={()=>{ setIdeaSharePopId(null); setIdeaShareAnchor(null); }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>}
+          <div className="muted small" style={{marginTop:10}}>Returns calculated from entry price and current/exit price. Not investment advice.</div>
         </div>
         {/* ── Methodology ── */}
         <div id="methodology" className="card" style={{marginBottom:14}}>
           <div className="card-head"><span style={{fontSize:13,fontWeight:700}}>How is the ICI Score calculated?</span><a href="#methodology" style={{fontSize:12,fontWeight:700,color:'var(--accent-ink)',textDecoration:'none'}}>Learn More →</a></div>
           <div style={{padding:'14px 20px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {[
-              ['Hit Rate','Percentage of closed recommendations with a positive realized return.'],
+              ['Hit Rate','Percentage of closed ideas with a positive realized return.'],
               ['Median Return','Median realized return across closed positions. More robust than average.'],
               ['Risk-Adjusted Return','Average return ÷ standard deviation of returns (Sharpe-like, no risk-free rate).'],
               ['ICI Score','Track length (15%), volume (15%), hit rate (20%), median (15%), risk-adj (15%), transparency (10%), profile (10%).'],
@@ -1424,7 +1545,7 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
                     borderRadius:9,padding:'10px 13px',fontSize:12,color:'#fbbf24',marginBottom:10,lineHeight:1.5}}>
                   ⚠ Choose carefully — username cannot be changed once set.
                   It becomes part of your permanent public profile URL, and you'll
-                  need one to post recommendations or have a public profile page.
+                  need one to post ideas or have a public profile page.
                 </div>
                 <div style={{position:'relative'}}>
                   <span style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',
@@ -1604,7 +1725,7 @@ export function ClaimProfilePage({ profile, token, onBack }) {
         </div>
         <div className="note" style={{fontSize:13,textAlign:'left',marginBottom:14,lineHeight:1.65}}>
           <strong>What happens next:</strong><br/>
-          Once the admin approves your profile, you will see your historical recommendations and full ICI score on your Track Record page. You'll receive a confirmation email as soon as it's approved — usually within 24 hours.
+          Once the admin approves your profile, you will see your historical ideas and full ICI score on your Track Record page. You'll receive a confirmation email as soon as it's approved — usually within 24 hours.
         </div>
         <div style={{fontSize:12,color:'var(--muted)'}}>
           You're now logged in. Visit the <strong>Track Record</strong> tab to check your approval status.
