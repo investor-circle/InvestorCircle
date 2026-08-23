@@ -117,7 +117,7 @@ export function AdminSeedData() {
       ['HITTING A HIGH ICI SCORE (target 75+/100)'],
       ['Component','Weight','What to do'],
       ['Track record length','15%','Backdate oldest recos 3+ years (e.g. 2022)'],
-      ['Recommendation volume','15%','Add 15+ recommendations per user'],
+      ['Idea volume','15%','Add 15+ recommendations per user'],
       ['Hit rate','20%','≥80% of closed Buy recos should have exit_price > reco_price'],
       ['Median return','15%','Aim for 20%+ median return across closed Buy recos'],
       ['Risk-adjusted return','15%','High average returns with few large losses helps'],

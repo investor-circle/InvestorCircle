@@ -583,7 +583,7 @@ export function computeIci({ years_history, total, hit_rate_pct, median_return, 
     score, band,
     components: [
       { label: 'Track record length',   score: Math.round(trackLen),    max: 15 },
-      { label: 'Recommendation volume', score: Math.round(volume),      max: 15 },
+      { label: 'Idea volume',           score: Math.round(volume),      max: 15 },
       { label: 'Hit rate',              score: Math.round(hitRate),      max: 20 },
       { label: 'Median return',         score: Math.round(medianRet),    max: 15 },
       { label: 'Risk-adjusted return',  score: Math.round(riskAdj),     max: 15 },
