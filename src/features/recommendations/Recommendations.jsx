@@ -1446,7 +1446,9 @@ export function ThesisEditor({ value, onChange }) {
     const sel = text.slice(s, e);
     const url = window.prompt('Enter URL (must start with https://):');
     if (!url || !url.startsWith('http')) return;
-    const label = sel || 'read more';
+    const labelInput = window.prompt('Enter link text:', sel || 'Click for more details');
+    if (labelInput === null) return; // cancelled
+    const label = labelInput.trim() || 'Click for more details';
     const str   = `[${label}](${url})`;
     const next  = (text.slice(0, s) + str + text.slice(e)).slice(0, THESIS_MAX_CHARS);
     setText(next); emit(next, undefined);
@@ -2303,7 +2305,7 @@ function RecoLinkSharePopover({ url, anchorEl, copied, onCopy, onClose }) {
 
 /* ─── RecoPostPage — dedicated shareable post view for a single recommendation ── */
 
-export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProfile }) {
+export function RecoPostPage({ username, recoId, viewerUser, ME, contacts=[], groups=[], onBack, onNavigateProfile }) {
   const isMobile = useIsMobile();
   const [data,         setData]         = useState(null);
   const [reco,         setReco]         = useState(null);
@@ -2392,6 +2394,11 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
       fallbackCopyLink(recoUrl, done);
     }
   };
+
+  // Share to Circles/contacts from this page — same forward pipeline the
+  // My Ideas cards use (IdeaSharePopover), just wired to ME.id directly
+  // since this standalone page doesn't carry the myId helper from Recommendations().
+  const sendShareTargets = async (targets) => { await dbForwardReco(recoId, ME.id, targets); };
 
   const profile  = data?.profile;
   const ici      = data?.ici;
@@ -2595,9 +2602,17 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
                 cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600}}>
                 <Share2 size={14}/> Share
               </button>
-              {shareOpen && (
+              {shareOpen && (viewerUser ? (
+                <IdeaSharePopover
+                  reco={{id:recoId, ticker:reco?.ticker, assetName:reco?.assetName}}
+                  username={username} contacts={contacts} groups={groups}
+                  anchorEl={shareBtnRef.current}
+                  onSend={sendShareTargets}
+                  onClose={()=>setShareOpen(false)}
+                />
+              ) : (
                 <RecoLinkSharePopover url={recoUrl} anchorEl={shareBtnRef.current} copied={copied} onCopy={copyLink} onClose={()=>setShareOpen(false)}/>
-              )}
+              ))}
             </div>
             {/* Bookmark */}
             <button onClick={viewerUser ? handleTrack : requireLogin}

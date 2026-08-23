@@ -1015,6 +1015,8 @@ export default function App() {
             recoId={pubRecoId}
             viewerUser={user}
             ME={ME}
+            contacts={contacts}
+            groups={groups}
             onBack={()=>{ window.location.hash = ''; }}
             onNavigateProfile={()=>{ window.location.hash = `#/investor/${pubUsername}`; }}
           />
