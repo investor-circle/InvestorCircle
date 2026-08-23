@@ -2230,6 +2230,77 @@ export function IdeaSharePopover({ reco, username, contacts=[], groups=[], ancho
   );
 }
 
+/* Clipboard fallback for contexts where the async Clipboard API is unavailable
+   or silently fails (older browsers, some in-app/WebView browsers) — copies
+   via a temporary offscreen textarea + execCommand instead. */
+function fallbackCopyLink(text, onDone) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    onDone();
+  } catch (_) { /* give up silently — the URL is still visible on-screen to copy by hand */ }
+}
+
+/* Small share popover for RecoPostPage's own Share button — just the public
+   link (visible + copy, with a robust fallback) and WhatsApp, since this
+   standalone page (reachable by logged-out viewers too) doesn't have the
+   viewer's Circles/contacts loaded the way IdeaSharePopover does. */
+function RecoLinkSharePopover({ url, anchorEl, copied, onCopy, onClose }) {
+  const isMobile = useIsMobile();
+  const [pos, setPos] = useState(null);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    if (!isMobile && anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    }
+    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
+    setTimeout(() => document.addEventListener('mousedown', h), 0);
+    return () => document.removeEventListener('mousedown', h);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const waMsg = encodeURIComponent(`Check out this idea on InvestorCircle:\n${url}`);
+
+  const content = (
+    <>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Share2 size={15} color="var(--accent)" /> Share this idea
+      </div>
+      <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 9, padding: '7px 9px', fontSize: 11, color: 'var(--muted)', marginBottom: 10, wordBreak: 'break-all', lineHeight: 1.4, userSelect: 'all' }}>{url}</div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn btn-pri btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={onCopy}>{copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}</button>
+        <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}><span style={{ fontSize: 14 }}>💬</span> WhatsApp</a>
+      </div>
+    </>
+  );
+
+  if (isMobile) return createPortal(
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={onClose}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)' }}/>
+      <div ref={popRef} style={{ position: 'relative', background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '20px 20px 28px', boxShadow: '0 -8px 40px rgba(0,0,0,.28)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ width: 36, height: 4, background: 'var(--line)', borderRadius: 2, margin: '0 auto 18px' }}/>
+        {content}
+      </div>
+    </div>,
+    document.body
+  );
+
+  if (!pos) return null;
+  return createPortal(
+    <div ref={popRef} style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,.18)', padding: '16px 18px', minWidth: 280, maxWidth: 340, fontFamily: 'var(--font)' }} onClick={e => e.stopPropagation()}>
+      {content}
+    </div>,
+    document.body
+  );
+}
+
 /* ─── RecoPostPage — dedicated shareable post view for a single recommendation ── */
 
 export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavigateProfile }) {
@@ -2245,6 +2316,8 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
   const [invested,     setInvested]     = useState(false);
   const [investedPrice,setInvestedPrice]= useState(null);
   const [copied,       setCopied]       = useState(false);
+  const [shareOpen,    setShareOpen]    = useState(false);
+  const shareBtnRef = useRef(null);
 
   const recoUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${recoId}`;
 
@@ -2312,9 +2385,12 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
   };
 
   const copyLink = () => {
-    navigator.clipboard.writeText(recoUrl)
-      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2200); })
-      .catch(() => {});
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 2200); };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(recoUrl).then(done).catch(() => fallbackCopyLink(recoUrl, done));
+    } else {
+      fallbackCopyLink(recoUrl, done);
+    }
   };
 
   const profile  = data?.profile;
@@ -2478,7 +2554,7 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
               <div style={{background:'var(--surface-2)', borderRadius:12, padding:'14px 16px'}}>
                 <div style={{fontSize:10.5, fontWeight:700, color:'var(--muted)', textTransform:'uppercase',
                              letterSpacing:.5, marginBottom:6}}>Investment Thesis</div>
-                <div style={{fontSize:14, lineHeight:1.75, color:'var(--ink-soft)'}}>{reco.thesis}</div>
+                <ThesisRenderer thesis={reco.thesis} previewLines={8}/>
               </div>
             )}
           </div>
@@ -2512,12 +2588,17 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
             )}
             <div style={{flex:1}}/>
             {/* Share */}
-            <button onClick={copyLink} style={{display:'flex', alignItems:'center', gap:5,
-              padding:'7px 12px', borderRadius:10, border:'1px solid var(--line)',
-              background:'transparent', color:'var(--muted)',
-              cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600}}>
-              {copied ? <><Check size={14}/></> : <><Share2 size={14}/></>}
-            </button>
+            <div style={{position:'relative'}}>
+              <button ref={shareBtnRef} onClick={()=>setShareOpen(v=>!v)} title="Share this idea" style={{display:'flex', alignItems:'center', gap:5,
+                padding:'7px 12px', borderRadius:10, border:'1px solid var(--line)',
+                background: shareOpen ? 'var(--accent-soft)' : 'transparent', color: shareOpen ? 'var(--accent-ink)' : 'var(--muted)',
+                cursor:'pointer', fontFamily:'var(--font)', fontSize:13, fontWeight:600}}>
+                <Share2 size={14}/> Share
+              </button>
+              {shareOpen && (
+                <RecoLinkSharePopover url={recoUrl} anchorEl={shareBtnRef.current} copied={copied} onCopy={copyLink} onClose={()=>setShareOpen(false)}/>
+              )}
+            </div>
             {/* Bookmark */}
             <button onClick={viewerUser ? handleTrack : requireLogin}
               style={{display:'flex', alignItems:'center', gap:5,
