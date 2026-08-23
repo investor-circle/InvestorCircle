@@ -242,8 +242,10 @@ export default async function handleEngagement(req, res, userId) {
                  ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
                  ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
                  ir.exit_signal, ir.exit_date, ir.is_public, ir.created_at,
+                 ir.recommender_id,
                  up.full_name as recommender_name, up.first_name, up.last_name, up.username as recommender_username,
-                 rt.tracked_at, rt.is_invested, rt.invested_price
+                 rt.tracked_at, rt.is_invested, rt.invested_price,
+                 (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id = ir.id)::int AS comment_count
           FROM recommendation_tracking rt
           JOIN ic_recommendations ir ON rt.reco_id = ir.id
           JOIN user_profiles up ON ir.recommender_id = up.id

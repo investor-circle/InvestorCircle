@@ -201,7 +201,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
       .catch(() => {}); // pricing unavailable degrades to '—' cells, not an error
     return () => { cancelled = true; };
   }, [trackedTickerKey]);
-  const dailyChangeFor = (r) => dailyPrices?.[priceKey(r.ticker, r.assetClass)]?.changePct ?? null;
+  const dailyChangeFor = (r) => dailyPrices?.[priceKey(r.ticker, r.asset_class)]?.changePct ?? null;
 
   // Patch invested status locally + persist to recommendation_tracking
   const patchInvested=(r, updates)=>{

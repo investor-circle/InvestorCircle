@@ -36,7 +36,8 @@ import {
 } from "../../services/api/recommendationsApi";
 import {
   reactToReco as dbReactToReco,
-  trackReco as dbTrackReco
+  trackReco as dbTrackReco,
+  getMyTrackedRecos as dbGetMyTrackedRecos
 } from "../../services/api/engagementApi";
 import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
@@ -357,7 +358,44 @@ function TrackedActivityRow({ item, contacts }) {
 export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoInit, me, contacts }) {
   const [mode, setMode] = useState('yesterday'); // 'yesterday' | 'tracking' — default "Since yesterday" per spec
 
-  const trackedList = useMemo(() => recsReceived.filter(r=>tracked.has(r.id)), [recsReceived, tracked]);
+  // Authoritative tracked-ideas list, fetched from recommendation_tracking
+  // directly (same source the "View all tracked" page uses via
+  // dbGetMyTrackedRecos) — NOT derived by filtering recsReceived/
+  // allFeedRecos against `tracked`. That in-memory pool is bounded to
+  // direct deliveries plus a paginated slice of the public feed, so an
+  // idea tracked from elsewhere (a connection's profile, a group, or one
+  // that's aged out of the feed window) was silently missing from the
+  // widget's count even though it's genuinely tracked.
+  const [trackedRows, setTrackedRows] = useState([]);
+  useEffect(() => {
+    if (!me?.id) { setTrackedRows([]); return; }
+    let cancelled = false;
+    dbGetMyTrackedRecos()
+      .then(rows => { if (!cancelled) setTrackedRows(rows || []); })
+      .catch(() => { if (!cancelled) setTrackedRows([]); });
+    return () => { cancelled = true; };
+  }, [me?.id, tracked.size]);
+
+  // Reshaped to the camelCase idea shape the rest of this widget (and
+  // src/utils/trackedActivity.js) already expects — the API route itself
+  // keeps its original snake_case field names since TrackedSection.jsx
+  // (the full "View all tracked" page) consumes those rows as-is.
+  const trackedList = useMemo(() => trackedRows.map(r => ({
+    id:            r.id,
+    assetName:     r.asset_name,
+    ticker:        r.ticker,
+    assetClass:    r.asset_class,
+    priceAt:       Number(r.reco_price || 0),
+    price:         Number(r.current_price || 0),
+    date:          r.created_at ? String(r.created_at).slice(0, 10) : null,
+    exitSignal:    r.exit_signal,
+    exitDate:      r.exit_date,
+    commentCount:  Number(r.comment_count || 0),
+    from:          r.recommender_id,
+    from_username: r.recommender_username,
+    invested:      r.is_invested,
+    investedPrice: r.invested_price ? Number(r.invested_price) : null,
+  })), [trackedRows]);
 
   // Phase 9: real "since yesterday" price deltas, read from the persisted
   // instrument daily-price snapshots (never from a market-data provider).
@@ -425,7 +463,7 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
     dailyPrices,
   }), [trackedList, recsReceived, mode, me?.id, dailyPrices]);
 
-  if (total===0) return (
+  if (tracked.size===0) return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
       <WidgetHeader icon={TrendingUp} label="My Tracked"/>
       <WidgetEmptyState icon="🎯" setPage={setPage}
