@@ -18,7 +18,9 @@
  *     update-delivery:   { deliveryId, patch: { isInvested?, investedPrice?, reaction?, isHidden? } }
  *     set-exit-signal:   { recommendationId, exitPrice?, exitPriceSource? }
  *     cancel-exit-signal:{ recommendationId }
- *     forward:           { recommendationId, recipients: [{type:'user', id}] }
+ *     forward:           { recommendationId, recipients: [{type:'user'|'group', id}] }
+ *                        — group recipients are authorized exactly like the
+ *                          'create' action (see authorizedCircleRecipientIds)
  *     delete-reco:       { recommendationId }  — only the recommender may delete
  *     delete-delivery:   { deliveryId }        — only the caller's own delivery row
  *
@@ -254,7 +256,7 @@ async function deliverToRecipients(recId, senderId, recipients, reco, { asForwar
         VALUES (${rid}, 'recommendation', ${asForward ? forwarderId : senderId}, ${recId},
                 ${JSON.stringify({ ticker: reco.ticker, assetName: reco.assetName })})
       `;
-    } else if (r.type === 'group' && !asForward) {
+    } else if (r.type === 'group') {
       if (!authorizedGroupIds?.has(String(r.id))) continue; // not authorized to post to this circle — see authorizedCircleRecipientIds
       const circleRows = await sql`SELECT name, slug FROM ic_groups WHERE id = ${r.id} LIMIT 1`;
       const circleMeta = {
@@ -443,11 +445,15 @@ export default async function handleRecommendations(req, res, userId) {
         SELECT ticker, asset_name FROM ic_recommendations WHERE id = ${recommendationId}
       `;
       if (!rec[0]) { res.status(404).json({ error: 'not_found' }); return; }
+      // Group recipients reuse the same authorization check the 'create' action
+      // uses (authorizedCircleRecipientIds): the forwarder must be an active
+      // member of a private circle, or the owner/admin of a public one.
+      const authorizedGroupIds = await authorizedCircleRecipientIds(userId, recipients);
       await deliverToRecipients(
         recommendationId, userId,
-        recipients.filter(r => r.type === 'user'),
+        recipients.filter(r => r.type === 'user' || r.type === 'group'),
         { ticker: rec[0].ticker, assetName: rec[0].asset_name },
-        { asForward: true, forwarderId: userId }
+        { asForward: true, forwarderId: userId, authorizedGroupIds }
       );
       res.status(200).json({ success: true });
       return;

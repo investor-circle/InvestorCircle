@@ -39,3 +39,14 @@ export async function gotoUserProfile(userId) {
 export function gotoCircle(slug) {
   if (slug) window.location.hash = `#/circle/${slug}`;
 }
+
+/** Navigate to a recommendation's dedicated post page by recommender username (hash-based routing). */
+export function openReco(username, recoId) {
+  if (username && recoId) window.location.hash = `#/investor/${username}/reco/${recoId}`;
+}
+
+/** Look up recommender username from userId then navigate to their reco's dedicated page. */
+export async function gotoReco(userId, recoId) {
+  const info = await fetchPublicProfileInfo(userId);
+  if (info?.username) openReco(info.username, recoId);
+}
