@@ -16,7 +16,6 @@ import {
   Check,
   UserCog,
   Layers,
-  ChevronRight,
   Sparkles,
   UserPlus,
   LogOut,
@@ -228,6 +227,7 @@ export default function App() {
   // list, so a creator with thousands of trackers doesn't load them all here.
   const [trackingCounts,  setTrackingCounts]  = useState({ trackersCount: 0, trackingCount: 0 });
   const [networkInitTab,  setNetworkInitTab]  = useState(null); // one-shot: which Network tab to open next (e.g. from a notification)
+  const [homeInitTab,     setHomeInitTab]      = useState(null); // one-shot: which HomeFeed mobile tab to open next — Pulse (top Home icon) vs Feed (DISCOVER > Ideas nav item, mobile only)
   // Feed configuration
   const [feedConfigOptions,       setFeedConfigOptions]       = useState([]); // admin-defined options
   const [userFeedPrefs,           setUserFeedPrefs]           = useState({}); // {key: boolean} user overrides
@@ -1215,7 +1215,11 @@ export default function App() {
               <div key={si}>
                 {sec.label && <div className="side-section">{sec.label}</div>}
                 {sec.items.map(n=>(
-                  <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>{setPage(n.id);if(isMobile)setNavOpen(false);}}>
+                  <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>{
+                      if(n.id==='home' && isMobile) setHomeInitTab('feed'); // DISCOVER > Ideas, mobile → land on the Feed tab, not Pulse
+                      setPage(n.id);
+                      if(isMobile)setNavOpen(false);
+                    }}>
                     <div className="nav-icon" style={{background:n.iconBg}}>
                       <n.icon size={17} color={n.iconColor}/>
                     </div>
@@ -1234,24 +1238,9 @@ export default function App() {
             ))}
           </div>
 
-          {/* Footer — Connections bar for investors, stats for admin */}
-          {isInv ? (
-            <div className="side-conn">
-              <div className="side-conn-row" onClick={()=>{setPage('network');if(isMobile)setNavOpen(false);}}>
-                <div className="nav-icon" style={{width:34,height:34,borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,background:"rgba(96,165,250,.13)"}}>
-                  <Users size={17} color="#60a5fa"/>
-                </div>
-                <div style={{display:'flex',flexDirection:'column',minWidth:0,flex:1}}>
-                  <span style={{fontSize:13.5,fontWeight:600,lineHeight:1.2,color:'var(--side-text)'}}>Connections</span>
-                  <span style={{fontSize:10.5,color:'var(--side-dim)',marginTop:1}}>People in your network</span>
-                </div>
-                <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
-                  {contacts.length>0 && <span className="side-conn-badge">{contacts.length}</span>}
-                  <ChevronRight size={14} color="var(--side-dim)"/>
-                </div>
-              </div>
-            </div>
-          ) : (
+          {/* Footer — stats only for admin; investors' redundant "Connections" quick-link
+              (duplicating the Network & Circles nav item above) has been removed. */}
+          {!isInv && (
             <div className="side-foot">
               {stats.map(([l,v])=><div key={l} className="side-stat"><span>{l}</span><b>{v}</b></div>)}
             </div>
@@ -1266,11 +1255,13 @@ export default function App() {
                 and the mobile brand logo's job is now done by this explicit Home icon so the
                 cluster stays compact instead of stacking a logo + hamburger + icon). */}
             <div style={{display:'flex',alignItems:'center',gap:isMobile?4:8,flexShrink:0}}>
-              {/* Permanent Home icon — always visible, desktop and mobile, works from any page */}
+              {/* Permanent Home icon — always visible, desktop and mobile, works from any page.
+                  Always lands on the Pulse tab (the daily home experience), as opposed to
+                  DISCOVER > Ideas in the sidebar, which lands mobile users on Feed. */}
               {isInv && (
                 <button
                   className={"icon-btn"+(page==='home'?" active":"")}
-                  onClick={()=>setPage('home')}
+                  onClick={()=>{ setHomeInitTab('pulse'); setPage('home'); }}
                   title="Home"
                   aria-label="Home"
                 >
@@ -1645,7 +1636,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}/>}
+            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds} initTab={homeInitTab} onInitTabConsumed={()=>setHomeInitTab(null)}/>}
             {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
             {isInv && showDiscover && <DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}

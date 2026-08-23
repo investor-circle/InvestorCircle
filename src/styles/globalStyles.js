@@ -29,9 +29,9 @@ export const STYLES = `
 .viewing .vs{font-size:10px;letter-spacing:1.3px;text-transform:uppercase;color:rgba(255,255,255,.78);}
 .viewing .role{font-size:16px;font-weight:700;line-height:1.1;}
 .side-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--side-dim);padding:4px 12px 8px;}
-.side-section{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--side-dim);padding:12px 10px 5px;opacity:.75;}
-.nav-item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:11px;cursor:pointer;margin-bottom:2px;border:1px solid transparent;transition:.12s;color:var(--side-text);}
-.nav-item .nav-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.12s;}
+.side-section{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--side-dim);padding:9px 10px 4px;opacity:.75;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:5px 8px;border-radius:10px;cursor:pointer;margin-bottom:1px;border:1px solid transparent;transition:.12s;color:var(--side-text);}
+.nav-item .nav-icon{width:29px;height:29px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.12s;}
 .nav-item .nav-txt{display:flex;flex-direction:column;min-width:0;flex:1;}
 .nav-item .nav-lbl{font-size:13.5px;font-weight:600;line-height:1.2;}
 .nav-item .nav-sub{font-size:10.5px;color:var(--side-dim);font-weight:400;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -46,10 +46,6 @@ export const STYLES = `
 .side-foot{padding-top:12px;border-top:1px solid var(--side-line);}
 .side-stat{display:flex;justify-content:space-between;padding:7px 12px;font-size:13px;color:var(--side-dim);}
 .side-stat b{color:#fff;font-weight:700;}
-.side-conn{padding:10px 0 0;border-top:1px solid var(--side-line);}
-.side-conn-row{display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:11px;cursor:pointer;transition:.12s;color:var(--side-text);}
-.side-conn-row:hover{background:rgba(255,255,255,.045);color:#fff;}
-.side-conn-badge{background:var(--grad);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;}
 
 .main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh;overflow:visible;}
 .topbar{height:64px;background:rgba(245,245,251,.8);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 26px;position:sticky;top:0;z-index:200;}

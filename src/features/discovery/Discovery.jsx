@@ -893,11 +893,17 @@ function FeedBrewingState() {
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
 
-export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds, setTrackedCreatorIds }) {
+export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds, setTrackedCreatorIds, initTab, onInitTabConsumed }) {
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
-  const [mobileFeedTab,  setMobileFeedTab]  = useState('pulse'); // 'feed' | 'pulse' — Pulse is the default home experience
+  const [mobileFeedTab,  setMobileFeedTab]  = useState(initTab || 'pulse'); // 'feed' | 'pulse' — Pulse is the default home experience
+  // One-shot: which tab to land on next, driven by how the user navigated here —
+  // the top Home icon always requests 'pulse'; DISCOVER > Ideas in the sidebar
+  // requests 'feed' on mobile (see App.jsx's homeInitTab).
+  useEffect(() => {
+    if (initTab) { setMobileFeedTab(initTab); onInitTabConsumed && onInitTabConsumed(); }
+  }, [initTab]); // eslint-disable-line react-hooks/exhaustive-deps
   // Merged pool for Pulse widgets: direct deliveries + public platform recommendations
   // Deduped so items already in recsReceived don't appear twice.
   const allFeedRecos = useMemo(() => {

@@ -74,6 +74,7 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
     contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack, globalSearch }) {
   const [tab, setTab] = useState(initFilter?.tab || "tracked");
   const [showNew, setShowNew] = useState(false);
+  const isMobile = useIsMobile();
   const myId = me?.id || "me";
   const contactName = (id) => contacts.find(c=>c.id===id)?.name || (id===myId?"You":id);
   const groupName   = (id) => groups.find(g=>g.id===id)?.name || id;
@@ -103,24 +104,28 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
         <div className="eyebrow" style={{marginBottom:0}}>My Ideas</div>
         <div style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px',marginTop:2}}>Ideas worth tracking</div>
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        {/* Tabs — Tracked first */}
-        <div style={{display:"flex",gap:6,background:"var(--surface-2)",borderRadius:14,padding:4,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",width:isMobile?"100%":undefined}}>
+        {/* Tabs — Tracked first. Fixed to a single row (flex:1 per tab, no wrap) so
+            3 tabs never spill onto a second row on narrow screens. */}
+        <div style={{display:"flex",gap:isMobile?4:6,background:"var(--surface-2)",borderRadius:14,padding:4,flexWrap:"nowrap",width:isMobile?"100%":undefined}}>
           {[
             {id:"tracked",  label:"Tracked",  count:trackedCount,  icon:Bookmark},
             {id:"received", label:"Received", count:receivedCount, icon:Lightbulb},
             {id:"made",     label:"Created",  count:madeCount,     icon:Send},
           ].map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{
-              display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"var(--font)",fontWeight:700,fontSize:14,transition:".15s",
+              display:"flex",alignItems:"center",justifyContent:isMobile?"center":undefined,gap:isMobile?4:8,
+              padding:isMobile?"9px 6px":"10px 18px",borderRadius:11,border:"none",cursor:"pointer",
+              fontFamily:"var(--font)",fontWeight:700,fontSize:isMobile?12.5:14,transition:".15s",
+              flex:isMobile?"1 1 0":undefined,minWidth:0,
               background: tab===t.id ? "var(--surface)" : "transparent",
               color:      tab===t.id ? "var(--accent-ink)" : "var(--ink)",
               boxShadow:  tab===t.id ? "0 1px 6px rgba(20,20,50,.1)" : "none",
             }}>
-              <t.icon size={15}/>
+              <t.icon size={isMobile?13:15}/>
               {t.label}
               <span style={{
-                fontSize:12, fontWeight:800, padding:"2px 9px", borderRadius:999,
+                fontSize:isMobile?10.5:12, fontWeight:800, padding:isMobile?"1px 6px":"2px 9px", borderRadius:999,
                 background: tab===t.id ? "var(--grad)" : "var(--surface-2)",
                 color:      tab===t.id ? "#fff" : "var(--ink-soft)",
               }}>{t.count}</span>
@@ -128,7 +133,7 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
           ))}
         </div>
         {/* New idea — elevated so it's reachable from every tab, not just Created */}
-        <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)}><Plus size={15}/> New idea</button>
+        <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)} style={isMobile?{width:"100%",justifyContent:"center"}:undefined}><Plus size={15}/> New idea</button>
       </div>
     </div>
 
