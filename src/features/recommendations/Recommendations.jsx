@@ -1598,7 +1598,7 @@ export function ThesisRenderer({ thesis, previewLines=3 }) {
             <img key={i} src={src} alt="" style={{maxWidth:'100%',borderRadius:8,
               marginTop:8,display:'block',border:'1px solid var(--line)'}}/>
           ))}
-          <button onClick={()=>setExpanded(false)} style={{background:'none',border:'none',
+          <button onClick={e=>{e.stopPropagation();setExpanded(false);}} style={{background:'none',border:'none',
             cursor:'pointer',fontSize:12,color:'var(--accent-ink)',padding:'4px 0',fontWeight:600,marginTop:4}}>
             Show less ↑
           </button>
@@ -1606,7 +1606,7 @@ export function ThesisRenderer({ thesis, previewLines=3 }) {
       ) : (
         <>
           {textNode(true)}
-          <button onClick={()=>setExpanded(true)} style={{background:'none',border:'none',
+          <button onClick={e=>{e.stopPropagation();setExpanded(true);}} style={{background:'none',border:'none',
             cursor:'pointer',fontSize:12,color:'var(--accent-ink)',padding:'4px 0',fontWeight:600}}>
             Read more{imgLabel} →
           </button>
@@ -2016,7 +2016,7 @@ export function IdeaSharePopover({ reco, username, contacts=[], groups=[], ancho
   const url = username
     ? `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${reco.id}`
     : null;
-  const waMsg = url ? encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) on InvestorCircle:\n${url}`) : null;
+  const waMsg = url ? encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) on My Investor Circle:\n${url}`) : null;
   const copyLink = () => {
     if (!url) return;
     const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1600); };
@@ -2172,7 +2172,7 @@ function RecoLinkSharePopover({ url, anchorEl, copied, onCopy, onClose }) {
     return () => document.removeEventListener('mousedown', h);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const waMsg = encodeURIComponent(`Check out this idea on InvestorCircle:\n${url}`);
+  const waMsg = encodeURIComponent(`Check out this idea on My Investor Circle:\n${url}`);
 
   const content = (
     <>
@@ -2866,11 +2866,11 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
           </div>
         </div>
 
-        {/* ── Thesis — "Read more" expands the text in place (ThesisRenderer's own
-             state); stopPropagation here so reading the thesis never triggers the
-             card's click-through navigation ── */}
+        {/* ── Thesis — plain text/links bubble up to the card's click-through like
+             the rest of the card; "Read more"/"Show less" stop their own
+             propagation (see ThesisRenderer) so expanding never navigates away ── */}
         {r.thesis&&r.thesis!=='—'&&(
-          <div style={{marginBottom:10}} onClick={e=>e.stopPropagation()}>
+          <div style={{marginBottom:10}}>
             <ThesisRenderer thesis={r.thesis} previewLines={2}/>
           </div>
         )}

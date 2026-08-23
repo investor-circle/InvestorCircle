@@ -434,7 +434,7 @@ export default function App() {
         email:        c.email,
         initials:     initialsOf(c.name),
         color:        CONTACT_COLORS[i % CONTACT_COLORS.length],
-        title:        "InvestorCircle member",
+        title:        "My Investor Circle member",
         shared:       { level:"none", holdings:[] },
       })),
     [connections]

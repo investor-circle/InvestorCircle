@@ -1137,7 +1137,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
 
         {/* ── Disclaimer ── */}
         <div style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:14,padding:'14px 18px',fontSize:12,color:'var(--muted)',lineHeight:1.7}}>
-          <strong style={{color:'var(--ink-soft)'}}>Regulatory Disclaimer:</strong> Investor Circle records publicly shared investment opinions and computes historical statistics using a transparent methodology. <strong>Investor Circle does not endorse or recommend any individual or investment.</strong> The individual shown is a self-directed investor and is <strong>not SEBI registered.</strong> Nothing here constitutes investment advice. Past performance does not indicate future results.
+          <strong style={{color:'var(--ink-soft)'}}>Regulatory Disclaimer:</strong> My Investor Circle records publicly shared investment opinions and computes historical statistics using a transparent methodology. <strong>My Investor Circle does not endorse or recommend any individual or investment.</strong> The individual shown is a self-directed investor and is <strong>not SEBI registered.</strong> Nothing here constitutes investment advice. Past performance does not indicate future results.
         </div>
       </>
     );

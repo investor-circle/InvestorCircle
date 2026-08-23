@@ -517,7 +517,7 @@ export function AddConnectionModal({ existing, me, onClose, onAddExisting, onInv
         setResult({type:"ok",msg:`Connection request sent to ${row.full_name}. They will see it in their notifications.`});
       } else {
         onInvite(e);
-        setResult({type:"info",msg:`${e} is not on InvestorCircle yet. An invitation note from ${myName} will be shared with them.`});
+        setResult({type:"info",msg:`${e} is not on My Investor Circle yet. An invitation note from ${myName} will be shared with them.`});
       }
     } catch(err) { setResult({type:"warn",msg:"Could not reach database: "+err.message}); }
     setBusy(false);
@@ -527,7 +527,7 @@ export function AddConnectionModal({ existing, me, onClose, onAddExisting, onInv
     <div className="modal-body">
       <div className="field"><label>Email address</label>
         <input value={email} onChange={e=>{setEmail(e.target.value);setResult(null);}} placeholder="name@example.com" onKeyDown={e=>e.key==="Enter"&&!busy&&submit()} autoFocus/></div>
-      <div className="muted small" style={{marginBottom:result?14:0}}>If they have an InvestorCircle account a connection request is sent. They must accept before you can share recommendations.</div>
+      <div className="muted small" style={{marginBottom:result?14:0}}>If they have a My Investor Circle account a connection request is sent. They must accept before you can share recommendations.</div>
       {result && <div className={"note "+result.type}>{result.type==="ok"?<Check size={16}/>:<Mail size={16}/>}<div>{result.msg}</div></div>}
     </div>
     <div className="modal-foot"><span/>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import {
   Users,
   Lightbulb,
@@ -175,9 +175,11 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
       </div>
 
       {/* WHY — truncated thesis, with a real "Read more" that expands in place
-           (links render as links) rather than raw markdown text */}
+           (links render as links) rather than raw markdown text. Plain text/links
+           bubble to the card's click-through; Read more/Show less stop their own
+           propagation (see ThesisRenderer) so expanding never navigates away. */}
       {r.thesis && r.thesis!=='—' && (
-        <div style={{fontSize:12,lineHeight:1.5,marginBottom:8}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:12,lineHeight:1.5,marginBottom:8}}>
           <ThesisRenderer thesis={r.thesis} previewLines={2}/>
         </div>
       )}
@@ -756,9 +758,11 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
         </span>
       </div>
 
-      {/* WHY the idea — thesis, with a real "Read more" (links render as links) */}
+      {/* WHY the idea — thesis, with a real "Read more" (links render as links).
+           Plain text/links bubble to the card's click-through; Read more/Show
+           less stop their own propagation (see ThesisRenderer). */}
       {r.thesis && r.thesis!=='—' && (
-        <div style={{fontSize:11,lineHeight:1.45,marginBottom:5}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:11,lineHeight:1.45,marginBottom:5}}>
           <ThesisRenderer thesis={r.thesis} previewLines={2}/>
         </div>
       )}
@@ -939,7 +943,26 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
   const pulseBadgeText = pulseCount >= 5 ? '5+' : pulseCount > 0 ? String(pulseCount) : null;
   const showPulseBadge = !!pulseBadgeText && mobileFeedTab !== 'pulse';
   const [loadedCount,  setLoadedCount]  = useState(20);
-  const sentinelRef = useRef(null);
+  const sentinelObsRef = useRef(null);
+  // Callback ref (not useRef+useEffect) — the sentinel div is conditionally
+  // rendered (only while there's more to load), so it mounts/unmounts
+  // repeatedly as loadedCount and feedRecs.length change. A plain useEffect
+  // keyed on a static dep array only attaches the IntersectionObserver once
+  // and never re-attaches to the new DOM node after a remount, which is what
+  // was causing "Loading more…" to spin forever once the sentinel node was
+  // replaced. A callback ref runs on every mount/unmount of the node itself,
+  // so the observer is always watching the currently-rendered sentinel.
+  const sentinelRef = useCallback((node) => {
+    if (sentinelObsRef.current) { sentinelObsRef.current.disconnect(); sentinelObsRef.current = null; }
+    if (node) {
+      const obs = new IntersectionObserver(
+        ([entry]) => { if (entry.isIntersecting) setLoadedCount(n => n + 20); },
+        { rootMargin: '300px' }
+      );
+      obs.observe(node);
+      sentinelObsRef.current = obs;
+    }
+  }, []);
 
   const feedRecs = useMemo(() => {
     const cfg = effectiveFeedConfig;
@@ -980,18 +1003,6 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
       contacts.find(c=>c.id===r.from)?.username?.toLowerCase().includes(q)
     );
   }, [feedRecs, loadedCount, globalSearch, contacts]);
-
-  // Infinite scroll — Intersection Observer on sentinel div
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting && !globalSearch) setLoadedCount(n => n + 20); },
-      { rootMargin: '300px' }
-    );
-    obs.observe(sentinel);
-    return () => obs.disconnect();
-  }, [globalSearch]);
 
   // Reset page when search changes
   useEffect(() => { setLoadedCount(20); }, [globalSearch]);
