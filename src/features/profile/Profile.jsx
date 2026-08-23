@@ -18,7 +18,8 @@ import {
   Radar,
   Users,
   Layers,
-  Share2
+  Share2,
+  Home
 } from "lucide-react";
 import { createUserWithEmailAndPassword, updateProfile as fbUpdateProfile } from "firebase/auth";
 import { auth as primaryAuth } from "../../firebase";
@@ -44,7 +45,7 @@ import {
   untrackInvestor as dbUntrackInvestor,
   getTrackingStatus as dbGetTrackingStatus
 } from "../../services/api/trackingApi";
-import { gotoCircle } from "../../utils/navigation";
+import { goBackOrElse, gotoCircle } from "../../utils/navigation";
 import { compressAvatarFile } from "../../utils/image";
 import {
   computeIci
@@ -1043,20 +1044,20 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   if(mode==='standalone') {
     return(
       <div style={{minHeight:'100vh',background:'var(--bg)',paddingBottom:48}}>
-        <div style={{background:'var(--surface)',borderBottom:'1px solid var(--line)',padding:'11px 24px',display:'flex',alignItems:'center',gap:14,position:'sticky',top:0,zIndex:100}}>
-          <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <img src="/mic-logo.png" alt="mic" style={{width:30,height:30,flexShrink:0}}/>
-            <div><div style={{fontWeight:800,fontSize:13,lineHeight:1.1}}>myInvestorCircle</div><div style={{fontSize:10,color:'var(--muted)'}}>Transparency Platform</div></div>
-          </div>
-          <div style={{flex:1}}/>
+        <div style={{background:'var(--surface)',borderBottom:'1px solid var(--line)',padding:'8px 14px',display:'flex',alignItems:'center',gap:8,position:'sticky',top:0,zIndex:100}}>
+          <img src="/mic-logo.png" alt="mic" style={{width:22,height:22,flexShrink:0}}/>
+          <div style={{flex:1,minWidth:0,fontWeight:800,fontSize:13,lineHeight:1.1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>myInvestorCircle</div>
           {data && (
-            <button ref={shareBtnRef} className="icon-btn" title="Share this profile" aria-label="Share this profile" onClick={()=>setShareOpen(true)}>
+            <button ref={shareBtnRef} className="icon-btn" title="Share this profile" aria-label="Share this profile" onClick={()=>setShareOpen(true)} style={{flexShrink:0}}>
               <Share2 size={16}/>
             </button>
           )}
           {viewerUser
-            ?<button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
-            :<a href={window.location.pathname} style={{fontSize:13,fontWeight:600,color:'var(--accent)',textDecoration:'none'}}>Sign in →</a>}
+            ?<div style={{display:'flex',gap:6,flexShrink:0}}>
+                <button className="btn btn-ghost btn-sm" style={{padding:'6px 10px'}} onClick={()=>goBackOrElse(onBack)} title="Go back"><ArrowLeft size={14}/> Back</button>
+                <button className="btn btn-ghost btn-sm" style={{padding:'6px 10px'}} onClick={onBack} title="Home"><Home size={14}/> Home</button>
+              </div>
+            :<a href={window.location.pathname} style={{fontSize:13,fontWeight:600,color:'var(--accent)',textDecoration:'none',flexShrink:0}}>Sign in →</a>}
         </div>
         {shareOpen && (
           <ProfileSharePopover

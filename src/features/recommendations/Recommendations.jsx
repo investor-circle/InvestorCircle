@@ -31,6 +31,7 @@ import {
   Copy,
   ArrowLeft,
   Link,
+  Home,
   Image as ImageIcon
 } from "lucide-react";
 import { getPreviousClose, getTodayClose, sourceName } from "../../services/marketData";
@@ -68,7 +69,7 @@ import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
 import { sendEmail, sendPush } from "../../services/notify";
 import { calcTargetDate, classColor, compressImage, fmt, fmtDate, fmtPct, getTargetDate, initialsOf, isExpired, parseThesis, ret, serializeThesis } from "../../utils/format";
-import { fetchPublicProfileInfo, gotoReco, gotoUserProfile, openProfile, openReco } from "../../utils/navigation";
+import { fetchPublicProfileInfo, goBackOrElse, gotoReco, gotoUserProfile, openProfile, openReco } from "../../utils/navigation";
 
 export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
     contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack, globalSearch }) {
@@ -2333,19 +2334,19 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, onBack, onNavig
   return (
     <div style={{minHeight:'100vh', background:'var(--bg)', paddingBottom:56}}>
 
-      {/* ── Topbar ── */}
+      {/* ── Topbar — compact: logo + brand name, then Back / Home ── */}
       <div style={{background:'var(--surface)', borderBottom:'1px solid var(--line)',
-                   padding:'11px 20px', display:'flex', alignItems:'center', gap:12,
+                   padding:'8px 14px', display:'flex', alignItems:'center', gap:8,
                    position:'sticky', top:0, zIndex:100}}>
-        <img src="/mic-logo.png" alt="mic" style={{width:30, height:30, flexShrink:0}}/>
-        <div style={{flex:1}}>
-          <div style={{fontWeight:800, fontSize:13, lineHeight:1.1}}>myInvestorCircle</div>
-          <div style={{fontSize:10, color:'var(--muted)'}}>Transparency Platform</div>
-        </div>
+        <img src="/mic-logo.png" alt="mic" style={{width:22, height:22, flexShrink:0}}/>
+        <div style={{flex:1, minWidth:0, fontWeight:800, fontSize:13, lineHeight:1.1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>myInvestorCircle</div>
         {viewerUser
-          ? <button className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14}/> Back to app</button>
+          ? <div style={{display:'flex', gap:6, flexShrink:0}}>
+              <button className="btn btn-ghost btn-sm" style={{padding:'6px 10px'}} onClick={()=>goBackOrElse(onBack)} title="Go back"><ArrowLeft size={14}/> Back</button>
+              <button className="btn btn-ghost btn-sm" style={{padding:'6px 10px'}} onClick={onBack} title="Home"><Home size={14}/> Home</button>
+            </div>
           : <a href={window.location.pathname}
-               style={{fontSize:13, fontWeight:700, color:'var(--accent)', textDecoration:'none'}}>
+               style={{fontSize:13, fontWeight:700, color:'var(--accent)', textDecoration:'none', flexShrink:0}}>
               Sign in →
             </a>}
       </div>

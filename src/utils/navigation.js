@@ -50,3 +50,16 @@ export async function gotoReco(userId, recoId) {
   const info = await fetchPublicProfileInfo(userId);
   if (info?.username) openReco(info.username, recoId);
 }
+
+/**
+ * Browser "back" for a standalone page reached via in-app hash navigation
+ * (a reco post, a public profile), with a fallback for when there's nothing
+ * to go back to — e.g. the page was opened directly from a shared link in a
+ * fresh tab, where history.back() would leave the site (or do nothing)
+ * instead of returning to My Ideas/wherever the user came from.
+ */
+export function goBackOrElse(fallbackFn) {
+  const beforeHash = window.location.hash;
+  window.history.back();
+  setTimeout(() => { if (window.location.hash === beforeHash) fallbackFn(); }, 350);
+}
