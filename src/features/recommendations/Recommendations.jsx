@@ -88,15 +88,8 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
     });
     return s.size;
   };
-  const forwardReco = async (r, targetIds, note) => {
-    const recipients = targetIds.map(id=>({type:"user",id}));
-    await dbForwardReco(r.id, myId, recipients);
-    await onReload();
-    setTab("made");
-  };
   // Share button on an idea card (Tracked/Received/Created) — targets are
-  // already typed {type:'user'|'group', id} by IdeaSharePopover. Unlike
-  // forwardReco above (used by the "Forward this idea" flow), this doesn't
+  // already typed {type:'user'|'group', id} by IdeaSharePopover. This doesn't
   // jump the user to the Made tab — sharing from Tracked/Received shouldn't
   // relocate them away from the tab they were on.
   const sendIdeaToTargets = async (recoId, targets) => {
@@ -151,7 +144,7 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
     {tab==="received" && <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} myId={myId}
         contactName={contactName} groupName={groupName} assetClasses={assetClasses}
         contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId}
-        onForward={forwardReco} onSendShare={sendIdeaToTargets} onReload={onReload} me={me} tracked={tracked} toggleTrack={toggleTrack} globalSearch={globalSearch}/>}
+        onSendShare={sendIdeaToTargets} onReload={onReload} me={me} tracked={tracked} toggleTrack={toggleTrack} globalSearch={globalSearch}/>}
     {tab==="made"     && <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName}
         reach={reach} contacts={contacts} groups={groups} onSendShare={sendIdeaToTargets} assetClasses={assetClasses}
         setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload} globalSearch={globalSearch}/>}
@@ -502,13 +495,13 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
   </>);
 }
 
-export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onForward, onSendShare, onReload, me, tracked, toggleTrack, globalSearch }) {
+export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onSendShare, onReload, me, tracked, toggleTrack, globalSearch }) {
   const isMobile = useIsMobile();
   const [q,setQ]=useState(globalSearch||""); const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
   const [fInv,setFInv]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
   const [showHidden,setShowHidden]=useState(false); const [showExpired,setShowExpired]=useState(false);
-  const [openRow,setOpenRow]=useState(null); const [fwd,setFwd]=useState(null);
+  const [openRow,setOpenRow]=useState(null);
   const [sharePopId,setSharePopId]=useState(null);
   const [shareAnchor,setShareAnchor]=useState(null);
   // Sync global search into local filter
@@ -808,7 +801,17 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                       <div style={{fontSize:13,lineHeight:1.7,color:"var(--ink-soft)",marginTop:4,marginBottom:12,maxWidth:720}}>
                         {r.thesis ? <ThesisRenderer thesis={r.thesis}/> : <span className="muted">No thesis shared.</span>}
                       </div>
-                      <button className="btn btn-soft btn-sm" onClick={()=>setFwd(r)}><Forward size={13}/> Forward this idea</button>
+                      <div style={{position:'relative',display:'inline-block'}}>
+                        <button className="btn btn-soft btn-sm" onClick={(e)=>{ setSharePopId(r.id); setShareAnchor(e.currentTarget); }}><Forward size={13}/> Forward this idea</button>
+                        {sharePopId===r.id && (
+                          <IdeaSharePopover
+                            reco={r} username={shareUsername} contacts={contacts} groups={groups}
+                            anchorEl={shareAnchor}
+                            onSend={(targets)=>onSendShare(r.id,targets)}
+                            onClose={()=>{ setSharePopId(null); setShareAnchor(null); }}
+                          />
+                        )}
+                      </div>
                       <div style={{marginTop:18,borderTop:'1px solid var(--line)',paddingTop:14}}>
                         <div className="cap" style={{marginBottom:10}}>Comments</div>
                         <RecoComments recoId={r.id} me={me}/>
@@ -821,9 +824,6 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
             </div>{/* /tscroll */}
           </div>
         </div>}
-
-    {fwd && <ShareRecoModal reco={fwd} mode="forward" originName={recName(fwd)} contacts={contacts} groups={groups} onClose={()=>setFwd(null)}
-        onShare={(targets,note)=>{ onForward(fwd,targets,note); setFwd(null); }}/>}
   </>);
 }
 
@@ -841,31 +841,6 @@ export function InvestPriceModal({ reco, onClose, onConfirm }) {
     </div>
     <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-pri" disabled={!valid} onClick={()=>onConfirm(+price)}><Check size={15}/> Confirm invested</button></div></div>
-  </div></div>);
-}
-
-export function ShareRecoModal({ reco, mode, originName, contacts, groups, onClose, onShare }) {
-  const [targets,setTargets]=useState([]); const [note,setNote]=useState("");
-  const toggle=(id)=>setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
-  const fwd = mode==="forward";
-  const valid = targets.length>0;
-  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-head"><h3>{fwd?<><Forward size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Forward recommendation</>:<><Share2 size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Share recommendation</>}</h3>
-      <button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
-    <div className="modal-body">
-      <div className="note info" style={{marginBottom:16}}><Lightbulb size={16}/><div>
-        <b>{reco.ticker}</b> — {reco.assetName}{fwd && originName && <> · originally recommended by <b>{originName}</b></>}.
-        {fwd && " Forwarding keeps the original recommender credited; you'll appear as the one who shared it."}</div></div>
-      <div className="field"><label>Send to contacts</label><div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-        {contacts.map(c=><span key={c.id} className={"chip"+(targets.includes(c.id)?" sel":"")} onClick={()=>toggle(c.id)}>{targets.includes(c.id)&&<Check size={13}/>}{c.name}</span>)}</div></div>
-      <div className="field"><label>Send to groups</label><div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-        {groups.filter(g=>g.members.includes("me")).map(g=><span key={g.id} className={"chip"+(targets.includes(g.id)?" sel":"")} onClick={()=>toggle(g.id)}>{targets.includes(g.id)&&<Check size={13}/>}<Layers size={13}/>{g.name}</span>)}</div></div>
-      <div className="field"><label>Add a note {fwd && <span className="muted small">(optional — replaces the thesis you pass on)</span>}</label>
-        <textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder={fwd?"Your take when forwarding…":"Anything to add?"}/></div>
-    </div>
-    <div className="modal-foot"><span className="muted small">{targets.length} selected</span><div style={{display:"flex",gap:10}}>
-      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      <button className="btn btn-pri" disabled={!valid} onClick={()=>onShare(targets,note)}><Send size={15}/> {fwd?"Forward":"Share"}</button></div></div>
   </div></div>);
 }
 
@@ -2011,79 +1986,6 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
 
 /* =================================================================== SHARING */
 
-export function ReceivedSharePopover({ reco, fromUsername, anchorEl, onForward, onClose }) {
-  const isMobile = useIsMobile();
-  const [copied, setCopied] = useState(false);
-  const [pos, setPos] = useState(null);
-  const popRef = useRef(null);
-
-  useEffect(() => {
-    if (!isMobile && anchorEl) {
-      const rect = anchorEl.getBoundingClientRect();
-      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
-    }
-    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
-    setTimeout(() => document.addEventListener('mousedown', h), 0);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-
-  const url = fromUsername
-    ? `${window.location.origin}${window.location.pathname}#/investor/${fromUsername}/reco/${reco.id}`
-    : null;
-  const waMsg = url ? encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) on InvestorCircle:\n${url}`) : null;
-  const copyLink = () => {
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => { setCopied(false); onClose(); }, 1600); });
-  };
-
-  const content = (
-    <>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Share2 size={15} color="var(--accent)" /> Share this idea
-      </div>
-      <button className="btn btn-ghost btn-sm" style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 8 }}
-        onClick={() => { onForward(); onClose(); }}>
-        <Forward size={14} /> Forward to your contacts
-      </button>
-      {url ? (<>
-        <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10, marginTop: 4, marginBottom: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 8 }}>Share publicly</div>
-          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 9, padding: '7px 9px', fontSize: 11, color: 'var(--muted)', marginBottom: 8, wordBreak: 'break-all', lineHeight: 1.4 }}>{url}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <button className="btn btn-pri btn-sm" style={{ justifyContent: 'center' }} onClick={copyLink}>{copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}</button>
-            <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ justifyContent: 'center', textDecoration: 'none' }} onClick={onClose}><span style={{ fontSize: 14 }}>💬</span> Share on WhatsApp</a>
-          </div>
-        </div>
-        <div className="muted small" style={{ fontSize: 11 }}>Links to the recommender's public profile.</div>
-      </>) : (
-        <div className="muted small" style={{ fontSize: 11, paddingTop: 4 }}>Public link unavailable — recommender hasn't set a username yet.</div>
-      )}
-      <button className="btn btn-ghost btn-sm" style={{ width: '100%', justifyContent: 'center', marginTop: 12 }} onClick={onClose}>Cancel</button>
-    </>
-  );
-
-  // ── Mobile: full-screen bottom sheet ──────────────────────────────────
-  if (isMobile) return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={onClose}>
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)' }}/>
-      <div ref={popRef} style={{ position: 'relative', background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '20px 20px 36px', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-        <div style={{ width: 36, height: 4, background: 'var(--line)', borderRadius: 2, margin: '0 auto 18px' }}/>
-        {content}
-      </div>
-    </div>,
-    document.body
-  );
-
-  // ── Desktop: floating popover ─────────────────────────────────────────
-  if (!pos) return null;
-  return createPortal(
-    <div ref={popRef} style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,.18)', padding: '16px 18px', minWidth: 290, maxWidth: 340, fontFamily: 'var(--font)' }} onClick={e => e.stopPropagation()}>
-      {content}
-    </div>,
-    document.body
-  );
-}
-
 /* ─── IdeaSharePopover — unified share UI for My Ideas cards (Tracked / Received /
      Created). Order: public link (copy/WhatsApp) → Circles → Contacts (expandable,
      searchable, multi-select). "Send" delivers to the selected Circles/contacts via
@@ -2115,7 +2017,12 @@ export function IdeaSharePopover({ reco, username, contacts=[], groups=[], ancho
     ? `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${reco.id}`
     : null;
   const waMsg = url ? encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) on InvestorCircle:\n${url}`) : null;
-  const copyLink = () => { if (!url) return; navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600); }); };
+  const copyLink = () => {
+    if (!url) return;
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1600); };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(() => fallbackCopyLink(url, done));
+    else fallbackCopyLink(url, done);
+  };
 
   const toggleCircle  = (id) => setSelCircles(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleContact = (id) => setSelContacts(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -2146,12 +2053,9 @@ export function IdeaSharePopover({ reco, username, contacts=[], groups=[], ancho
 
       {/* ── Public link: copy + WhatsApp ── */}
       {url ? (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 9, padding: '7px 9px', fontSize: 11, color: 'var(--muted)', marginBottom: 8, wordBreak: 'break-all', lineHeight: 1.4 }}>{url}</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-pri btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={copyLink}>{copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}</button>
-            <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}><span style={{ fontSize: 14 }}>💬</span> WhatsApp</a>
-          </div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <button className="btn btn-pri btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={copyLink}>{copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}</button>
+          <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}><span style={{ fontSize: 14 }}>💬</span> WhatsApp</a>
         </div>
       ) : (
         <div className="muted small" style={{ marginBottom: 14 }}>Public link unavailable — recommender hasn't set a username yet.</div>
@@ -2275,7 +2179,6 @@ function RecoLinkSharePopover({ url, anchorEl, copied, onCopy, onClose }) {
       <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
         <Share2 size={15} color="var(--accent)" /> Share this idea
       </div>
-      <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 9, padding: '7px 9px', fontSize: 11, color: 'var(--muted)', marginBottom: 10, wordBreak: 'break-all', lineHeight: 1.4, userSelect: 'all' }}>{url}</div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button className="btn btn-pri btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={onCopy}>{copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}</button>
         <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}><span style={{ fontSize: 14 }}>💬</span> WhatsApp</a>
@@ -2987,9 +2890,14 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
           {/* Share */}
           <div style={{position:'relative'}}>
             <button className="iconbtn" title="Share" onClick={e=>{e.stopPropagation();handleShareClick(e);}} style={{width:32,height:32}}><Share2 size={14}/></button>
-            {showShare&&<ReceivedSharePopover reco={r} fromUsername={shareUsername} anchorEl={shareAnchor}
-              onForward={()=>setShowShare(false)}
-              onClose={()=>{ setShowShare(false); setShareAnchor(null); }}/>}
+            {showShare && (
+              <IdeaSharePopover
+                reco={r} username={shareUsername} contacts={contacts} groups={groups}
+                anchorEl={shareAnchor}
+                onSend={(targets)=>dbForwardReco(r.id, me?.id, targets)}
+                onClose={()=>{ setShowShare(false); setShareAnchor(null); }}
+              />
+            )}
           </div>
           {/* Bookmark */}
           <button className={"iconbtn"+(isTracked?' on-like':'')} title={isTracked?'Remove from tracked':'Track'}

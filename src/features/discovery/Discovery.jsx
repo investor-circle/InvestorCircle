@@ -29,6 +29,7 @@ import {
 } from "../../services/api/profileApi";
 import {
   computeIci,
+  forwardRecommendation as dbForwardReco,
   getConsensusRecosPublic as dbGetConsensusRecosPublic,
   getTickerRecos as dbGetTickerRecos,
   updateDelivery as dbUpdateDelivery
@@ -38,7 +39,7 @@ import {
   trackReco as dbTrackReco
 } from "../../services/api/engagementApi";
 import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
-import { FeedCard, InvestedToggle, MakeRecoModal, ReceivedSharePopover } from "../recommendations/Recommendations";
+import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal } from "../recommendations/Recommendations";
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
 import { fetchPublicProfileInfo, openProfile } from "../../utils/navigation";
@@ -61,7 +62,7 @@ const FRESH_WINDOW_MS = 48 * 60 * 60 * 1000;
    Like / Bookmark / Mark-invested / Share all call the same handlers and
    API functions FeedCard uses; Comment is a lightweight entry point that
    opens the same detail page (where the comment thread lives). ── */
-function FreshIdeaCard({ r, contacts, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, ici }) {
+function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, ici }) {
   const [recommenderInfo, setRecommenderInfo] = useState(null); // { username, isSebiApproved }
   const [shareAnchor, setShareAnchor] = useState(null);
   const [showShare, setShowShare] = useState(false);
@@ -199,8 +200,14 @@ function FreshIdeaCard({ r, contacts, me, tracked, toggleTrack, setRecsReceived,
         {(r.commentCount||0)>0 && <span style={{fontSize:10,fontWeight:700,color:'var(--muted)'}}>{r.commentCount}</span>}
         <div style={{position:'relative'}}>
           <button className="iconbtn" title="Share" onClick={handleShareClick} style={{width:26,height:26}}><Share2 size={12}/></button>
-          {showShare && <ReceivedSharePopover reco={r} fromUsername={username} anchorEl={shareAnchor}
-            onForward={()=>setShowShare(false)} onClose={()=>{ setShowShare(false); setShareAnchor(null); }}/>}
+          {showShare && (
+            <IdeaSharePopover
+              reco={r} username={username} contacts={contacts} groups={groups}
+              anchorEl={shareAnchor}
+              onSend={(targets)=>dbForwardReco(r.id, me?.id, targets)}
+              onClose={()=>{ setShowShare(false); setShareAnchor(null); }}
+            />
+          )}
         </div>
         <button className={"iconbtn"+(isTracked?' on-like':'')} title={isTracked?'Remove from tracked':'Track'}
           onClick={()=>toggleTrack?.(r.id)}
@@ -246,7 +253,7 @@ function WidgetEmptyState({ icon, title, sub, setPage }) {
   );
 }
 
-export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onViewAll, setPage }) {
+export function FreshIdeasWidget({ recsReceived, contacts, groups, me, tracked, toggleTrack, setRecsReceived, setPublicFeedRecos, setNetworkEngagementRecos, onViewAll, setPage }) {
   const fresh = useMemo(() => [...recsReceived].filter(r=>!r.hidden)
     .sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5), [recsReceived]);
 
@@ -281,7 +288,7 @@ export function FreshIdeasWidget({ recsReceived, contacts, me, tracked, toggleTr
           />
         ) : (<>
           {fresh.map(r => (
-            <FreshIdeaCard key={r.id} r={r} contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+            <FreshIdeaCard key={r.id} r={r} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
               setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
               ici={iciScores[r.from]}/>
           ))}
@@ -1094,7 +1101,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             than a blank widget column. */}
         {feedLoading ? <FeedBrewingState/> : (<>
         {/* Widget #1 — Fresh Ideas (network + public platform) */}
-        <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+        <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
           setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
           setPage={setPage}
           onViewAll={()=>{ if (isMobile) setMobileFeedTab('feed'); }}/>
