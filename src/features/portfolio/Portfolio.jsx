@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   TrendingUp,
   TrendingDown,
@@ -6,7 +6,7 @@ import {
   X,
   ChevronRight,
   Search,
-  Filter,
+  SlidersHorizontal,
   ArrowUpDown,
   Trash2,
   Upload,
@@ -26,7 +26,7 @@ import {
   getConsensusRecosAll as dbGetConsensusRecosAll
 } from "../../services/api/recommendationsApi";
 import { getDailyPrices, byTicker, priceKey } from "../../services/api/pricingApi";
-import { ConsensusBar, InstrumentSearch, SortTh, StrengthDot } from "../../components/common";
+import { ConsensusBar, InstrumentSearch, SmallAnchoredPopover, SortTh, StrengthDot } from "../../components/common";
 import { SecurityQuickPanel } from "../discovery/Discovery";
 import { PanPullModal } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
@@ -42,6 +42,10 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
   const [tab, setTab] = useState('all'); // all | bullish | neutral | bearish
   const [q, setQ] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const filterBtnRef = useRef(null);
+  const sortBtnRef   = useRef(null);
   const [classFilter, setClassFilter] = useState('Stock'); // default to the common case; "All asset classes" is one click away
   const [sort, setSort] = useState({ key: 'value', dir: 'desc' });
   const [refreshKey, setRefreshKey] = useState(0); // bump to force-reload consensus data, independent of holdings changing
@@ -347,40 +351,43 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
       {/* Main grid: table + quick panel — stacks on mobile */}
       <div style={{display:'grid',gridTemplateColumns:selected&&!isMobile?'1fr 340px':'1fr',gap:16,alignItems:'start'}}>
         <div className="card">
+          {/* Header + search/filter/sort icons — same icon-only pattern as
+              the public-profile Investment Ideas list (SmallAnchoredPopover
+              for filter/sort, search toggling a full-width box below). */}
           <div className="card-head">
             <span style={{display:'flex',alignItems:'center',gap:8}}><BarChart2 size={15}/> My Holdings — Market Consensus Overlay</span>
-            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-              {searchOpen ? (
-                <div className="searchbox" style={{width:170}}>
-                  <Search size={13} color="var(--muted)"/>
-                  <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
-                    onBlur={()=>{ if(!q.trim()) setSearchOpen(false); }}
-                    placeholder="Search symbol or name…"/>
-                </div>
-              ) : (
-                <button className="iconbtn" title="Search holdings" onClick={()=>setSearchOpen(true)}><Search size={15}/></button>
-              )}
+            <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+              <button className={"icon-btn"+(searchOpen?" active":"")} style={{width:32,height:32}} title="Search holdings" onClick={()=>setSearchOpen(v=>!v)}><Search size={14}/></button>
               {assetClassOptions.length>1 && (
-                <div style={{display:'flex',alignItems:'center',gap:4}} title="Filter by asset class">
-                  <Filter size={13} color="var(--muted)"/>
-                  <select className="inline-select sm" value={classFilter} onChange={e=>setClassFilter(e.target.value)}>
-                    <option value="all">All classes</option>
-                    {assetClassOptions.map(c=><option key={c} value={c}>{c}</option>)}
-                  </select>
+                <div style={{position:'relative'}}>
+                  <button ref={filterBtnRef} className={"icon-btn"+(classFilterActive?" active":"")} style={{width:32,height:32}} title="Filter by asset class" onClick={()=>setFilterOpen(v=>!v)}><SlidersHorizontal size={14}/></button>
+                  {filterOpen && (
+                    <SmallAnchoredPopover anchorEl={filterBtnRef.current} onClose={()=>setFilterOpen(false)}>
+                      <div className="cap" style={{marginBottom:6}}>Asset class</div>
+                      <select className="inline-select sm" style={{width:'100%'}} value={classFilter} onChange={e=>setClassFilter(e.target.value)}>
+                        <option value="all">All classes</option>
+                        {assetClassOptions.map(c=><option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </SmallAnchoredPopover>
+                  )}
                 </div>
               )}
-              <div style={{display:'flex',alignItems:'center',gap:4}} title="Sort holdings">
-                <ArrowUpDown size={13} color="var(--muted)"/>
-                <select className="inline-select sm" value={`${sort.key}:${sort.dir}`}
-                  onChange={e=>{ const [key,dir]=e.target.value.split(':'); setSort({key,dir}); }}>
-                  <option value="value:desc">Value (high→low)</option>
-                  <option value="value:asc">Value (low→high)</option>
-                  <option value="gain:desc">Gain (high→low)</option>
-                  <option value="gain:asc">Gain (low→high)</option>
-                  <option value="sym:asc">Symbol (A→Z)</option>
-                  <option value="consensus:desc">Consensus (bullish first)</option>
-                  <option value="strength:desc">Strength (high→low)</option>
-                </select>
+              <div style={{position:'relative'}}>
+                <button ref={sortBtnRef} className={"icon-btn"+(sort.key!=='value'||sort.dir!=='desc'?" active":"")} style={{width:32,height:32}} title="Sort holdings" onClick={()=>setSortOpen(v=>!v)}><ArrowUpDown size={14}/></button>
+                {sortOpen && (
+                  <SmallAnchoredPopover anchorEl={sortBtnRef.current} onClose={()=>setSortOpen(false)}>
+                    {[['value:desc','Value (high→low)'],['value:asc','Value (low→high)'],['gain:desc','Gain (high→low)'],['gain:asc','Gain (low→high)'],['sym:asc','Symbol (A→Z)'],['consensus:desc','Consensus (bullish first)'],['strength:desc','Strength (high→low)']].map(([val,label])=>{
+                      const [key,dir] = val.split(':');
+                      const active = sort.key===key && sort.dir===dir;
+                      return (
+                        <div key={val} onClick={()=>{setSort({key,dir});setSortOpen(false);}}
+                          style={{padding:'8px 9px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:active?700:500,color:active?'var(--accent-ink)':'var(--ink)',background:active?'var(--accent-soft)':'transparent'}}>
+                          {label}
+                        </div>
+                      );
+                    })}
+                  </SmallAnchoredPopover>
+                )}
               </div>
             </div>
           </div>
@@ -391,6 +398,13 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
                   <button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)}>{l}</button>
                 ))}
               </div>
+            </div>
+          )}
+          {searchOpen && (
+            <div className="searchbox" style={{margin:'12px 16px 0'}}>
+              <Search size={13} color="var(--muted)"/>
+              <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search symbol or name…" style={{fontSize:13}}/>
+              {q && <button onClick={()=>setQ('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',display:'flex'}}><X size={13}/></button>}
             </div>
           )}
           {holdings.length===0?(

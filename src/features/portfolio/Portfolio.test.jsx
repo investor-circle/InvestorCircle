@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, fireEvent } from "@testing-library/react";
 import { PortfolioIntelligencePage } from "./Portfolio.jsx";
 
 // useIsMobile (src/hooks/index.js) reads window.matchMedia — jsdom provides
@@ -57,5 +57,31 @@ describe("PortfolioIntelligencePage", () => {
     setViewport(true);
     const { container } = render(<PortfolioIntelligencePage holdings={cryptoOnlyHoldings} {...noopProps} />);
     expect(container.textContent).toContain("BTC");
+  });
+
+  // The holdings-card header's search/filter/sort are icon-only buttons
+  // that open either an inline search box or a SmallAnchoredPopover
+  // (portalled to document.body) — exercise the actual click interactions,
+  // not just the initial render, since that's the new code this pass.
+  it("search icon toggles a search input open", () => {
+    const { getByTitle, queryByPlaceholderText } = render(<PortfolioIntelligencePage holdings={holdings} {...noopProps} />);
+    expect(queryByPlaceholderText("Search symbol or name…")).toBeNull();
+    fireEvent.click(getByTitle("Search holdings"));
+    expect(queryByPlaceholderText("Search symbol or name…")).not.toBeNull();
+  });
+
+  it("filter icon opens a popover with the asset-class select", () => {
+    const { getByTitle, queryByText } = render(<PortfolioIntelligencePage holdings={holdings} {...noopProps} />);
+    expect(queryByText("Asset class")).toBeNull();
+    fireEvent.click(getByTitle("Filter by asset class"));
+    expect(queryByText("Asset class")).not.toBeNull();
+  });
+
+  it("sort icon opens a popover with sort options, and picking one closes it", () => {
+    const { getByTitle, queryByText, getByText } = render(<PortfolioIntelligencePage holdings={holdings} {...noopProps} />);
+    fireEvent.click(getByTitle("Sort holdings"));
+    expect(queryByText("Gain (high→low)")).not.toBeNull();
+    fireEvent.click(getByText("Gain (high→low)"));
+    expect(queryByText("Symbol (A→Z)")).toBeNull(); // popover closed after picking an option
   });
 });
