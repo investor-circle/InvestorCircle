@@ -85,7 +85,7 @@ import {
 import {
   getSharingPrefs
 } from "./services/api/sharingApi";
-import { ProfileErrorBoundary } from "./components/common";
+import { ProfileErrorBoundary, SectionErrorBoundary } from "./components/common";
 import { CONTACT_COLORS, DEFAULT_CLASSES, HOLDINGS } from "./constants/app";
 // Admin screens are code-split into their own chunk: only admin-role users
 // ever navigate here, so investors never pay for this bundle weight.
@@ -1686,7 +1686,7 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds} initTab={homeInitTab} onInitTabConsumed={()=>setHomeInitTab(null)}/>}
+            {isInv && page==="home"      && <SectionErrorBoundary label="Home feed"><HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds} initTab={homeInitTab} onInitTabConsumed={()=>setHomeInitTab(null)}/></SectionErrorBoundary>}
             {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
             {isInv && showDiscover && <DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/>}
             {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
@@ -1703,7 +1703,7 @@ export default function App() {
                 onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}
                 initTab={networkInitTab} onInitTabConsumed={()=>setNetworkInitTab(null)}
                 trackingCounts={trackingCounts} onTrackingCountsChange={setTrackingCounts}/>}
-            {isInv && page==="recs"      && <Recommendations
+            {isInv && page==="recs"      && <SectionErrorBoundary label="Ideas"><Recommendations
                 recsReceived={recsReceived} setRecsReceived={setRecsReceived}
                 recsMade={recsMade} setRecsMade={setRecsMade}
                 contacts={contacts} groups={groups}
@@ -1711,7 +1711,7 @@ export default function App() {
                 initFilter={recoInit} holdings={holdings} me={ME}
                 tracked={tracked} toggleTrack={toggleTrack}
                 globalSearch={globalSearch}
-                onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/>}
+                onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/></SectionErrorBoundary>}
             {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/>}
             {isInv && page==="about"        && <AboutPage/>}
             {isInv && page==="contact"      && <ContactPage setPage={setPage}/>}

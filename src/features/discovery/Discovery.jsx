@@ -39,7 +39,7 @@ import {
   trackReco as dbTrackReco,
   getMyTrackedRecos as dbGetMyTrackedRecos
 } from "../../services/api/engagementApi";
-import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
+import { ConsensusBar, ConvBadge, InstrumentSearch, SectionErrorBoundary, SparkLine, WidgetHeader } from "../../components/common";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
@@ -1158,11 +1158,17 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             (or quickly switches to before data arrives) sees it rather
             than a blank widget column. */}
         {feedLoading ? <FeedBrewingState/> : (<>
-        {/* Widget #1 — Fresh Ideas (network + public platform) */}
-        <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
-          setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
-          setPage={setPage}
-          onViewAll={()=>{ if (isMobile) setMobileFeedTab('feed'); }}/>
+        {/* Widget #1 — Fresh Ideas (network + public platform).
+            Each Pulse widget gets its own error boundary so one widget's
+            bug shows a small inline "failed to load" card instead of
+            blanking the whole Pulse column (or, without any boundary
+            above HomeFeed at all, the whole app). */}
+        <SectionErrorBoundary label="Fresh Ideas">
+          <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
+            setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
+            setPage={setPage}
+            onViewAll={()=>{ if (isMobile) setMobileFeedTab('feed'); }}/>
+        </SectionErrorBoundary>
 
         {/* Widget #2 — Trending on MIC.
             Fed publicFeedRecos (the platform-wide public pool), not
@@ -1171,20 +1177,26 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             to the Feed, which is where public platform ideas live — on
             mobile that means switching tabs, on desktop the feed column
             is now on the right, so we scroll it back to the top. */}
-        <TrendingWidget publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos}
-          contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
-          trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}
-          setPage={setPage}
-          onSeeAll={()=>{
-            if (isMobile) setMobileFeedTab('feed');
-            else window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}/>
+        <SectionErrorBoundary label="Trending on MIC">
+          <TrendingWidget publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos}
+            contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+            trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}
+            setPage={setPage}
+            onSeeAll={()=>{
+              if (isMobile) setMobileFeedTab('feed');
+              else window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}/>
+        </SectionErrorBoundary>
 
         {/* Widget #3 — What You Missed */}
-        <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} toggleTrack={toggleTrack} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
+        <SectionErrorBoundary label="What You Missed">
+          <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} toggleTrack={toggleTrack} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
+        </SectionErrorBoundary>
 
         {/* Widget #4 — Tracked Summary Donut (My Tracked) */}
-        <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
+        <SectionErrorBoundary label="My Tracked">
+          <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
+        </SectionErrorBoundary>
         </>)}
 
         {/* ── Market Insights + Invite Friends — compact, side-by-side clickable
@@ -1237,8 +1249,10 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             </div>
           : (<>
               {visibleFeed.map(r=>(
-                <FeedCard key={r.id} r={r} me={me} contacts={contacts} groups={groups}
-                  setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} tracked={tracked} toggleTrack={toggleTrack} onOpenSecurity={onOpenSecurity}/>
+                <SectionErrorBoundary key={r.id} label="This idea">
+                  <FeedCard r={r} me={me} contacts={contacts} groups={groups}
+                    setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} tracked={tracked} toggleTrack={toggleTrack} onOpenSecurity={onOpenSecurity}/>
+                </SectionErrorBoundary>
               ))}
               {!globalSearch && loadedCount < feedRecs.length && (
                 <div ref={sentinelRef} style={{height:8,textAlign:'center',padding:'12px 0',color:'var(--muted)',fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>

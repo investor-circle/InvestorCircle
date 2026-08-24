@@ -246,6 +246,37 @@ export class ProfileErrorBoundary extends React.Component {
   }
 }
 
+/**
+ * Generic render-error boundary — catches a thrown error anywhere in its
+ * subtree and shows a small inline "X failed to load" card with the error
+ * message instead of taking down everything above it. Without a boundary
+ * like this, an uncaught render error unmounts React all the way up to
+ * whichever ancestor (if any) does have one — with nothing between a page
+ * section and the app root, that section's crash blanks the entire app.
+ * `label` names the section in the fallback text (e.g. "Home feed").
+ */
+export class SectionErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(err) { return { error: err }; }
+  componentDidCatch(err, info) { console.error(`${this.props.label || 'Section'} render error:`, err, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{padding:'24px 18px',textAlign:'center',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16}}>
+          <AlertTriangle size={26} color="var(--loss)" style={{marginBottom:10}}/>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:6,color:'var(--ink)'}}>{this.props.label || 'This section'} failed to load</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Try refreshing the page. If it keeps happening, this detail may help:</div>
+          <div style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:8,
+              padding:'8px 12px',fontSize:11,fontFamily:'monospace',color:'var(--loss)',textAlign:'left',wordBreak:'break-all'}}>
+            {this.state.error.message}
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function WidgetHeader({ icon: Icon, emoji, label, action, onAction }) {
   return (
     <div style={{background:'var(--grad)',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
