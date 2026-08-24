@@ -301,7 +301,19 @@ export function SmallAnchoredPopover({ anchorEl, onClose, children, width=200 })
     // the popover could only ever be dismissed by clicking elsewhere.
     const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && !anchorEl?.contains(e.target)) onClose(); };
     setTimeout(() => document.addEventListener('mousedown', h), 0);
-    return () => document.removeEventListener('mousedown', h);
+    // The popover is `position:fixed`, computed once from the anchor
+    // button's rect at open time — it does not track the button as the page
+    // scrolls (the anchor sits in normal document flow and moves; the fixed
+    // popover doesn't), so it visually detaches from its trigger and is left
+    // floating over unrelated content. Closing on any scroll (capture: true,
+    // since scroll doesn't bubble) is the same fix outside-click already
+    // applies for the equivalent "this popover no longer makes sense" case.
+    const onScroll = () => onClose();
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', h);
+      window.removeEventListener('scroll', onScroll, true);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!pos) return null;

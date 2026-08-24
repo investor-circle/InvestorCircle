@@ -28,7 +28,6 @@ import {
   Info,
   Bookmark
 } from "lucide-react";
-import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 import { useAuth } from "./AuthContext";
 import { track } from "./firebase";
 import LoginPage from "./LoginPage";
@@ -420,7 +419,6 @@ export default function App() {
     maxGroupMembers:8, groupCreationPolicy:"all",
   });
   const [providers, setProviders] = useState(["Fidelity","Vanguard","Robinhood","Coinbase","Schwab","E*TRADE"]);
-  const [priceRefresh, setPriceRefresh] = useState({ busy:false, lastAt:null, errors:[] });
   const [pendingInvites, setPendingInvites] = useState([]);
 
   // Derived: confirmed contacts only (accepted connections, shaped for UI backward compat)
@@ -478,20 +476,6 @@ export default function App() {
     } else {
       setTracked(s => new Set([...s, recoId]));
       if (user?.uid) dbTrackReco(recoId).catch(console.warn);
-    }
-  };
-
-  const refreshPrices = async () => {
-    if (!isFinnhubConfigured) return;                          // boolean, not a function
-    setPriceRefresh({ busy:true, lastAt:null, errors:[] });
-    try {
-      const { results, errors } = await fetchLivePrices(holdings); // takes full holdings array
-      setHoldings(hs => hs.map(h =>
-        results[h.sym]?.price != null ? {...h, price:results[h.sym].price} : h
-      ));
-      setPriceRefresh({ busy:false, lastAt:new Date(), errors });
-    } catch(e) {
-      setPriceRefresh({ busy:false, lastAt:null, errors:[e.message] });
     }
   };
 
@@ -1697,7 +1681,7 @@ export default function App() {
             {isInv && page==="home"      && <SectionErrorBoundary label="Home feed"><HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds} initTab={homeInitTab} onInitTabConsumed={()=>setHomeInitTab(null)}/></SectionErrorBoundary>}
             {isInv && showInvite && <SectionErrorBoundary label="Invite"><InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/></SectionErrorBoundary>}
             {isInv && showDiscover && <SectionErrorBoundary label="Discover"><DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/></SectionErrorBoundary>}
-            {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/></SectionErrorBoundary>}
+            {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} onOpenSecurity={openSecurity} setPage={setPage}/></SectionErrorBoundary>}
             {isInv && page==="market_intel" && <SectionErrorBoundary label="Market Insights"><MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
             {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity} onBack={()=>setPage(secInsightsFrom)} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
             {isInv && page==="discover"     && <SectionErrorBoundary label="Discover People"><DiscoverPeoplePage ME={ME}/></SectionErrorBoundary>}

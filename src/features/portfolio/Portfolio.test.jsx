@@ -21,7 +21,7 @@ const holdings = [
 const cryptoOnlyHoldings = [
   { id: "h3", sym: "BTC", name: "Bitcoin", type: "Crypto", acct: "manual", acctName: "Manual", sh: 0.1, cost: 3000000, price: 3200000, isin: "", sector: "", currency: "INR", purchaseDate: "2023-01-01", source: "manual" },
 ];
-const noopProps = { setHoldings: () => {}, contacts: [], me: { id: "me" }, refreshPrices: () => {}, priceRefresh: null, onOpenSecurity: () => {}, setPage: () => {} };
+const noopProps = { setHoldings: () => {}, contacts: [], me: { id: "me" }, onOpenSecurity: () => {}, setPage: () => {} };
 
 describe("PortfolioIntelligencePage", () => {
   beforeEach(() => { setViewport(false); });

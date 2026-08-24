@@ -59,6 +59,7 @@ import { pathToFileURL } from 'url';
 import {
   fetchDailySeries,
   fetchPrice,
+  fetchFundDailySeriesByIsin,
   mapWithConcurrency,
 } from '../api/_lib/priceProvider.js';
 
@@ -102,6 +103,15 @@ const SERIES_RANGE = '7d';
 const IN_SCOPE_ASSET_CLASSES = ['Equity', 'ETF'];
 const IN_SCOPE_SET = new Set(IN_SCOPE_ASSET_CLASSES.map(c => c.toLowerCase()));
 function isInScope(assetClass) { return IN_SCOPE_SET.has(String(assetClass || '').trim().toLowerCase()); }
+
+// Mutual funds are priced through a completely separate identity/provider
+// path (ISIN -> Yahoo search -> Yahoo chart, see runFundPricing() below),
+// not the ticker+exchange path IN_SCOPE_ASSET_CLASSES gates — a fund has no
+// exchange ticker at all. This is just the asset_class label the minted
+// `instruments` rows and instrument_daily_prices snapshots carry, matching
+// src/constants/app.js's DEFAULT_CLASSES so the same label means the same
+// thing everywhere in the app.
+const FUND_ASSET_CLASS = 'Mutual Funds';
 
 // Exchange fallback order for sourcing a price. NSE is deeper/more liquid and
 // is this app's default everywhere else, so it is tried first for every
@@ -233,29 +243,81 @@ export async function resolvePrice(symbol, exchange, isoDate, bhavMap) {
  * so a stock referenced by 50 ideas across both NSE and BSE tags appears
  * exactly ONCE, and is therefore fetched exactly once.
  *
+ * ALSO includes every Stock/ETF ticker held in ANYONE's portfolio
+ * (portfolio_holdings), even one with zero recommendations ever made or
+ * tracked on it — otherwise a ticker a user only ever added manually to
+ * their portfolio (never recommended, never tracked) would never enter the
+ * universe at all, and Portfolio Intelligence would have no batch price to
+ * read for it. These rows contribute 0 to active_idea_count (portfolio
+ * holdings aren't "ideas"); that count is ordering/logging only, never a
+ * filter.
+ *
  * ALL asset classes are returned; the caller splits them, so an out-of-scope
  * class is still refreshed on ic_recommendations and merely skips the history
  * table. Ported from the retired collector's getActiveInstrumentUniverse().
  */
 async function getActiveInstrumentUniverse(db) {
   const { rows } = await db.query(`
+    WITH reco_universe AS (
+      SELECT
+        UPPER(TRIM(r.ticker))                               AS symbol,
+        COALESCE(NULLIF(TRIM(r.asset_class), ''), 'Equity') AS asset_class,
+        NULLIF(TRIM(r.asset_name), '')                      AS asset_name,
+        (r.exit_signal = false AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)) AS is_active
+      FROM ic_recommendations r
+      WHERE r.ticker IS NOT NULL
+        AND TRIM(r.ticker) <> ''
+        AND (
+          (r.exit_signal = false AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE))
+          OR EXISTS (SELECT 1 FROM recommendation_tracking rt WHERE rt.reco_id = r.id)
+        )
+    ),
+    portfolio_universe AS (
+      SELECT
+        UPPER(TRIM(h.sym))                          AS symbol,
+        CASE WHEN h.type = 'ETF' THEN 'ETF' ELSE 'Equity' END AS asset_class,
+        NULLIF(TRIM(h.name), '')                    AS asset_name,
+        false                                        AS is_active
+      FROM portfolio_holdings h
+      WHERE h.type IN ('Stock', 'ETF')
+        AND h.sym IS NOT NULL
+        AND TRIM(h.sym) <> ''
+    ),
+    combined AS (
+      SELECT * FROM reco_universe
+      UNION ALL
+      SELECT * FROM portfolio_universe
+    )
     SELECT
-      UPPER(TRIM(r.ticker))                                AS symbol,
-      COALESCE(NULLIF(TRIM(r.asset_class), ''), 'Equity')  AS asset_class,
-      MIN(NULLIF(TRIM(r.asset_name), ''))                  AS asset_name,
-      COUNT(*) FILTER (
-        WHERE r.exit_signal = false
-          AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)
-      )::int                                               AS active_idea_count
-    FROM ic_recommendations r
-    WHERE r.ticker IS NOT NULL
-      AND TRIM(r.ticker) <> ''
-      AND (
-        (r.exit_signal = false AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE))
-        OR EXISTS (SELECT 1 FROM recommendation_tracking rt WHERE rt.reco_id = r.id)
-      )
+      symbol, asset_class,
+      MIN(asset_name)                       AS asset_name,
+      COUNT(*) FILTER (WHERE is_active)::int AS active_idea_count
+    FROM combined
     GROUP BY 1, 2
     ORDER BY active_idea_count DESC, symbol ASC
+  `);
+  return rows;
+}
+
+/**
+ * Every DISTINCT mutual fund ISIN held in ANYONE's portfolio
+ * (portfolio_holdings.type = 'Fund'). CAS-imported fund holdings carry an
+ * ISIN (see api/cas.py); manually-added fund holdings may not, and are
+ * simply excluded here — there is no ISIN to resolve a Yahoo symbol from,
+ * same rule the ticker-based universe already applies (a symbol/identity it
+ * can't fetch on is dropped rather than guessed at).
+ */
+async function getFundInstrumentUniverse(db) {
+  const { rows } = await db.query(`
+    SELECT
+      UPPER(TRIM(h.isin))                   AS isin,
+      MIN(NULLIF(TRIM(h.name), ''))         AS name
+    FROM portfolio_holdings h
+    WHERE h.type = 'Fund'
+      AND h.isin IS NOT NULL
+      AND TRIM(h.isin) <> ''
+    GROUP BY 1
+    ORDER BY 1
   `);
   return rows;
 }
@@ -629,6 +691,85 @@ async function runTask1(db, bhavMap) {
   return { instruments: entries.length, priced: pricedInstruments, failed: failedInstruments, updatedRecos, stored, priceMap };
 }
 
+/**
+ * Resolve ONE mutual fund's NAV series via its ISIN. Returns null (not a
+ * throw) on any failure — Yahoo not covering a given fund, or the ISIN not
+ * resolving to a symbol at all, is an ordinary outcome (same as an
+ * equity/ETF the provider chain can't price), not a run-stopping error.
+ */
+async function resolveFundPrice(isin) {
+  try {
+    const { series, currency, yahooSymbol } = await fetchFundDailySeriesByIsin(isin, SERIES_RANGE);
+    const latest = series[series.length - 1];
+    const prev   = series.length > 1 ? series[series.length - 2] : null;
+    return { date: latest.date, close: latest.close, currency: currency || 'INR', source: 'yahoo_finance', sourceExchange: null, prev, yahooSymbol };
+  } catch (e) {
+    console.warn(`  [fund] ${isin}: ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * TASK 1b — mutual fund NAV pricing, ISIN-based.
+ *
+ * A parallel, standalone version of Task 1's "mint instrument rows -> fetch
+ * once -> persist snapshots" shape, but for portfolio-held mutual funds:
+ *   - identity is (ISIN, 'Mutual Funds') instead of (ticker, asset_class) —
+ *     funds have no exchange ticker, so ISIN is the only stable identifier
+ *     CAS statements give us (see api/cas.py);
+ *   - the fetch is Yahoo-search-by-ISIN -> Yahoo chart, not the NSE/BSE
+ *     ticker candidate chain;
+ *   - there is no `current_price` side to update — ic_recommendations rows
+ *     are never keyed by ISIN, so unlike Task 1 this only ever writes
+ *     instrument_daily_prices, read back by Portfolio Intelligence via the
+ *     same getDailyPrices()/priceKey() plumbing every other holding uses,
+ *     keyed by the holding's ISIN instead of its ticker for Fund-type rows.
+ */
+async function runFundPricing(db) {
+  const universe = await getFundInstrumentUniverse(db);
+  console.log(`  Found ${universe.length} distinct mutual fund ISIN(s) held in portfolios`);
+  if (!universe.length) return { total: 0, priced: 0, failed: 0, stored: 0 };
+
+  const canonical = await resolveInstruments(
+    db,
+    universe.map(u => ({ symbol: u.isin, asset_class: FUND_ASSET_CLASS, asset_name: u.name }))
+  );
+  const byIsin = new Map(canonical.map(c => [c.symbol, c]));
+
+  const settled = await mapWithConcurrency(universe, FETCH_CONCURRENCY, u => resolveFundPrice(u.isin));
+
+  let priced = 0, failed = 0;
+  const snapshots = [];
+  for (const outcome of settled) {
+    if (!outcome) continue;
+    const { item, value, error } = outcome;
+    if (error || !value || !(value.close > 0)) {
+      failed++;
+      if (error) console.warn(`  Failed fund ${item.isin}: ${error.message}`);
+      continue;
+    }
+    const inst = byIsin.get(item.isin);
+    if (!inst) { failed++; continue; }
+    priced++;
+    snapshots.push({
+      instrumentId:   inst.id,
+      date:           value.date,
+      close:          value.close,
+      currency:       value.currency || 'INR',
+      source:         value.source,
+      sourceExchange: value.sourceExchange,
+      prevClose:      value.prev ? value.prev.close : null,
+      prevDate:       value.prev ? value.prev.date  : null,
+    });
+  }
+
+  await backfillPrevFromDb(db, snapshots);
+  const stored = await persistSnapshots(db, snapshots);
+  console.log(`  Done: ${priced} mutual fund(s) priced, ${failed} failed`);
+  console.log(`        ${stored} instrument_daily_prices row(s) upserted (Mutual Funds, ISIN-based)`);
+  return { total: universe.length, priced, failed, stored };
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log(`\n=== InvestorCircle Price Stamp — ${TODAY_ISO} ===\n`);
@@ -653,6 +794,13 @@ async function main() {
   // "now", it cannot answer for a date that isn't today.
   console.log('\n[Task 1] Refreshing current_price for active recommendations and collecting instrument price history…');
   const task1 = await runTask1(db, bhavMap);
+
+  // Task 1b: mutual fund NAVs for portfolio holdings, ISIN-based — see
+  // runFundPricing()'s header for why this is a separate task rather than
+  // folded into Task 1 (different identity, different provider path, no
+  // current_price side-effect).
+  console.log('\n[Task 1b] Refreshing mutual fund NAVs (ISIN-based) for portfolio holdings…');
+  const fundTask = await runFundPricing(db);
 
   // Task 0: stamp reco_price for recommendations published without a price
   console.log('\n[Task 0] Stamping reco_price for new recommendations missing entry price…');
@@ -802,13 +950,15 @@ async function main() {
   console.log(`  Instruments priced       : ${task1.priced} / ${task1.instruments} (${task1.failed} failed)`);
   console.log(`  Active current_price set : ${task1.updatedRecos}`);
   console.log(`  Price-history rows       : ${task1.stored}`);
+  console.log(`  Mutual funds priced      : ${fundTask.priced} / ${fundTask.total} (${fundTask.failed} failed)`);
+  console.log(`  Fund price-history rows  : ${fundTask.stored}`);
   console.log(`  Expiry stamped           : ${expStamped}`);
   console.log(`  Exit backfilled          : ${exitStamped}`);
 }
 
 // Exported for local/offline validation harnesses; the CLI entry point below
 // is what GitHub Actions runs.
-export { runTask1, getActiveInstrumentUniverse, resolveInstruments, resolveInstrumentPrice, backfillPrevFromDb, persistSnapshots, isInScope, exchangesFor, notifyIdeaExpired, notifyIdeasExpiringToday };
+export { runTask1, runFundPricing, getActiveInstrumentUniverse, getFundInstrumentUniverse, resolveInstruments, resolveInstrumentPrice, resolveFundPrice, backfillPrevFromDb, persistSnapshots, isInScope, exchangesFor, notifyIdeaExpired, notifyIdeasExpiringToday };
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {

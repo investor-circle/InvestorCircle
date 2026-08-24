@@ -32,7 +32,7 @@ import { PanPullModal } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { computeConsensus } from "../../utils/format";
 
-export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, refreshPrices, priceRefresh, onOpenSecurity, setPage }) {
+export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me, onOpenSecurity, setPage }) {
   const isMobile = useIsMobile();
   const [recoMap, setRecoMap] = useState({}); // { ticker: [reco,...] }
   const [loading, setLoading] = useState(true);
@@ -138,6 +138,40 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
       .catch(e=>{ console.warn('recoMap SQL error:',e?.message||e); setLoading(false); });
   },[holdings.length, refreshKey]);
 
+  // Batch-priced (Equity/ETF/Mutual Fund) holdings are keyed by the nightly
+  // job's `instruments` identity — ticker for Stock/ETF, ISIN for Fund
+  // (mutual funds have no exchange ticker; CAS statements carry the ISIN
+  // instead — see scripts/stamp-prices.js's runFundPricing()). Other holding
+  // types (Crypto/Bond/REIT/Others) have no batch source at all and simply
+  // fall back to whatever price was last stamped on the holding itself
+  // (entry price for a fresh manual add, or the CAS-imported price/NAV).
+  const holdingAssetClass = (h) => h.type==='ETF' ? 'ETF' : h.type==='Fund' ? 'Mutual Funds' : 'Equity';
+  const holdingPriceIdentifier = (h) => h.type==='Fund' ? (h.isin||'').trim().toUpperCase() : (h.sym||'').trim().toUpperCase();
+
+  // "Since yesterday" daily price deltas AND the live price/value/gain shown
+  // per holding both come from the same Phase 9 instrument-price snapshots
+  // the nightly batch (scripts/stamp-prices.js) writes — the same table
+  // Pulse's My Tracked widget reads (src/services/api/pricingApi.js). This
+  // is deliberately NOT a client-triggered refresh: every user who opens
+  // Portfolio sees whatever the last nightly run stamped, with no button to
+  // click and no live provider call from the browser. A holding the batch
+  // has never priced yet (added just now, or an out-of-scope asset type)
+  // simply keeps showing its stored price until the next run picks it up.
+  const holdingIdKey = useMemo(
+    () => [...new Set(holdings.map(h=>holdingPriceIdentifier(h)).filter(Boolean))].sort().join(','),
+    [holdings]
+  );
+  const [dailyPrices, setDailyPrices] = useState(null);
+  useEffect(() => {
+    if (!holdingIdKey) { setDailyPrices(null); return; }
+    let cancelled = false;
+    getDailyPrices(holdingIdKey.split(','))
+      .then(rows => { if (!cancelled) setDailyPrices(byTicker(rows)); })
+      .catch(() => {}); // pricing unavailable degrades to stored/stale prices, not an error
+    return () => { cancelled = true; };
+  }, [holdingIdKey]);
+  const dailySnapshotFor = (h) => dailyPrices?.[priceKey(holdingPriceIdentifier(h), holdingAssetClass(h))] ?? null;
+
   const holdingsData = useMemo(()=>holdings.map(h=>{
     // Uppercase both sides so 'KPL' matches 'kpl' in recoMap
     const key    = (h.sym||'').toUpperCase().trim();
@@ -145,37 +179,17 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
     const circleR= allR.filter(r=>circleIds.includes(r.from));
     const community = computeConsensus(allR);
     const circle    = computeConsensus(circleR);
-    const value = (h.sh||0)*(h.price||0);
-    const gain  = h.cost>0?((h.price-h.cost)/h.cost*100):0;
-    return {...h, community, circle, value, gain, allR, circleR};
-  }),[holdings,recoMap,circleIds]);
+    const snap  = dailySnapshotFor(h);
+    const price = snap?.close!=null ? snap.close : (h.price||0);
+    const value = (h.sh||0)*price;
+    const gain  = h.cost>0?((price-h.cost)/h.cost*100):0;
+    return {...h, price, community, circle, value, gain, dailyChangePct: snap?.changePct ?? null, allR, circleR};
+  }),[holdings,recoMap,circleIds,dailyPrices]);
 
   const assetClassOptions = useMemo(
     () => [...new Set(holdingsData.map(h=>h.type).filter(Boolean))].sort(),
     [holdingsData]
   );
-
-  // "Since yesterday" daily price deltas — same Phase 9 instrument-price
-  // snapshots and (ticker, assetClass) keying Pulse's My Tracked widget
-  // uses (see src/services/api/pricingApi.js), so a holding's daily move
-  // here means exactly the same thing it does there. Only Equity/ETF have
-  // this history (see stamp-prices.js's IN_SCOPE_ASSET_CLASSES) — other
-  // holding types just never contribute a Daily Mover signal below.
-  const holdingAssetClass = (h) => h.type==='ETF' ? 'ETF' : 'Equity';
-  const holdingTickerKey = useMemo(
-    () => [...new Set(holdingsData.map(h=>(h.sym||'').trim().toUpperCase()).filter(Boolean))].sort().join(','),
-    [holdingsData]
-  );
-  const [dailyPrices, setDailyPrices] = useState(null);
-  useEffect(() => {
-    if (!holdingTickerKey) { setDailyPrices(null); return; }
-    let cancelled = false;
-    getDailyPrices(holdingTickerKey.split(','))
-      .then(rows => { if (!cancelled) setDailyPrices(byTicker(rows)); })
-      .catch(() => {}); // pricing unavailable degrades to no Daily Mover card, not an error
-    return () => { cancelled = true; };
-  }, [holdingTickerKey]);
-  const dailyChangeFor = (h) => dailyPrices?.[priceKey(h.sym, holdingAssetClass(h))]?.changePct ?? null;
 
   const bySignalTab = holdingsData.filter(h=>
     tab==='all'||
@@ -237,11 +251,7 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
     // bar for "worth a line in a daily digest."
     const DAILY_MOVER_THRESHOLD = 0.02;
     const dailyMover = holdingsData
-      .map(h => {
-        const pct = dailyChangeFor(h);
-        return pct!=null ? { ...h, dailyChangePct: pct } : null;
-      })
-      .filter(h => h && Math.abs(h.dailyChangePct)/100 >= DAILY_MOVER_THRESHOLD)
+      .filter(h => h.dailyChangePct!=null && Math.abs(h.dailyChangePct)/100 >= DAILY_MOVER_THRESHOLD)
       .sort((a,b)=>Math.abs(b.dailyChangePct)-Math.abs(a.dailyChangePct));
     const emerging = holdingsData.filter(h=>{
       const recent = (h.allR||[]).filter(r => r.created_at && (now - new Date(r.created_at)) < thirtyDays);
@@ -266,7 +276,7 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
       claim(emerging, 'emerging'),
     ].filter(Boolean);
     return { cards };
-  },[holdingsData, dailyPrices]);
+  },[holdingsData]);
 
   const SIGNAL_META = {
     strong:     { label:'Strong Conviction', color:'var(--gain)',  soft:'var(--gain-soft)' },
@@ -607,7 +617,7 @@ export function AddHoldingModal({ onClose, onAdd }) {
       acctName:  'Manual Portfolio',
       sh,
       cost,
-      price:     cost,   // use purchase price as proxy until live price refreshes
+      price:     cost,   // proxy until the nightly batch prices this ticker/ISIN
       isin:      selected?.isin || '',
       sector:    sector.trim(),
       currency,
