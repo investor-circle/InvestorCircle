@@ -38,7 +38,16 @@ export const ret = (r) => (r.priceAt && r.priceAt !== 0) ? (r.price - r.priceAt)
 
 export const calcTargetDate = (date, horizon) => {
   if (!date || !horizon) return null;
-  const d = new Date(date + "T00:00:00");
+  // `date` is a bare "YYYY-MM-DD" from most sources (e.g. mapReceivedRow),
+  // but some (public-feed/network-engagement rows select created_at AS
+  // date directly — see api/_lib/handlers/lookups.js) hand over a full ISO
+  // timestamp instead. Concatenating "T00:00:00" onto a timestamp produces
+  // a malformed string ("...Z T00:00:00"), which parses to an Invalid
+  // Date — and toISOString() on an Invalid Date THROWS ("Invalid time
+  // value"), not returns null. Slicing to the date portion first makes
+  // this robust to either input shape.
+  const d = new Date(String(date).slice(0, 10) + "T00:00:00");
+  if (isNaN(d)) return null;
   if (horizon==="<3m") d.setMonth(d.getMonth()+3);
   else if (horizon==="6m")  d.setMonth(d.getMonth()+6);
   else if (horizon==="12m") d.setMonth(d.getMonth()+12);
