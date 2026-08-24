@@ -278,19 +278,24 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
   return (
     <>
       {/* ── Compact header: just the title (the "Intelligence" eyebrow was
-           redundant with "Portfolio Intelligence" right below it) + the 3
-           CTAs in one row on the right. Old page-head + 4 bulky summary
-           cards ate ~250px before a single holding was visible. ── */}
+           redundant with "Portfolio Intelligence" right below it) — the old
+           page-head + 4 bulky summary cards ate ~250px before a single
+           holding was visible. The 3 CTAs sit on the right when there's
+           room; .page-head's own flex-wrap already drops the whole button
+           group to its own row under the title rather than squeezing in —
+           but that group must then stay ONE row itself (not further wrap
+           into 2-3 ragged lines), so it's nowrap + horizontally scrollable
+           as a last resort instead. ── */}
       <div className="page-head" style={{marginBottom:12}}>
         <div className="page-title">Portfolio Intelligence</div>
-        <div style={{display:'flex',gap:10,flexWrap:'wrap',justifyContent:'flex-end'}}>
-          {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)',marginRight:4}}/>}
-          <button className="btn btn-ghost btn-sm" title="Reload consensus data from latest ideas"
+        <div style={{display:'flex',gap:10,flexWrap:'nowrap',overflowX:'auto',justifyContent:'flex-end',WebkitOverflowScrolling:'touch'}}>
+          {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)',marginRight:4,flexShrink:0}}/>}
+          <button className="btn btn-ghost btn-sm" style={{flexShrink:0,whiteSpace:'nowrap'}} title="Reload consensus data from latest ideas"
             onClick={()=>setRefreshKey(k=>k+1)}>
             <RefreshCw size={13}/> Refresh
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={()=>setShowAddHolding(true)}><Plus size={13}/> Add Holding</button>
-          <button className="btn btn-soft btn-sm" onClick={()=>setShowManage(true)}><Upload size={13}/> Upload CAS</button>
+          <button className="btn btn-ghost btn-sm" style={{flexShrink:0,whiteSpace:'nowrap'}} onClick={()=>setShowAddHolding(true)}><Plus size={13}/> Add Holding</button>
+          <button className="btn btn-soft btn-sm" style={{flexShrink:0,whiteSpace:'nowrap'}} onClick={()=>setShowManage(true)}><Upload size={13}/> Upload CAS</button>
         </div>
       </div>
 
