@@ -210,10 +210,24 @@ export async function resolvePrice(symbol, exchange, isoDate, bhavMap) {
 
 // ── Task 1 support: the active-instrument universe ────────────────────────────
 /**
- * Every DISTINCT instrument referenced by at least one currently-active idea.
+ * Every DISTINCT instrument referenced by at least one currently-active idea,
+ * PLUS every instrument referenced by an idea that's still being tracked by
+ * at least one user even though the idea itself is closed/expired.
  *
  * "Active" is this codebase's existing lifecycle rule, unchanged:
  *     NOT exit_signal AND (target_date IS NULL OR target_date >= CURRENT_DATE)
+ *
+ * The tracked-but-closed half exists because My Tracked's "since yesterday"
+ * daily deltas (api/_lib/handlers/pricing.js `action=daily`, read from
+ * instrument_daily_prices) go stale the moment a ticker drops out of this
+ * universe — and before this addition, a ticker whose ONLY ideas had all
+ * been closed by their recommenders dropped out immediately, even for users
+ * still actively tracking one of those closed ideas. Users don't stop
+ * caring about a stock's daily move just because the recommender exited it.
+ * current_price on the underlying idea is deliberately NOT touched by this
+ * addition — Task 1's UPDATE below still re-applies the exit_signal/
+ * target_date filter itself, so a tracked-but-closed idea's current_price
+ * stays frozen at whatever it was, exactly as before.
  *
  * Dedup happens in SQL on (UPPER(TRIM(ticker)), asset_class) — NOT exchange —
  * so a stock referenced by 50 ideas across both NSE and BSE tags appears
@@ -226,15 +240,20 @@ export async function resolvePrice(symbol, exchange, isoDate, bhavMap) {
 async function getActiveInstrumentUniverse(db) {
   const { rows } = await db.query(`
     SELECT
-      UPPER(TRIM(ticker))                                AS symbol,
-      COALESCE(NULLIF(TRIM(asset_class), ''), 'Equity')  AS asset_class,
-      MIN(NULLIF(TRIM(asset_name), ''))                  AS asset_name,
-      COUNT(*)::int                                      AS active_idea_count
-    FROM ic_recommendations
-    WHERE ticker IS NOT NULL
-      AND TRIM(ticker) <> ''
-      AND exit_signal = false
-      AND (target_date IS NULL OR target_date >= CURRENT_DATE)
+      UPPER(TRIM(r.ticker))                                AS symbol,
+      COALESCE(NULLIF(TRIM(r.asset_class), ''), 'Equity')  AS asset_class,
+      MIN(NULLIF(TRIM(r.asset_name), ''))                  AS asset_name,
+      COUNT(*) FILTER (
+        WHERE r.exit_signal = false
+          AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)
+      )::int                                               AS active_idea_count
+    FROM ic_recommendations r
+    WHERE r.ticker IS NOT NULL
+      AND TRIM(r.ticker) <> ''
+      AND (
+        (r.exit_signal = false AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE))
+        OR EXISTS (SELECT 1 FROM recommendation_tracking rt WHERE rt.reco_id = r.id)
+      )
     GROUP BY 1, 2
     ORDER BY active_idea_count DESC, symbol ASC
   `);
@@ -444,7 +463,7 @@ async function persistSnapshots(db, rows) {
  */
 async function runTask1(db, bhavMap) {
   const allGroups = await getActiveInstrumentUniverse(db);
-  console.log(`  Found ${allGroups.length} distinct active instrument(s) across all asset classes`);
+  console.log(`  Found ${allGroups.length} distinct active-or-tracked instrument(s) across all asset classes`);
 
   const inScope  = allGroups.filter(g => isInScope(g.asset_class));
   const excluded = allGroups.filter(g => !isInScope(g.asset_class));
