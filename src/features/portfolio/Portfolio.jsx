@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   TrendingUp,
+  TrendingDown,
   Plus,
   X,
   ChevronRight,
+  Search,
   Trash2,
   Upload,
   Loader,
@@ -21,7 +23,8 @@ import {
 import {
   getConsensusRecosAll as dbGetConsensusRecosAll
 } from "../../services/api/recommendationsApi";
-import { ConsensusBar, InstrumentSearch, StrengthDot } from "../../components/common";
+import { getDailyPrices, byTicker, priceKey } from "../../services/api/pricingApi";
+import { ConsensusBar, InstrumentSearch, SortTh, StrengthDot } from "../../components/common";
 import { SecurityQuickPanel } from "../discovery/Discovery";
 import { PanPullModal } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
@@ -35,6 +38,9 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
   const [showManage, setShowManage] = useState(false);
   const [showAddHolding, setShowAddHolding] = useState(false);
   const [tab, setTab] = useState('all'); // all | bullish | neutral | bearish
+  const [q, setQ] = useState('');
+  const [classFilter, setClassFilter] = useState('all');
+  const [sort, setSort] = useState({ key: 'value', dir: 'desc' });
 
   // Declare ownerId BEFORE any hooks that reference it in dependency arrays (prevents TDZ crash)
   const ownerId   = me?.id || '';
@@ -133,12 +139,58 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
     return {...h, community, circle, value, gain, allR, circleR};
   }),[holdings,recoMap,circleIds]);
 
-  const filtered = holdingsData.filter(h=>
+  const assetClassOptions = useMemo(
+    () => [...new Set(holdingsData.map(h=>h.type).filter(Boolean))].sort(),
+    [holdingsData]
+  );
+
+  // "Since yesterday" daily price deltas — same Phase 9 instrument-price
+  // snapshots and (ticker, assetClass) keying Pulse's My Tracked widget
+  // uses (see src/services/api/pricingApi.js), so a holding's daily move
+  // here means exactly the same thing it does there. Only Equity/ETF have
+  // this history (see stamp-prices.js's IN_SCOPE_ASSET_CLASSES) — other
+  // holding types just never contribute a Daily Mover signal below.
+  const holdingAssetClass = (h) => h.type==='ETF' ? 'ETF' : 'Equity';
+  const holdingTickerKey = useMemo(
+    () => [...new Set(holdingsData.map(h=>(h.sym||'').trim().toUpperCase()).filter(Boolean))].sort().join(','),
+    [holdingsData]
+  );
+  const [dailyPrices, setDailyPrices] = useState(null);
+  useEffect(() => {
+    if (!holdingTickerKey) { setDailyPrices(null); return; }
+    let cancelled = false;
+    getDailyPrices(holdingTickerKey.split(','))
+      .then(rows => { if (!cancelled) setDailyPrices(byTicker(rows)); })
+      .catch(() => {}); // pricing unavailable degrades to no Daily Mover card, not an error
+    return () => { cancelled = true; };
+  }, [holdingTickerKey]);
+  const dailyChangeFor = (h) => dailyPrices?.[priceKey(h.sym, holdingAssetClass(h))]?.changePct ?? null;
+
+  const bySignalTab = holdingsData.filter(h=>
     tab==='all'||
     (tab==='bullish'&&h.community.bullPct>=55)||
     (tab==='bearish'&&h.community.bearPct>=55)||
     (tab==='neutral'&&h.community.bullPct<55&&h.community.bearPct<55)
   );
+  const bySearchAndClass = bySignalTab.filter(h=>{
+    if (classFilter!=='all' && h.type!==classFilter) return false;
+    if (q.trim()) {
+      const s = q.trim().toLowerCase();
+      if (!(`${h.sym} ${h.name}`).toLowerCase().includes(s)) return false;
+    }
+    return true;
+  });
+  const filtered = useMemo(() => {
+    const dir = sort.dir==='asc' ? 1 : -1;
+    return [...bySearchAndClass].sort((a,b) => {
+      if (sort.key==='sym')     return a.sym.localeCompare(b.sym)*dir;
+      if (sort.key==='gain')    return ((a.gain||0)-(b.gain||0))*dir;
+      if (sort.key==='consensus') return ((a.community.bullPct||0)-(b.community.bullPct||0))*dir;
+      if (sort.key==='strength')  return ((a.community.strength||0)-(b.community.strength||0))*dir;
+      return ((a.value||0)-(b.value||0))*dir; // default: value
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bySearchAndClass, sort]);
 
   const totalValue = holdingsData.reduce((s,h)=>s+(h.value||0),0);
   const avgBull = holdingsData.filter(h=>h.community.total>0).reduce((s,h,_,a)=>s+h.community.bullPct/a.length,0)||0;
@@ -146,6 +198,11 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
   const selected = holdingsData.find(h=>h.sym===selectedTicker);
 
   // ── Opportunity Signals ──────────────────────────────────────────
+  // Exactly 4 categories, one holding each, deduped across categories (a
+  // holding already used by an earlier category is skipped by later ones)
+  // so the grid is always predictable: at most 4 cards, never the same
+  // stock twice. Priority order below is the order categories claim a
+  // holding in, not necessarily render order.
   const now = Date.now();
   const signals = useMemo(()=>{
     const thirtyDays = 30*24*60*60*1000;
@@ -156,20 +213,59 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
       h.community.total>=3 && h.circle.total>=2 &&
       h.circle.bullPct < h.community.bullPct - 15
     ).sort((a,b)=>(a.circle.bullPct-a.community.bullPct)-(b.circle.bullPct-b.community.bullPct)).slice(0,3);
+    // Daily Mover — the same daily close-to-close delta Pulse's My Tracked
+    // widget surfaces, applied here to what you actually hold rather than
+    // what you track. DAILY_MOVER_THRESHOLD mirrors trackedActivity.js's
+    // bar for "worth a line in a daily digest."
+    const DAILY_MOVER_THRESHOLD = 0.02;
+    const dailyMover = holdingsData
+      .map(h => {
+        const pct = dailyChangeFor(h);
+        return pct!=null ? { ...h, dailyChangePct: pct } : null;
+      })
+      .filter(h => h && Math.abs(h.dailyChangePct)/100 >= DAILY_MOVER_THRESHOLD)
+      .sort((a,b)=>Math.abs(b.dailyChangePct)-Math.abs(a.dailyChangePct));
     const emerging = holdingsData.filter(h=>{
       const recent = (h.allR||[]).filter(r => r.created_at && (now - new Date(r.created_at)) < thirtyDays);
       return recent.length>=2 && h.community.total<=6;
     }).sort((a,b)=>b.community.bullPct-a.community.bullPct).slice(0,3);
-    return { strongConv, weakening, emerging };
-  },[holdingsData]);
+
+    // Claim exactly one holding per category, skipping any already claimed
+    // by an earlier category — guarantees at most 4 cards, never the same
+    // stock twice, in a fixed narrative order (strength -> movement ->
+    // divergence -> early signal).
+    const used = new Set();
+    const claim = (pool, kind) => {
+      const h = pool.find(x => !used.has(x.sym));
+      if (!h) return null;
+      used.add(h.sym);
+      return { kind, h };
+    };
+    const cards = [
+      claim(strongConv, 'strong'),
+      claim(dailyMover, 'mover'),
+      claim(weakening, 'diverging'),
+      claim(emerging, 'emerging'),
+    ].filter(Boolean);
+    return { cards };
+  },[holdingsData, dailyPrices]);
+
+  const SIGNAL_META = {
+    strong:     { label:'Strong Conviction', color:'var(--gain)',  soft:'var(--gain-soft)' },
+    mover:      { label:'Daily Mover',       color:'var(--accent-ink)', soft:'var(--accent-soft)' },
+    diverging:  { label:'Circle Diverging',  color:'#92400e', soft:'#fef3c7' },
+    emerging:   { label:'Emerging Idea',     color:'var(--accent-ink)', soft:'var(--accent-soft)' },
+  };
 
   return (
     <>
-      <div className="page-head">
+      {/* ── Compact header: title + actions on one line, no separate subtitle
+           row — the old page-head + 4 bulky summary cards ate ~250px before
+           a single holding was visible. Everything below is one dense card. ── */}
+      <div className="page-head" style={{marginBottom:12}}>
         <div>
           <div className="eyebrow">Intelligence</div>
           <div className="page-title">Portfolio Intelligence</div>
-          <div className="page-sub">See what the market and your circle think about the stocks you hold</div>
         </div>
         <div style={{display:'flex',gap:10,flexWrap:'wrap',justifyContent:'flex-end'}}>
           {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)',marginRight:4}}/>}
@@ -182,81 +278,77 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12,marginBottom:20}}>
+      {/* Stat strip — one slim row instead of 4 tall cards. Dividers instead
+          of card chrome, sub-copy folded onto the same line as the value. */}
+      <div className="card" style={{display:'flex',flexWrap:'wrap',marginBottom:14,overflow:'hidden'}}>
         {[
-          {icon:<BarChart2 size={18}/>,label:'Total Holdings',val:holdings.length,sub:holdings.length?`${holdingsData.filter(h=>h.community.total>0).length} tracked by community`:'Upload CAS to begin'},
-          {icon:<Globe size={18}/>,label:'Total Value',val:`₹${Math.round(totalValue).toLocaleString('en-IN')}`,accent:true},
-          {icon:<TrendingUp size={18}/>,label:'Avg Market Sentiment',val:`${Math.round(avgBull)}% Bullish`,bar:true,pct:avgBull},
-          {icon:<Zap size={18}/>,label:'High Conviction',val:highConv,sub:`holdings with strong consensus`},
+          {icon:<BarChart2 size={14}/>,label:'Holdings',val:holdings.length,sub:holdings.length?`${holdingsData.filter(h=>h.community.total>0).length} tracked`:'Upload CAS to begin'},
+          {icon:<Globe size={14}/>,label:'Total Value',val:`₹${Math.round(totalValue).toLocaleString('en-IN')}`,accent:true},
+          {icon:<TrendingUp size={14}/>,label:'Avg Sentiment',val:`${Math.round(avgBull)}% Bullish`},
+          {icon:<Zap size={14}/>,label:'High Conviction',val:highConv,sub:'strong consensus'},
         ].map((s,i)=>(
-          <div key={i} className="card" style={{padding:'16px 18px'}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,color:'var(--accent-ink)',opacity:.7}}>{s.icon}</div>
-            <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--muted)',marginBottom:4}}>{s.label}</div>
-            <div style={{fontSize:20,fontWeight:900,color:s.accent?'var(--accent-ink)':'var(--ink)'}}>{s.val}</div>
-            {s.sub&&<div style={{fontSize:11,color:'var(--muted)',marginTop:3}}>{s.sub}</div>}
-            {s.bar&&<div style={{height:3,borderRadius:2,overflow:'hidden',marginTop:8,background:'var(--line)'}}>
-              <div style={{width:`${s.pct}%`,background:'var(--gain)',height:'100%',transition:'width .6s'}}/>
-            </div>}
+          <div key={i} style={{flex:'1 1 170px',padding:'10px 16px',borderRight:!isMobile&&i<3?'1px solid var(--line)':'none',borderBottom:isMobile&&i<3?'1px solid var(--line)':'none'}}>
+            <div style={{display:'flex',alignItems:'center',gap:5,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--muted)',marginBottom:2}}>
+              <span style={{color:'var(--accent-ink)',opacity:.8,display:'flex'}}>{s.icon}</span>{s.label}
+            </div>
+            <div style={{fontSize:16,fontWeight:900,color:s.accent?'var(--accent-ink)':'var(--ink)'}}>
+              {s.val}{s.sub&&<span style={{fontSize:11,fontWeight:400,color:'var(--muted)',marginLeft:7}}>{s.sub}</span>}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Opportunity Signals — only shown when there are holdings with consensus data */}
-      {holdingsData.some(h=>h.community.total>0)&&(signals.strongConv.length>0||signals.weakening.length>0||signals.emerging.length>0)&&(
-        <div style={{marginBottom:16}}>
-          <div style={{fontSize:11,fontWeight:800,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+      {/* Opportunity Signals — up to 4 cards, one per category, deduped —
+          single row on desktop, 2×2 on mobile. */}
+      {signals.cards.length>0&&(
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--muted)',marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
             <Zap size={13}/> Opportunity Signals
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:10}}>
-            {/* Strongest Conviction */}
-            {signals.strongConv.length>0&&signals.strongConv.map(h=>(
-              <div key={'sc'+h.sym} className="card" style={{padding:'12px 14px',cursor:'pointer',border:'1px solid var(--gain)',borderRadius:12}}
-                onClick={()=>{setSelectedTicker(h.sym);}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
-                  <span style={{fontSize:9,fontWeight:800,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--gain)',background:'var(--gain-soft)',padding:'2px 7px',borderRadius:4}}>Strong Conviction</span>
-                  <span style={{fontSize:10,color:'var(--muted)'}}>{h.community.strength}/100</span>
+          <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:10}}>
+            {signals.cards.map(({kind,h})=>{
+              const meta = SIGNAL_META[kind];
+              return (
+                <div key={kind+h.sym} className="card" style={{padding:'12px 14px',cursor:'pointer',borderTop:`3px solid ${meta.color}`,borderRadius:12,minWidth:0}}
+                  onClick={()=>setSelectedTicker(h.sym)}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6,gap:6}}>
+                    <span style={{fontSize:9,fontWeight:800,textTransform:'uppercase',letterSpacing:'.05em',color:meta.color,background:meta.soft,padding:'2px 7px',borderRadius:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{meta.label}</span>
+                    {kind==='strong'    && <span style={{fontSize:10,color:'var(--muted)',flexShrink:0}}>{h.community.strength}/100</span>}
+                    {kind==='mover'     && <span style={{fontSize:10,fontWeight:700,color:h.dailyChangePct>=0?'var(--gain)':'var(--loss)',flexShrink:0,display:'flex',alignItems:'center',gap:2}}>{h.dailyChangePct>=0?<TrendingUp size={11}/>:<TrendingDown size={11}/>}{h.dailyChangePct>=0?'+':''}{h.dailyChangePct.toFixed(1)}%</span>}
+                    {kind==='diverging' && <span style={{fontSize:10,color:'var(--muted)',flexShrink:0}}>↓{Math.round(h.community.bullPct-h.circle.bullPct)}%</span>}
+                    {kind==='emerging'  && <span style={{fontSize:10,color:'var(--muted)',flexShrink:0}}>+Recent</span>}
+                  </div>
+                  <div style={{fontWeight:900,fontSize:15}}>{h.sym}</div>
+                  <div style={{fontSize:11,color:'var(--muted)',marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
+                  {kind==='diverging'
+                    ? <div style={{fontSize:11,color:'var(--muted)'}}>Community {h.community.bullPct}% · Circle {h.circle.bullPct}% bull</div>
+                    : kind==='mover'
+                    ? <div style={{fontSize:11,color:'var(--muted)'}}>Since yesterday's close</div>
+                    : <ConsensusBar cons={h.community} width={'100%'} mini/>}
                 </div>
-                <div style={{fontWeight:900,fontSize:15}}>{h.sym}</div>
-                <div style={{fontSize:11,color:'var(--muted)',marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
-                <ConsensusBar cons={h.community} width={'100%'} mini/>
-              </div>
-            ))}
-            {/* Diverging — circle less bullish than community */}
-            {signals.weakening.length>0&&signals.weakening.map(h=>(
-              <div key={'wk'+h.sym} className="card" style={{padding:'12px 14px',cursor:'pointer',border:'1px solid #fbbf24',borderRadius:12}}
-                onClick={()=>{setSelectedTicker(h.sym);}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
-                  <span style={{fontSize:9,fontWeight:800,textTransform:'uppercase',letterSpacing:'.06em',color:'#92400e',background:'#fef3c7',padding:'2px 7px',borderRadius:4}}>Circle Diverging</span>
-                  <span style={{fontSize:10,color:'var(--muted)'}}>↓{Math.round(h.community.bullPct-h.circle.bullPct)}%</span>
-                </div>
-                <div style={{fontWeight:900,fontSize:15}}>{h.sym}</div>
-                <div style={{fontSize:11,color:'var(--muted)',marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
-                <div style={{fontSize:11,color:'var(--muted)'}}>Community {h.community.bullPct}% bull · Circle {h.circle.bullPct}% bull</div>
-              </div>
-            ))}
-            {/* Emerging — few but growing recos */}
-            {signals.emerging.length>0&&signals.emerging.map(h=>(
-              <div key={'em'+h.sym} className="card" style={{padding:'12px 14px',cursor:'pointer',border:'1px solid var(--accent)',borderRadius:12}}
-                onClick={()=>{setSelectedTicker(h.sym);}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
-                  <span style={{fontSize:9,fontWeight:800,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--accent-ink)',background:'var(--accent-soft)',padding:'2px 7px',borderRadius:4}}>Emerging Idea</span>
-                  <span style={{fontSize:10,color:'var(--muted)'}}>+Recent</span>
-                </div>
-                <div style={{fontWeight:900,fontSize:15}}>{h.sym}</div>
-                <div style={{fontSize:11,color:'var(--muted)',marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
-                <ConsensusBar cons={h.community} width={'100%'} mini/>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Filter tabs */}
-      <div className="seg" style={{marginBottom:16}}>
-        {[['all','All Holdings'],['bullish','Bullish'],['neutral','Neutral'],['bearish','Bearish']].map(([v,l])=>(
-          <button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)}>{l}</button>
-        ))}
+      {/* Filters — tabs, search, asset class, all on one row on desktop */}
+      <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center',marginBottom:14}}>
+        <div className="seg">
+          {[['all','All'],['bullish','Bullish'],['neutral','Neutral'],['bearish','Bearish']].map(([v,l])=>(
+            <button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)}>{l}</button>
+          ))}
+        </div>
+        <div className="searchbox" style={{flex:'1 1 180px',minWidth:150}}>
+          <Search size={14} color="var(--muted)"/>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search symbol or name…"/>
+        </div>
+        {assetClassOptions.length>1&&(
+          <select className="inline-select sm" value={classFilter} onChange={e=>setClassFilter(e.target.value)}>
+            <option value="all">All asset classes</option>
+            {assetClassOptions.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
       </div>
 
       {/* Main grid: table + quick panel — stacks on mobile */}
@@ -276,6 +368,16 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
           ):( isMobile ? (
             /* ── Mobile: asset card list (keeps scroll, search, filters at top) ── */
             <div style={{display:'flex',flexDirection:'column',gap:10,padding:'14px 16px'}}>
+              <select className="inline-select sm" style={{alignSelf:'flex-end'}} value={`${sort.key}:${sort.dir}`}
+                onChange={e=>{ const [key,dir]=e.target.value.split(':'); setSort({key,dir}); }}>
+                <option value="value:desc">Sort: Value (high→low)</option>
+                <option value="value:asc">Sort: Value (low→high)</option>
+                <option value="gain:desc">Sort: Gain (high→low)</option>
+                <option value="gain:asc">Sort: Gain (low→high)</option>
+                <option value="sym:asc">Sort: Symbol (A→Z)</option>
+                <option value="consensus:desc">Sort: Consensus (bullish first)</option>
+                <option value="strength:desc">Sort: Strength (high→low)</option>
+              </select>
               {filtered.map(h=>(
                 <div key={h.id} onClick={()=>setSelectedTicker(prev=>prev===h.sym?null:h.sym)}
                   style={{background:'var(--surface)',border:`1px solid ${selectedTicker===h.sym?'var(--accent)':'var(--line)'}`,borderRadius:12,padding:'13px 15px',cursor:'pointer',transition:'border-color .15s'}}>
@@ -293,7 +395,7 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
                   {h.circle.total>0&&(<div style={{marginBottom:6}}><div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>My circle</div><ConsensusBar cons={h.circle} width={'100%'} mini/></div>)}
                   {h.community.total===0&&h.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No ideas yet</div>)}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,paddingTop:8,borderTop:'1px solid var(--line)'}}>
-                    <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={e=>{e.stopPropagation();onOpenSecurity(h.sym,h.name);}}><ChevronRight size={13}/> Security Intel</button>
+                    <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={e=>{e.stopPropagation();onOpenSecurity(h.sym,h.name);}}><ChevronRight size={13}/> Stock Insights</button>
                     <button style={{border:'none',background:'none',cursor:'pointer',color:'var(--loss)',opacity:.5,padding:4}}
                       onClick={e=>{e.stopPropagation();setHoldings(p=>p.filter(x=>x.id!==h.id));deleteHolding(h.id);}}
                       onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.5}><Trash2 size={14}/></button>
@@ -307,9 +409,13 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
               <table style={{width:'100%',borderCollapse:'collapse'}}>
                 <thead>
                   <tr style={{borderBottom:'2px solid var(--line)'}}>
-                    {['Stock','Current Value','Overall Gain','Market Consensus (All Investors)','Consensus in My Circle','Strength','',''].map((h,i)=>(
-                      <th key={i} style={{padding:'10px 14px',textAlign:i===0?'left':'center',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'var(--muted)',whiteSpace:'nowrap'}}>{h}</th>
-                    ))}
+                    <SortTh label="Stock" k="sym" sort={sort} setSort={setSort}/>
+                    <SortTh label="Current Value" k="value" sort={sort} setSort={setSort} align="center"/>
+                    <SortTh label="Overall Gain" k="gain" sort={sort} setSort={setSort} align="center"/>
+                    <SortTh label="Market Consensus (All Investors)" k="consensus" sort={sort} setSort={setSort} align="center"/>
+                    <th style={{padding:'10px 14px',textAlign:'center',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'var(--muted)',whiteSpace:'nowrap'}}>Consensus in My Circle</th>
+                    <SortTh label="Strength" k="strength" sort={sort} setSort={setSort} align="center"/>
+                    <th/><th/>
                   </tr>
                 </thead>
                 <tbody>

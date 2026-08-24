@@ -22,7 +22,9 @@ import {
   Zap,
   Target,
   Clock,
-  Share2
+  Share2,
+  ArrowLeft,
+  Home
 } from "lucide-react";
 import {
   getInvestorIciBatch as dbGetInvestorIciBatch
@@ -1854,7 +1856,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
    SECURITY INTELLIGENCE
    ═══════════════════════════════════════════════════════════════════ */
 
-export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity }) {
+export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity, onBack, onHome }) {
   const isMobile = useIsMobile();
   const { ticker, name } = securityTicker || {};
   const [recos, setRecos]     = useState([]);
@@ -1930,6 +1932,16 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
     return { months, convMap, firstDate, total:recos.length, active:activeR.length, exited:exitedR.length };
   },[recos]);
 
+  // Shown whenever this page was reached via a drill-down (a holding card,
+  // a reco card's "Stock Insights" link, etc.) so there's always a quick
+  // way back to where the user came from, not just the top-nav Home icon.
+  const backHomeButtons = (onBack || onHome) && (
+    <div style={{display:'flex',gap:6,flexShrink:0}}>
+      {onBack && <button className="btn btn-ghost btn-sm" onClick={onBack} title="Go back"><ArrowLeft size={13}/> Back</button>}
+      {onHome && <button className="btn btn-ghost btn-sm" onClick={onHome} title="Home"><Home size={13}/> Home</button>}
+    </div>
+  );
+
   if (!ticker) return (
     <>
       <div className="page-head">
@@ -1937,6 +1949,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           <div className="eyebrow">Insights</div>
           <div className="page-title">Stock Insights</div>
         </div>
+        {backHomeButtons}
       </div>
 
       {/* ── Discovery landing ── */}
@@ -2022,6 +2035,8 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           <div className="page-sub">{activeRecos.length} active idea{activeRecos.length!==1?'s':''} · {investors.length} investor{investors.length!==1?'s':''} tracking</div>
         </div>
 
+        {backHomeButtons}
+
         {/* ── Switch-security search — compact, tucked into the header's empty space.
              On mobile there's no spare width, so it starts collapsed to an icon. ── */}
         {isMobile ? (
@@ -2062,7 +2077,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
              by the .map() below, never rendered as an array themselves; the
              actual rendered element (the <button> below) already has a key. */
           ['consensus', 'Consensus',    <Activity size={15}/> ],
-          ['timeline',  'Rec. History', <Clock size={15}/>    ],
+          ['timeline',  'Idea History', <Clock size={15}/>    ],
           ['investors', 'Investors',    <Users size={15}/>    ],
           ['stats',     'Statistics',   <BarChart2 size={15}/>],
           ['ai',        'AI Summary',   <Sparkles size={15}/>],

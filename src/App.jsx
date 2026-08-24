@@ -987,6 +987,10 @@ export default function App() {
 
   // securityTicker must be here — before ANY conditional return — Rules of Hooks
   const [securityTicker, setSecurityTicker] = useState(null);
+  // Which page Stock Insights was opened from, so its Back button returns
+  // there instead of always landing on Home — captured at the moment of
+  // navigation (openSecurity below), not derived after the fact.
+  const [secInsightsFrom, setSecInsightsFrom] = useState('home');
 
   // ── Circle route — no auth required (shareable, works from an invite link) ──
   // Matches: #/circle/slug  (optionally ?invite=<code> appended by an invite link)
@@ -1118,7 +1122,11 @@ export default function App() {
   // see the useEffect that keeps investorPage/adminPage synced with the URL.)
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
   // page + setPage — setPage also closes the mobile nav drawer for investors
-  const openSecurity = (ticker, name, tab) => { setSecurityTicker({ ticker, name, tab }); setPage('sec_intel'); };
+  const openSecurity = (ticker, name, tab) => {
+    if (page !== 'sec_intel') setSecInsightsFrom(page);
+    setSecurityTicker({ ticker, name, tab });
+    setPage('sec_intel');
+  };
   const page    = isInv ? investorPage : adminPage;
   const setPage = isInv
     ? (p) => { setInvestorPage(p); setNavOpen(false); track('page_view', { page_name: p });
@@ -1691,7 +1699,7 @@ export default function App() {
             {isInv && showDiscover && <SectionErrorBoundary label="Discover"><DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/></SectionErrorBoundary>}
             {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/></SectionErrorBoundary>}
             {isInv && page==="market_intel" && <SectionErrorBoundary label="Market Insights"><MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
-            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
+            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity} onBack={()=>setPage(secInsightsFrom)} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
             {isInv && page==="discover"     && <SectionErrorBoundary label="Discover People"><DiscoverPeoplePage ME={ME}/></SectionErrorBoundary>}
             {isInv && page==="network"   && <SectionErrorBoundary label="Network"><Network
                 connections={connections} setConnections={setConnections}
