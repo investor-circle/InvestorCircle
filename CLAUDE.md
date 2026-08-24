@@ -170,13 +170,52 @@ modules. These are now durable conventions, not a one-time cleanup:
 
 ## Testing and validation
 
-- There is no automated test suite in this repo (no test framework, scripts, or
-  test files configured) — do not assume one exists; verify before relying on
-  it.
-- After any change to `App.jsx` or `LoginPage.jsx` (or other frontend code),
-  verify the build compiles: `npx vite build`.
+- `npm run lint` — ESLint (`.eslintrc.cjs`), scoped intentionally: `no-undef` and
+  `react-hooks/rules-of-hooks` are errors (they catch real crash-class bugs —
+  see the incident note below), everything else (unused vars, exhaustive-deps)
+  is a warning so pre-existing code doesn't block new PRs. Run before pushing;
+  it also runs automatically in CI on every PR.
+- `npm test` — Vitest (`vitest.config.js`). Component tests use
+  `@testing-library/react` + jsdom; pure-function tests need nothing extra.
+  When you add a shared utility/component that's called from more than one
+  place, add a test that exercises it with each caller's actual data shape —
+  see `src/utils/format.test.js` for the pattern (a shared date-parsing helper
+  crashed the whole app because two API endpoints represent "date"
+  differently; the test locks in both shapes).
+- `npm run build` — always verify after touching `App.jsx`, `LoginPage.jsx`, or
+  other frontend code.
+- `npm run smoke` — Playwright, real-browser check that the app shell loads
+  with zero console/page errors (`tests/smoke/`). Needs `npx playwright install
+  chromium` once, and a running server at `SMOKE_BASE_URL` (defaults to
+  `http://localhost:4173`, i.e. `npm run build && npm run preview`). Scoped to
+  what's testable without live Firebase/DB credentials — it catches
+  bundle/deploy-level breakage, not authenticated-flow logic (that's what the
+  Vitest component tests are for).
+- **CI runs all of the above automatically — you do not need to ask for it.**
+  `.github/workflows/ci.yml` runs lint + test + build + smoke on every pull
+  request; `.github/workflows/post-deploy-smoke.yml` re-runs the smoke test
+  against the live production URL immediately after every deploy to `main`
+  completes. Treat a red CI check the same as a manually-caught bug — fix it
+  before merging, don't bypass it.
 - For backend (`api/`) changes, check that the relevant Node or Python function
-  still runs / imports cleanly; there is no CI test step to rely on.
+  still runs / imports cleanly.
+- **New top-level page, modal, or overlay in `App.jsx`**: wrap it in
+  `SectionErrorBoundary` (`src/components/common.jsx`) as a matter of course,
+  the same way you'd add an auth check. An uncaught render error with nothing
+  above it to catch it unmounts React all the way to the app root — i.e. a
+  bug in one page blanks the *entire* app, not just that page. This has
+  already happened once (see incident note below); every existing page/modal
+  in `App.jsx` is now wrapped — keep it that way for new ones.
+- **Incident note** (2026-08): a shared date-parsing helper
+  (`calcTargetDate`) assumed every caller passed a bare `YYYY-MM-DD` string;
+  one API endpoint actually returned a full ISO timestamp for the same
+  logical field, which produced an `Invalid Date` whose `.toISOString()`
+  call threw — and with no error boundary above the Home Feed at the time,
+  that single throw blanked the whole app. Both the missing boundary and the
+  unsafe date parsing are fixed, but the lesson generalizes: (1) a function
+  called from multiple render paths needs to be checked against *every*
+  caller's actual data shape, not just the one it was written against, and
+  (2) every page-level render needs a boundary above it regardless.
 
 ## Deployment considerations
 

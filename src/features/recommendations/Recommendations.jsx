@@ -543,7 +543,6 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
     patch(r,{isInvested:false,investedPrice:null,invested:false});
     if(myId) dbTrackReco(r.id, false).catch(console.warn);
   };
-  const onInvestClick=(r)=>{ if(r.invested) unInvest(r); else setInvesting(r); };
   const react=(r,val)=>{
     const next=r.reaction===val?'none':val;
     let likes=(r.likes||0);
@@ -1116,7 +1115,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
   const [exitingId,  setExitingId]  = useState(null);
 
   const del=async(r)=>{
-    if(!confirm("Delete this idea? This will remove it from all recipients\' lists too.")) return;
+    if(!confirm("Delete this idea? This will remove it from all recipients' lists too.")) return;
     setRecs(rs=>rs.filter(x=>x.id!==r.id));
     await dbDeleteReco(r.id, me?.id);
   };
@@ -1563,11 +1562,20 @@ export function ThesisEditor({ value, onChange }) {
 
 export function ThesisRenderer({ thesis, previewLines=3 }) {
   const [expanded, setExpanded] = useState(false);
+  // Both hooks below must run unconditionally, before either early return —
+  // `parsed` can legitimately be null (an empty/placeholder thesis), so
+  // `text`/`images` are read via optional chaining rather than destructured
+  // off it, keeping this useMemo call from ever being skipped. Previously
+  // the early `if (!parsed) return null` sat BETWEEN the two hook calls:
+  // if `thesis` ever changed from populated to empty/placeholder while this
+  // component instance stayed mounted (same position in the tree), the
+  // second render would call fewer hooks than the first and React would
+  // throw ("Rendered fewer hooks than during the previous render"),
+  // crashing everything up to the nearest error boundary — this component
+  // is used on nearly every reco card in the app.
   const parsed = useMemo(() => parseThesis(thesis), [thesis]);
-  if (!parsed) return null;
-  const { text, images } = parsed;
-  if (!text && !images?.length) return null;
-
+  const text = parsed?.text;
+  const images = parsed?.images;
   const html = useMemo(() => {
     if (!text) return '';
     return text
@@ -1578,6 +1586,9 @@ export function ThesisRenderer({ thesis, previewLines=3 }) {
         '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--accent-ink);text-decoration:underline;word-break:break-all">$1</a>')
       .replace(/\n/g, '<br/>');
   }, [text]);
+
+  if (!parsed) return null;
+  if (!text && !images?.length) return null;
 
   const isLong = text.length > 200 || images?.length > 0;
   const imgLabel = images?.length ? ` + ${images.length} image${images.length>1?'s':''}` : '';

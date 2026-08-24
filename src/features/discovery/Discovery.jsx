@@ -2058,11 +2058,15 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
         background:'var(--surface-2)', border:'1px solid var(--line)', borderRadius:14, padding:5,
       }}>
         {[
+          /* eslint-disable react/jsx-key -- lookup-table tuples destructured
+             by the .map() below, never rendered as an array themselves; the
+             actual rendered element (the <button> below) already has a key. */
           ['consensus', 'Consensus',    <Activity size={15}/> ],
           ['timeline',  'Rec. History', <Clock size={15}/>    ],
           ['investors', 'Investors',    <Users size={15}/>    ],
           ['stats',     'Statistics',   <BarChart2 size={15}/>],
           ['ai',        'AI Summary',   <Sparkles size={15}/>],
+          /* eslint-enable react/jsx-key */
         ].map(([v,l,icon])=>(
           <button key={v}
             onClick={()=>{ setTab(v); if(v==='ai') buildAiSummary(); }}
