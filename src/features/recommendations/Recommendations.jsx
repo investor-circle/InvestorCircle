@@ -1286,7 +1286,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                     <td>
                       <div style={{display:"flex",alignItems:"center",gap:5}}>
                         <ThumbsUp size={13} color="var(--gain)"/>
-                        <span style={{fontSize:12,fontWeight:700,color:"var(--gain)",minWidth:14}}>{r.likes?.length||0}</span>
+                        <span style={{fontSize:12,fontWeight:700,color:"var(--gain)",minWidth:14}}>{r.likes||0}</span>
                       </div>
                     </td>
                     <td>
@@ -1325,7 +1325,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                         <div><div className="cap">Acted on it</div><b>{r.actedList.length} of {reach(r.recipients)}</b></div>
                         <div><div className="cap">Reactions</div>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <ThumbsUp size={13} color="var(--gain)"/><b>{r.likes.length}</b>
+                            <ThumbsUp size={13} color="var(--gain)"/><b>{r.likes||0}</b>
                           </div>
                         </div>
                       </div>

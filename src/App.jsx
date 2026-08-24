@@ -1687,13 +1687,13 @@ export default function App() {
               </div>
             )}
             {isInv && page==="home"      && <SectionErrorBoundary label="Home feed"><HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds} initTab={homeInitTab} onInitTabConsumed={()=>setHomeInitTab(null)}/></SectionErrorBoundary>}
-            {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
-            {isInv && showDiscover && <DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/>}
-            {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
-            {isInv && page==="market_intel" && <MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
-            {isInv && page==="sec_intel"    && <SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
-            {isInv && page==="discover"     && <DiscoverPeoplePage ME={ME}/>}
-            {isInv && page==="network"   && <Network
+            {isInv && showInvite && <SectionErrorBoundary label="Invite"><InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/></SectionErrorBoundary>}
+            {isInv && showDiscover && <SectionErrorBoundary label="Discover"><DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/></SectionErrorBoundary>}
+            {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/></SectionErrorBoundary>}
+            {isInv && page==="market_intel" && <SectionErrorBoundary label="Market Insights"><MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
+            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
+            {isInv && page==="discover"     && <SectionErrorBoundary label="Discover People"><DiscoverPeoplePage ME={ME}/></SectionErrorBoundary>}
+            {isInv && page==="network"   && <SectionErrorBoundary label="Network"><Network
                 connections={connections} setConnections={setConnections}
                 groups={groups} setGroups={setGroups}
                 sharing={sharing} setSharing={setSharing}
@@ -1702,7 +1702,7 @@ export default function App() {
                 recsReceived={recsReceived} me={ME}
                 onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}
                 initTab={networkInitTab} onInitTabConsumed={()=>setNetworkInitTab(null)}
-                trackingCounts={trackingCounts} onTrackingCountsChange={setTrackingCounts}/>}
+                trackingCounts={trackingCounts} onTrackingCountsChange={setTrackingCounts}/></SectionErrorBoundary>}
             {isInv && page==="recs"      && <SectionErrorBoundary label="Ideas"><Recommendations
                 recsReceived={recsReceived} setRecsReceived={setRecsReceived}
                 recsMade={recsMade} setRecsMade={setRecsMade}
@@ -1712,10 +1712,10 @@ export default function App() {
                 tracked={tracked} toggleTrack={toggleTrack}
                 globalSearch={globalSearch}
                 onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/></SectionErrorBoundary>}
-            {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/>}
-            {isInv && page==="about"        && <AboutPage/>}
-            {isInv && page==="contact"      && <ContactPage setPage={setPage}/>}
-            {isInv && page==="privacy"      && <PrivacyPolicyPage/>}
+            {isInv && page==="sharing"     && <SectionErrorBoundary label="Sharing"><Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/></SectionErrorBoundary>}
+            {isInv && page==="about"        && <SectionErrorBoundary label="About"><AboutPage/></SectionErrorBoundary>}
+            {isInv && page==="contact"      && <SectionErrorBoundary label="Contact"><ContactPage setPage={setPage}/></SectionErrorBoundary>}
+            {isInv && page==="privacy"      && <SectionErrorBoundary label="Privacy Policy"><PrivacyPolicyPage/></SectionErrorBoundary>}
             {isInv && page==="trackrecord" && (
               ME.username
                 ? <ProfileErrorBoundary key={ME.username}>
@@ -1772,17 +1772,19 @@ export default function App() {
                   </div>
             )}
             {!isInv && (
-              <React.Suspense fallback={<div className="empty">Loading admin panel…</div>}>
-                {page==="users"       && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={()=>{}}/>}
-                {page==="creators"    && <AdminCreators ME={ME} claimRequests={claimRequests} onClaimAction={loadClaimRequests}/>}
-                {page==="groups"      && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
-                {page==="instruments" && <AdminInstruments/>}
-                {page==="sebi"        && <AdminSebi/>}
-                {page==="feed"        && <AdminFeedConfig feedConfigOptions={feedConfigOptions} setFeedConfigOptions={setFeedConfigOptions} setEffectiveFeedConfig={setEffectiveFeedConfig} userFeedPrefs={userFeedPrefs}/>}
-                {page==="configs"     && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
-                {page==="seed"        && <AdminSeedData/>}
-                {page==="about"       && <AdminAboutEditor/>}
-              </React.Suspense>
+              <SectionErrorBoundary label="Admin panel">
+                <React.Suspense fallback={<div className="empty">Loading admin panel…</div>}>
+                  {page==="users"       && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={()=>{}}/>}
+                  {page==="creators"    && <AdminCreators ME={ME} claimRequests={claimRequests} onClaimAction={loadClaimRequests}/>}
+                  {page==="groups"      && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
+                  {page==="instruments" && <AdminInstruments/>}
+                  {page==="sebi"        && <AdminSebi/>}
+                  {page==="feed"        && <AdminFeedConfig feedConfigOptions={feedConfigOptions} setFeedConfigOptions={setFeedConfigOptions} setEffectiveFeedConfig={setEffectiveFeedConfig} userFeedPrefs={userFeedPrefs}/>}
+                  {page==="configs"     && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
+                  {page==="seed"        && <AdminSeedData/>}
+                  {page==="about"       && <AdminAboutEditor/>}
+                </React.Suspense>
+              </SectionErrorBoundary>
             )}
             {/* ── Site-wide footer — investors only ── */}
             {isInv && <SiteFooter page={page} setPage={setPage}/>}
@@ -1791,20 +1793,22 @@ export default function App() {
       </div>
       {/* ── Edit profile modal — rendered as a portal, accessible from any page ── */}
       {profileEditOpen && isInv && (
-        <ProfileEditModal
-          profile={profile}
-          userId={user?.uid}
-          username={ME.username}
-          patchProfile={patchProfile}
-          updateProfile={updateProfile}
-          onClose={()=>setProfileEditOpen(false)}
-        />
+        <SectionErrorBoundary label="Edit profile">
+          <ProfileEditModal
+            profile={profile}
+            userId={user?.uid}
+            username={ME.username}
+            patchProfile={patchProfile}
+            updateProfile={updateProfile}
+            onClose={()=>setProfileEditOpen(false)}
+          />
+        </SectionErrorBoundary>
       )}
       {/* ── Mandatory username+consent gate, then a one-time Discover modal —
           both portal overlays gated purely on server-persisted profile state,
           so a user who drops off mid-setup resumes exactly where they left
           off on next login. See features/onboarding/Onboarding.jsx. ── */}
-      {isInv && <OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={setPage}/>}
+      {isInv && <SectionErrorBoundary label="Onboarding"><OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={setPage}/></SectionErrorBoundary>}
     </div>
   );
 }
