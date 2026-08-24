@@ -53,6 +53,8 @@ function mapReceivedRow(r) {
     date:         r.reco_date ? r.reco_date.toISOString?.().slice(0,10) ?? String(r.reco_date) : null,
     exitSignal:   r.exit_signal,
     exitDate:     r.exit_date,
+    exitPrice:    r.exit_price ? Number(r.exit_price) : null,
+    expiryPrice:  r.expiry_price ? Number(r.expiry_price) : null,
     invested:      r.is_invested,
     investedPrice: r.invested_price ? Number(r.invested_price) : null,
     reaction:      r.reaction || 'none',
@@ -83,7 +85,7 @@ async function getReceived(userId) {
       r.target_price, r.horizon, r.target_date, r.thesis,
       r.is_public,
       r.exit_signal, r.exit_date,
-      r.recommendation_type, r.stop_loss, r.conviction, r.sector, r.exit_price,
+      r.recommendation_type, r.stop_loss, r.conviction, r.sector, r.exit_price, r.expiry_price,
       r.created_at        AS reco_date,
       rec_up.full_name    AS from_name,
       rec_up.email        AS from_email,
@@ -110,7 +112,7 @@ async function getMade(userId) {
       r.id, r.asset_name, r.ticker, r.asset_class, r.created_at,
       r.reco_price, r.current_price, r.target_price, r.horizon, r.target_date,
       r.thesis, r.exit_signal, r.exit_date, r.is_public,
-      r.recommendation_type, r.stop_loss, r.conviction, r.sector, r.exit_price,
+      r.recommendation_type, r.stop_loss, r.conviction, r.sector, r.exit_price, r.expiry_price,
       (SELECT COUNT(*) FROM recommendation_deliveries d WHERE d.recommendation_id = r.id) AS recipient_count,
       (SELECT COUNT(*) FROM recommendation_deliveries d
        WHERE d.recommendation_id = r.id AND d.is_invested = true) AS acted_count,
@@ -150,6 +152,7 @@ async function getMade(userId) {
     thesis:      r.thesis,
     exit:        r.exit_signal,
     exitDate:    r.exit_date,
+    expiryPrice: r.expiry_price  ? +r.expiry_price  : null,
     actedList:   actedByRec[r.id] || [],
     likes:       Number(r.like_count    || 0),
     dislikes:    Number(r.dislike_count || 0),
@@ -400,18 +403,34 @@ export default async function handleRecommendations(req, res, userId) {
             exit_price_stamped_at  = ${exitPrice ? new Date().toISOString() : null},
             updated_at             = now()
         WHERE id = ${recommendationId} AND recommender_id = ${userId}
-        RETURNING id, ticker, exit_signal, exit_date, exit_price
+        RETURNING id, ticker, asset_name, exit_signal, exit_date, exit_price
       `;
       if (!row[0]) { res.status(404).json({ error: 'not_found' }); return; }
+
+      // Recipients = delivery recipients UNION trackers, so someone who
+      // tracked this idea from a public profile/discovery (never a direct
+      // delivery recipient) still hears that it was exited, not just the
+      // people it was originally shared with.
       const recipients = await sql`
-        SELECT delivered_to_user_id FROM recommendation_deliveries
+        SELECT delivered_to_user_id AS user_id FROM recommendation_deliveries
         WHERE recommendation_id = ${recommendationId}
+        UNION
+        SELECT user_id FROM recommendation_tracking
+        WHERE reco_id = ${recommendationId}
       `;
+      const [caller] = await sql`SELECT username, full_name FROM user_profiles WHERE id = ${userId}`;
+      const metadata = JSON.stringify({
+        ticker: row[0]?.ticker,
+        assetName: row[0]?.asset_name,
+        recoId: recommendationId,
+        recommenderUsername: caller?.username,
+        recommenderName: caller?.full_name,
+      });
       for (const r of recipients) {
+        if (r.user_id === userId) continue; // never notify yourself about your own exit
         await sql`
           INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
-          VALUES (${r.delivered_to_user_id}, 'exit_signal', ${userId}, ${recommendationId},
-                  ${JSON.stringify({ ticker: row[0]?.ticker })})
+          VALUES (${r.user_id}, 'exit_signal', ${userId}, ${recommendationId}, ${metadata})
         `;
       }
       res.status(200).json({ recommendation: row[0] });

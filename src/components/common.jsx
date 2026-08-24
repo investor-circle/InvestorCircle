@@ -10,7 +10,7 @@ import {
   Loader
 } from "lucide-react";
 import { SOCIAL_BRAND, SOCIAL_PATHS, TYPE_COLORS } from "../constants/app";
-import { classColor, consensusStrengthColor, fmt, fmtSigned, initialsOf } from "../utils/format";
+import { classColor, consensusStrengthColor, fmt, fmtDate, fmtSigned, initialsOf } from "../utils/format";
 import { loadInstruments } from "../utils/instruments";
 
 export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;
@@ -189,6 +189,33 @@ export function ConvBadge({ level }) {
 export function StatusBadge2({ status }) {
   const cfg={Active:{bg:'#dbeafe',col:'#1d4ed8'},Closed:{bg:'var(--gain-soft)',col:'var(--gain)'},Expired:{bg:'#f3f4f6',col:'var(--muted)'}}[status]||{bg:'#f3f4f6',col:'var(--muted)'};
   return <span style={{fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:5,background:cfg.bg,color:cfg.col}}>{status}</span>;
+}
+
+/**
+ * Compact info line for a CLOSED idea (exited or expired) — the label,
+ * closing date, closing price, and the return from posting price to that
+ * close. Renders nothing for an idea that's still open (getClosedInfo(r)
+ * returns null). Takes the {kind,date,price,pending,retPct} shape
+ * src/utils/format.js's getClosedInfo() produces, not a raw reco row —
+ * callers compute that once and pass it in, so this stays a pure renderer.
+ */
+export function ClosedInfoLine({ info, cur='INR' }) {
+  if (!info) return null;
+  const exited = info.kind === 'exited';
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',fontSize:11.5,padding:'7px 10px',borderRadius:8,
+      background: exited ? 'var(--loss-soft)' : 'var(--surface-2)',
+      color: exited ? 'var(--loss)' : 'var(--ink-soft)'}}>
+      <b>{exited ? 'Exited' : 'Expired'}</b>
+      {info.date && <span>{fmtDate(info.date)}</span>}
+      {info.pending
+        ? <span style={{color:'var(--muted)'}}>· {exited ? 'exit' : 'expiry'} price pending</span>
+        : <>
+            <span>· {fmt(info.price, cur)}</span>
+            {info.retPct != null && <><span>·</span><RetBadge pct={info.retPct*100} size={11.5}/></>}
+          </>}
+    </div>
+  );
 }
 
 /* ─── SharePublicPopover (unchanged) ────────────────────────────────────────── */

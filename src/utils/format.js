@@ -51,6 +51,55 @@ export const getTargetDate = (r) => r.targetDate || calcTargetDate(r.date, r.hor
 
 export const isExpired = (r) => { const td=getTargetDate(r); return td ? td < TODAY : false; };
 
+const numOrNull = (v) => (v === null || v === undefined || v === '') ? null : Number(v);
+
+/**
+ * Lifecycle status for a CLOSED idea — 'exited' (the recommender deliberately
+ * closed it) or 'expired' (its target date passed with no exit signal).
+ * Returns null for an idea that's still open.
+ *
+ * Exited always wins when both apply: a deliberate exit is a stronger signal
+ * than the passive target-date clock, matching the status label already
+ * computed server-side in api/_lib/handlers/public-profile.js's `recos`
+ * query ('Closed' beats 'Expired' there too).
+ *
+ * Accepts either the camelCase shape most of the frontend reads
+ * (exitSignal/exitDate/exitPrice/expiryPrice/targetDate) or the raw
+ * snake_case DB row shape a few components read directly
+ * (exit_signal/exit_date/...), since different pages source from different
+ * endpoints. `retPct` mirrors ret()'s existing convention of not flipping
+ * sign for a Sell idea — same math the rest of the frontend already uses,
+ * just anchored to the closing price instead of the live one.
+ */
+export function getClosedInfo(r) {
+  const exited = !!(r.exitSignal ?? r.exit_signal ?? r.exit);
+  const priceAt = numOrNull(r.priceAt ?? r.reco_price) || null;
+
+  if (exited) {
+    const price = numOrNull(r.exitPrice ?? r.exit_price);
+    return {
+      kind: 'exited',
+      date: r.exitDate ?? r.exit_date ?? null,
+      price,
+      pending: price == null,
+      retPct: (priceAt && price != null) ? (price - priceAt) / priceAt : null,
+    };
+  }
+
+  const targetDate = r.targetDate ?? r.target_date ?? getTargetDate(r);
+  if (targetDate && String(targetDate).slice(0,10) < TODAY) {
+    const price = numOrNull(r.expiryPrice ?? r.expiry_price);
+    return {
+      kind: 'expired',
+      date: targetDate,
+      price,
+      pending: price == null,
+      retPct: (priceAt && price != null) ? (price - priceAt) / priceAt : null,
+    };
+  }
+  return null;
+}
+
 export function parseThesis(raw) {
   if (!raw || raw === '—') return null;
   try { const p = JSON.parse(raw); if (p.__v === '1') return p; } catch {}

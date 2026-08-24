@@ -1461,7 +1461,7 @@ export default function App() {
                     }
                     setNotifOpen(false);
 
-                    const recoTypes = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation'];
+                    const recoTypes = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation','exit_signal','idea_expired','idea_expiring_today'];
 
                     if (recoTypes.includes(n.type)) {
                       const recoId   = n.metadata?.recoId   || null;

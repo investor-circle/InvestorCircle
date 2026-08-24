@@ -436,6 +436,91 @@ async function persistSnapshots(db, rows) {
   return rows.length;
 }
 
+// ── Task 2 support: notifications ──────────────────────────────────────────
+/**
+ * Notify everyone with a stake in a just-expired idea — its delivery
+ * recipients AND anyone tracking it (recommendation_tracking), unioned so
+ * nobody who cares about the idea is missed and nobody is double-notified.
+ * Called once per idea, right after its expiry_price is successfully
+ * stamped — Task 2's own WHERE (`expiry_price IS NULL`) guarantees a given
+ * idea only reaches this once, ever, so there's no separate dedup needed
+ * here the way notifyIdeasExpiringToday() needs one below.
+ *
+ * This script runs standalone in GitHub Actions (see the file header) with
+ * only NEON_DATABASE_URL available — no RESEND_API_KEY/VAPID secrets — so
+ * this writes the in-app `notifications` row only, the same row every other
+ * notification in this app is built from (src/db.js getMyNotifications).
+ * Push/email fan-out for these rows can be layered on later once this job
+ * is given those secrets, same as the interactive API handlers already do.
+ */
+async function notifyIdeaExpired(db, recId) {
+  const { rows: recRows } = await db.query(`
+    SELECT r.ticker, r.asset_name, r.recommender_id,
+           up.username AS recommender_username, up.full_name AS recommender_name
+    FROM ic_recommendations r
+    JOIN user_profiles up ON up.id = r.recommender_id
+    WHERE r.id = $1
+  `, [recId]);
+  const rec = recRows[0];
+  if (!rec) return;
+
+  const { rows: recipients } = await db.query(`
+    SELECT delivered_to_user_id AS user_id FROM recommendation_deliveries WHERE recommendation_id = $1
+    UNION
+    SELECT user_id FROM recommendation_tracking WHERE reco_id = $1
+  `, [recId]);
+  if (!recipients.length) return;
+
+  const metadata = JSON.stringify({
+    ticker: rec.ticker,
+    assetName: rec.asset_name,
+    recoId: recId,
+    recommenderUsername: rec.recommender_username,
+    recommenderName: rec.recommender_name,
+  });
+  for (const { user_id } of recipients) {
+    if (user_id === rec.recommender_id) continue; // the recommender doesn't need "an idea you track expired" about their own idea
+    await db.query(
+      `INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
+       VALUES ($1, 'idea_expired', $2, $3, $4)`,
+      [user_id, rec.recommender_id, recId, metadata]
+    );
+  }
+}
+
+/**
+ * Same-day heads-up to a recommender: "your idea expires today." Unlike
+ * notifyIdeaExpired() this has no natural one-shot guard from the price
+ * columns (expiry_price isn't stamped until the day AFTER target_date, once
+ * that close is available), so a NOT EXISTS check against previously-sent
+ * notifications makes this idempotent across manual re-runs / same-day retries.
+ */
+async function notifyIdeasExpiringToday(db) {
+  const { rows } = await db.query(`
+    SELECT r.id, r.ticker, r.asset_name, r.recommender_id, up.username AS recommender_username
+    FROM ic_recommendations r
+    JOIN user_profiles up ON up.id = r.recommender_id
+    WHERE r.target_date = CURRENT_DATE
+      AND r.exit_signal = false
+      AND NOT EXISTS (
+        SELECT 1 FROM notifications n
+        WHERE n.type = 'idea_expiring_today' AND n.reference_id = r.id::text AND n.user_id = r.recommender_id
+      )
+  `);
+  for (const rec of rows) {
+    const metadata = JSON.stringify({
+      ticker: rec.ticker, assetName: rec.asset_name, recoId: rec.id,
+      recommenderUsername: rec.recommender_username,
+    });
+    await db.query(
+      `INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
+       VALUES ($1, 'idea_expiring_today', NULL, $2, $3)`,
+      [rec.recommender_id, rec.id, metadata]
+    );
+  }
+  console.log(`  ${rows.length} recommender(s) notified their idea expires today`);
+}
+
 /**
  * TASK 1 — the consolidated live-price refresh.
  *
@@ -653,6 +738,7 @@ async function main() {
           [reused.close, reused.source, rec.id]
         );
         expStamped++; expFromTask1++;
+        await notifyIdeaExpired(db, rec.id).catch(e => console.warn(`  Failed expiry notification ${rec.ticker}: ${e.message}`));
       } catch (e) { console.warn(`  Failed expiry ${rec.ticker}: ${e.message}`); }
     } else {
       expiringToFetch.push(rec);
@@ -675,9 +761,17 @@ async function main() {
         [result.price, result.source, rec.id]
       );
       expStamped++;
+      await notifyIdeaExpired(db, rec.id).catch(e => console.warn(`  Failed expiry notification ${rec.ticker}: ${e.message}`));
     } catch (e) { console.warn(`  Failed expiry ${rec.ticker}: ${e.message}`); }
   }
   console.log(`  Done: ${expStamped} expiry prices stamped (${expFromTask1} reused from Task 1, ${expStamped - expFromTask1} fetched)`);
+
+  // Same-day heads-up: recommenders whose idea's target_date is today get
+  // notified now, before expiry_price even exists for it (that's stamped on
+  // a LATER run once the day's close is available) — see
+  // notifyIdeasExpiringToday()'s header for why this needs its own dedup.
+  console.log('\n[Task 2b] Notifying recommenders whose idea expires today…');
+  await notifyIdeasExpiringToday(db).catch(e => console.warn(`  Failed expiring-today notifications: ${e.message}`));
 
   // Task 3: backfill exit_price for exited recommendations missing it
   console.log('\n[Task 3] Backfilling missing exit prices…');
@@ -714,7 +808,7 @@ async function main() {
 
 // Exported for local/offline validation harnesses; the CLI entry point below
 // is what GitHub Actions runs.
-export { runTask1, getActiveInstrumentUniverse, resolveInstruments, resolveInstrumentPrice, backfillPrevFromDb, persistSnapshots, isInScope, exchangesFor };
+export { runTask1, getActiveInstrumentUniverse, resolveInstruments, resolveInstrumentPrice, backfillPrevFromDb, persistSnapshots, isInScope, exchangesFor, notifyIdeaExpired, notifyIdeasExpiringToday };
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {

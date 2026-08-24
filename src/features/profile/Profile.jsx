@@ -56,11 +56,11 @@ import {
   forwardRecommendation as dbForwardReco
 } from "../../services/api/recommendationsApi";
 import { IdeaSharePopover, ThesisRenderer } from "../recommendations/Recommendations";
-import { ConvBadge, IciDonut, RetBadge, ScoreBox, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClosedInfoLine, ConvBadge, IciDonut, RetBadge, ScoreBox, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
 import { SECTOR_EMOJI } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
-import { initialsOf } from "../../utils/format";
+import { getClosedInfo, initialsOf } from "../../utils/format";
 
 /* ── ProfileSharePopover — Copy link / Share on WhatsApp for a profile,
    same anchored-popover-on-desktop / bottom-sheet-on-mobile pattern as the
@@ -1097,6 +1097,9 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                           </div>
                         ))}
                       </div>
+                      {(() => { const closed = getClosedInfo(r); return closed && (
+                        <div style={{marginBottom:10}}><ClosedInfoLine info={closed}/></div>
+                      ); })()}
                       {r.thesis&&r.thesis!=='—'&&(
                         <div style={{marginBottom:10}}><ThesisRenderer thesis={r.thesis} previewLines={2}/></div>
                       )}

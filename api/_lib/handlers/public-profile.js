@@ -174,6 +174,7 @@ export default async function handlePublicProfile(req, res) {
         r.id, r.ticker, r.asset_name, r.asset_class,
         r.recommendation_type, r.sector, r.conviction,
         r.reco_price, r.current_price, r.exit_price,
+        r.expiry_price, r.expiry_price_source,
         r.target_price, r.stop_loss,
         r.horizon, r.target_date, r.thesis,
         r.exit_signal, r.exit_date, r.is_public, r.created_at,
@@ -182,11 +183,22 @@ export default async function handlePublicProfile(req, res) {
           WHEN r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE           THEN 'Expired'
           ELSE                                                                           'Active'
         END AS status,
+        -- Exited wins over expired when both apply (a deliberate exit is a
+        -- stronger signal than the passive target-date clock). An expired-
+        -- but-not-exited idea's return freezes at expiry_price, the actual
+        -- close on its target date — falling through to current_price here
+        -- would silently keep moving the "return" of an idea that's no
+        -- longer being tracked against a live thesis.
         ROUND((CASE
           WHEN r.exit_signal THEN
             CASE r.recommendation_type
               WHEN 'Sell' THEN (COALESCE(r.reco_price,0) - COALESCE(r.exit_price, r.current_price, r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
               ELSE             (COALESCE(r.exit_price, r.current_price, r.reco_price,0) - COALESCE(r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+            END
+          WHEN r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE THEN
+            CASE r.recommendation_type
+              WHEN 'Sell' THEN (COALESCE(r.reco_price,0) - COALESCE(r.expiry_price, r.current_price, r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+              ELSE             (COALESCE(r.expiry_price, r.current_price, r.reco_price,0) - COALESCE(r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
             END
           ELSE
             CASE r.recommendation_type
@@ -196,6 +208,7 @@ export default async function handlePublicProfile(req, res) {
         END)::numeric, 2)                                        AS return_pct,
         CASE
           WHEN r.exit_signal THEN COALESCE(r.exit_date::date, CURRENT_DATE) - r.created_at::date
+          WHEN r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE THEN r.target_date::date - r.created_at::date
           ELSE CURRENT_DATE - r.created_at::date
         END                                                      AS holding_days
       FROM ic_recommendations r

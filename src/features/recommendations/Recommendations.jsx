@@ -63,12 +63,12 @@ import {
   setExitSignal as dbSetExit,
   updateDelivery
 } from "../../services/api/recommendationsApi";
-import { ClassTag, ConvBadge, HoldPreviewTable, InstrumentSearch, Money, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, InstrumentSearch, Money, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
 import { CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, SECTOR_EMOJI, THESIS_EMOJIS, THESIS_MAX_CHARS, THESIS_MAX_IMAGES, THESIS_MAX_MB, TODAY } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
 import { sendEmail, sendPush } from "../../services/notify";
-import { calcTargetDate, classColor, compressImage, fmt, fmtDate, fmtPct, getTargetDate, initialsOf, isExpired, parseThesis, ret, serializeThesis } from "../../utils/format";
+import { calcTargetDate, classColor, compressImage, fmt, fmtDate, fmtPct, getClosedInfo, getTargetDate, initialsOf, isExpired, parseThesis, ret, serializeThesis } from "../../utils/format";
 import { fetchPublicProfileInfo, goBackOrElse, gotoReco, gotoUserProfile, openProfile, openReco } from "../../utils/navigation";
 
 export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
@@ -302,7 +302,8 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
       : isMobile
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {sorted.map(r=>{
-            const recoRet=r.reco_price?(r.current_price-r.reco_price)/r.reco_price:0;
+            const closedM=getClosedInfo(r);
+            const recoRet=closedM && closedM.retPct!=null ? closedM.retPct : (r.reco_price?(r.current_price-r.reco_price)/r.reco_price:0);
             const myRet=r.is_invested&&r.invested_price?(r.current_price-r.invested_price)/r.invested_price:null;
             const isBuy=(r.recommendation_type||'Buy')==='Buy';
             const isInv=r.is_invested||false;
@@ -331,6 +332,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
                     </div>
                   ))}
                 </div>
+                {closedM && <div style={{marginBottom:12}}><ClosedInfoLine info={closedM} cur={cur}/></div>}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
                     {r.horizon&&<span className="pill accent" style={{fontSize:10}}>{r.horizon}</span>}
@@ -378,7 +380,8 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
                 <th style={{textAlign:"right"}}>Actions</th>
               </tr></thead>
               <tbody>{sorted.map(r=>{
-                const recoRet = r.reco_price ? (r.current_price-r.reco_price)/r.reco_price : 0;
+                const closed  = getClosedInfo(r);
+                const recoRet = closed && closed.retPct!=null ? closed.retPct : (r.reco_price ? (r.current_price-r.reco_price)/r.reco_price : 0);
                 const myRet   = r.is_invested && r.invested_price ? (r.current_price-r.invested_price)/r.invested_price : null;
                 const itm = recoRet >= 0;
                 const open = openRow===r.id;
@@ -476,6 +479,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
                         <div><div className="cap">Idea Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
                         {myRet!==null&&<div><div className="cap">My Return</div><b className={"tnum "+(myRet>=0?"pos":"neg")}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</b></div>}
                       </div>
+                      {closed && <div style={{marginBottom:12}}><ClosedInfoLine info={closed} cur={r.currency||'INR'}/></div>}
                       {r.thesis&&r.thesis!=='—'&&(
                         <><div className="cap" style={{marginBottom:4}}>Thesis</div>
                         <div style={{fontSize:13,lineHeight:1.7,color:'var(--ink-soft)',marginBottom:14}}>{r.thesis}</div></>
@@ -632,7 +636,8 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {rows.map(r=>{
             const isBuy=(r.recommendation_type||r.recType||'Buy')==='Buy';
-            const recoRet=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
+            const closed=getClosedInfo(r);
+            const recoRet=closed && closed.retPct!=null ? closed.retPct : (r.priceAt?(r.price-r.priceAt)/r.priceAt:0);
             const cur=r.currency||'INR';
             const fromName=r.byName||(typeof contactName==='function'?contactName(r.from):'Someone');
             return (
@@ -653,6 +658,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                     </div>
                   ))}
                 </div>
+                {closed && <div style={{marginBottom:12}}><ClosedInfoLine info={closed} cur={cur}/></div>}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
                   <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
                     {r.horizon&&<span className="pill accent" style={{fontSize:10}}>{r.horizon}</span>}
@@ -693,9 +699,11 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                 <th style={{textAlign:"right"}}>Actions</th>
               </tr></thead>
               <tbody>{rows.map(r=>{
-                const itm=ret(r)>=0; const open=openRow===r.id; const exp=isExpired(r); const td=getTargetDate(r);
+                const closed=getClosedInfo(r);
+                const retVal=closed && closed.retPct!=null ? closed.retPct : ret(r);
+                const itm=retVal>=0; const open=openRow===r.id; const td=getTargetDate(r);
                 return (<React.Fragment key={r.id}>
-                  <tr className={"hoverable"+(r.exitSignal?" exit":"")+(r.hidden?" hiddenrow":"")+(exp?" expired":"")}>
+                  <tr className={"hoverable"+(closed?.kind==='exited'?" exit":"")+(r.hidden?" hiddenrow":"")+(closed?.kind==='expired'?" expired":"")}>
                     {/* Asset — chevron expands inline detail; name click-through to the dedicated reco page */}
                     <td style={{maxWidth:200}}>
                       <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -706,7 +714,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                         </div>
                       </div>
                       {r.hidden && <span className="pill" style={{marginLeft:8,fontSize:10}}>Hidden</span>}
-                      {exp && <span className="pill loss" style={{marginLeft:8,fontSize:10}}>Expired</span>}
+                      {closed && <span className={"pill "+(closed.kind==='exited'?'loss':'')} style={{marginLeft:8,fontSize:10}}>{closed.kind==='exited'?'Exited':'Expired'}</span>}
                     </td>
                     {/* Recommended by */}
                     <td style={{maxWidth:130}}>
@@ -724,11 +732,8 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                     <td className="muted small nowrap">{fmtDate(r.date)}</td>
                     <td style={{textAlign:"right"}} className="tnum">{r.priceAt?fmt(r.priceAt):<span className="muted">—</span>}</td>
                     <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
-                    <td className={"tnum nowrap "+(itm?"pos":"neg")} style={{fontWeight:700,textAlign:"right"}}>{fmtPct(ret(r))}</td>
-                    <td>
-                      <Money itm={itm}/>
-                      {r.exitSignal && <div style={{marginTop:3}}><span className="pill loss" style={{fontSize:10}}><AlertTriangle size={10}/> EXIT</span></div>}
-                    </td>
+                    <td className={"tnum nowrap "+(itm?"pos":"neg")} style={{fontWeight:700,textAlign:"right"}}>{fmtPct(retVal)}</td>
+                    <td>{closed ? <StatusBadge2 status={closed.kind==='exited'?'Closed':'Expired'}/> : <Money itm={itm}/>}</td>
                     <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
                     {/* Reactions */}
                     <td>
@@ -793,10 +798,11 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                         {isForwarded(r)&&<div><div className="cap">Forwarded by</div><b>{sharedByName(r)}</b></div>}
                         {r.targetPrice&&<div><div className="cap">Target price</div><b className="tnum">{fmt(r.targetPrice)}</b></div>}
                         {r.stopLoss&&<div><div className="cap">Stop loss</div><b className="tnum neg">{fmt(r.stopLoss)}</b></div>}
-                        {td&&<div><div className="cap">Target date</div><b className={exp?"neg":""}>{fmtDate(td)}{exp?" · Expired":""}</b></div>}
+                        {td&&<div><div className="cap">Target date</div><b className={closed?.kind==='expired'?"neg":""}>{fmtDate(td)}{closed?.kind==='expired'?" · Expired":""}</b></div>}
                         {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
                         {r.invested&&<div><div className="cap">My entry</div><b className="tnum pos">{r.investedPrice?fmt(r.investedPrice):"—"}</b></div>}
                       </div>
+                      {closed && <div style={{marginBottom:12}}><ClosedInfoLine info={closed}/></div>}
                       <div className="cap">Thesis from {recName(r)}{isForwarded(r)?` · forwarded by ${sharedByName(r)}`:""}</div>
                       <div style={{fontSize:13,lineHeight:1.7,color:"var(--ink-soft)",marginTop:4,marginBottom:12,maxWidth:720}}>
                         {r.thesis ? <ThesisRenderer thesis={r.thesis}/> : <span className="muted">No thesis shared.</span>}
@@ -1188,7 +1194,8 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {rows.map(r=>{
             const isBuy=(r.recType||'Buy')==='Buy';
-            const recoRet=r.priceAt?(r.price-r.priceAt)/r.priceAt:0;
+            const closedM=getClosedInfo(r);
+            const recoRet=closedM && closedM.retPct!=null ? closedM.retPct : (r.priceAt?(r.price-r.priceAt)/r.priceAt:0);
             const cur=r.currency||'INR';
             return (
               <div key={r.id} className="card"
@@ -1209,12 +1216,12 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                     </div>
                   ))}
                 </div>
+                {closedM && <div style={{marginBottom:12}}><ClosedInfoLine info={closedM} cur={cur}/></div>}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
                   <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
                     {r.horizon&&<span className="pill accent" style={{fontSize:10}}>{r.horizon}</span>}
                     {r.conviction&&<ConvBadge level={r.conviction}/>}
                     {(r.recipients?.length||0)>0&&<span style={{fontSize:10,color:'var(--muted)'}}>Sent to {reach(r.recipients)} people</span>}
-                    {r.exit&&<span className="pill loss" style={{fontSize:10}}><LogOut size={10}/> Exited</span>}
                   </div>
                   <div style={{display:'flex',gap:4,position:'relative'}} onClick={e=>e.stopPropagation()}>
                     <button className="iconbtn" title="Share" onClick={(e)=>{ setSharePopId(sharePopId===r.id?null:r.id); setShareAnchor(e.currentTarget); }}><Share2 size={13}/></button>
@@ -1249,9 +1256,11 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                 <th style={{textAlign:"right"}}>Actions</th>
               </tr></thead>
               <tbody>{rows.map(r=>{
-                const itm=ret(r)>=0; const open=openRow===r.id; const expired=isExpired(r); const td=getTargetDate(r);
+                const closed=getClosedInfo(r);
+                const retVal=closed && closed.retPct!=null ? closed.retPct : ret(r);
+                const itm=retVal>=0; const open=openRow===r.id; const td=getTargetDate(r);
                 return (<React.Fragment key={r.id}>
-                  <tr className={"hoverable"+(r.exit?" exit":"")+(expired?" expired":"")}>
+                  <tr className={"hoverable"+(closed?.kind==='exited'?" exit":"")+(closed?.kind==='expired'?" expired":"")}>
                     {/* Asset — chevron expands inline detail; name click-through to the dedicated reco page */}
                     <td style={{maxWidth:220}}>
                       <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -1264,14 +1273,14 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                           <div style={{fontSize:11,color:"var(--muted)"}}><ClassTag c={r.assetClass}/></div>
                         </div>
                       </div>
-                      {expired && <span className="pill loss" style={{fontSize:10,marginLeft:4}}>Expired</span>}
-                      {r.exit && <div style={{marginTop:2}}><span className="pill loss" style={{fontSize:10}}><LogOut size={10}/> Exited {r.exitDate?fmtDate(r.exitDate):""}</span></div>}
+                      {closed?.kind==='expired' && <span className="pill loss" style={{fontSize:10,marginLeft:4}}>Expired</span>}
+                      {closed?.kind==='exited' && <div style={{marginTop:2}}><span className="pill loss" style={{fontSize:10}}><LogOut size={10}/> Exited {r.exitDate?fmtDate(r.exitDate):""}</span></div>}
                     </td>
                     <td className="muted small nowrap">{fmtDate(r.date)}</td>
                     <td style={{textAlign:"right"}} className="tnum">{r.priceAt?fmt(r.priceAt):<span className="muted">—</span>}</td>
                     <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
-                    <td style={{textAlign:"right",fontWeight:700}} className={"tnum nowrap "+(itm?"pos":"neg")}>{fmtPct(ret(r))}</td>
-                    <td><Money itm={itm}/></td>
+                    <td style={{textAlign:"right",fontWeight:700}} className={"tnum nowrap "+(itm?"pos":"neg")}>{fmtPct(retVal)}</td>
+                    <td>{closed ? <StatusBadge2 status={closed.kind==='exited'?'Closed':'Expired'}/> : <Money itm={itm}/>}</td>
                     <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
                     {/* Likes from recipients */}
                     <td>
@@ -1310,7 +1319,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                           <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:2}}>{r.recipients.map(id=><span key={id} className="chip mini">{recipientName(id)}</span>)}</div>
                         </div>
                         {r.stopLoss&&<div><div className="cap">Stop loss</div><b className="tnum neg">{fmt(r.stopLoss)}</b></div>}
-                        {td&&<div><div className="cap">Target date</div><b className={expired?"neg":""}>{fmtDate(td)}{expired?" · Expired":""}</b></div>}
+                        {td&&<div><div className="cap">Target date</div><b className={closed?.kind==='expired'?"neg":""}>{fmtDate(td)}{closed?.kind==='expired'?" · Expired":""}</b></div>}
                         {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
                         {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
                         <div><div className="cap">Acted on it</div><b>{r.actedList.length} of {reach(r.recipients)}</b></div>
@@ -1320,6 +1329,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                           </div>
                         </div>
                       </div>
+                      {closed && <div style={{marginBottom:12}}><ClosedInfoLine info={closed}/></div>}
                       {/* Thesis */}
                       <div className="cap">Your thesis</div>
                       <div style={{fontSize:13,lineHeight:1.7,color:"var(--ink-soft)",marginTop:4,marginBottom:12,maxWidth:720}}>
@@ -2723,7 +2733,8 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
     return { name, initials:initialsOf(name), color:'#8d90ad' };
   },[r.from, contacts]);
 
-  const retPct = (r.priceAt&&r.priceAt!==0) ? (r.price-r.priceAt)/r.priceAt : 0;
+  const closed = getClosedInfo(r);
+  const retPct = closed && closed.retPct!=null ? closed.retPct : ((r.priceAt&&r.priceAt!==0) ? (r.price-r.priceAt)/r.priceAt : 0);
   const itm = retPct >= 0;
   const isTracked = tracked?.has(r.id);
   const interactionCount = (r.likes||0)+(r.invested?1:0)+(isTracked?1:0);
@@ -2884,6 +2895,8 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
             {r.conviction&&<ConvBadge level={r.conviction}/>}
           </div>
         )}
+
+        {closed && <div style={{marginBottom:11}}><ClosedInfoLine info={closed}/></div>}
 
         {/* ── Interaction bar — Like · Comment · Engagement · Share · Bookmark · Invested ── */}
         <div style={{display:'flex',alignItems:'center',gap:5,paddingTop:10,borderTop:'1px solid var(--line)'}} onClick={e=>e.stopPropagation()}>
