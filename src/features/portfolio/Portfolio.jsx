@@ -6,6 +6,8 @@ import {
   X,
   ChevronRight,
   Search,
+  Filter,
+  ArrowUpDown,
   Trash2,
   Upload,
   Loader,
@@ -39,8 +41,10 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
   const [showAddHolding, setShowAddHolding] = useState(false);
   const [tab, setTab] = useState('all'); // all | bullish | neutral | bearish
   const [q, setQ] = useState('');
-  const [classFilter, setClassFilter] = useState('all');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [classFilter, setClassFilter] = useState('Stock'); // default to the common case; "All asset classes" is one click away
   const [sort, setSort] = useState({ key: 'value', dir: 'desc' });
+  const [refreshKey, setRefreshKey] = useState(0); // bump to force-reload consensus data, independent of holdings changing
 
   // Declare ownerId BEFORE any hooks that reference it in dependency arrays (prevents TDZ crash)
   const ownerId   = me?.id || '';
@@ -111,7 +115,11 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
   };
 
   // Load ALL active recommendations — re-runs whenever holding count changes
-  // so consensus overlay stays fresh after CAS imports and manual additions
+  // (covers CAS upload + manual add) or refreshKey is bumped (the "Refresh"
+  // button, for "I've been sitting on this page a while, pull anything
+  // new" — a real gap since nothing here auto-refreshes or subscribes to
+  // live updates). refreshKey is a plain counter dedicated to this purpose,
+  // not a proxy through some other state's identity.
   useEffect(()=>{
     setLoading(true);
     dbGetConsensusRecosAll()
@@ -124,8 +132,7 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
         setRecoMap(map); setLoading(false);
       })
       .catch(e=>{ console.warn('recoMap SQL error:',e?.message||e); setLoading(false); });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[holdings.length]); // re-runs on holding add/remove; covers CAS upload + manual add
+  },[holdings.length, refreshKey]);
 
   const holdingsData = useMemo(()=>holdings.map(h=>{
     // Uppercase both sides so 'KPL' matches 'kpl' in recoMap
@@ -172,8 +179,15 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
     (tab==='bearish'&&h.community.bearPct>=55)||
     (tab==='neutral'&&h.community.bullPct<55&&h.community.bearPct<55)
   );
+  // classFilter defaults to 'Stock', but if this portfolio happens to hold
+  // no Stock-type holdings at all (e.g. only ETFs/Crypto), that default
+  // must not silently filter the list down to nothing with no visible way
+  // to fix it — the filter dropdown itself only renders when there's more
+  // than one asset class to choose from, so a stale/inapplicable default
+  // needs to fall back to "all" on its own rather than needing a click.
+  const classFilterActive = classFilter!=='all' && assetClassOptions.includes(classFilter);
   const bySearchAndClass = bySignalTab.filter(h=>{
-    if (classFilter!=='all' && h.type!==classFilter) return false;
+    if (classFilterActive && h.type!==classFilter) return false;
     if (q.trim()) {
       const s = q.trim().toLowerCase();
       if (!(`${h.sym} ${h.name}`).toLowerCase().includes(s)) return false;
@@ -259,19 +273,17 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
 
   return (
     <>
-      {/* ── Compact header: title + actions on one line, no separate subtitle
-           row — the old page-head + 4 bulky summary cards ate ~250px before
-           a single holding was visible. Everything below is one dense card. ── */}
+      {/* ── Compact header: just the title (the "Intelligence" eyebrow was
+           redundant with "Portfolio Intelligence" right below it) + the 3
+           CTAs in one row on the right. Old page-head + 4 bulky summary
+           cards ate ~250px before a single holding was visible. ── */}
       <div className="page-head" style={{marginBottom:12}}>
-        <div>
-          <div className="eyebrow">Intelligence</div>
-          <div className="page-title">Portfolio Intelligence</div>
-        </div>
+        <div className="page-title">Portfolio Intelligence</div>
         <div style={{display:'flex',gap:10,flexWrap:'wrap',justifyContent:'flex-end'}}>
           {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)',marginRight:4}}/>}
           <button className="btn btn-ghost btn-sm" title="Reload consensus data from latest ideas"
-            onClick={()=>{ setRecoMap({}); setLoading(true); /* holdings.length dep triggers reload */ setHoldings(h=>[...h]); }}>
-            <RefreshCw size={13}/> Refresh Intelligence
+            onClick={()=>setRefreshKey(k=>k+1)}>
+            <RefreshCw size={13}/> Refresh
           </button>
           <button className="btn btn-ghost btn-sm" onClick={()=>setShowAddHolding(true)}><Plus size={13}/> Add Holding</button>
           <button className="btn btn-soft btn-sm" onClick={()=>setShowManage(true)}><Upload size={13}/> Upload CAS</button>
@@ -332,29 +344,55 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
         </div>
       )}
 
-      {/* Filters — tabs, search, asset class, all on one row on desktop */}
-      <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center',marginBottom:14}}>
-        <div className="seg">
-          {[['all','All'],['bullish','Bullish'],['neutral','Neutral'],['bearish','Bearish']].map(([v,l])=>(
-            <button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)}>{l}</button>
-          ))}
-        </div>
-        <div className="searchbox" style={{flex:'1 1 180px',minWidth:150}}>
-          <Search size={14} color="var(--muted)"/>
-          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search symbol or name…"/>
-        </div>
-        {assetClassOptions.length>1&&(
-          <select className="inline-select sm" value={classFilter} onChange={e=>setClassFilter(e.target.value)}>
-            <option value="all">All asset classes</option>
-            {assetClassOptions.map(c=><option key={c} value={c}>{c}</option>)}
-          </select>
-        )}
-      </div>
-
       {/* Main grid: table + quick panel — stacks on mobile */}
       <div style={{display:'grid',gridTemplateColumns:selected&&!isMobile?'1fr 340px':'1fr',gap:16,alignItems:'start'}}>
         <div className="card">
-          <div className="card-head"><BarChart2 size={15}/> My Holdings — Market Consensus Overlay</div>
+          <div className="card-head">
+            <span style={{display:'flex',alignItems:'center',gap:8}}><BarChart2 size={15}/> My Holdings — Market Consensus Overlay</span>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              {searchOpen ? (
+                <div className="searchbox" style={{width:170}}>
+                  <Search size={13} color="var(--muted)"/>
+                  <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
+                    onBlur={()=>{ if(!q.trim()) setSearchOpen(false); }}
+                    placeholder="Search symbol or name…"/>
+                </div>
+              ) : (
+                <button className="iconbtn" title="Search holdings" onClick={()=>setSearchOpen(true)}><Search size={15}/></button>
+              )}
+              {assetClassOptions.length>1 && (
+                <div style={{display:'flex',alignItems:'center',gap:4}} title="Filter by asset class">
+                  <Filter size={13} color="var(--muted)"/>
+                  <select className="inline-select sm" value={classFilter} onChange={e=>setClassFilter(e.target.value)}>
+                    <option value="all">All classes</option>
+                    {assetClassOptions.map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              )}
+              <div style={{display:'flex',alignItems:'center',gap:4}} title="Sort holdings">
+                <ArrowUpDown size={13} color="var(--muted)"/>
+                <select className="inline-select sm" value={`${sort.key}:${sort.dir}`}
+                  onChange={e=>{ const [key,dir]=e.target.value.split(':'); setSort({key,dir}); }}>
+                  <option value="value:desc">Value (high→low)</option>
+                  <option value="value:asc">Value (low→high)</option>
+                  <option value="gain:desc">Gain (high→low)</option>
+                  <option value="gain:asc">Gain (low→high)</option>
+                  <option value="sym:asc">Symbol (A→Z)</option>
+                  <option value="consensus:desc">Consensus (bullish first)</option>
+                  <option value="strength:desc">Strength (high→low)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          {holdings.length>0 && (
+            <div style={{padding:'12px 16px 0'}}>
+              <div className="seg">
+                {[['all','All'],['bullish','Bullish'],['neutral','Neutral'],['bearish','Bearish']].map(([v,l])=>(
+                  <button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)}>{l}</button>
+                ))}
+              </div>
+            </div>
+          )}
           {holdings.length===0?(
             <div style={{padding:'48px 24px',textAlign:'center'}}>
               <BarChart2 size={32} style={{color:'var(--muted)',marginBottom:12,opacity:.4}}/>
@@ -366,18 +404,9 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
               </div>
             </div>
           ):( isMobile ? (
-            /* ── Mobile: asset card list (keeps scroll, search, filters at top) ── */
+            /* ── Mobile: asset card list (search/filter/sort now live in the
+                 card-head above, same controls power both layouts) ── */
             <div style={{display:'flex',flexDirection:'column',gap:10,padding:'14px 16px'}}>
-              <select className="inline-select sm" style={{alignSelf:'flex-end'}} value={`${sort.key}:${sort.dir}`}
-                onChange={e=>{ const [key,dir]=e.target.value.split(':'); setSort({key,dir}); }}>
-                <option value="value:desc">Sort: Value (high→low)</option>
-                <option value="value:asc">Sort: Value (low→high)</option>
-                <option value="gain:desc">Sort: Gain (high→low)</option>
-                <option value="gain:asc">Sort: Gain (low→high)</option>
-                <option value="sym:asc">Sort: Symbol (A→Z)</option>
-                <option value="consensus:desc">Sort: Consensus (bullish first)</option>
-                <option value="strength:desc">Sort: Strength (high→low)</option>
-              </select>
               {filtered.map(h=>(
                 <div key={h.id} onClick={()=>setSelectedTicker(prev=>prev===h.sym?null:h.sym)}
                   style={{background:'var(--surface)',border:`1px solid ${selectedTicker===h.sym?'var(--accent)':'var(--line)'}`,borderRadius:12,padding:'13px 15px',cursor:'pointer',transition:'border-color .15s'}}>
@@ -391,8 +420,22 @@ export function PortfolioIntelligencePage({ holdings, setHoldings, contacts, me,
                       <div style={{fontSize:11,color:h.gain>=0?'var(--gain)':'var(--loss)',fontWeight:600}}>{h.gain>=0?'+':''}{h.gain.toFixed(1)}%</div>
                     </div>
                   </div>
-                  {h.community.total>0&&(<div style={{marginBottom:6}}><div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>Community</div><ConsensusBar cons={h.community} width={'100%'} mini/></div>)}
-                  {h.circle.total>0&&(<div style={{marginBottom:6}}><div style={{fontSize:10,color:'var(--muted)',marginBottom:3}}>My circle</div><ConsensusBar cons={h.circle} width={'100%'} mini/></div>)}
+                  {(h.community.total>0||h.circle.total>0)&&(
+                    <div style={{display:'flex',gap:10,marginBottom:6}}>
+                      {h.community.total>0&&(
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:9.5,color:'var(--muted)',marginBottom:3,textTransform:'uppercase',letterSpacing:'.03em'}}>Community</div>
+                          <ConsensusBar cons={h.community} width={'100%'} mini/>
+                        </div>
+                      )}
+                      {h.circle.total>0&&(
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:9.5,color:'var(--muted)',marginBottom:3,textTransform:'uppercase',letterSpacing:'.03em'}}>My Circle</div>
+                          <ConsensusBar cons={h.circle} width={'100%'} mini/>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {h.community.total===0&&h.circle.total===0&&(<div style={{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginBottom:4}}>No ideas yet</div>)}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,paddingTop:8,borderTop:'1px solid var(--line)'}}>
                     <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={e=>{e.stopPropagation();onOpenSecurity(h.sym,h.name);}}><ChevronRight size={13}/> Stock Insights</button>
