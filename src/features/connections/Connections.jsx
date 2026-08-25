@@ -41,7 +41,7 @@ import { CONTACT_COLORS, TODAY } from "../../constants/app";
 import { GroupsSection } from "../groups/Groups";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail, sendPush } from "../../services/notify";
-import { fmtSigned, initialsOf, recoStats } from "../../utils/format";
+import { fmtDate, fmtSigned, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile } from "../../utils/navigation";
 
 export function Network({ connections, setConnections, groups, setGroups, configs,
@@ -420,14 +420,8 @@ export function ContactsSection({ connections, setConnections, groups,
     </div>
 
     {/* Pending incoming requests */}
-    {pendingReceived.length>0 && (
-      <div className="card" style={{marginBottom:16,border:"2px solid var(--accent)"}}>
-        <div className="card-head" style={{color:"var(--accent)"}}><Bell size={15}/> {pendingReceived.length} pending connection request{pendingReceived.length>1?"s":""}</div>
-        <div className="card-body" style={{padding:"8px 0"}}><table className="grid" style={{minWidth:800}}>
-          <tbody>{pendingReceived.map(c=><ContactRow key={c.connection_id} c={c}/>)}</tbody>
-        </table></div>
-      </div>
-    )}
+    <PendingRequestsCard pendingReceived={pendingReceived} connections={connections}
+      busy={busy} doAccept={doAccept} doReject={doReject}/>
 
     {/* Accepted contacts */}
     {connections.length===0
@@ -469,6 +463,84 @@ export function ContactsSection({ connections, setConnections, groups,
           });
         }}/>}
   </>);
+}
+
+/* ── Pending incoming requests ────────────────────────────────────────────────
+   A dedicated, compact list (not the dense all-columns table the accepted/
+   rejected/sent-pending sections share) so Accept/Decline are always visible
+   without opening the row, name is a real click-through to the profile, and
+   a long queue collapses to a few rows with its own search instead of eating
+   the whole page. Sorted newest-request-first by default (created_at desc);
+   the in-card search only filters this list, independent of the main
+   connections search above it. ── */
+function PendingRequestsCard({ pendingReceived, connections, busy, doAccept, doReject }) {
+  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const INITIAL_SHOW = 3;
+
+  const sorted = useMemo(() => {
+    let r = [...pendingReceived];
+    if (search.trim()) {
+      const s = search.trim().toLowerCase();
+      r = r.filter(c => c.name.toLowerCase().includes(s));
+    }
+    r.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    return r;
+  }, [pendingReceived, search]);
+
+  if (pendingReceived.length === 0) return null;
+
+  const visible = expanded ? sorted : sorted.slice(0, INITIAL_SHOW);
+
+  return (
+    <div className="card" style={{marginBottom:16,border:"2px solid var(--accent)"}}>
+      <div className="card-head" style={{color:"var(--accent)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{display:"flex",alignItems:"center",gap:8}}>
+          <Bell size={15}/> {pendingReceived.length} pending connection request{pendingReceived.length!==1?"s":""}
+        </span>
+        {pendingReceived.length > INITIAL_SHOW && (
+          <div className="searchbox" style={{padding:"5px 10px",maxWidth:200}}>
+            <Search size={13} color="var(--muted)"/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name…" style={{fontSize:12.5}}/>
+          </div>
+        )}
+      </div>
+      <div className="card-body" style={{padding:0}}>
+        {visible.length===0
+          ? <div className="muted small" style={{padding:"18px 16px"}}>No requests match &ldquo;{search}&rdquo;.</div>
+          : visible.map(c=>{
+              const av = {name:c.name, initials:initialsOf(c.name), color:CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
+              return (
+                <div key={c.connection_id} className="hoverable"
+                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"11px 16px",borderBottom:"1px solid var(--line)",flexWrap:"wrap"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:11,minWidth:0,cursor:"pointer"}}
+                    title={`View ${c.name}'s public profile`} onClick={()=>gotoUserProfile(c.user_id)}>
+                    <Avatar f={av} size={36}/>
+                    <div style={{minWidth:0}}>
+                      <div className="sym" style={{color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{c.name}</div>
+                      <div className="muted small" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email}</div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:16,marginLeft:"auto",flexShrink:0}}>
+                    <div className="muted small nowrap" title="Date requested">{fmtDate(c.created_at)}</div>
+                    <div style={{display:"flex",gap:6}}>
+                      <button className="btn btn-pri btn-sm" disabled={busy[c.connection_id]} onClick={()=>doAccept(c)}><Check size={13}/> Accept</button>
+                      <button className="btn btn-ghost btn-sm" disabled={busy[c.connection_id]} onClick={()=>doReject(c)}><X size={13}/> Decline</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+      </div>
+      {sorted.length > INITIAL_SHOW && (
+        <div style={{padding:"10px 16px",textAlign:"center"}}>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setExpanded(v=>!v)}>
+            {expanded ? "Show less" : `Show all ${sorted.length}`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ── Add connection modal ──────────────────────────────────────────────────── */
