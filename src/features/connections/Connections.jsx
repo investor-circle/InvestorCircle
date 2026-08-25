@@ -37,6 +37,7 @@ import {
   getMyTrackers as dbGetMyTrackers,
   getMyTrackingList as dbGetMyTrackingList
 } from "../../services/api/trackingApi";
+import { getMyTrackedRecos as dbGetMyTrackedRecos } from "../../services/api/engagementApi";
 import { Avatar, RecoBreakdown, SortTh } from "../../components/common";
 import { CONTACT_COLORS, TODAY } from "../../constants/app";
 import { GroupsSection } from "../groups/Groups";
@@ -108,6 +109,30 @@ const CLIENT_SORT_KEYS = new Set(["ici_desc", "ideas_desc"]);
 // sort client-side — matches investor-ici-batch's own 500-uid cap, so we
 // never fetch more people than we could score anyway.
 const CLIENT_SORT_FETCH_CAP = 500;
+
+// Connections tab's sort dropdown — same {key,dir} shape ContactsSection's
+// SortTh column headers already use, so a dropdown pick and a header click
+// stay perfectly in sync (one shared `sort` state, two ways to set it).
+const CONTACTS_SORT_OPTIONS = [
+  { value: "name_asc",   label: "Name A–Z",                key: "name",  dir: "asc"  },
+  { value: "name_desc",  label: "Name Z–A",                 key: "name",  dir: "desc" },
+  { value: "recos_desc", label: "Ideas to me (high→low)",   key: "recos", dir: "desc" },
+  { value: "pnl_desc",   label: "My P&L (high→low)",        key: "pnl",   dir: "desc" },
+  { value: "ici_desc",   label: "ICI (high→low)",           key: "ici",   dir: "desc" },
+  { value: "ideas_desc", label: "Ideas posted (high→low)",  key: "ideas", dir: "desc" },
+];
+
+function ContactsSortSelect({ sort, setSort }) {
+  const current = CONTACTS_SORT_OPTIONS.find(o=>o.key===sort.key && o.dir===sort.dir)?.value || "name_asc";
+  return (
+    <select className="inline-select sm" value={current} onChange={e=>{
+      const opt = CONTACTS_SORT_OPTIONS.find(o=>o.value===e.target.value);
+      if (opt) setSort({key:opt.key, dir:opt.dir});
+    }} aria-label="Sort by">
+      {CONTACTS_SORT_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
 
 function SortSelect({ value, onChange }) {
   return (
@@ -394,6 +419,23 @@ export function ImTrackingSection({ me, setConnections, onTrackingCountsChange }
 
 /* ── Contacts section ─────────────────────────────────────────────────────── */
 
+// Normalizes a `recommendation_tracking`-joined row (my-tracked-recos'
+// snake_case shape) into the camelCase shape recoStats()/getClosedInfo()
+// already read everywhere else in the app — see mapReceivedRow() in
+// api/_lib/handlers/recommendations.js for the shape this mirrors.
+const mapTrackedRowForPnl = (r) => ({
+  id:           r.id,
+  invested:     r.is_invested,
+  investedPrice: r.invested_price != null ? Number(r.invested_price) : null,
+  priceAt:      Number(r.reco_price || 0),
+  price:        Number(r.current_price || 0),
+  exitSignal:   r.exit_signal,
+  exitDate:     r.exit_date,
+  exitPrice:    r.exit_price != null ? Number(r.exit_price) : null,
+  targetDate:   r.target_date,
+  expiryPrice:  r.expiry_price != null ? Number(r.expiry_price) : null,
+});
+
 export function ContactsSection({ connections, setConnections, groups,
     pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me }) {
   const [q, setQ] = useState("");
@@ -401,7 +443,37 @@ export function ContactsSection({ connections, setConnections, groups,
   const [showAdd, setShowAdd] = useState(false);
   const [expandId, setExpandId] = useState(null);
   const [busy, setBusy] = useState({});
+  const [trackedRecos, setTrackedRecos] = useState([]);
+  const [pnlExplainerOpen, setPnlExplainerOpen] = useState(false);
   const myId = me?.id || "me";
+
+  // My P&L (below) has to include ideas from a contact that I tracked
+  // straight off their public profile, not just ones they delivered to me
+  // directly — recsReceived alone would silently undercount (and mislead
+  // the click-through) for anyone who tracks publicly-posted ideas outside
+  // their received bucket.
+  useEffect(() => {
+    if (!myId) return;
+    dbGetMyTrackedRecos().then(setTrackedRecos).catch(()=>{});
+  }, [myId]);
+
+  // For the "ICI" / "Ideas posted" sort options — same batched computeIci()
+  // used by the Tracking me / I'm tracking pages, applied to my connections.
+  const icis = useIciBatch(useMemo(()=>connections.map(c=>c.user_id),[connections]));
+
+  const statsOf = (c) => recoStats(recsReceived, r => r.from===c.user_id||(r.byName&&r.byName===c.name));
+  // Received ∪ (tracked but never received) — the received copy of an idea
+  // wins on overlap since it's the richer row (has reaction/likes); a
+  // tracked-only idea is normalized via mapTrackedRowForPnl above.
+  const pnlFor = (c) => {
+    const received = recsReceived.filter(r=>r.from===c.user_id||(r.byName&&r.byName===c.name));
+    const receivedIds = new Set(received.map(r=>r.id));
+    const trackedOnly = trackedRecos
+      .filter(r=>r.recommender_id===c.user_id && !receivedIds.has(r.id))
+      .map(mapTrackedRowForPnl);
+    return recoStats([...received, ...trackedOnly], () => true);
+  };
+  const commonGroups = (c) => groups.filter(g=>g.members?.some(m=>m.user_id===c.user_id));
 
   // ALL connections shown (all statuses) so user can see pending/rejected
   const rows = useMemo(() => {
@@ -411,13 +483,15 @@ export function ContactsSection({ connections, setConnections, groups,
     r.sort((a,b)=>{
       if(sort.key==="name")   return a.name.localeCompare(b.name)*dir;
       if(sort.key==="status") return a.status.localeCompare(b.status)*dir;
+      if(sort.key==="recos")  return (statsOf(a).count-statsOf(b).count)*dir;
+      if(sort.key==="pnl")    return (pnlFor(a).pnl-pnlFor(b).pnl)*dir;
+      if(sort.key==="ici")    return ((icis[a.user_id]?.score??-1)-(icis[b.user_id]?.score??-1))*dir;
+      if(sort.key==="ideas")  return ((icis[a.user_id]?.total??0)-(icis[b.user_id]?.total??0))*dir;
       return 0;
     });
     return r;
-  }, [connections, q, sort]);
-
-  const statsOf = (c) => recoStats(recsReceived, r => r.from===c.user_id||(r.byName&&r.byName===c.name));
-  const commonGroups = (c) => groups.filter(g=>g.members?.some(m=>m.user_id===c.user_id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connections, q, sort, recsReceived, trackedRecos, icis]);
 
   const doAccept = async (c) => {
     setBusy(b=>({...b,[c.connection_id]:true}));
@@ -459,6 +533,7 @@ export function ContactsSection({ connections, setConnections, groups,
 
   const ContactRow = ({c, showActions}) => {
     const stats = statsOf(c);
+    const pnlInfo = pnlFor(c);
     const open = expandId===c.connection_id;
     const cg = commonGroups(c);
     const av = {name:c.name,initials:initialsOf(c.name),color:CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
@@ -481,7 +556,7 @@ export function ContactsSection({ connections, setConnections, groups,
         <td className="tnum">{c.status==="accepted"?stats.count:<span className="muted">—</span>}</td>
         <td style={{textAlign:"right"}}>
           {c.status==="accepted"
-            ? <span className="clickable tnum nowrap" onClick={(e)=>{e.stopPropagation();onOpenRecos({tab:'received',by:c.name,invested:'yes'});}}>{fmtSigned(stats.pnl)} ↗</span>
+            ? <span className="clickable tnum nowrap" onClick={(e)=>{e.stopPropagation();onOpenRecos({tab:'tracked',by:c.name,invested:'yes'});}}>{fmtSigned(pnlInfo.pnl)} ↗</span>
             : <span className="muted">—</span>}</td>
         <td onClick={e=>e.stopPropagation()}>
           {c.status==="pending"&&c.direction==="received" && (
@@ -500,7 +575,7 @@ export function ContactsSection({ connections, setConnections, groups,
           <b style={{fontSize:14}}>{c.name}&apos;s ideas to you</b>
           <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>
         </div>
-        <RecoBreakdown stats={statsOf(c)} pnlLabel="My P&L" onPnl={()=>onOpenRecos({tab:'received',by:c.name,invested:'yes'})}/>
+        <RecoBreakdown stats={{...stats, pnl:pnlInfo.pnl, pnlPending:pnlInfo.pnlPending}} pnlLabel="My P&L" onPnl={()=>onOpenRecos({tab:'tracked',by:c.name,invested:'yes'})}/>
       </div></td></tr>}
     </React.Fragment>);
   };
@@ -509,6 +584,7 @@ export function ContactsSection({ connections, setConnections, groups,
     {pendingInvites.length>0 && <div className="note info" style={{marginBottom:14}}><Mail size={16}/><div>Pending email invitations: {pendingInvites.map(p=>p.email).join(", ")}.</div></div>}
     <div className="toolbar">
       <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by name or email…"/></div>
+      <ContactsSortSelect sort={sort} setSort={setSort}/>
       <button className="btn btn-pri btn-sm" onClick={()=>setShowAdd(true)}><UserPlus size={15}/> Add connection</button>
     </div>
 
@@ -523,10 +599,19 @@ export function ContactsSection({ connections, setConnections, groups,
       <div className="note info" style={{marginBottom:10,alignItems:"flex-start"}}>
         <Info size={16} style={{marginTop:1,flexShrink:0}}/>
         <div>
-          <b>What is My P&amp;L?</b> A directional signal, not real money: for each idea someone sent you that you marked
-          &ldquo;invested&rdquo;, it applies a flat hypothetical ₹1,000 stake to the move from your entry price to the idea&apos;s
-          closing price (or its live price if still open), then adds those up per person. It shows whether following a
-          connection&apos;s ideas has tended to be profitable — it isn&apos;t a record of what you actually put in or made.
+          <b>What is My P&amp;L?</b> A directional signal, not real money.{" "}
+          {pnlExplainerOpen ? (
+            <>
+              For each idea from that person you marked &ldquo;invested&rdquo; — whether they sent it to you directly
+              or you tracked it from their public profile — it applies a flat hypothetical ₹1,000 stake to the move
+              from your entry price to the idea&apos;s closing price (or its live price if still open), then adds
+              those up per person. It shows whether following a connection&apos;s ideas has tended to be profitable —
+              it isn&apos;t a record of what you actually put in or made.{" "}
+            </>
+          ) : null}
+          <span className="clickable" style={{fontWeight:700,whiteSpace:"nowrap"}} onClick={()=>setPnlExplainerOpen(v=>!v)}>
+            {pnlExplainerOpen ? "Show less" : "Read more"}
+          </span>
         </div>
       </div>
       <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:760}}>
@@ -535,7 +620,7 @@ export function ContactsSection({ connections, setConnections, groups,
             <th>Common groups</th>
             <SortTh label="Ideas to me"     k="recos"  sort={sort} setSort={setSort}/>
             <SortTh label="My P&amp;L"      k="pnl"    sort={sort} setSort={setSort} align="right"
-              hint="Hypothetical ₹1,000-per-idea return on ideas you marked invested — a directional signal, not real money. Click a value to see the ideas behind it."/>
+              hint="Hypothetical ₹1,000-per-idea return on this person's ideas you marked invested (received or tracked) — a directional signal, not real money. Click a value to see the ideas behind it."/>
             <th>Actions</th>
           </tr></thead>
           <tbody>

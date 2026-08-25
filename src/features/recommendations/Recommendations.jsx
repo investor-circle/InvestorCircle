@@ -140,7 +140,7 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
       </div>
     </div>
 
-    {tab==="tracked"  && <TrackedSection tracked={tracked} toggleTrack={toggleTrack} me={me} contacts={contacts} groups={groups} onSendShare={sendIdeaToTargets} initMoneyFilter={initFilter?.moneyFilter} globalSearch={globalSearch}/>}
+    {tab==="tracked"  && <TrackedSection tracked={tracked} toggleTrack={toggleTrack} me={me} contacts={contacts} groups={groups} onSendShare={sendIdeaToTargets} initMoneyFilter={initFilter?.moneyFilter} initBy={initFilter?.by} initInv={initFilter?.invested} globalSearch={globalSearch}/>}
     {tab==="received" && <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} myId={myId}
         contactName={contactName} groupName={groupName} assetClasses={assetClasses}
         contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId} initInv={initFilter?.invested}
@@ -156,7 +156,7 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
 
 /* ─── TrackedSection — My Tracked / Saved list ─────────────────────────────── */
 
-export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], onSendShare, initMoneyFilter, globalSearch }) {
+export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], onSendShare, initMoneyFilter, initBy, initInv, globalSearch }) {
   const isMobile = useIsMobile();
   const [recos,         setRecos]         = useState([]);
   const [loading,       setLoading]       = useState(true);
@@ -166,10 +166,10 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
   const [shareAnchor,   setShareAnchor]   = useState(null);
   const [shareUsername, setShareUsername] = useState(null);
   const [q,       setQ]       = useState(globalSearch||"");
-  const [fBy,     setFBy]     = useState("all");
+  const [fBy,     setFBy]     = useState(initBy||"all");
   const [fHorizon,setFHorizon]= useState("all");
   const [fMoney,  setFMoney]  = useState(initMoneyFilter||"all");
-  const [fInv,    setFInv]    = useState("all");
+  const [fInv,    setFInv]    = useState(initInv||"all");
   const [dailyPrices, setDailyPrices] = useState(null);
 
   // Sync global search into local filter
