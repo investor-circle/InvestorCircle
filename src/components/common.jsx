@@ -11,7 +11,7 @@ import {
   Loader
 } from "lucide-react";
 import { SOCIAL_BRAND, SOCIAL_PATHS, TYPE_COLORS } from "../constants/app";
-import { classColor, consensusStrengthColor, fmt, fmtDate, fmtSigned, initialsOf } from "../utils/format";
+import { classColor, consensusStrengthColor, fmt, fmtDate, initialsOf } from "../utils/format";
 import { loadInstruments } from "../utils/instruments";
 
 export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;
@@ -34,22 +34,6 @@ export function SortTh({ label, k, sort, setSort, align, hint }) {
         onClick={()=>setSort(s=>({ key:k, dir: s.key===k && s.dir==="asc" ? "desc":"asc" }))}>
       {label}<span className="si">{active ? (sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>) : <ArrowUpDown size={12}/>}</span>
     </th>
-  );
-}
-
-export function RecoBreakdown({ stats, onPnl, pnlLabel }) {
-  return (
-    <div className="statgrid">
-      <div className="stat"><div className="v">{stats.count}</div><div className="l">Ideas</div></div>
-      <div className="stat"><div className="v">{stats.acted}</div><div className="l">I acted on</div></div>
-      <div className="stat"><div className="v">{stats.liked}</div><div className="l">I liked</div></div>
-      <div className="stat"><div className="v pos">{stats.inMoney}</div><div className="l">In the money</div></div>
-      <div className="stat"><div className="v neg">{stats.outMoney}</div><div className="l">Out of money</div></div>
-      <div className="stat click" onClick={(e)=>{ e.stopPropagation(); onPnl(); }}
-        title={stats.pnlPending>0?`${stats.pnlPending} acted-on idea${stats.pnlPending!==1?'s':''} not priced yet — excluded from this total`:undefined}>
-        <div className={"v "+(stats.pnl>=0?"pos":"neg")}>{fmtSigned(stats.pnl)}</div>
-        <div className="l" style={{color:"var(--accent-ink)"}}>{pnlLabel||"My P&L"} ↗{stats.pnlPending>0?" *":""}</div></div>
-    </div>
   );
 }
 

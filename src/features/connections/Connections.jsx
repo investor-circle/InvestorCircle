@@ -36,7 +36,7 @@ import {
   getMyTrackingList as dbGetMyTrackingList
 } from "../../services/api/trackingApi";
 import { getMyTrackedRecos as dbGetMyTrackedRecos } from "../../services/api/engagementApi";
-import { Avatar, RecoBreakdown, SmallAnchoredPopover, SortTh } from "../../components/common";
+import { Avatar, SmallAnchoredPopover, SortTh } from "../../components/common";
 import { CONTACT_COLORS } from "../../constants/app";
 import { GroupsSection } from "../groups/Groups";
 import { useIsMobile } from "../../hooks/index";
@@ -566,9 +566,16 @@ export function ContactsSection({ connections, setConnections, groups,
     const cg = commonGroups(c);
     const av = {name:c.name,initials:initialsOf(c.name),avatarUrl:c.avatar_url,color:c.avatar_color||CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
 
+    const MiniStat = ({label, value, cls}) => (
+      <div style={{textAlign:"center",flexShrink:0}}>
+        <div className={cls} style={{fontWeight:800,fontSize:13}}>{value}</div>
+        <div className="muted" style={{fontSize:9,textTransform:"uppercase",letterSpacing:".03em",whiteSpace:"nowrap"}}>{label}</div>
+      </div>
+    );
+
     if (isMobile) return (
-      <div key={c.connection_id} className="card" style={{padding:0,marginBottom:8}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
+      <div key={c.connection_id} className="card" style={{padding:"12px 14px",marginBottom:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",flex:1,minWidth:0}}
             onClick={()=>gotoUserProfile(c.user_id)}>
             <Avatar f={av} size={40}/>
@@ -577,23 +584,31 @@ export function ContactsSection({ connections, setConnections, groups,
               <div className="muted small">{c.username ? `@${c.username}` : "—"}</div>
             </div>
           </div>
-          {statusPill(c)}
+          {c.status==="accepted" ? (
+            <div style={{textAlign:"right",cursor:"pointer",flexShrink:0}} onClick={()=>onOpenRecos({tab:'tracked',by:c.name,invested:'yes'})}
+              title={pnlInfo.pnlPending>0?`${pnlInfo.pnlPending} acted-on idea${pnlInfo.pnlPending!==1?'s':''} not priced yet — excluded from this total`:undefined}>
+              <div className="clickable" style={{fontWeight:800,fontSize:15,justifyContent:"flex-end"}}>{fmtSigned(pnlInfo.pnl)}</div>
+              <div className="muted" style={{fontSize:9,textTransform:"uppercase",letterSpacing:".03em"}}>My P&amp;L{pnlInfo.pnlPending>0?" *":""}</div>
+            </div>
+          ) : statusPill(c)}
         </div>
-        {cg.length>0 && <div style={{display:"flex",flexWrap:"wrap",gap:5,padding:"0 14px 10px"}}>{cg.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}
+        {cg.length>0 && <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>{cg.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}
         {c.status==="accepted" && (
-          <div style={{padding:"0 14px 12px"}}>
-            <RecoBreakdown stats={{...stats, pnl:pnlInfo.pnl, pnlPending:pnlInfo.pnlPending}} pnlLabel="My P&L" onPnl={()=>onOpenRecos({tab:'tracked',by:c.name,invested:'yes'})}/>
+          <div style={{display:"flex",gap:16,marginTop:10,paddingTop:10,borderTop:"1px solid var(--line)",overflowX:"auto"}}>
+            <MiniStat label="Ideas" value={stats.count}/>
+            <MiniStat label="Acted on" value={stats.acted}/>
+            <MiniStat label="In money" value={stats.inMoney} cls="pos"/>
+            <MiniStat label="Out money" value={stats.outMoney} cls="neg"/>
           </div>
         )}
-        <div style={{display:"flex",justifyContent:"flex-end",gap:6,padding:"0 14px 12px"}}>
+        <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:6,marginTop:10}}>
           {c.status==="pending"&&c.direction==="received" && (<>
             <button className="btn btn-pri btn-sm" disabled={busy[c.connection_id]} onClick={()=>doAccept(c)}><Check size={13}/> Accept</button>
             <button className="btn btn-ghost btn-sm" disabled={busy[c.connection_id]} onClick={()=>doReject(c)}><X size={13}/> Decline</button>
           </>)}
-          {(c.status==="pending"&&c.direction==="sent"||c.status==="rejected") && (
-            <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>)}
-          {c.status==="accepted" && (
-            <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>)}
+          {c.status!=="pending" || c.direction!=="received" ? (
+            <button className="iconbtn danger" title="Remove" onClick={()=>doRemove(c)}><Trash2 size={14}/></button>
+          ) : null}
         </div>
       </div>
     );
