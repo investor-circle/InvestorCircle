@@ -221,11 +221,14 @@ tr.hiddenrow > td{opacity:.55;}
 /* ─── Home feed "brewing" loading state — shown only while the feed's first
    load is genuinely in flight, never once it's known to be empty ─── */
 .feed-brewing{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:44px 28px 36px;text-align:center;}
-.feed-brewing-art{position:relative;width:120px;height:88px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
+.feed-brewing-art{position:relative;width:120px;height:76px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
 .feed-brewing-cup{overflow:visible;}
-.feed-brewing-cupbody{fill:var(--ink);}
-.feed-brewing-handle{stroke:var(--ink);stroke-width:6;fill:none;}
-.feed-brewing-saucer{fill:var(--surface-2);}
+/* Outlined mug (stroke + soft fill), not a solid silhouette — reads as a
+   deliberately-drawn icon rather than a flat blob, and no saucer/plate
+   underneath (removed — this is a mug being poured, not a place setting). */
+.feed-brewing-cupbody{fill:var(--surface);stroke:var(--ink);stroke-width:3.5;}
+.feed-brewing-handle{stroke:var(--ink);stroke-width:5;fill:none;}
+.feed-brewing-rim{fill:none;stroke:var(--ink);stroke-width:2;opacity:.25;}
 .feed-brewing-liquid{fill:var(--accent);}
 .feed-brewing-steam{stroke:var(--accent);stroke-width:3;opacity:0;}
 .feed-brewing-badge{position:absolute;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);}

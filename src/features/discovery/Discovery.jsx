@@ -43,7 +43,7 @@ import {
 } from "../../services/api/engagementApi";
 import { ConsensusBar, ConvBadge, InstrumentSearch, SectionErrorBoundary, SparkLine, WidgetHeader } from "../../components/common";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
-import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
+import { useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
 import { fetchPublicProfileInfo, openProfile } from "../../utils/navigation";
 import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
@@ -933,14 +933,15 @@ function FeedBrewingState() {
         <span className="feed-brewing-badge feed-brewing-badge-1"><Lightbulb size={15}/></span>
         <span className="feed-brewing-badge feed-brewing-badge-2"><TrendingUp size={15}/></span>
         <span className="feed-brewing-badge feed-brewing-badge-3"><Sparkles size={13}/></span>
-        <svg className="feed-brewing-cup" viewBox="0 0 120 96" width="88" height="70">
-          <path className="feed-brewing-steam feed-brewing-steam-1" d="M46 34 Q40 26 46 18 Q52 10 46 2" fill="none" strokeLinecap="round"/>
-          <path className="feed-brewing-steam feed-brewing-steam-2" d="M60 34 Q54 26 60 18 Q66 10 60 2" fill="none" strokeLinecap="round"/>
-          <path className="feed-brewing-steam feed-brewing-steam-3" d="M74 34 Q68 26 74 18 Q80 10 74 2" fill="none" strokeLinecap="round"/>
-          <ellipse className="feed-brewing-saucer" cx="60" cy="86" rx="38" ry="6"/>
-          <path className="feed-brewing-handle" d="M92 46 Q112 46 112 60 Q112 74 92 74" fill="none" strokeLinecap="round"/>
-          <rect className="feed-brewing-cupbody" x="28" y="40" width="64" height="38" rx="10"/>
-          <ellipse className="feed-brewing-liquid" cx="60" cy="42" rx="29" ry="6"/>
+        <svg className="feed-brewing-cup" viewBox="0 0 120 84" width="88" height="62">
+          <path className="feed-brewing-steam feed-brewing-steam-1" d="M46 30 Q40 22 46 14 Q52 6 46 -2" fill="none" strokeLinecap="round"/>
+          <path className="feed-brewing-steam feed-brewing-steam-2" d="M60 30 Q54 22 60 14 Q66 6 60 -2" fill="none" strokeLinecap="round"/>
+          <path className="feed-brewing-steam feed-brewing-steam-3" d="M74 30 Q68 22 74 14 Q80 6 74 -2" fill="none" strokeLinecap="round"/>
+          <path className="feed-brewing-handle" d="M90 42 Q108 42 108 54 Q108 66 90 66" fill="none" strokeLinecap="round"/>
+          {/* Tapered mug body — narrower base, rounded bottom corners — instead of a plain rectangle */}
+          <path className="feed-brewing-cupbody" d="M30 36 L34 72 Q35 78 41 78 L79 78 Q85 78 86 72 L90 36 Z"/>
+          <ellipse className="feed-brewing-liquid" cx="60" cy="37" rx="30" ry="7"/>
+          <ellipse className="feed-brewing-rim" cx="60" cy="36" rx="30" ry="6"/>
         </svg>
       </div>
       <div className="feed-brewing-title">Great ideas from your circle are brewing</div>
@@ -954,7 +955,6 @@ function FeedBrewingState() {
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
 
 export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds, setTrackedCreatorIds, initTab, onInitTabConsumed }) {
-  const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
   // 'feed' | 'pulse' — Pulse is the default home experience. Drives which

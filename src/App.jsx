@@ -783,19 +783,25 @@ export default function App() {
       const trackedPromise    = dbGetMyTrackedRecoIds();
       const feedCfgPromise    = dbGetFeedConfigAndPrefs();
       const publicFeedPromise = dbGetPublicFeed();
+      // "My Ideas" and notifications aren't needed for Home's first paint
+      // (the feed only reads recsReceived/publicFeedRecos/networkEngagement-
+      // Recos) — they used to sit in the same Promise.all as connections/
+      // groups/received below, so a slow made-recos or notifications query
+      // (either can grow large over time) directly delayed the home feed
+      // leaving its loading state even though neither is shown there.
+      // Firing them independently means they populate whenever they're
+      // ready without holding up anything else.
+      getMyMadeRecos(user.uid).then(setRecsMade).catch(e=>console.warn('made recos load:', e?.message||e));
+      getMyNotifications(user.uid).then(setNotifications).catch(e=>console.warn('notifications load:', e?.message||e));
       try {
-        const [conns, grps, recv, made, notifs] = await Promise.all([
+        const [conns, grps, recv] = await Promise.all([
           getMyConnections(user.uid),
           getMyGroups(user.uid),
           getMyReceivedRecos(user.uid),
-          getMyMadeRecos(user.uid),
-          getMyNotifications(user.uid),
         ]);
         setConnections(conns);
         setGroups(grps);
         setRecsReceived(recv);
-        setRecsMade(made);
-        setNotifications(notifs);
         // Hydrate reactions from recommendation_reactions — fire-and-forget, never breaks main load
         if (recv.length > 0) {
           const ids = recv.map(r => String(r.id));
@@ -849,11 +855,17 @@ export default function App() {
           setEffectiveFeedConfig(effective);
         }
 
-        // Load network-engaged recos and public recos in parallel — the public
-        // feed doesn't depend on the network-engagement fetch (only on the feed
-        // config resolved above), so these two independent round-trips no
-        // longer need to be serialized either.
-        const networkEngagementLoad = (async () => {
+        // Network-engaged recos: fire-and-forget, NOT part of the
+        // feedLoading gate below. It's just one of three Feed-tab sources
+        // (direct delivery + public are the other two, both already
+        // resolved by this point) and Pulse doesn't read it at all, so
+        // holding the home feed's loading state on it was adding a whole
+        // extra sequential round-trip — it can only start once `conns`
+        // (above) and `effective` (just resolved) are both known — for data
+        // that isn't required to render anything. It now populates
+        // networkEngagementRecos whenever it lands, same as the reaction-
+        // hydration calls elsewhere in this function already do.
+        (async () => {
           // Load network-engaged recos (recos liked/commented by connections not in my direct feed)
           if (!effective.src_network_engagement) return;
           try {
@@ -881,15 +893,15 @@ export default function App() {
               }
             }
           } catch(_) {}
-        })();
+        })(); // not awaited — see comment above
 
-        const publicFeedLoad = (async () => {
-          // Load public recommendations — visible to all users when is_public = true.
-          // Excludes the user's own recos and ones already in their direct feed.
-          // (publicFeedPromise was already kicked off above, in parallel with
-          // the first batch, so this is usually just awaiting an
-          // already-in-flight or already-resolved request.)
-          try {
+        // Public feed — awaited (unlike network-engagement above): it's a
+        // Pulse source too (Trending on MIC), not just a Feed-tab extra, and
+        // publicFeedPromise was already kicked off at the top of load(), in
+        // parallel with the connections/groups/received batch, so awaiting
+        // it here is normally just picking up an already-settled promise —
+        // not a real extra round-trip on the critical path.
+        try {
             const pubRows = await publicFeedPromise;
             const pubMapped = pubRows.map(r => ({
               ...r,
@@ -927,10 +939,7 @@ export default function App() {
                   setPublicFeedRecos(rs=>rs.map(x=>rxMap[String(x.id)]?{...x,reaction:rxMap[String(x.id)]}:x));
                 }).catch(()=>{});
             }
-          } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
-        })();
-
-        await Promise.allSettled([networkEngagementLoad, publicFeedLoad]);
+        } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
       } catch(e) { console.warn("Data load failed:", e.message); }
       finally { setFeedLoading(false); }
       // Load registered users for admin panel (admin only — non-admins skip this
