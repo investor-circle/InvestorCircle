@@ -143,7 +143,7 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
     {tab==="tracked"  && <TrackedSection tracked={tracked} toggleTrack={toggleTrack} me={me} contacts={contacts} groups={groups} onSendShare={sendIdeaToTargets} initMoneyFilter={initFilter?.moneyFilter} globalSearch={globalSearch}/>}
     {tab==="received" && <ReceivedSection recs={recsReceived} setRecs={setRecsReceived} myId={myId}
         contactName={contactName} groupName={groupName} assetClasses={assetClasses}
-        contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId}
+        contacts={contacts} groups={groups} initBy={initFilter?.by} initGroup={initFilter?.groupId} initInv={initFilter?.invested}
         onSendShare={sendIdeaToTargets} onReload={onReload} me={me} tracked={tracked} toggleTrack={toggleTrack} globalSearch={globalSearch}/>}
     {tab==="made"     && <MadeSection recs={recsMade} setRecs={setRecsMade} recipientName={recipientName}
         reach={reach} contacts={contacts} groups={groups} onSendShare={sendIdeaToTargets} assetClasses={assetClasses}
@@ -499,11 +499,11 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
   </>);
 }
 
-export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, onSendShare, onReload, me, tracked, toggleTrack, globalSearch }) {
+export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, assetClasses, contacts, groups, initBy, initGroup, initInv, onSendShare, onReload, me, tracked, toggleTrack, globalSearch }) {
   const isMobile = useIsMobile();
   const [q,setQ]=useState(globalSearch||""); const [sort,setSort]=useState({key:"date",dir:"desc"});
   const [fBy,setFBy]=useState(initBy||"all"),[fCls,setFCls]=useState("all"),[fMoney,setFMoney]=useState("all");
-  const [fInv,setFInv]=useState("all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
+  const [fInv,setFInv]=useState(initInv||"all"),[fGroup,setFGroup]=useState(initGroup||"all"),[fHorizon,setFHorizon]=useState("all");
   const [showHidden,setShowHidden]=useState(false); const [showExpired,setShowExpired]=useState(false);
   const [openRow,setOpenRow]=useState(null);
   const [sharePopId,setSharePopId]=useState(null);
@@ -582,7 +582,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
   },[recs,q,fBy,fGroup,fCls,fHorizon,fMoney,fInv,showHidden,showExpired,sort]);
 
   const expiredCount = recs.filter(x=>!x.hidden&&isExpired(x)).length;
-  const activeFilterNote = fBy!=="all"?`From ${fBy}`:fGroup!=="all"?`Via ${groupName(fGroup)}`:null;
+  const activeFilterNote = fBy!=="all"?`From ${fBy}`+(fInv==="yes"?" · Acted on":""):fGroup!=="all"?`Via ${groupName(fGroup)}`:null;
 
   return (<>
     {/* ── Compact top bar: search + filters + expired toggle all in one row ── */}

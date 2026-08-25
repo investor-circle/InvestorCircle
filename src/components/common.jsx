@@ -27,10 +27,10 @@ export const Avatar = ({ f, size=40 }) => {
 
 /* ── useIsMobile — JS-driven responsive control (bypasses CSS media query issues) ── */
 
-export function SortTh({ label, k, sort, setSort, align }) {
+export function SortTh({ label, k, sort, setSort, align, hint }) {
   const active = sort.key===k;
   return (
-    <th className={"sortable"+(active?" sorted":"")} style={align?{textAlign:align}:null}
+    <th className={"sortable"+(active?" sorted":"")} style={align?{textAlign:align}:null} title={hint}
         onClick={()=>setSort(s=>({ key:k, dir: s.key===k && s.dir==="asc" ? "desc":"asc" }))}>
       {label}<span className="si">{active ? (sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>) : <ArrowUpDown size={12}/>}</span>
     </th>
@@ -46,9 +46,10 @@ export function RecoBreakdown({ stats, onPnl, pnlLabel }) {
       <div className="stat"><div className="v">{stats.disliked}</div><div className="l">I disliked</div></div>
       <div className="stat"><div className="v pos">{stats.inMoney}</div><div className="l">In the money</div></div>
       <div className="stat"><div className="v neg">{stats.outMoney}</div><div className="l">Out of money</div></div>
-      <div className="stat click" onClick={(e)=>{ e.stopPropagation(); onPnl(); }}>
+      <div className="stat click" onClick={(e)=>{ e.stopPropagation(); onPnl(); }}
+        title={stats.pnlPending>0?`${stats.pnlPending} acted-on idea${stats.pnlPending!==1?'s':''} not priced yet — excluded from this total`:undefined}>
         <div className={"v "+(stats.pnl>=0?"pos":"neg")}>{fmtSigned(stats.pnl)}</div>
-        <div className="l" style={{color:"var(--accent-ink)"}}>{pnlLabel||"My P&L"} ↗</div></div>
+        <div className="l" style={{color:"var(--accent-ink)"}}>{pnlLabel||"My P&L"} ↗{stats.pnlPending>0?" *":""}</div></div>
     </div>
   );
 }

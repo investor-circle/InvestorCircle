@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcTargetDate, getTargetDate, getClosedInfo } from "./format.js";
+import { calcTargetDate, getTargetDate, getClosedInfo, recoStats } from "./format.js";
 
 // Regression coverage for the "Invalid time value" crash that blanked the
 // whole app: calcTargetDate() built a Date via `date + "T00:00:00"`, which
@@ -101,5 +101,63 @@ describe("getClosedInfo", () => {
 
   it("does not throw when entry price is zero", () => {
     expect(() => getClosedInfo({ exitSignal: true, exitDate: "2024-01-01", exitPrice: 10, priceAt: 0 })).not.toThrow();
+  });
+});
+
+// Regression coverage for "My P&L" (Connections page): the original
+// reduce() priced every acted-on idea off its still-live current_price and
+// never excluded an unpriced one, so (a) a closed idea's P&L kept drifting
+// with the market after it closed, and (b) an idea the nightly batch hasn't
+// stamped a price for yet (current_price coerces to 0 upstream) silently
+// counted as a full -100% loss instead of being left out.
+describe("recoStats", () => {
+  const pred = () => true;
+
+  it("only counts ideas marked invested", () => {
+    const stats = recoStats([
+      { invested: true,  priceAt: 100, price: 110 },
+      { invested: false, priceAt: 100, price: 200 },
+    ], pred);
+    expect(stats.acted).toBe(1);
+    expect(stats.pnl).toBeCloseTo(1000 * 0.10);
+  });
+
+  it("uses investedPrice over priceAt as the entry price when set", () => {
+    const stats = recoStats([{ invested: true, investedPrice: 50, priceAt: 100, price: 100 }], pred);
+    expect(stats.pnl).toBeCloseTo(1000); // 50 -> 100 is +100% off the entry price actually paid
+  });
+
+  it("prices a CLOSED (exited) idea off its exit price, not the still-drifting current price", () => {
+    const stats = recoStats([{
+      invested: true, priceAt: 100, investedPrice: 100,
+      exitSignal: true, exitDate: "2024-01-01", exitPrice: 120,
+      price: 500, // live price kept moving long after the idea closed — must be ignored
+    }], pred);
+    expect(stats.pnl).toBeCloseTo(1000 * 0.20);
+  });
+
+  it("prices a CLOSED (expired) idea off its expiry price, not the current price", () => {
+    const stats = recoStats([{
+      invested: true, priceAt: 100, investedPrice: 100,
+      exitSignal: false, targetDate: "2020-01-01", expiryPrice: 80,
+      price: 500,
+    }], pred);
+    expect(stats.pnl).toBeCloseTo(1000 * -0.20);
+  });
+
+  it("excludes an acted-on idea with no priced outcome yet instead of counting it as a full loss", () => {
+    const stats = recoStats([
+      { invested: true, priceAt: 100, price: 0 },   // current_price never stamped (e.g. out-of-scope asset class)
+      { invested: true, priceAt: 100, price: 110 }, // this one IS priced
+    ], pred);
+    expect(stats.pnl).toBeCloseTo(1000 * 0.10); // not -1000 + 100
+    expect(stats.pnlPending).toBe(1);
+  });
+
+  it("excludes an acted-on idea with no valid entry price", () => {
+    const stats = recoStats([{ invested: true, priceAt: 0, investedPrice: null, price: 100 }], pred);
+    expect(stats.pnl).toBe(0);
+    expect(stats.pnlPending).toBe(1);
+    expect(Number.isFinite(stats.pnl)).toBe(true); // guards the old price/0 -> Infinity path
   });
 });

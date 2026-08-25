@@ -20,10 +20,38 @@ export const fmtDate = (d) => {
 
 export const initialsOf = (name) => name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
 
+/**
+ * P&L per acted-on idea uses a flat assumed ₹NOTIONAL stake (see constants/
+ * app.js) — it's a directional "would this person's ideas have made money"
+ * indicator, not a record of real amounts invested.
+ *
+ * Two correctness rules, both required for the number to mean what it
+ * claims to mean:
+ *  - CLOSED ideas (exited or expired) price off getClosedInfo()'s exit/
+ *    expiry price, not the idea's still-live current_price — the current
+ *    price keeps drifting long after the idea closed and no longer
+ *    reflects what tracking it would actually have returned.
+ *  - An idea with no priced outcome yet (current_price not stamped yet —
+ *    e.g. an out-of-scope asset class the nightly batch doesn't cover, or
+ *    simply too new — coerces to 0 upstream) is EXCLUDED from the sum
+ *    rather than counted as a -100% loss. Reducing over `r.price` directly
+ *    without this check silently manufactured a full loss for every
+ *    unpriced idea, which is not a real outcome — just missing data.
+ * `pnlPending` reports how many acted-on ideas were excluded for this
+ * reason, so a caller can flag "N idea(s) not yet priced" if it wants to.
+ */
 export const recoStats = (recs, pred) => {
   const list = recs.filter(pred);
   const acted = list.filter(r=>r.invested);
-  const pnl = acted.reduce((s,r)=> s + NOTIONAL*((r.price/(r.investedPrice||r.priceAt))-1), 0);
+  let pnl = 0, pnlPending = 0;
+  acted.forEach(r => {
+    const entry = r.investedPrice || r.priceAt;
+    if (!entry) { pnlPending++; return; }
+    const closed = getClosedInfo(r);
+    const outcome = closed ? closed.price : (r.price || null);
+    if (outcome == null || outcome <= 0) { pnlPending++; return; }
+    pnl += NOTIONAL * (outcome / entry - 1);
+  });
   return {
     count:list.length, acted:acted.length,
     liked:list.filter(r=>r.reaction==="like").length,
@@ -31,6 +59,7 @@ export const recoStats = (recs, pred) => {
     inMoney:list.filter(r=>(r.price-r.priceAt)/r.priceAt>=0).length,
     outMoney:list.filter(r=>(r.price-r.priceAt)/r.priceAt<0).length,
     pnl,
+    pnlPending,
   };
 };
 

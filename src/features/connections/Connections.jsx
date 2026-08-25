@@ -15,7 +15,8 @@ import {
   Loader,
   Copy,
   Radar,
-  Eye
+  Eye,
+  Info
 } from "lucide-react";
 import {
   acceptConnection,
@@ -388,7 +389,7 @@ export function ContactsSection({ connections, setConnections, groups,
         <td className="tnum">{c.status==="accepted"?stats.count:<span className="muted">—</span>}</td>
         <td style={{textAlign:"right"}}>
           {c.status==="accepted"
-            ? <span className="clickable tnum nowrap" onClick={(e)=>{e.stopPropagation();onOpenRecos({by:c.name});}}>{fmtSigned(stats.pnl)} ↗</span>
+            ? <span className="clickable tnum nowrap" onClick={(e)=>{e.stopPropagation();onOpenRecos({tab:'received',by:c.name,invested:'yes'});}}>{fmtSigned(stats.pnl)} ↗</span>
             : <span className="muted">—</span>}</td>
         <td onClick={e=>e.stopPropagation()}>
           {c.status==="pending"&&c.direction==="received" && (
@@ -407,7 +408,7 @@ export function ContactsSection({ connections, setConnections, groups,
           <b style={{fontSize:14}}>{c.name}&apos;s ideas to you</b>
           <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>
         </div>
-        <RecoBreakdown stats={statsOf(c)} pnlLabel="My P&L" onPnl={()=>onOpenRecos({by:c.name})}/>
+        <RecoBreakdown stats={statsOf(c)} pnlLabel="My P&L" onPnl={()=>onOpenRecos({tab:'received',by:c.name,invested:'yes'})}/>
       </div></td></tr>}
     </React.Fragment>);
   };
@@ -426,13 +427,24 @@ export function ContactsSection({ connections, setConnections, groups,
     {/* Accepted contacts */}
     {connections.length===0
       ? <div className="card"><div className="empty">No connections yet. Use &ldquo;Add connection&rdquo; to invite people.</div></div>
-      : <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:900}}>
+      : <>
+      <div className="note info" style={{marginBottom:10,alignItems:"flex-start"}}>
+        <Info size={16} style={{marginTop:1,flexShrink:0}}/>
+        <div>
+          <b>What is My P&amp;L?</b> A directional signal, not real money: for each idea someone sent you that you marked
+          &ldquo;invested&rdquo;, it applies a flat hypothetical ₹1,000 stake to the move from your entry price to the idea&apos;s
+          closing price (or its live price if still open), then adds those up per person. It shows whether following a
+          connection&apos;s ideas has tended to be profitable — it isn&apos;t a record of what you actually put in or made.
+        </div>
+      </div>
+      <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:900}}>
           <thead><tr>
             <SortTh label="Name"            k="name"   sort={sort} setSort={setSort}/>
             <th>Email</th>
             <th>Common groups</th>
             <SortTh label="Ideas to me"     k="recos"  sort={sort} setSort={setSort}/>
-            <SortTh label="My P&amp;L"      k="pnl"    sort={sort} setSort={setSort} align="right"/>
+            <SortTh label="My P&amp;L"      k="pnl"    sort={sort} setSort={setSort} align="right"
+              hint="Hypothetical ₹1,000-per-idea return on ideas you marked invested — a directional signal, not real money. Click a value to see the ideas behind it."/>
             <th>Actions</th>
           </tr></thead>
           <tbody>
@@ -440,7 +452,8 @@ export function ContactsSection({ connections, setConnections, groups,
             {pendingSent.map(c=><ContactRow key={c.connection_id} c={c}/>)}
             {rejected.map(c=><ContactRow key={c.connection_id} c={c}/>)}
           </tbody>
-        </table></div></div></div>}
+        </table></div></div></div>
+      </>}
 
     {showAdd && <AddConnectionModal existing={connections} me={me} onClose={()=>setShowAdd(false)}
         onAddExisting={async(uid,info)=>{
