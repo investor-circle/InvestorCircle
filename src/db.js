@@ -102,8 +102,8 @@ export async function callApi(path, { method = "GET", body } = {}) {
  * Load all connections for the current user (all statuses).
  * Returns an array ready to use as the `connections` React state.
  *
- * Each element:
- *   { connectionId, userId, name, email, status, direction }
+ * Each element (raw SQL row shape — NOT camelCased, see connections.js):
+ *   { connection_id, user_id, name, username, avatar_url, avatar_color, email, status, direction }
  *   direction: 'sent' = I requested | 'received' = they requested
  */
 export async function getMyConnections(myId) {

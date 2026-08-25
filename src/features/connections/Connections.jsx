@@ -16,7 +16,8 @@ import {
   Copy,
   Radar,
   Eye,
-  Info
+  Info,
+  ArrowUpDown
 } from "lucide-react";
 import {
   acceptConnection,
@@ -38,7 +39,7 @@ import {
   getMyTrackingList as dbGetMyTrackingList
 } from "../../services/api/trackingApi";
 import { getMyTrackedRecos as dbGetMyTrackedRecos } from "../../services/api/engagementApi";
-import { Avatar, RecoBreakdown, SortTh } from "../../components/common";
+import { Avatar, RecoBreakdown, SmallAnchoredPopover, SortTh } from "../../components/common";
 import { CONTACT_COLORS, TODAY } from "../../constants/app";
 import { GroupsSection } from "../groups/Groups";
 import { useIsMobile } from "../../hooks/index";
@@ -60,13 +61,10 @@ export function Network({ connections, setConnections, groups, setGroups, config
         <div><div className="eyebrow">Network</div><div className="page-title">Your network</div>
           <div className="page-sub">Manage connections, tracking and Circles</div></div>
       </div>
-      <div className="seg net-tabs" style={{marginBottom:20,flexWrap:"wrap"}}>
+      <div className="seg net-tabs" style={{marginBottom:20}}>
         <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}>
-          <Users size={15}/>
-          <span style={{display:"inline-flex",alignItems:"center",flexWrap:"wrap",justifyContent:"center",gap:5}}>
-            <span>Connections · {connections.filter(c=>c.status==="accepted").length}</span>
-            {pendingReceived>0 && <span className="nav-badge" style={{position:"static",flexShrink:0}}>{pendingReceived}</span>}
-          </span>
+          <Users size={15}/> Connections · {connections.filter(c=>c.status==="accepted").length}
+          {pendingReceived>0 && <span className="nav-badge" style={{position:"static",flexShrink:0}}>{pendingReceived}</span>}
         </button>
         <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}>
           <Layers size={15}/> Circles · {groups.length}
@@ -134,11 +132,31 @@ function ContactsSortSelect({ sort, setSort }) {
   );
 }
 
-function SortSelect({ value, onChange }) {
+// Icon-only trigger + popover — same pattern Portfolio's holdings-grid
+// header uses for its filter/sort icons — instead of a full <select>, so
+// the search box + sort control fit on one row on mobile without wrapping.
+function SortIconButton({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const active = value !== SORT_OPTIONS[0].value;
   return (
-    <select className="inline-select sm" value={value} onChange={e=>onChange(e.target.value)} aria-label="Sort by">
-      {SORT_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <div style={{position:"relative",flexShrink:0}}>
+      <button ref={setAnchorEl} className={"icon-btn"+(active?" active":"")} style={{width:36,height:36}}
+        title="Sort by" onClick={()=>setOpen(v=>!v)}><ArrowUpDown size={15}/></button>
+      {open && (
+        <SmallAnchoredPopover anchorEl={anchorEl} onClose={()=>setOpen(false)} width={200}>
+          {SORT_OPTIONS.map(o=>{
+            const isActive = o.value===value;
+            return (
+              <div key={o.value} onClick={()=>{onChange(o.value);setOpen(false);}}
+                style={{padding:"8px 9px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:isActive?700:500,color:isActive?"var(--accent-ink)":"var(--ink)",background:isActive?"var(--accent-soft)":"transparent"}}>
+                {o.label}
+              </div>
+            );
+          })}
+        </SmallAnchoredPopover>
+      )}
+    </div>
   );
 }
 
@@ -284,9 +302,9 @@ function useTrackingPeople(fetchFn, sort, q) {
 /** Debounced search box shared by both tracking lists. */
 function TrackingSearchBox({ value, onChange }) {
   return (
-    <div className="searchbox" style={{flex:"1 1 200px",minWidth:160}}>
+    <div className="searchbox" style={{flex:"1 1 auto",minWidth:0}}>
       <Search size={14} color="var(--muted)"/>
-      <input value={value} onChange={e=>onChange(e.target.value)} placeholder="Search by name or username…" style={{fontSize:13}}/>
+      <input value={value} onChange={e=>onChange(e.target.value)} placeholder="Search by name or username…" style={{fontSize:13,minWidth:0}}/>
     </div>
   );
 }
@@ -341,9 +359,9 @@ export function TrackingMeSection({ me, setConnections, onTrackingCountsChange }
   if(loading && people.length===0 && !q) return <div className="card"><div className="empty"><Loader size={16} className="spin"/> Loading…</div></div>;
 
   return (<div style={{display:"flex",flexDirection:"column",gap:8}}>
-    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:2}}>
+    <div style={{display:"flex",gap:8,flexWrap:"nowrap",marginBottom:2}}>
       <TrackingSearchBox value={qInput} onChange={setQInput}/>
-      <SortSelect value={sort} onChange={setSort}/>
+      <SortIconButton value={sort} onChange={setSort}/>
     </div>
     {people.length===0 && !loading && (
       <div className="card"><div className="empty">
@@ -394,9 +412,9 @@ export function ImTrackingSection({ me, setConnections, onTrackingCountsChange }
   if(loading && people.length===0 && !q) return <div className="card"><div className="empty"><Loader size={16} className="spin"/> Loading…</div></div>;
 
   return (<div style={{display:"flex",flexDirection:"column",gap:8}}>
-    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:2}}>
+    <div style={{display:"flex",gap:8,flexWrap:"nowrap",marginBottom:2}}>
       <TrackingSearchBox value={qInput} onChange={setQInput}/>
-      <SortSelect value={sort} onChange={setSort}/>
+      <SortIconButton value={sort} onChange={setSort}/>
     </div>
     {people.length===0 && !loading && (
       <div className="card"><div className="empty">
@@ -445,6 +463,7 @@ export function ContactsSection({ connections, setConnections, groups,
   const [busy, setBusy] = useState({});
   const [trackedRecos, setTrackedRecos] = useState([]);
   const [pnlExplainerOpen, setPnlExplainerOpen] = useState(false);
+  const isMobile = useIsMobile();
   const myId = me?.id || "me";
 
   // My P&L (below) has to include ideas from a contact that I tracked
@@ -531,12 +550,64 @@ export function ContactsSection({ connections, setConnections, groups,
   const pendingSent = rows.filter(c=>c.status==="pending"&&c.direction==="sent");
   const rejected = rows.filter(c=>c.status==="rejected");
 
-  const ContactRow = ({c, showActions}) => {
+  const statusPill = (c) => c.status==="pending"&&c.direction==="sent" ? <span className="pill" style={{fontSize:11,background:"#f59e0b22",color:"#b45309"}}>Pending</span>
+    : c.status==="pending"&&c.direction==="received" ? <span className="pill accent" style={{fontSize:11}}>Wants to connect</span>
+    : c.status==="rejected" ? <span className="pill loss" style={{fontSize:11}}>Rejected</span>
+    : null;
+
+  const ContactRow = ({c}) => {
     const stats = statsOf(c);
     const pnlInfo = pnlFor(c);
     const open = expandId===c.connection_id;
     const cg = commonGroups(c);
-    const av = {name:c.name,initials:initialsOf(c.name),color:CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
+    const av = {name:c.name,initials:initialsOf(c.name),avatarUrl:c.avatar_url,color:c.avatar_color||CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
+
+    if (isMobile) return (
+      <div key={c.connection_id} className="card" style={{padding:0,marginBottom:8,cursor:"pointer"}} onClick={()=>setExpandId(open?null:c.connection_id)}>
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",flex:1,minWidth:0}}
+            onClick={e=>{e.stopPropagation();gotoUserProfile(c.user_id);}}>
+            <Avatar f={av} size={40}/>
+            <div style={{minWidth:0}}>
+              <div className="sym" style={{color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
+              <div className="muted small">{c.username ? `@${c.username}` : "—"}</div>
+            </div>
+          </div>
+          {statusPill(c)}
+          <ChevronDown size={14} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s",flexShrink:0}}/>
+        </div>
+        {cg.length>0 && <div style={{display:"flex",flexWrap:"wrap",gap:5,padding:"0 14px 10px"}}>{cg.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}
+        {c.status==="accepted" && (
+          <div style={{display:"flex",gap:20,padding:"0 14px 12px"}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontWeight:800,fontSize:14}}>{stats.count}</div>
+              <div className="muted" style={{fontSize:10,textTransform:"uppercase",letterSpacing:".04em"}}>Ideas to me</div>
+            </div>
+            <div style={{textAlign:"center",cursor:"pointer"}} onClick={e=>{e.stopPropagation();onOpenRecos({tab:'tracked',by:c.name,invested:'yes'});}}>
+              <div className="clickable" style={{fontWeight:800,fontSize:14,justifyContent:"center"}}>{fmtSigned(pnlInfo.pnl)}</div>
+              <div className="muted" style={{fontSize:10,textTransform:"uppercase",letterSpacing:".04em"}}>My P&amp;L</div>
+            </div>
+          </div>
+        )}
+        <div style={{display:"flex",justifyContent:"flex-end",gap:6,padding:"0 14px 12px"}} onClick={e=>e.stopPropagation()}>
+          {c.status==="pending"&&c.direction==="received" && (<>
+            <button className="btn btn-pri btn-sm" disabled={busy[c.connection_id]} onClick={()=>doAccept(c)}><Check size={13}/> Accept</button>
+            <button className="btn btn-ghost btn-sm" disabled={busy[c.connection_id]} onClick={()=>doReject(c)}><X size={13}/> Decline</button>
+          </>)}
+          {(c.status==="pending"&&c.direction==="sent"||c.status==="rejected") && (
+            <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>)}
+          {c.status==="accepted" && (
+            <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>)}
+        </div>
+        {open && c.status==="accepted" && (
+          <div style={{padding:"0 14px 14px",borderTop:"1px solid var(--line)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,fontSize:13,margin:"12px 0 10px"}}>{c.name}&apos;s ideas to you</div>
+            <RecoBreakdown stats={{...stats, pnl:pnlInfo.pnl, pnlPending:pnlInfo.pnlPending}} pnlLabel="My P&L" onPnl={()=>onOpenRecos({tab:'tracked',by:c.name,invested:'yes'})}/>
+          </div>
+        )}
+      </div>
+    );
+
     return (<React.Fragment key={c.connection_id}>
       <tr className={"hoverable"+(c.status!=="accepted"?" hiddenrow":"")} style={{cursor:"pointer"}} onClick={()=>setExpandId(open?null:c.connection_id)}>
         <td><div style={{display:"flex",gap:11,alignItems:"center"}}>
@@ -545,11 +616,12 @@ export function ContactsSection({ connections, setConnections, groups,
             title={`View ${c.name}'s public profile`}
             onClick={e=>{e.stopPropagation(); gotoUserProfile(c.user_id);}}>
             <Avatar f={av} size={36}/>
-            <div className="sym" style={{color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{c.name}</div>
+            <div>
+              <div className="sym" style={{color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{c.name}</div>
+              {c.username && <div className="muted small">@{c.username}</div>}
+            </div>
           </div>
-          {c.status==="pending"&&c.direction==="sent"     && <span className="pill" style={{fontSize:11,background:"#f59e0b22",color:"#b45309"}}>Pending</span>}
-          {c.status==="pending"&&c.direction==="received" && <span className="pill accent" style={{fontSize:11}}>Wants to connect</span>}
-          {c.status==="rejected" && <span className="pill loss" style={{fontSize:11}}>Rejected</span>}
+          {statusPill(c)}
           <ChevronDown size={14} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s"}}/>
         </div></td>
         <td>{cg.length===0?<span className="muted small">—</span>:<div style={{display:"flex",flexWrap:"wrap",gap:5}}>{cg.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}</td>
@@ -614,21 +686,29 @@ export function ContactsSection({ connections, setConnections, groups,
           </span>
         </div>
       </div>
-      <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:760}}>
-          <thead><tr>
-            <SortTh label="Name"            k="name"   sort={sort} setSort={setSort}/>
-            <th>Common groups</th>
-            <SortTh label="Ideas to me"     k="recos"  sort={sort} setSort={setSort}/>
-            <SortTh label="My P&amp;L"      k="pnl"    sort={sort} setSort={setSort} align="right"
-              hint="Hypothetical ₹1,000-per-idea return on this person's ideas you marked invested (received or tracked) — a directional signal, not real money. Click a value to see the ideas behind it."/>
-            <th>Actions</th>
-          </tr></thead>
-          <tbody>
-            {accepted.map(c=><ContactRow key={c.connection_id} c={c}/>)}
-            {pendingSent.map(c=><ContactRow key={c.connection_id} c={c}/>)}
-            {rejected.map(c=><ContactRow key={c.connection_id} c={c}/>)}
-          </tbody>
-        </table></div></div></div>
+      {isMobile ? (
+        <div>
+          {accepted.map(c=><ContactRow key={c.connection_id} c={c}/>)}
+          {pendingSent.map(c=><ContactRow key={c.connection_id} c={c}/>)}
+          {rejected.map(c=><ContactRow key={c.connection_id} c={c}/>)}
+        </div>
+      ) : (
+        <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid">
+            <thead><tr>
+              <SortTh label="Name"            k="name"   sort={sort} setSort={setSort}/>
+              <th>Common groups</th>
+              <SortTh label="Ideas to me"     k="recos"  sort={sort} setSort={setSort}/>
+              <SortTh label="My P&amp;L"      k="pnl"    sort={sort} setSort={setSort} align="right"
+                hint="Hypothetical ₹1,000-per-idea return on this person's ideas you marked invested (received or tracked) — a directional signal, not real money. Click a value to see the ideas behind it."/>
+              <th>Actions</th>
+            </tr></thead>
+            <tbody>
+              {accepted.map(c=><ContactRow key={c.connection_id} c={c}/>)}
+              {pendingSent.map(c=><ContactRow key={c.connection_id} c={c}/>)}
+              {rejected.map(c=><ContactRow key={c.connection_id} c={c}/>)}
+            </tbody>
+          </table></div></div></div>
+      )}
       </>}
 
     {showAdd && <AddConnectionModal existing={connections} me={me} onClose={()=>setShowAdd(false)}
@@ -698,7 +778,7 @@ function PendingRequestsCard({ pendingReceived, connections, busy, doAccept, doR
         {visible.length===0
           ? <div className="muted small" style={{padding:"18px 16px"}}>No requests match &ldquo;{search}&rdquo;.</div>
           : visible.map(c=>{
-              const av = {name:c.name, initials:initialsOf(c.name), color:CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
+              const av = {name:c.name, initials:initialsOf(c.name), avatarUrl:c.avatar_url, color:c.avatar_color||CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
               return (
                 <div key={c.connection_id} className="hoverable"
                   style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"11px 16px",borderBottom:"1px solid var(--line)",flexWrap:"wrap"}}>
@@ -707,7 +787,7 @@ function PendingRequestsCard({ pendingReceived, connections, busy, doAccept, doR
                     <Avatar f={av} size={36}/>
                     <div style={{minWidth:0}}>
                       <div className="sym" style={{color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{c.name}</div>
-                      <div className="muted small">Wants to connect</div>
+                      <div className="muted small">{c.username ? `@${c.username}` : "Wants to connect"}</div>
                     </div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:16,marginLeft:"auto",flexShrink:0}}>

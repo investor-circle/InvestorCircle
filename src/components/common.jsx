@@ -43,7 +43,6 @@ export function RecoBreakdown({ stats, onPnl, pnlLabel }) {
       <div className="stat"><div className="v">{stats.count}</div><div className="l">Ideas</div></div>
       <div className="stat"><div className="v">{stats.acted}</div><div className="l">I acted on</div></div>
       <div className="stat"><div className="v">{stats.liked}</div><div className="l">I liked</div></div>
-      <div className="stat"><div className="v">{stats.disliked}</div><div className="l">I disliked</div></div>
       <div className="stat"><div className="v pos">{stats.inMoney}</div><div className="l">In the money</div></div>
       <div className="stat"><div className="v neg">{stats.outMoney}</div><div className="l">Out of money</div></div>
       <div className="stat click" onClick={(e)=>{ e.stopPropagation(); onPnl(); }}

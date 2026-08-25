@@ -366,11 +366,15 @@ tr.hiddenrow > td{opacity:.55;}
   .overlay{align-items:flex-end!important;padding:0!important;}
   .modal{border-radius:20px 20px 0 0!important;width:100%!important;max-height:88vh!important;}
 
-  /* Network tabs (Connections/Circles/Tracking me/I'm tracking): force a single
-     row on mobile — shrink padding/font and let labels wrap to 2 lines instead
-     of the row wrapping to a second line of buttons. */
-  .net-tabs{flex-wrap:nowrap!important;width:100%;}
-  .net-tabs button{flex:1 1 0;min-width:0;padding:7px 4px;font-size:11px;gap:4px;white-space:normal;text-align:center;justify-content:center;line-height:1.15;}
+  /* Network tabs (Connections/Circles/Tracking me/I'm tracking): squeezing 4
+     verbose labels into equal-width flex items (flex:1 1 0 + wrapped text)
+     still broke into multiple rows in practice — each button's content could
+     out-grow its allotted quarter-width and the WHOLE ROW would wrap rather
+     than just that one button's text. A horizontally-scrollable strip of
+     natural-width, single-line buttons is the standard mobile tab pattern
+     and can't wrap: if all 4 don't fit, the row scrolls instead. */
+  .net-tabs{flex-wrap:nowrap!important;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .net-tabs button{flex:0 0 auto;white-space:nowrap;padding:8px 12px;font-size:12px;gap:5px;}
 }
 
 @media(max-width:480px){
