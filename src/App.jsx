@@ -81,9 +81,6 @@ import {
   getMyMadeRecos,
   getMyReceivedRecos
 } from "./services/api/recommendationsApi";
-import {
-  getSharingPrefs
-} from "./services/api/sharingApi";
 import { ProfileErrorBoundary, SectionErrorBoundary } from "./components/common";
 import { CONTACT_COLORS, DEFAULT_CLASSES, HOLDINGS } from "./constants/app";
 // Admin screens are code-split into their own chunk: only admin-role users
@@ -217,7 +214,6 @@ export default function App() {
   const [groups,        setGroups]        = useState([]); // shared groups from ic_groups
   const [recsReceived,  setRecsReceived]  = useState([]); // from recommendation_deliveries
   const [recsMade,      setRecsMade]      = useState([]); // from ic_recommendations
-  const [sharing,       setSharing]       = useState({});
   const [notifications, setNotifications] = useState([]);
   const [tracked,       setTracked]       = useState(new Set()); // Set of reco IDs the user has tracked
   const [trackedCreatorIds, setTrackedCreatorIds] = useState(new Set()); // Set of investor/creator IDs the user tracks (Pulse "What You Missed" relevance signal)
@@ -384,7 +380,6 @@ export default function App() {
     setRecsReceived([]);
     setRecsMade([]);
     setNotifications([]);
-    setSharing({});
     setUsers([]);
     setPublicFeedRecos([]);
     setNetworkEngagementRecos([]);
@@ -415,7 +410,7 @@ export default function App() {
   const [users,         setUsers]         = useState([]);
   const [configs,       setConfigs]       = useState({
     enableRecommendations:true, allowCryptoAccounts:true, publicFeed:true,
-    requireAccountApproval:true, allowAmountSharing:true, defaultDisclosure:"names",
+    requireAccountApproval:true,
     maxGroupMembers:8, groupCreationPolicy:"all",
   });
   const [providers, setProviders] = useState(["Fidelity","Vanguard","Robinhood","Coinbase","Schwab","E*TRADE"]);
@@ -433,7 +428,6 @@ export default function App() {
         initials:     initialsOf(c.name),
         color:        CONTACT_COLORS[i % CONTACT_COLORS.length],
         title:        "My Investor Circle member",
-        shared:       { level:"none", holdings:[] },
       })),
     [connections]
   );
@@ -791,20 +785,18 @@ export default function App() {
       const feedCfgPromise    = dbGetFeedConfigAndPrefs();
       const publicFeedPromise = dbGetPublicFeed();
       try {
-        const [conns, grps, recv, made, notifs, shr] = await Promise.all([
+        const [conns, grps, recv, made, notifs] = await Promise.all([
           getMyConnections(user.uid),
           getMyGroups(user.uid),
           getMyReceivedRecos(user.uid),
           getMyMadeRecos(user.uid),
           getMyNotifications(user.uid),
-          getSharingPrefs(user.uid),
         ]);
         setConnections(conns);
         setGroups(grps);
         setRecsReceived(recv);
         setRecsMade(made);
         setNotifications(notifs);
-        setSharing(shr);
         // Hydrate reactions from recommendation_reactions — fire-and-forget, never breaks main load
         if (recv.length > 0) {
           const ids = recv.map(r => String(r.id));
@@ -1134,7 +1126,7 @@ export default function App() {
       { id:"portfolio",   label:"Portfolio",         icon:PieChart,iconColor:"#fb923c", iconBg:"rgba(251,146,60,.13)" },
     ]},
     { label:"ACCOUNT & SUPPORT", items: [
-      { id:"sharing",  label:"Privacy & Sharing", icon:Lock,        iconColor:"#f472b6", iconBg:"rgba(244,114,182,.13)" },
+      { id:"sharing",  label:"Feed Settings", icon:Lock,        iconColor:"#f472b6", iconBg:"rgba(244,114,182,.13)" },
       { id:"about",    label:"About MIC",         icon:Info,        iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
       { id:"contact",  label:"Contact Us",        icon:ExternalLink,iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
     ]},
@@ -1688,7 +1680,6 @@ export default function App() {
             {isInv && page==="network"   && <SectionErrorBoundary label="Network"><Network
                 connections={connections} setConnections={setConnections}
                 groups={groups} setGroups={setGroups}
-                sharing={sharing} setSharing={setSharing}
                 configs={configs} canCreateGroups={canCreateGroups}
                 pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
                 recsReceived={recsReceived} me={ME}
@@ -1704,7 +1695,7 @@ export default function App() {
                 tracked={tracked} toggleTrack={toggleTrack}
                 globalSearch={globalSearch}
                 onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/></SectionErrorBoundary>}
-            {isInv && page==="sharing"     && <SectionErrorBoundary label="Sharing"><Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/></SectionErrorBoundary>}
+            {isInv && page==="sharing"     && <SectionErrorBoundary label="Sharing"><Sharing myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/></SectionErrorBoundary>}
             {isInv && page==="about"        && <SectionErrorBoundary label="About"><AboutPage/></SectionErrorBoundary>}
             {isInv && page==="contact"      && <SectionErrorBoundary label="Contact"><ContactPage setPage={setPage}/></SectionErrorBoundary>}
             {isInv && page==="privacy"      && <SectionErrorBoundary label="Privacy Policy"><PrivacyPolicyPage/></SectionErrorBoundary>}

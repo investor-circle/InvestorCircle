@@ -4,7 +4,6 @@ import {
   Users,
   Search,
   Bell,
-  Lock,
   X,
   Check,
   Send,
@@ -31,24 +30,21 @@ import {
 } from "../../services/api/profileApi";
 import { computeIci } from "../../services/api/recommendationsApi";
 import {
-  upsertSharingPref
-} from "../../services/api/sharingApi";
-import {
   trackInvestor as dbTrackInvestor,
   untrackInvestor as dbUntrackInvestor,
   getTrackingCounts as dbGetTrackingCounts,
   getMyTrackers as dbGetMyTrackers,
   getMyTrackingList as dbGetMyTrackingList
 } from "../../services/api/trackingApi";
-import { Avatar, RecoBreakdown, SortTh, TypeTag } from "../../components/common";
+import { Avatar, RecoBreakdown, SortTh } from "../../components/common";
 import { CONTACT_COLORS, TODAY } from "../../constants/app";
 import { GroupsSection } from "../groups/Groups";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail, sendPush } from "../../services/notify";
-import { fmt, fmtPct, fmtSigned, initialsOf, recoStats } from "../../utils/format";
+import { fmtSigned, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile } from "../../utils/navigation";
 
-export function Network({ connections, setConnections, groups, setGroups, sharing, setSharing, configs,
+export function Network({ connections, setConnections, groups, setGroups, configs,
     canCreateGroups, pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me,
     initTab, onInitTabConsumed, trackingCounts, onTrackingCountsChange }) {
   const [tab, setTab] = useState(initTab || "contacts");
@@ -78,7 +74,7 @@ export function Network({ connections, setConnections, groups, setGroups, sharin
         </button>
       </div>
       {tab==="contacts" && <ContactsSection connections={connections} setConnections={setConnections}
-            groups={groups} sharing={sharing} setSharing={setSharing} configs={configs}
+            groups={groups}
             pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
             recsReceived={recsReceived} onOpenRecos={onOpenRecos} me={me}/>}
       {tab==="trackers" && <TrackingMeSection me={me} setConnections={setConnections} onTrackingCountsChange={onTrackingCountsChange}/>}
@@ -304,12 +300,11 @@ export function ImTrackingSection({ me, setConnections, onTrackingCountsChange }
 
 /* ── Contacts section ─────────────────────────────────────────────────────── */
 
-export function ContactsSection({ connections, setConnections, groups, sharing, setSharing, configs,
+export function ContactsSection({ connections, setConnections, groups,
     pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me }) {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState({key:"name",dir:"asc"});
   const [showAdd, setShowAdd] = useState(false);
-  const [openContact, setOpenContact] = useState(null);
   const [expandId, setExpandId] = useState(null);
   const [busy, setBusy] = useState({});
   const myId = me?.id || "me";
@@ -329,12 +324,6 @@ export function ContactsSection({ connections, setConnections, groups, sharing, 
 
   const statsOf = (c) => recoStats(recsReceived, r => r.from===c.user_id||(r.byName&&r.byName===c.name));
   const commonGroups = (c) => groups.filter(g=>g.members?.some(m=>m.user_id===c.user_id));
-  const myPermFor = (c) => {
-    const s = sharing[c.user_id];
-    if (!s) return "off";
-    if (s.visibility==="off") return "off";
-    return s.level==="full"?"full":"names";
-  };
 
   const doAccept = async (c) => {
     setBusy(b=>({...b,[c.connection_id]:true}));
@@ -367,12 +356,6 @@ export function ContactsSection({ connections, setConnections, groups, sharing, 
     if(!confirm(`Remove ${c.name} from your network?`)) return;
     await removeConnection(c.connection_id, myId);
     setConnections(cs=>cs.filter(x=>x.connection_id!==c.connection_id));
-    setSharing(s=>{const ns={...s}; delete ns[c.user_id]; return ns;});
-  };
-  const setMyPerm_ = async (userId, val) => {
-    const next = { visibility: val==="off"?"off":"all", level: val==="full"?"full":"names", selected:[] };
-    setSharing(s=>({...s,[userId]:next}));
-    await upsertSharingPref(myId, userId, "user", next);
   };
 
   const accepted = rows.filter(c=>c.status==="accepted");
@@ -382,7 +365,6 @@ export function ContactsSection({ connections, setConnections, groups, sharing, 
 
   const ContactRow = ({c, showActions}) => {
     const stats = statsOf(c);
-    const mine = myPermFor(c);
     const open = expandId===c.connection_id;
     const cg = commonGroups(c);
     const av = {name:c.name,initials:initialsOf(c.name),color:CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
@@ -409,12 +391,6 @@ export function ContactsSection({ connections, setConnections, groups, sharing, 
             ? <span className="clickable tnum nowrap" onClick={(e)=>{e.stopPropagation();onOpenRecos({by:c.name});}}>{fmtSigned(stats.pnl)} ↗</span>
             : <span className="muted">—</span>}</td>
         <td onClick={e=>e.stopPropagation()}>
-          {c.status==="accepted"
-            ? <select className="inline-select sm" value={mine} onChange={e=>setMyPerm_(c.user_id,e.target.value)}>
-                <option value="off">Not shared</option><option value="names">Names only</option><option value="full">Amounts & P&L</option>
-              </select>
-            : <span className="muted small">—</span>}</td>
-        <td onClick={e=>e.stopPropagation()}>
           {c.status==="pending"&&c.direction==="received" && (
             <div style={{display:"flex",gap:6}}>
               <button className="btn btn-pri btn-sm" disabled={busy[c.connection_id]} onClick={()=>doAccept(c)}><Check size={13}/> Accept</button>
@@ -426,7 +402,7 @@ export function ContactsSection({ connections, setConnections, groups, sharing, 
             <button className="iconbtn danger" title="Remove from network" onClick={()=>doRemove(c)}><Trash2 size={14}/></button>)}
         </td>
       </tr>
-      {open && c.status==="accepted" && <tr className="expand-row"><td colSpan={7}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
+      {open && c.status==="accepted" && <tr className="expand-row"><td colSpan={6}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <b style={{fontSize:14}}>{c.name}&apos;s ideas to you</b>
           <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>
@@ -463,7 +439,6 @@ export function ContactsSection({ connections, setConnections, groups, sharing, 
             <th>Common groups</th>
             <SortTh label="Recos to me"     k="recos"  sort={sort} setSort={setSort}/>
             <SortTh label="My P&amp;L"      k="pnl"    sort={sort} setSort={setSort} align="right"/>
-            <th>I share</th>
             <th>Actions</th>
           </tr></thead>
           <tbody>
@@ -493,7 +468,6 @@ export function ContactsSection({ connections, setConnections, groups, sharing, 
             invite_link: `https://myinvestorcircle.com/?ref=${me?.username||''}`,
           });
         }}/>}
-    {openContact && <PortfolioModal contact={openContact} onClose={()=>setOpenContact(null)}/>}
   </>);
 }
 
@@ -539,32 +513,6 @@ export function AddConnectionModal({ existing, me, onClose, onAddExisting, onInv
       </div>
     </div>
   </div></div>);
-}
-
-export function PortfolioModal({ contact, onClose }) {
-  const full = contact.shared.level==="full";
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><div style={{ display:"flex", gap:12, alignItems:"center" }}><Avatar f={contact} size={42}/>
-          <div><h3>{contact.name}</h3><div className="muted small">{contact.title}</div></div></div>
-          <button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
-        <div className="modal-body">
-          <div className="muted small" style={{ marginBottom:14, display:"flex", gap:6, alignItems:"center" }}>
-            {contact.shared.level==="names" ? <><Lock size={13}/> Amounts and P&L are hidden — only names are shared.</> : <>Showing everything {contact.name.split(" ")[0]} shared with you.</>}</div>
-          <table className="grid">
-            <thead><tr><th>Asset</th><th>Type</th>{full && <><th style={{textAlign:"right"}}>Value</th><th style={{textAlign:"right"}}>P&L</th></>}</tr></thead>
-            <tbody>{contact.shared.holdings.map((h,i)=>(
-              <tr key={i} className="hoverable"><td><span className="sym">{h.sym}</span><div className="muted small">{h.name}</div></td>
-                <td>{h.type?<TypeTag t={h.type}/>:<span className="muted">—</span>}</td>
-                {full && <><td style={{textAlign:"right"}} className="tnum">{fmt(h.value)}</td>
-                  <td style={{textAlign:"right"}} className={"tnum "+(h.pnlPct>=0?"pos":"neg")}>{fmtPct(h.pnlPct)}</td></>}</tr>
-            ))}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /* ─── InviteModal — personal referral link sharing ──────────────────────────── */

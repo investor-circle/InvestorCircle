@@ -1057,7 +1057,7 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
       setContacts(cs=>[...cs, {
         id: u.email, name:u.name, initials:initialsOf(u.name),
         color: CONTACT_COLORS[cs.length % CONTACT_COLORS.length],
-        title: u.role, shared:{ level:"none", holdings:[] }
+        title: u.role,
       }]);
       setShowAdd(false);
     }}/>}
@@ -1237,12 +1237,7 @@ export function AdminConfigs({ configs, setConfigs, providers, setProviders }) {
         <Switch k="allowCryptoAccounts" title="Crypto accounts" desc="Permit linking crypto exchange accounts"/>
         <Switch k="publicFeed" title="Public activity feed" desc="Show network activity on the home feed" last/></div></div>
       <div className="card"><div className="card-head">Privacy defaults</div><div className="card-body" style={{paddingTop:2,paddingBottom:2}}>
-        <Switch k="requireAccountApproval" title="Account-link approval" desc="Require admin approval before a linked account goes live"/>
-        <Switch k="allowAmountSharing" title="Amount & P&L sharing" desc="Let users share amounts and P&L, not just names"/>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 0" }}>
-          <div><div style={{fontWeight:700,fontSize:14}}>Default disclosure for new connections</div><div className="muted small" style={{marginTop:2}}>Applied when a user adds a new friend</div></div>
-          <select className="inline-select" value={configs.defaultDisclosure} onChange={e=>setConfigs(c=>({...c,defaultDisclosure:e.target.value}))}>
-            <option value="none">Nothing</option><option value="names">Names only</option><option value="full">Names + P&L</option></select></div></div></div>
+        <Switch k="requireAccountApproval" title="Account-link approval" desc="Require admin approval before a linked account goes live" last/></div></div>
     </div>
     <div className="card" style={{ marginTop:18 }}><div className="card-head"><span style={{display:"flex",gap:8,alignItems:"center"}}><Layers size={16}/> Groups</span></div>
       <div className="card-body" style={{paddingTop:2,paddingBottom:2}}>

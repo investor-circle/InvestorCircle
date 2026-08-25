@@ -454,25 +454,6 @@ export async function markAllNotifRead(userId) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SHARING PREFERENCES
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Load all sharing preferences for a user as { targetId → {visibility, level, selected} }. */
-export async function getSharingPrefs(userId) {
-  const api = await callApi("/data?resource=sharing-prefs");
-  if (api.ok) return api.data.prefs || {};
-  if (api.denied) return {};
-  return {};
-}
-
-/** Save (upsert) a sharing preference for one target. */
-export async function upsertSharingPref(userId, targetId, targetType, prefs) {
-  const api = await callApi("/data?resource=sharing-prefs", { method: "POST", body: { targetId, targetType, prefs } });
-  if (api.ok || api.denied) return;
-  return;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // DELETION
 // ─────────────────────────────────────────────────────────────────────────────
 
