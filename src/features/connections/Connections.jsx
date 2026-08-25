@@ -431,7 +431,7 @@ export function ContactsSection({ connections, setConnections, groups,
             <SortTh label="Name"            k="name"   sort={sort} setSort={setSort}/>
             <th>Email</th>
             <th>Common groups</th>
-            <SortTh label="Recos to me"     k="recos"  sort={sort} setSort={setSort}/>
+            <SortTh label="Ideas to me"     k="recos"  sort={sort} setSort={setSort}/>
             <SortTh label="My P&amp;L"      k="pnl"    sort={sort} setSort={setSort} align="right"/>
             <th>Actions</th>
           </tr></thead>
