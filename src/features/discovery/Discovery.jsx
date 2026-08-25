@@ -957,12 +957,20 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
   const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
-  const [mobileFeedTab,  setMobileFeedTab]  = useState(initTab || 'pulse'); // 'feed' | 'pulse' — Pulse is the default home experience
+  // 'feed' | 'pulse' — Pulse is the default home experience. Drives which
+  // section is visible on BOTH mobile and desktop now: a permanent
+  // side-by-side Pulse+Feed layout on desktop looked cramped and imbalanced
+  // (a narrow widget column squeezed against a full feed) — one focused
+  // section at a time, switched via tabs, is the same fix mobile already
+  // had. Both sections stay mounted regardless of which is visible (see the
+  // display:none toggle below, not conditional rendering) so a widget's own
+  // data fetch / scroll position isn't lost when switching tabs back and forth.
+  const [feedTab,  setFeedTab]  = useState(initTab || 'pulse');
   // One-shot: which tab to land on next, driven by how the user navigated here —
   // the top Home icon always requests 'pulse'; DISCOVER > Ideas in the sidebar
   // requests 'feed' on mobile (see App.jsx's homeInitTab).
   useEffect(() => {
-    if (initTab) { setMobileFeedTab(initTab); onInitTabConsumed && onInitTabConsumed(); }
+    if (initTab) { setFeedTab(initTab); onInitTabConsumed && onInitTabConsumed(); }
   }, [initTab]); // eslint-disable-line react-hooks/exhaustive-deps
   // Merged pool for Pulse widgets: direct deliveries + public platform recommendations
   // Deduped so items already in recsReceived don't appear twice.
@@ -984,7 +992,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
   ).length;
   const pulseCount    = Math.min(pulseCountRaw, 5);
   const pulseBadgeText = pulseCount >= 5 ? '5+' : pulseCount > 0 ? String(pulseCount) : null;
-  const showPulseBadge = !!pulseBadgeText && mobileFeedTab !== 'pulse';
+  const showPulseBadge = !!pulseBadgeText && feedTab !== 'pulse';
   const [loadedCount,  setLoadedCount]  = useState(20);
   const sentinelObsRef = useRef(null);
   // Callback ref (not useRef+useEffect) — the sentinel div is conditionally
@@ -1089,10 +1097,10 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             { id:'pulse', label:'Pulse', sub:'Your daily investment dose' },
             { id:'feed',  label:'Feed',  sub:'Ideas from your network' },
           ].map(({id, label, sub})=>{
-            const isActive = mobileFeedTab === id;
+            const isActive = feedTab === id;
             return (
               <button key={id} role="tab" aria-selected={isActive}
-                onClick={()=>setMobileFeedTab(id)}
+                onClick={()=>setFeedTab(id)}
                 style={{
                   flex:1, height:48, border:'none', borderRadius:10,
                   fontFamily:'var(--font)', cursor:'pointer', transition:'.15s',
@@ -1131,8 +1139,12 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         exact height in the flow and nothing hides underneath. */}
     {isMobile && !showNewReco && <div aria-hidden="true" style={{height:130,flexShrink:0}}/>}
 
-    {/* ── Desktop: normal in-flow header ── */}
-    {!isMobile && (
+    {/* ── Desktop: normal in-flow header + tab switcher ──
+         Same Pulse/Feed tabs as mobile (same .seg pattern used on the
+         Network/Ideas pages elsewhere in the app), so desktop gets one
+         focused, full-width section at a time instead of a cramped
+         permanent two-column split. ── */}
+    {!isMobile && (<>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
         <div>
           <div style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>Welcome back, {firstName}! 👋</div>
@@ -1142,52 +1154,65 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
           <Lightbulb size={14}/> New idea
         </button>
       </div>
-    )}
-    <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
+      <div className="seg" style={{marginBottom:18}}>
+        {[
+          { id:'pulse', label:'Pulse' },
+          { id:'feed',  label:'Feed'  },
+        ].map(t=>(
+          <button key={t.id} className={feedTab===t.id?'active':''} onClick={()=>setFeedTab(t.id)}>
+            {t.label}
+            {t.id==='pulse' && showPulseBadge && (
+              <span className="nav-badge" style={{position:'static',marginLeft:6}}>{pulseBadgeText}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </>)}
+    <div>
 
-      {/* ── Pulse column (left, the default home experience): desktop = fixed
-           252px aside; mobile = full-width, shown only on the Pulse tab.
-           Rendered first so it's the left column on desktop. Widget order:
-           Fresh Ideas, Trending, What You Missed, My Tracked. ── */}
+      {/* ── Pulse section: shown only on the Pulse tab. Mobile = single
+           vertical stack (unchanged); desktop = a 2-column grid now that it
+           has the full page width to itself instead of a squeezed 252px
+           aside, capped at a sensible max-width so it doesn't stretch thin
+           across a very wide monitor. Widget order: Fresh Ideas, Trending,
+           What You Missed, My Tracked. Stays mounted when the Feed tab is
+           active (display:none, not unmounted) so its data fetches and any
+           local state survive switching tabs back and forth. ── */}
       <div style={{
-        width: isMobile ? '100%' : 252,
-        flexShrink: isMobile ? 1 : 0,
-        display: isMobile && mobileFeedTab==='feed' ? 'none' : undefined,
+        display: feedTab==='feed' ? 'none' : undefined,
+        maxWidth: isMobile ? undefined : 920,
+        margin: isMobile ? undefined : '0 auto',
       }}>
-        {/* Same "brewing" filler the Feed column shows while the initial
+        {/* Same "brewing" filler the Feed section shows while the initial
             post-login data load is in flight — shown here too now that
             Pulse is the default tab, so whichever tab the user lands on
             (or quickly switches to before data arrives) sees it rather
             than a blank widget column. */}
-        {feedLoading ? <FeedBrewingState/> : (<>
+        {feedLoading ? <FeedBrewingState/> : (
+        <div style={isMobile ? undefined : {display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,alignItems:'start'}}>
         {/* Widget #1 — Fresh Ideas (network + public platform).
             Each Pulse widget gets its own error boundary so one widget's
             bug shows a small inline "failed to load" card instead of
-            blanking the whole Pulse column (or, without any boundary
+            blanking the whole Pulse section (or, without any boundary
             above HomeFeed at all, the whole app). */}
         <SectionErrorBoundary label="Fresh Ideas">
           <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
             setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
             setPage={setPage}
-            onViewAll={()=>{ if (isMobile) setMobileFeedTab('feed'); }}/>
+            onViewAll={()=>setFeedTab('feed')}/>
         </SectionErrorBoundary>
 
         {/* Widget #2 — Trending on MIC.
             Fed publicFeedRecos (the platform-wide public pool), not
             allFeedRecos: this is a discovery surface and must be able to
-            show creators the viewer has never encountered. "See all" goes
-            to the Feed, which is where public platform ideas live — on
-            mobile that means switching tabs, on desktop the feed column
-            is now on the right, so we scroll it back to the top. */}
+            show creators the viewer has never encountered. "See all"
+            switches to the Feed tab, where public platform ideas live. */}
         <SectionErrorBoundary label="Trending on MIC">
           <TrendingWidget publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos}
             contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
             trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}
             setPage={setPage}
-            onSeeAll={()=>{
-              if (isMobile) setMobileFeedTab('feed');
-              else window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}/>
+            onSeeAll={()=>setFeedTab('feed')}/>
         </SectionErrorBoundary>
 
         {/* Widget #3 — What You Missed */}
@@ -1199,14 +1224,15 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         <SectionErrorBoundary label="My Tracked">
           <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
         </SectionErrorBoundary>
-        </>)}
+        </div>
+        )}
 
         {/* ── Market Insights + Invite Friends — compact, side-by-side clickable
              cards, bottom of Pulse, both mobile + desktop. "Market Insights"
              matches the page's actual current name (App.jsx's nav already
              calls it that — "Market Intelligence" was the old name, stale
              only here). ── */}
-        <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:12}}>
+        <div style={{display:'flex',gap:10,flexWrap:'wrap',marginTop:isMobile?0:16,marginBottom:12}}>
           <div onClick={()=>setPage('market_intel')}
             style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
             onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
@@ -1226,10 +1252,13 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         </div>
       </div>
 
-      {/* ── Feed column (right): JS-controlled visibility on mobile ── */}
+      {/* ── Feed section: shown only on the Feed tab. Desktop gets a
+           centered, readability-capped column instead of stretching feed
+           cards edge-to-edge across a wide monitor. ── */}
       <div style={{
-        flex:1, minWidth:0,
-        display: isMobile && mobileFeedTab==='pulse' ? 'none' : undefined,
+        display: feedTab==='pulse' ? 'none' : undefined,
+        maxWidth: isMobile ? undefined : 700,
+        margin: isMobile ? undefined : '0 auto',
       }}>
 
         {/* Feed cards — searched via top nav bar */}
