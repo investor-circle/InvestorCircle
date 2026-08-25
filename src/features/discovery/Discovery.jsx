@@ -1140,10 +1140,12 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
     {isMobile && !showNewReco && <div aria-hidden="true" style={{height:130,flexShrink:0}}/>}
 
     {/* ── Desktop: normal in-flow header + tab switcher ──
-         Same Pulse/Feed tabs as mobile (same .seg pattern used on the
-         Network/Ideas pages elsewhere in the app), so desktop gets one
-         focused, full-width section at a time instead of a cramped
-         permanent two-column split. ── */}
+         The small .seg pill row this started as went unnoticed — new users
+         landing on Home never realized Feed was one click away. Now two
+         large, card-style buttons (with the same label+subtitle mobile's
+         tab bar already has) instead of a compact pill, so the tab
+         switcher itself reads as a primary piece of the page, not a minor
+         control easy to skim past. ── */}
     {!isMobile && (<>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
         <div>
@@ -1154,18 +1156,31 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
           <Lightbulb size={14}/> New idea
         </button>
       </div>
-      <div className="seg" style={{marginBottom:18}}>
+      <div role="tablist" style={{display:'flex',gap:14,marginBottom:22}}>
         {[
-          { id:'pulse', label:'Pulse' },
-          { id:'feed',  label:'Feed'  },
-        ].map(t=>(
-          <button key={t.id} className={feedTab===t.id?'active':''} onClick={()=>setFeedTab(t.id)}>
-            {t.label}
-            {t.id==='pulse' && showPulseBadge && (
-              <span className="nav-badge" style={{position:'static',marginLeft:6}}>{pulseBadgeText}</span>
-            )}
-          </button>
-        ))}
+          { id:'pulse', label:'Pulse', sub:'Your daily investment dose' },
+          { id:'feed',  label:'Feed',  sub:'Ideas from your network' },
+        ].map(({id,label,sub})=>{
+          const isActive = feedTab===id;
+          return (
+            <button key={id} role="tab" aria-selected={isActive} onClick={()=>setFeedTab(id)}
+              style={{
+                flex:'0 1 280px', textAlign:'left', cursor:'pointer', fontFamily:'var(--font)',
+                borderRadius:14, padding:'14px 20px', transition:'.15s',
+                border: isActive ? '2px solid var(--accent)' : '1px solid var(--line)',
+                background: isActive ? 'var(--accent-soft)' : 'var(--surface)',
+                boxShadow: isActive ? '0 3px 14px rgba(109,93,245,.15)' : 'none',
+              }}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <span style={{fontSize:16,fontWeight:800,color:isActive?'var(--accent-ink)':'var(--ink)'}}>{label}</span>
+                {id==='pulse' && showPulseBadge && (
+                  <span className="nav-badge" style={{position:'static'}}>{pulseBadgeText}</span>
+                )}
+              </div>
+              <div style={{fontSize:12,color:isActive?'var(--accent-ink)':'var(--muted)',marginTop:2,opacity:isActive?.8:1}}>{sub}</div>
+            </button>
+          );
+        })}
       </div>
     </>)}
     <div>
