@@ -38,11 +38,11 @@ export function Sharing({ sharing, setSharing, configs, holdings, contacts, grou
     {!configs.allowAmountSharing && <div className="card" style={{ marginBottom:16, borderLeft:"3px solid var(--accent)" }}><div className="card-body" style={{padding:"13px 16px", fontSize:13, display:"flex", gap:8, alignItems:"center"}}>
       <Lock size={15}/> Amount & P&L sharing is turned off by the administrator — only holding names can be shared right now.</div></div>}
     <div className="card" style={{ marginBottom:18 }}><div className="card-head"><span style={{display:"flex",gap:8,alignItems:"center"}}><Users size={16}/> Friends</span></div>
-      <div className="card-body" style={{padding:"8px 10px"}}><table className="grid"><thead><tr><th>Connection</th><th>Can see</th><th>Detail level</th><th></th></tr></thead>
-        <tbody>{contacts.map(f=><Row key={f.id} id={f.id} name={f.name} sub={f.title} color={f.color}/>)}</tbody></table></div></div>
+      <div className="card-body" style={{padding:"8px 10px"}}><div className="tscroll"><table className="grid" style={{minWidth:560}}><thead><tr><th>Connection</th><th>Can see</th><th>Detail level</th><th></th></tr></thead>
+        <tbody>{contacts.map(f=><Row key={f.id} id={f.id} name={f.name} sub={f.title} color={f.color}/>)}</tbody></table></div></div></div>
     <div className="card"><div className="card-head"><span style={{display:"flex",gap:8,alignItems:"center"}}><Layers size={16}/> Groups</span></div>
-      <div className="card-body" style={{padding:"8px 10px"}}><table className="grid"><thead><tr><th>Group</th><th>Can see</th><th>Detail level</th><th></th></tr></thead>
-        <tbody>{groups.filter(g=>g.members.includes("me")).map(g=><Row key={g.id} id={g.id} name={g.name} sub={`${g.members.length} members`} color={g.color} isGroup/>)}</tbody></table></div></div>
+      <div className="card-body" style={{padding:"8px 10px"}}><div className="tscroll"><table className="grid" style={{minWidth:560}}><thead><tr><th>Group</th><th>Can see</th><th>Detail level</th><th></th></tr></thead>
+        <tbody>{groups.filter(g=>g.members.includes("me")).map(g=><Row key={g.id} id={g.id} name={g.name} sub={`${g.members.length} members`} color={g.color} isGroup/>)}</tbody></table></div></div></div>
     {pickFor && <HoldingsPicker entityName={nameOfLive(pickFor)} holdings={holdings} selected={sharing[pickFor].selected} onClose={()=>setPickFor(null)} onSave={(sel)=>{ set(pickFor,{selected:sel}); setPickFor(null); }}/>}
     {previewId && <SharePreview id={previewId} name={nameOfLive(previewId)} cfg={sharing[previewId]} holdings={holdings} onClose={()=>setPreviewId(null)}/>}
 
@@ -126,9 +126,9 @@ export function SharePreview({ id, name, cfg, holdings, onClose }) {
     <div className="modal-head"><h3>As seen by {name}</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body"><div className="muted small" style={{ marginBottom:14, display:"flex", gap:6, alignItems:"center" }}>
       {cfg.level==="full" ? "They see names, amounts and P&L for these holdings." : <><Lock size={13}/> They see names only — amounts and P&L stay private.</>}</div>
-      <table className="grid"><thead><tr><th>Asset</th><th>Type</th>{cfg.level==="full" && <><th style={{textAlign:"right"}}>Value</th><th style={{textAlign:"right"}}>P&L</th></>}</tr></thead>
+      <div className="tscroll"><table className="grid" style={{minWidth:420}}><thead><tr><th>Asset</th><th>Type</th>{cfg.level==="full" && <><th style={{textAlign:"right"}}>Value</th><th style={{textAlign:"right"}}>P&L</th></>}</tr></thead>
         <tbody>{rows.map(r=>(<tr key={r.id} className="hoverable"><td><span className="sym">{r.sym}</span><div className="muted small">{r.name}</div></td><td><TypeTag t={r.type}/></td>
-          {cfg.level==="full" && <><td style={{textAlign:"right"}} className="tnum">{fmt(r.value)}</td><td style={{textAlign:"right"}} className={"tnum "+(r.pnlPct>=0?"pos":"neg")}>{fmtPct(r.pnlPct)}</td></>}</tr>))}</tbody></table></div>
+          {cfg.level==="full" && <><td style={{textAlign:"right"}} className="tnum">{fmt(r.value)}</td><td style={{textAlign:"right"}} className={"tnum "+(r.pnlPct>=0?"pos":"neg")}>{fmtPct(r.pnlPct)}</td></>}</tr>))}</tbody></table></div></div>
   </div></div>);
 }
 
