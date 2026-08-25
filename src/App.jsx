@@ -414,7 +414,6 @@ export default function App() {
     maxGroupMembers:8, groupCreationPolicy:"all",
   });
   const [providers, setProviders] = useState(["Fidelity","Vanguard","Robinhood","Coinbase","Schwab","E*TRADE"]);
-  const [pendingInvites, setPendingInvites] = useState([]);
 
   // Derived: confirmed contacts only (accepted connections, shaped for UI backward compat)
   const contacts = useMemo(() =>
@@ -1681,8 +1680,7 @@ export default function App() {
                 connections={connections} setConnections={setConnections}
                 groups={groups} setGroups={setGroups}
                 configs={configs} canCreateGroups={canCreateGroups}
-                pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
-                recsReceived={recsReceived} me={ME}
+                recsReceived={recsReceived} me={ME} setPage={setPage}
                 onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}
                 initTab={networkInitTab} onInitTabConsumed={()=>setNetworkInitTab(null)}
                 trackingCounts={trackingCounts} onTrackingCountsChange={setTrackingCounts}/></SectionErrorBoundary>}

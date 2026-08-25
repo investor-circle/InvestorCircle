@@ -6,10 +6,7 @@ import {
   Bell,
   X,
   Check,
-  Send,
   Layers,
-  ChevronDown,
-  Mail,
   UserPlus,
   Trash2,
   Loader,
@@ -40,7 +37,7 @@ import {
 } from "../../services/api/trackingApi";
 import { getMyTrackedRecos as dbGetMyTrackedRecos } from "../../services/api/engagementApi";
 import { Avatar, RecoBreakdown, SmallAnchoredPopover, SortTh } from "../../components/common";
-import { CONTACT_COLORS, TODAY } from "../../constants/app";
+import { CONTACT_COLORS } from "../../constants/app";
 import { GroupsSection } from "../groups/Groups";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail, sendPush } from "../../services/notify";
@@ -48,37 +45,47 @@ import { fmtDate, fmtSigned, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile } from "../../utils/navigation";
 
 export function Network({ connections, setConnections, groups, setGroups, configs,
-    canCreateGroups, pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me,
+    canCreateGroups, recsReceived, onOpenRecos, me, setPage,
     initTab, onInitTabConsumed, trackingCounts, onTrackingCountsChange }) {
   const [tab, setTab] = useState(initTab || "contacts");
   useEffect(()=>{
     if(initTab){ setTab(initTab); onInitTabConsumed && onInitTabConsumed(); }
   },[initTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const pendingReceived = connections.filter(c=>c.status==="pending"&&c.direction==="received").length;
+
+  const TABS = [
+    { id:"contacts", icon:Users,  label:"Connections",  count:connections.filter(c=>c.status==="accepted").length, badge:pendingReceived },
+    { id:"groups",   icon:Layers, label:"Circles",       count:groups.length },
+    { id:"trackers", icon:Eye,    label:"Tracking me",   count:trackingCounts?.trackersCount ?? 0 },
+    { id:"tracking", icon:Radar,  label:"I'm tracking",  count:trackingCounts?.trackingCount ?? 0 },
+  ];
+
   return (
     <>
       <div className="page-head">
         <div><div className="eyebrow">Network</div><div className="page-title">Your network</div>
           <div className="page-sub">Manage connections, tracking and Circles</div></div>
+        <button className="btn btn-pri btn-sm" onClick={()=>setPage && setPage("discover")}>
+          <UserPlus size={15}/> Grow your network
+        </button>
       </div>
+      {/* Two lines per tab (label, then count) instead of one long "Label · N"
+          string — a single row of 4 short, fixed-height buttons that can
+          neither wrap into a ragged multi-row mess nor need to scroll. */}
       <div className="seg net-tabs" style={{marginBottom:20}}>
-        <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}>
-          <Users size={15}/> Connections · {connections.filter(c=>c.status==="accepted").length}
-          {pendingReceived>0 && <span className="nav-badge" style={{position:"static",flexShrink:0}}>{pendingReceived}</span>}
-        </button>
-        <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}>
-          <Layers size={15}/> Circles · {groups.length}
-        </button>
-        <button className={tab==="trackers"?"active":""} onClick={()=>setTab("trackers")}>
-          <Eye size={15}/> Tracking me · {trackingCounts?.trackersCount ?? 0}
-        </button>
-        <button className={tab==="tracking"?"active":""} onClick={()=>setTab("tracking")}>
-          <Radar size={15}/> I&apos;m tracking · {trackingCounts?.trackingCount ?? 0}
-        </button>
+        {TABS.map(t=>(
+          <button key={t.id} className={tab===t.id?"active":""} onClick={()=>setTab(t.id)}
+            style={{flexDirection:"column",gap:2}}>
+            <span style={{display:"flex",alignItems:"center",gap:5}}><t.icon size={14}/> {t.label}</span>
+            <span style={{display:"flex",alignItems:"center",gap:4,fontSize:12,fontWeight:800}}>
+              {t.count}
+              {t.badge>0 && <span className="nav-badge" style={{position:"static"}}>{t.badge}</span>}
+            </span>
+          </button>
+        ))}
       </div>
       {tab==="contacts" && <ContactsSection connections={connections} setConnections={setConnections}
             groups={groups}
-            pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
             recsReceived={recsReceived} onOpenRecos={onOpenRecos} me={me}/>}
       {tab==="trackers" && <TrackingMeSection me={me} setConnections={setConnections} onTrackingCountsChange={onTrackingCountsChange}/>}
       {tab==="tracking" && <ImTrackingSection me={me} setConnections={setConnections} onTrackingCountsChange={onTrackingCountsChange}/>}
@@ -120,32 +127,22 @@ const CONTACTS_SORT_OPTIONS = [
   { value: "ideas_desc", label: "Ideas posted (high→low)",  key: "ideas", dir: "desc" },
 ];
 
-function ContactsSortSelect({ sort, setSort }) {
-  const current = CONTACTS_SORT_OPTIONS.find(o=>o.key===sort.key && o.dir===sort.dir)?.value || "name_asc";
-  return (
-    <select className="inline-select sm" value={current} onChange={e=>{
-      const opt = CONTACTS_SORT_OPTIONS.find(o=>o.value===e.target.value);
-      if (opt) setSort({key:opt.key, dir:opt.dir});
-    }} aria-label="Sort by">
-      {CONTACTS_SORT_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
-}
-
 // Icon-only trigger + popover — same pattern Portfolio's holdings-grid
 // header uses for its filter/sort icons — instead of a full <select>, so
 // the search box + sort control fit on one row on mobile without wrapping.
-function SortIconButton({ value, onChange }) {
+// `options` defaults to SORT_OPTIONS (Tracking me / I'm tracking); the
+// Connections tab passes CONTACTS_SORT_OPTIONS through the wrapper below.
+function SortIconButton({ value, onChange, options=SORT_OPTIONS }) {
   const [open, setOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
-  const active = value !== SORT_OPTIONS[0].value;
+  const active = value !== options[0].value;
   return (
     <div style={{position:"relative",flexShrink:0}}>
       <button ref={setAnchorEl} className={"icon-btn"+(active?" active":"")} style={{width:36,height:36}}
         title="Sort by" onClick={()=>setOpen(v=>!v)}><ArrowUpDown size={15}/></button>
       {open && (
-        <SmallAnchoredPopover anchorEl={anchorEl} onClose={()=>setOpen(false)} width={200}>
-          {SORT_OPTIONS.map(o=>{
+        <SmallAnchoredPopover anchorEl={anchorEl} onClose={()=>setOpen(false)} width={220}>
+          {options.map(o=>{
             const isActive = o.value===value;
             return (
               <div key={o.value} onClick={()=>{onChange(o.value);setOpen(false);}}
@@ -157,6 +154,16 @@ function SortIconButton({ value, onChange }) {
         </SmallAnchoredPopover>
       )}
     </div>
+  );
+}
+
+function ContactsSortIconButton({ sort, setSort }) {
+  const current = CONTACTS_SORT_OPTIONS.find(o=>o.key===sort.key && o.dir===sort.dir)?.value || "name_asc";
+  return (
+    <SortIconButton value={current} options={CONTACTS_SORT_OPTIONS} onChange={v=>{
+      const opt = CONTACTS_SORT_OPTIONS.find(o=>o.value===v);
+      if (opt) setSort({key:opt.key, dir:opt.dir});
+    }}/>
   );
 }
 
@@ -455,11 +462,9 @@ const mapTrackedRowForPnl = (r) => ({
 });
 
 export function ContactsSection({ connections, setConnections, groups,
-    pendingInvites, setPendingInvites, recsReceived, onOpenRecos, me }) {
+    recsReceived, onOpenRecos, me }) {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState({key:"name",dir:"asc"});
-  const [showAdd, setShowAdd] = useState(false);
-  const [expandId, setExpandId] = useState(null);
   const [busy, setBusy] = useState({});
   const [trackedRecos, setTrackedRecos] = useState([]);
   const [pnlExplainerOpen, setPnlExplainerOpen] = useState(false);
@@ -558,15 +563,14 @@ export function ContactsSection({ connections, setConnections, groups,
   const ContactRow = ({c}) => {
     const stats = statsOf(c);
     const pnlInfo = pnlFor(c);
-    const open = expandId===c.connection_id;
     const cg = commonGroups(c);
     const av = {name:c.name,initials:initialsOf(c.name),avatarUrl:c.avatar_url,color:c.avatar_color||CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
 
     if (isMobile) return (
-      <div key={c.connection_id} className="card" style={{padding:0,marginBottom:8,cursor:"pointer"}} onClick={()=>setExpandId(open?null:c.connection_id)}>
+      <div key={c.connection_id} className="card" style={{padding:0,marginBottom:8}}>
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",flex:1,minWidth:0}}
-            onClick={e=>{e.stopPropagation();gotoUserProfile(c.user_id);}}>
+            onClick={()=>gotoUserProfile(c.user_id)}>
             <Avatar f={av} size={40}/>
             <div style={{minWidth:0}}>
               <div className="sym" style={{color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
@@ -574,22 +578,14 @@ export function ContactsSection({ connections, setConnections, groups,
             </div>
           </div>
           {statusPill(c)}
-          <ChevronDown size={14} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s",flexShrink:0}}/>
         </div>
         {cg.length>0 && <div style={{display:"flex",flexWrap:"wrap",gap:5,padding:"0 14px 10px"}}>{cg.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}
         {c.status==="accepted" && (
-          <div style={{display:"flex",gap:20,padding:"0 14px 12px"}}>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontWeight:800,fontSize:14}}>{stats.count}</div>
-              <div className="muted" style={{fontSize:10,textTransform:"uppercase",letterSpacing:".04em"}}>Ideas to me</div>
-            </div>
-            <div style={{textAlign:"center",cursor:"pointer"}} onClick={e=>{e.stopPropagation();onOpenRecos({tab:'tracked',by:c.name,invested:'yes'});}}>
-              <div className="clickable" style={{fontWeight:800,fontSize:14,justifyContent:"center"}}>{fmtSigned(pnlInfo.pnl)}</div>
-              <div className="muted" style={{fontSize:10,textTransform:"uppercase",letterSpacing:".04em"}}>My P&amp;L</div>
-            </div>
+          <div style={{padding:"0 14px 12px"}}>
+            <RecoBreakdown stats={{...stats, pnl:pnlInfo.pnl, pnlPending:pnlInfo.pnlPending}} pnlLabel="My P&L" onPnl={()=>onOpenRecos({tab:'tracked',by:c.name,invested:'yes'})}/>
           </div>
         )}
-        <div style={{display:"flex",justifyContent:"flex-end",gap:6,padding:"0 14px 12px"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:6,padding:"0 14px 12px"}}>
           {c.status==="pending"&&c.direction==="received" && (<>
             <button className="btn btn-pri btn-sm" disabled={busy[c.connection_id]} onClick={()=>doAccept(c)}><Check size={13}/> Accept</button>
             <button className="btn btn-ghost btn-sm" disabled={busy[c.connection_id]} onClick={()=>doReject(c)}><X size={13}/> Decline</button>
@@ -599,22 +595,15 @@ export function ContactsSection({ connections, setConnections, groups,
           {c.status==="accepted" && (
             <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>)}
         </div>
-        {open && c.status==="accepted" && (
-          <div style={{padding:"0 14px 14px",borderTop:"1px solid var(--line)"}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontWeight:700,fontSize:13,margin:"12px 0 10px"}}>{c.name}&apos;s ideas to you</div>
-            <RecoBreakdown stats={{...stats, pnl:pnlInfo.pnl, pnlPending:pnlInfo.pnlPending}} pnlLabel="My P&L" onPnl={()=>onOpenRecos({tab:'tracked',by:c.name,invested:'yes'})}/>
-          </div>
-        )}
       </div>
     );
 
-    return (<React.Fragment key={c.connection_id}>
-      <tr className={"hoverable"+(c.status!=="accepted"?" hiddenrow":"")} style={{cursor:"pointer"}} onClick={()=>setExpandId(open?null:c.connection_id)}>
+    return (
+      <tr key={c.connection_id} className={"hoverable"+(c.status!=="accepted"?" hiddenrow":"")}>
         <td><div style={{display:"flex",gap:11,alignItems:"center"}}>
-          {/* Avatar + name: click opens public profile; rest of row click expands */}
           <div style={{display:"flex",gap:11,alignItems:"center",cursor:"pointer"}}
             title={`View ${c.name}'s public profile`}
-            onClick={e=>{e.stopPropagation(); gotoUserProfile(c.user_id);}}>
+            onClick={()=>gotoUserProfile(c.user_id)}>
             <Avatar f={av} size={36}/>
             <div>
               <div className="sym" style={{color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{c.name}</div>
@@ -622,15 +611,14 @@ export function ContactsSection({ connections, setConnections, groups,
             </div>
           </div>
           {statusPill(c)}
-          <ChevronDown size={14} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s"}}/>
         </div></td>
         <td>{cg.length===0?<span className="muted small">—</span>:<div style={{display:"flex",flexWrap:"wrap",gap:5}}>{cg.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}</td>
         <td className="tnum">{c.status==="accepted"?stats.count:<span className="muted">—</span>}</td>
         <td style={{textAlign:"right"}}>
           {c.status==="accepted"
-            ? <span className="clickable tnum nowrap" onClick={(e)=>{e.stopPropagation();onOpenRecos({tab:'tracked',by:c.name,invested:'yes'});}}>{fmtSigned(pnlInfo.pnl)} ↗</span>
+            ? <span className="clickable tnum nowrap" onClick={()=>onOpenRecos({tab:'tracked',by:c.name,invested:'yes'})}>{fmtSigned(pnlInfo.pnl)} ↗</span>
             : <span className="muted">—</span>}</td>
-        <td onClick={e=>e.stopPropagation()}>
+        <td>
           {c.status==="pending"&&c.direction==="received" && (
             <div style={{display:"flex",gap:6}}>
               <button className="btn btn-pri btn-sm" disabled={busy[c.connection_id]} onClick={()=>doAccept(c)}><Check size={13}/> Accept</button>
@@ -642,22 +630,13 @@ export function ContactsSection({ connections, setConnections, groups,
             <button className="iconbtn danger" title="Remove from network" onClick={()=>doRemove(c)}><Trash2 size={14}/></button>)}
         </td>
       </tr>
-      {open && c.status==="accepted" && <tr className="expand-row"><td colSpan={5}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <b style={{fontSize:14}}>{c.name}&apos;s ideas to you</b>
-          <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>
-        </div>
-        <RecoBreakdown stats={{...stats, pnl:pnlInfo.pnl, pnlPending:pnlInfo.pnlPending}} pnlLabel="My P&L" onPnl={()=>onOpenRecos({tab:'tracked',by:c.name,invested:'yes'})}/>
-      </div></td></tr>}
-    </React.Fragment>);
+    );
   };
 
   return (<>
-    {pendingInvites.length>0 && <div className="note info" style={{marginBottom:14}}><Mail size={16}/><div>Pending email invitations: {pendingInvites.map(p=>p.email).join(", ")}.</div></div>}
     <div className="toolbar">
       <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by name or email…"/></div>
-      <ContactsSortSelect sort={sort} setSort={setSort}/>
-      <button className="btn btn-pri btn-sm" onClick={()=>setShowAdd(true)}><UserPlus size={15}/> Add connection</button>
+      <ContactsSortIconButton sort={sort} setSort={setSort}/>
     </div>
 
     {/* Pending incoming requests */}
@@ -666,7 +645,7 @@ export function ContactsSection({ connections, setConnections, groups,
 
     {/* Accepted contacts */}
     {connections.length===0
-      ? <div className="card"><div className="empty">No connections yet. Use &ldquo;Add connection&rdquo; to invite people.</div></div>
+      ? <div className="card"><div className="empty">No connections yet. Use &ldquo;Grow your network&rdquo; above to discover people to follow.</div></div>
       : <>
       <div className="note info" style={{marginBottom:10,alignItems:"flex-start"}}>
         <Info size={16} style={{marginTop:1,flexShrink:0}}/>
@@ -710,27 +689,6 @@ export function ContactsSection({ connections, setConnections, groups,
           </table></div></div></div>
       )}
       </>}
-
-    {showAdd && <AddConnectionModal existing={connections} me={me} onClose={()=>setShowAdd(false)}
-        onAddExisting={async(uid,info)=>{
-          const res = await sendConnectionRequest(myId, uid);
-          if (res.error==="already_exists") return;
-          if (info?.email) sendEmail('connection_request', {
-            to_email:      info.email,
-            from_name:     me?.name || 'Someone',
-            from_username: me?.username || '',
-          });
-          const conns = await getMyConnections(myId);
-          setConnections(conns);
-        }}
-        onInvite={(email)=>{
-          setPendingInvites(p=>p.some(x=>x.email===email)?p:[...p,{email,date:TODAY}]);
-          sendEmail('invite', {
-            to_email:    email,
-            from_name:   me?.name || 'A fellow investor',
-            invite_link: `https://myinvestorcircle.com/?ref=${me?.username||''}`,
-          });
-        }}/>}
   </>);
 }
 
@@ -810,50 +768,6 @@ function PendingRequestsCard({ pendingReceived, connections, busy, doAccept, doR
       )}
     </div>
   );
-}
-
-/* ── Add connection modal ──────────────────────────────────────────────────── */
-
-export function AddConnectionModal({ existing, me, onClose, onAddExisting, onInvite }) {
-  const [email, setEmail] = useState("");
-  const [result, setResult] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const myName = me?.name || "your admin";
-  const submit = async () => {
-    const e = email.trim().toLowerCase();
-    if(!/^\S+@\S+\.\S+$/.test(e)){ setResult({type:"warn",msg:"Please enter a valid email address."}); return; }
-    if(existing.some(c=>c.email===e)){ setResult({type:"warn",msg:"You already have a connection with this person."}); return; }
-    setBusy(true);
-    try {
-      const row = await dbLookupUser('email', e);
-      if (row) {
-        if (row.id === me?.id){ setResult({type:"warn",msg:"That is your own email address."}); setBusy(false); return; }
-        await onAddExisting(row.id, {name:row.full_name,email:row.email});
-        setResult({type:"ok",msg:`Connection request sent to ${row.full_name}. They will see it in their notifications.`});
-      } else {
-        onInvite(e);
-        setResult({type:"info",msg:`${e} is not on My Investor Circle yet. An invitation note from ${myName} will be shared with them.`});
-      }
-    } catch(err) { setResult({type:"warn",msg:"Could not reach database: "+err.message}); }
-    setBusy(false);
-  };
-  return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-head"><h3><UserPlus size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> Add connection</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
-    <div className="modal-body">
-      <div className="field"><label>Email address</label>
-        <input value={email} onChange={e=>{setEmail(e.target.value);setResult(null);}} placeholder="name@example.com" onKeyDown={e=>e.key==="Enter"&&!busy&&submit()} autoFocus/></div>
-      <div className="muted small" style={{marginBottom:result?14:0}}>If they have a My Investor Circle account a connection request is sent. They must accept before you can share ideas.</div>
-      {result && <div className={"note "+result.type}>{result.type==="ok"?<Check size={16}/>:<Mail size={16}/>}<div>{result.msg}</div></div>}
-    </div>
-    <div className="modal-foot"><span/>
-      <div style={{display:"flex",gap:10}}>
-        <button className="btn btn-ghost" onClick={onClose}>{result?"Done":"Cancel"}</button>
-        <button className="btn btn-pri" disabled={!email||busy} onClick={submit}>
-          {busy?<><Loader size={14} className="spin"/> Checking…</>:<><Send size={15}/> Send request</>}
-        </button>
-      </div>
-    </div>
-  </div></div>);
 }
 
 /* ─── InviteModal — personal referral link sharing ──────────────────────────── */
