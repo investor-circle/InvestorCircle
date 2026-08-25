@@ -12,9 +12,10 @@
  * GET  ?resource=tracking                                   -> { tracking: [...] }  (legacy: full list of people I track, unpaginated — kept for callers that just need "am I tracking X" client-side lookups)
  * GET  ?resource=tracking&action=status&targetId=X            -> { tracking: boolean }
  * GET  ?resource=tracking&action=counts                       -> { trackersCount, trackingCount }
- * GET  ?resource=tracking&action=trackers&limit=&offset=&sort=       -> { people: [...], hasMore }  ("Tracking me" — people who track ME)
- * GET  ?resource=tracking&action=tracking-list&limit=&offset=&sort=  -> { people: [...], hasMore }  ("I'm tracking" — people I track)
+ * GET  ?resource=tracking&action=trackers&limit=&offset=&sort=&q=       -> { people: [...], hasMore }  ("Tracking me" — people who track ME)
+ * GET  ?resource=tracking&action=tracking-list&limit=&offset=&sort=&q=  -> { people: [...], hasMore }  ("I'm tracking" — people I track)
  *   sort: 'date_desc' (default — newest first) | 'date_asc' | 'name_asc' | 'name_desc'
+ *   q: optional case-insensitive substring match against name/username
  *
  * POST ?resource=tracking
  *   Body: { action: 'track'|'untrack', targetId }
@@ -38,6 +39,11 @@ const SORTS = ['date_desc', 'date_asc', 'name_asc', 'name_desc'];
 function readSort(req) {
   const s = String(req.query?.sort || 'date_desc');
   return SORTS.includes(s) ? s : 'date_desc';
+}
+
+// Bounded so an absurdly long query string can't bloat the ILIKE pattern.
+function readSearch(req) {
+  return String(req.query?.q || '').trim().slice(0, 100);
 }
 
 export default async function handleTracking(req, res, myId) {
@@ -73,6 +79,7 @@ export default async function handleTracking(req, res, myId) {
       if (action === 'trackers') {
         const { limit, offset } = readPaging(req);
         const sort = readSort(req);
+        const q = readSearch(req);
         const rows = await sql`
           SELECT up.id, up.username, up.full_name, up.avatar_url, up.avatar_color, ut.created_at,
                  EXISTS(
@@ -88,6 +95,7 @@ export default async function handleTracking(req, res, myId) {
           FROM user_tracking ut
           JOIN user_profiles up ON up.id = ut.tracker_id
           WHERE ut.tracked_id = ${myId}
+            AND (${q} = '' OR up.full_name ILIKE ${'%' + q + '%'} OR up.username ILIKE ${'%' + q + '%'})
           ORDER BY
             CASE WHEN ${sort} = 'name_asc'  THEN up.full_name END ASC NULLS LAST,
             CASE WHEN ${sort} = 'name_desc' THEN up.full_name END DESC NULLS LAST,
@@ -105,6 +113,7 @@ export default async function handleTracking(req, res, myId) {
       if (action === 'tracking-list') {
         const { limit, offset } = readPaging(req);
         const sort = readSort(req);
+        const q = readSearch(req);
         const rows = await sql`
           SELECT up.id, up.username, up.full_name, up.avatar_url, up.avatar_color, ut.created_at,
                  (
@@ -116,6 +125,7 @@ export default async function handleTracking(req, res, myId) {
           FROM user_tracking ut
           JOIN user_profiles up ON up.id = ut.tracked_id
           WHERE ut.tracker_id = ${myId}
+            AND (${q} = '' OR up.full_name ILIKE ${'%' + q + '%'} OR up.username ILIKE ${'%' + q + '%'})
           ORDER BY
             CASE WHEN ${sort} = 'name_asc'  THEN up.full_name END ASC NULLS LAST,
             CASE WHEN ${sort} = 'name_desc' THEN up.full_name END DESC NULLS LAST,

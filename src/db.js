@@ -186,15 +186,15 @@ export async function getTrackingCounts() {
   return api.ok ? { trackersCount: api.data.trackersCount || 0, trackingCount: api.data.trackingCount || 0 } : { trackersCount: 0, trackingCount: 0 };
 }
 
-/** Paginated "Tracking me" list — people who track the current user. sort: 'date_desc'(default)|'date_asc'|'name_asc'|'name_desc'. */
-export async function getMyTrackers(limit=20, offset=0, sort='date_desc') {
-  const api = await callApi(`/data?resource=tracking&action=trackers&limit=${limit}&offset=${offset}&sort=${sort}`);
+/** Paginated "Tracking me" list — people who track the current user. sort: 'date_desc'(default)|'date_asc'|'name_asc'|'name_desc'. q: optional name/username search. */
+export async function getMyTrackers(limit=20, offset=0, sort='date_desc', q='') {
+  const api = await callApi(`/data?resource=tracking&action=trackers&limit=${limit}&offset=${offset}&sort=${sort}&q=${encodeURIComponent(q)}`);
   return api.ok ? { people: api.data.people || [], hasMore: !!api.data.hasMore } : { people: [], hasMore: false };
 }
 
-/** Paginated "I'm tracking" list — people the current user tracks. sort: 'date_desc'(default)|'date_asc'|'name_asc'|'name_desc'. */
-export async function getMyTrackingList(limit=20, offset=0, sort='date_desc') {
-  const api = await callApi(`/data?resource=tracking&action=tracking-list&limit=${limit}&offset=${offset}&sort=${sort}`);
+/** Paginated "I'm tracking" list — people the current user tracks. sort: 'date_desc'(default)|'date_asc'|'name_asc'|'name_desc'. q: optional name/username search. */
+export async function getMyTrackingList(limit=20, offset=0, sort='date_desc', q='') {
+  const api = await callApi(`/data?resource=tracking&action=tracking-list&limit=${limit}&offset=${offset}&sort=${sort}&q=${encodeURIComponent(q)}`);
   return api.ok ? { people: api.data.people || [], hasMore: !!api.data.hasMore } : { people: [], hasMore: false };
 }
 

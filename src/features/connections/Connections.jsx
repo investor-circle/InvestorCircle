@@ -61,8 +61,11 @@ export function Network({ connections, setConnections, groups, setGroups, config
       </div>
       <div className="seg net-tabs" style={{marginBottom:20,flexWrap:"wrap"}}>
         <button className={tab==="contacts"?"active":""} onClick={()=>setTab("contacts")}>
-          <Users size={15}/> Connections · {connections.filter(c=>c.status==="accepted").length}
-          {pendingReceived>0 && <span className="nav-badge" style={{position:"static",marginLeft:6}}>{pendingReceived}</span>}
+          <Users size={15}/>
+          <span style={{display:"inline-flex",alignItems:"center",flexWrap:"wrap",justifyContent:"center",gap:5}}>
+            <span>Connections · {connections.filter(c=>c.status==="accepted").length}</span>
+            {pendingReceived>0 && <span className="nav-badge" style={{position:"static",flexShrink:0}}>{pendingReceived}</span>}
+          </span>
         </button>
         <button className={tab==="groups"?"active":""} onClick={()=>setTab("groups")}>
           <Layers size={15}/> Circles · {groups.length}
@@ -89,11 +92,22 @@ export function Network({ connections, setConnections, groups, setGroups, config
 }
 
 const SORT_OPTIONS = [
-  { value: "date_desc", label: "Newest first" },
-  { value: "date_asc",  label: "Oldest first" },
-  { value: "name_asc",  label: "Name A–Z" },
-  { value: "name_desc", label: "Name Z–A" },
+  { value: "date_desc",  label: "Newest first" },
+  { value: "date_asc",   label: "Oldest first" },
+  { value: "name_asc",   label: "Name A–Z" },
+  { value: "name_desc",  label: "Name Z–A" },
+  { value: "ici_desc",   label: "ICI (high→low)" },
+  { value: "ideas_desc", label: "Ideas posted (high→low)" },
 ];
+// Sorted client-side (see useTrackingPeople below) — ICI and idea count
+// are computed in the browser via computeIci()/useIciBatch, the same
+// single source of truth every other ICI display in the app uses, rather
+// than a second copy of that formula ported into SQL just for ordering.
+const CLIENT_SORT_KEYS = new Set(["ici_desc", "ideas_desc"]);
+// Upper bound on how many people we'll fetch (in PAGE_SIZE-sized hops) to
+// sort client-side — matches investor-ici-batch's own 500-uid cap, so we
+// never fetch more people than we could score anyway.
+const CLIENT_SORT_FETCH_CAP = 500;
 
 function SortSelect({ value, onChange }) {
   return (
@@ -170,15 +184,105 @@ function useIciBatch(ids) {
 
 const PAGE_SIZE = 20;
 
-/* ── "Tracking me" — people who track the current user ──────────────────────── */
-export function TrackingMeSection({ me, setConnections, onTrackingCountsChange }) {
-  const myId = me?.id || "me";
+/**
+ * Shared data-loading for TrackingMeSection / ImTrackingSection.
+ *
+ * date/name sorts stay server-paginated, one page per request, as before.
+ * ici_desc/ideas_desc sort client-side instead: those values only exist
+ * once computeIci() runs in the browser (see useIciBatch above), so
+ * ordering by them server-side would mean porting that formula into SQL —
+ * a second copy that WILL drift from the one real implementation. Instead,
+ * for those two sort keys this fetches everyone matching the search
+ * (bounded to CLIENT_SORT_FETCH_CAP, in PAGE_SIZE-sized hops), batches
+ * their ICI once, and sorts/paginates in the browser.
+ */
+function useTrackingPeople(fetchFn, sort, q) {
   const [people, setPeople] = useState([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const isClientSort = CLIENT_SORT_KEYS.has(sort);
+  const icis = useIciBatch(useMemo(()=>people.map(p=>p.id),[people]));
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      if (isClientSort) {
+        let all = [], offset = 0, more = true;
+        while (more && all.length < CLIENT_SORT_FETCH_CAP) {
+          const { people: rows, hasMore: m } = await fetchFn(PAGE_SIZE, offset, "date_desc", q);
+          if (cancelled) return;
+          all = all.concat(rows);
+          more = m;
+          offset += PAGE_SIZE;
+        }
+        if (cancelled) return;
+        setPeople(all);
+        setVisibleCount(PAGE_SIZE);
+        setHasMore(false); // "load more" below is client-side (visibleCount) in this mode
+      } else {
+        const { people: rows, hasMore: more } = await fetchFn(PAGE_SIZE, 0, sort, q);
+        if (cancelled) return;
+        setPeople(rows);
+        setHasMore(more);
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sort, q]);
+
+  const displayed = useMemo(() => {
+    if (!isClientSort) return people;
+    const sorted = [...people].sort((a,b) => {
+      if (sort==="ici_desc")   return (icis[b.id]?.score ?? -1) - (icis[a.id]?.score ?? -1);
+      if (sort==="ideas_desc") return (icis[b.id]?.total ?? 0)  - (icis[a.id]?.total ?? 0);
+      return 0;
+    });
+    return sorted.slice(0, visibleCount);
+  }, [people, icis, sort, visibleCount]);
+
+  const canLoadMore = isClientSort ? visibleCount < people.length : hasMore;
+  const loadMore = async () => {
+    if (isClientSort) { setVisibleCount(v=>v+PAGE_SIZE); return; }
+    setLoading(true);
+    const { people: rows, hasMore: more } = await fetchFn(PAGE_SIZE, people.length, sort, q);
+    setPeople(prev => [...prev, ...rows]);
+    setHasMore(more);
+    setLoading(false);
+  };
+
+  return { people: displayed, icis, loading, canLoadMore, loadMore, setPeople };
+}
+
+/** Debounced search box shared by both tracking lists. */
+function TrackingSearchBox({ value, onChange }) {
+  return (
+    <div className="searchbox" style={{flex:"1 1 200px",minWidth:160}}>
+      <Search size={14} color="var(--muted)"/>
+      <input value={value} onChange={e=>onChange(e.target.value)} placeholder="Search by name or username…" style={{fontSize:13}}/>
+    </div>
+  );
+}
+
+function useDebouncedValue(value, delayMs) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(()=>setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
+
+/* ── "Tracking me" — people who track the current user ──────────────────────── */
+export function TrackingMeSection({ me, setConnections, onTrackingCountsChange }) {
+  const myId = me?.id || "me";
   const [busy, setBusy] = useState({});
   const [sort, setSort] = useState("date_desc");
-  const icis = useIciBatch(useMemo(()=>people.map(p=>p.id),[people]));
+  const [qInput, setQInput] = useState("");
+  const q = useDebouncedValue(qInput, 300);
+  const { people, icis, loading, canLoadMore, loadMore, setPeople } = useTrackingPeople(dbGetMyTrackers, sort, q);
 
   // "New since last visit" — a lightweight per-device cutoff (no schema
   // change needed for a purely visual affordance). Captured ONCE at mount
@@ -189,16 +293,6 @@ export function TrackingMeSection({ me, setConnections, onTrackingCountsChange }
   useEffect(()=>{
     try { localStorage.setItem(lastSeenKey, new Date().toISOString()); } catch {}
   },[]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const loadPage = async (offset, sortVal) => {
-    setLoading(true);
-    const { people: rows, hasMore: more } = await dbGetMyTrackers(PAGE_SIZE, offset, sortVal ?? sort);
-    setPeople(prev => offset===0 ? rows : [...prev, ...rows]);
-    setHasMore(more);
-    setLoading(false);
-  };
-  // Re-fetches from the top whenever the sort changes (also covers initial mount).
-  useEffect(()=>{ loadPage(0, sort); },[sort]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doTrackBack = async (person) => {
     setBusy(b=>({...b,[person.id]:true}));
@@ -219,13 +313,18 @@ export function TrackingMeSection({ me, setConnections, onTrackingCountsChange }
 
   const isNew = (p) => !!lastSeenAt && new Date(p.created_at) > new Date(lastSeenAt);
 
-  if(loading && people.length===0) return <div className="card"><div className="empty"><Loader size={16} className="spin"/> Loading…</div></div>;
-  if(people.length===0) return <div className="card"><div className="empty">No one is tracking you yet. Share your public profile to grow your audience.</div></div>;
+  if(loading && people.length===0 && !q) return <div className="card"><div className="empty"><Loader size={16} className="spin"/> Loading…</div></div>;
 
   return (<div style={{display:"flex",flexDirection:"column",gap:8}}>
-    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:2}}>
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:2}}>
+      <TrackingSearchBox value={qInput} onChange={setQInput}/>
       <SortSelect value={sort} onChange={setSort}/>
     </div>
+    {people.length===0 && !loading && (
+      <div className="card"><div className="empty">
+        {q ? `No one matches "${q}".` : "No one is tracking you yet. Share your public profile to grow your audience."}
+      </div></div>
+    )}
     {people.map(p=>(
       <TrackingRow key={p.id} person={p} ici={icis[p.id]} connectionStatus={p.connection_status} connectBusy={busy[p.id]} isNew={isNew(p)}
         onConnect={()=>doConnect(p)}
@@ -235,7 +334,7 @@ export function TrackingMeSection({ me, setConnections, onTrackingCountsChange }
               {busy[p.id]?<Loader size={13} className="spin"/>:<><Radar size={13}/> Track back</>}
             </button>}/>
     ))}
-    {hasMore && <button className="btn btn-ghost" disabled={loading} onClick={()=>loadPage(people.length)}>
+    {canLoadMore && <button className="btn btn-ghost" disabled={loading} onClick={loadMore}>
       {loading?<Loader size={14} className="spin"/>:"Load more"}
     </button>}
   </div>);
@@ -244,22 +343,11 @@ export function TrackingMeSection({ me, setConnections, onTrackingCountsChange }
 /* ── "I'm tracking" — people the current user tracks ─────────────────────────── */
 export function ImTrackingSection({ me, setConnections, onTrackingCountsChange }) {
   const myId = me?.id || "me";
-  const [people, setPeople] = useState([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState({});
   const [sort, setSort] = useState("date_desc");
-  const icis = useIciBatch(useMemo(()=>people.map(p=>p.id),[people]));
-
-  const loadPage = async (offset, sortVal) => {
-    setLoading(true);
-    const { people: rows, hasMore: more } = await dbGetMyTrackingList(PAGE_SIZE, offset, sortVal ?? sort);
-    setPeople(prev => offset===0 ? rows : [...prev, ...rows]);
-    setHasMore(more);
-    setLoading(false);
-  };
-  // Re-fetches from the top whenever the sort changes (also covers initial mount).
-  useEffect(()=>{ loadPage(0, sort); },[sort]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [qInput, setQInput] = useState("");
+  const q = useDebouncedValue(qInput, 300);
+  const { people, icis, loading, canLoadMore, loadMore, setPeople } = useTrackingPeople(dbGetMyTrackingList, sort, q);
 
   const doUntrack = async (person) => {
     setBusy(b=>({...b,[person.id]:true}));
@@ -278,13 +366,18 @@ export function ImTrackingSection({ me, setConnections, onTrackingCountsChange }
     setBusy(b=>({...b,[person.id]:false}));
   };
 
-  if(loading && people.length===0) return <div className="card"><div className="empty"><Loader size={16} className="spin"/> Loading…</div></div>;
-  if(people.length===0) return <div className="card"><div className="empty">You&apos;re not tracking anyone yet. Track an investor from their profile to see their ideas here.</div></div>;
+  if(loading && people.length===0 && !q) return <div className="card"><div className="empty"><Loader size={16} className="spin"/> Loading…</div></div>;
 
   return (<div style={{display:"flex",flexDirection:"column",gap:8}}>
-    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:2}}>
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:2}}>
+      <TrackingSearchBox value={qInput} onChange={setQInput}/>
       <SortSelect value={sort} onChange={setSort}/>
     </div>
+    {people.length===0 && !loading && (
+      <div className="card"><div className="empty">
+        {q ? `No one matches "${q}".` : <>You&apos;re not tracking anyone yet. Track an investor from their profile to see their ideas here.</>}
+      </div></div>
+    )}
     {people.map(p=>(
       <TrackingRow key={p.id} person={p} ici={icis[p.id]} connectionStatus={p.connection_status} connectBusy={busy[p.id]}
         onConnect={()=>doConnect(p)}
@@ -293,7 +386,7 @@ export function ImTrackingSection({ me, setConnections, onTrackingCountsChange }
             {busy[p.id]?<Loader size={13} className="spin"/>:<><Check size={13}/> Tracking</>}
           </button>}/>
     ))}
-    {hasMore && <button className="btn btn-ghost" disabled={loading} onClick={()=>loadPage(people.length)}>
+    {canLoadMore && <button className="btn btn-ghost" disabled={loading} onClick={loadMore}>
       {loading?<Loader size={14} className="spin"/>:"Load more"}
     </button>}
   </div>);
@@ -384,7 +477,6 @@ export function ContactsSection({ connections, setConnections, groups,
           {c.status==="rejected" && <span className="pill loss" style={{fontSize:11}}>Rejected</span>}
           <ChevronDown size={14} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s"}}/>
         </div></td>
-        <td className="muted small">{c.email}</td>
         <td>{cg.length===0?<span className="muted small">—</span>:<div style={{display:"flex",flexWrap:"wrap",gap:5}}>{cg.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}</td>
         <td className="tnum">{c.status==="accepted"?stats.count:<span className="muted">—</span>}</td>
         <td style={{textAlign:"right"}}>
@@ -403,7 +495,7 @@ export function ContactsSection({ connections, setConnections, groups,
             <button className="iconbtn danger" title="Remove from network" onClick={()=>doRemove(c)}><Trash2 size={14}/></button>)}
         </td>
       </tr>
-      {open && c.status==="accepted" && <tr className="expand-row"><td colSpan={6}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
+      {open && c.status==="accepted" && <tr className="expand-row"><td colSpan={5}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <b style={{fontSize:14}}>{c.name}&apos;s ideas to you</b>
           <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doRemove(c)}><Trash2 size={13}/> Remove</button>
@@ -437,10 +529,9 @@ export function ContactsSection({ connections, setConnections, groups,
           connection&apos;s ideas has tended to be profitable — it isn&apos;t a record of what you actually put in or made.
         </div>
       </div>
-      <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:900}}>
+      <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:760}}>
           <thead><tr>
             <SortTh label="Name"            k="name"   sort={sort} setSort={setSort}/>
-            <th>Email</th>
             <th>Common groups</th>
             <SortTh label="Ideas to me"     k="recos"  sort={sort} setSort={setSort}/>
             <SortTh label="My P&amp;L"      k="pnl"    sort={sort} setSort={setSort} align="right"
@@ -531,7 +622,7 @@ function PendingRequestsCard({ pendingReceived, connections, busy, doAccept, doR
                     <Avatar f={av} size={36}/>
                     <div style={{minWidth:0}}>
                       <div className="sym" style={{color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{c.name}</div>
-                      <div className="muted small" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email}</div>
+                      <div className="muted small">Wants to connect</div>
                     </div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:16,marginLeft:"auto",flexShrink:0}}>
