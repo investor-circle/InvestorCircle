@@ -1189,41 +1189,57 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             (or quickly switches to before data arrives) sees it rather
             than a blank widget column. */}
         {feedLoading ? <FeedBrewingState/> : (
-        <div style={isMobile ? undefined : {display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,alignItems:'start'}}>
+        /* CSS multi-column, not display:grid — a strict 2x2 grid gave each
+           ROW a fixed height (the taller of its two cells), so a short
+           widget next to a tall one left visible empty space beneath it
+           before the next row started. Columns instead let each widget
+           stack immediately under the previous one in whichever column is
+           shorter, so there's never a gap — the standard CSS-only masonry
+           trick. break-inside:avoid on each wrapper stops a card from being
+           split across the column break. */
+        <div style={isMobile ? undefined : {columnCount:2, columnGap:16}}>
         {/* Widget #1 — Fresh Ideas (network + public platform).
             Each Pulse widget gets its own error boundary so one widget's
             bug shows a small inline "failed to load" card instead of
             blanking the whole Pulse section (or, without any boundary
             above HomeFeed at all, the whole app). */}
-        <SectionErrorBoundary label="Fresh Ideas">
-          <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
-            setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
-            setPage={setPage}
-            onViewAll={()=>setFeedTab('feed')}/>
-        </SectionErrorBoundary>
+        <div style={isMobile ? undefined : {breakInside:'avoid'}}>
+          <SectionErrorBoundary label="Fresh Ideas">
+            <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
+              setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
+              setPage={setPage}
+              onViewAll={()=>setFeedTab('feed')}/>
+          </SectionErrorBoundary>
+        </div>
 
         {/* Widget #2 — Trending on MIC.
             Fed publicFeedRecos (the platform-wide public pool), not
             allFeedRecos: this is a discovery surface and must be able to
             show creators the viewer has never encountered. "See all"
             switches to the Feed tab, where public platform ideas live. */}
-        <SectionErrorBoundary label="Trending on MIC">
-          <TrendingWidget publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos}
-            contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
-            trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}
-            setPage={setPage}
-            onSeeAll={()=>setFeedTab('feed')}/>
-        </SectionErrorBoundary>
+        <div style={isMobile ? undefined : {breakInside:'avoid'}}>
+          <SectionErrorBoundary label="Trending on MIC">
+            <TrendingWidget publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos}
+              contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+              trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}
+              setPage={setPage}
+              onSeeAll={()=>setFeedTab('feed')}/>
+          </SectionErrorBoundary>
+        </div>
 
         {/* Widget #3 — What You Missed */}
-        <SectionErrorBoundary label="What You Missed">
-          <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} toggleTrack={toggleTrack} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
-        </SectionErrorBoundary>
+        <div style={isMobile ? undefined : {breakInside:'avoid'}}>
+          <SectionErrorBoundary label="What You Missed">
+            <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} toggleTrack={toggleTrack} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
+          </SectionErrorBoundary>
+        </div>
 
         {/* Widget #4 — Tracked Summary Donut (My Tracked) */}
-        <SectionErrorBoundary label="My Tracked">
-          <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
-        </SectionErrorBoundary>
+        <div style={isMobile ? undefined : {breakInside:'avoid'}}>
+          <SectionErrorBoundary label="My Tracked">
+            <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
+          </SectionErrorBoundary>
+        </div>
         </div>
         )}
 

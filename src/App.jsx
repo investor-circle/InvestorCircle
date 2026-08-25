@@ -223,7 +223,7 @@ export default function App() {
   // list, so a creator with thousands of trackers doesn't load them all here.
   const [trackingCounts,  setTrackingCounts]  = useState({ trackersCount: 0, trackingCount: 0 });
   const [networkInitTab,  setNetworkInitTab]  = useState(null); // one-shot: which Network tab to open next (e.g. from a notification)
-  const [homeInitTab,     setHomeInitTab]      = useState(null); // one-shot: which HomeFeed mobile tab to open next — Pulse (top Home icon) vs Feed (DISCOVER > Ideas nav item, mobile only)
+  const [homeInitTab,     setHomeInitTab]      = useState(null); // one-shot: which HomeFeed tab to open next (desktop + mobile alike) — Pulse (top Home icon) vs Feed (DISCOVER > Ideas nav item)
   // Feed configuration
   const [feedConfigOptions,       setFeedConfigOptions]       = useState([]); // admin-defined options
   const [userFeedPrefs,           setUserFeedPrefs]           = useState({}); // {key: boolean} user overrides
@@ -1217,7 +1217,7 @@ export default function App() {
                 {sec.label && <div className="side-section">{sec.label}</div>}
                 {sec.items.map(n=>(
                   <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>{
-                      if(n.id==='home' && isMobile) setHomeInitTab('feed'); // DISCOVER > Ideas, mobile → land on the Feed tab, not Pulse
+                      if(n.id==='home') setHomeInitTab('feed'); // DISCOVER > Ideas → land on the Feed tab, not Pulse (desktop + mobile alike)
                       setPage(n.id);
                       if(isMobile)setNavOpen(false);
                     }}>
@@ -1258,7 +1258,7 @@ export default function App() {
             <div style={{display:'flex',alignItems:'center',gap:isMobile?4:8,flexShrink:0}}>
               {/* Permanent Home icon — always visible, desktop and mobile, works from any page.
                   Always lands on the Pulse tab (the daily home experience), as opposed to
-                  DISCOVER > Ideas in the sidebar, which lands mobile users on Feed. */}
+                  DISCOVER > Ideas in the sidebar, which lands on the Feed tab instead. */}
               {isInv && (
                 <button
                   className={"icon-btn"+(page==='home'?" active":"")}
