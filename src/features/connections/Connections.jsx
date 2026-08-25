@@ -594,22 +594,27 @@ export function ContactsSection({ connections, setConnections, groups,
         </div>
         {cg.length>0 && <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>{cg.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}
         {c.status==="accepted" && (
-          <div style={{display:"flex",gap:16,marginTop:10,paddingTop:10,borderTop:"1px solid var(--line)",overflowX:"auto"}}>
-            <MiniStat label="Ideas" value={stats.count}/>
-            <MiniStat label="Acted on" value={stats.acted}/>
-            <MiniStat label="In money" value={stats.inMoney} cls="pos"/>
-            <MiniStat label="Out money" value={stats.outMoney} cls="neg"/>
+          <div style={{display:"flex",alignItems:"center",gap:16,marginTop:10,paddingTop:10,borderTop:"1px solid var(--line)"}}>
+            <div style={{display:"flex",gap:16,overflowX:"auto",flex:1,minWidth:0}}>
+              <MiniStat label="Ideas" value={stats.count}/>
+              <MiniStat label="Acted on" value={stats.acted}/>
+              <MiniStat label="In money" value={stats.inMoney} cls="pos"/>
+              <MiniStat label="Out money" value={stats.outMoney} cls="neg"/>
+            </div>
+            <button className="iconbtn danger" title="Remove from network" onClick={()=>doRemove(c)} style={{flexShrink:0}}><Trash2 size={14}/></button>
           </div>
         )}
-        <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:6,marginTop:10}}>
-          {c.status==="pending"&&c.direction==="received" && (<>
+        {c.status==="pending"&&c.direction==="received" && (
+          <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginTop:10}}>
             <button className="btn btn-pri btn-sm" disabled={busy[c.connection_id]} onClick={()=>doAccept(c)}><Check size={13}/> Accept</button>
             <button className="btn btn-ghost btn-sm" disabled={busy[c.connection_id]} onClick={()=>doReject(c)}><X size={13}/> Decline</button>
-          </>)}
-          {c.status!=="pending" || c.direction!=="received" ? (
+          </div>
+        )}
+        {(c.status==="pending"&&c.direction==="sent"||c.status==="rejected") && (
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}>
             <button className="iconbtn danger" title="Remove" onClick={()=>doRemove(c)}><Trash2 size={14}/></button>
-          ) : null}
-        </div>
+          </div>
+        )}
       </div>
     );
 
