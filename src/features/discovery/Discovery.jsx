@@ -958,11 +958,16 @@ function FeedBrewingState() {
             C 138 48, 142 82, 108 86
             C 130 78, 128 58, 105 62
             Z"/>
+          {/* Tapered foot (narrower base than rim, rounded corners) — with
+              the saucer removed the cup needs its own grounded silhouette
+              rather than a flat-cut slab bottom. */}
           <path className="feed-brewing-cupbody" d="
             M33 46
-            C 30 66, 30 84, 37 92
-            C 42 97, 100 97, 105 92
-            C 112 84, 112 66, 109 46
+            C 30 64, 31 80, 39 89
+            Q 44 96 52 96
+            L 90 96
+            Q 98 96 103 89
+            C 111 80 112 64 109 46
             Z"/>
           <ellipse className="feed-brewing-rim-outer" cx="71" cy="46" rx="38" ry="12"/>
           <ellipse className="feed-brewing-liquid" cx="71" cy="45" rx="32" ry="9"/>
