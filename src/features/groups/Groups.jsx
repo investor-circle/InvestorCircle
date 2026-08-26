@@ -20,7 +20,9 @@ import {
   ThumbsUp,
   Share2,
   Info,
-  Users
+  Users,
+  ArrowUpDown,
+  SlidersHorizontal
 } from "lucide-react";
 import {
   addGroupMembers as dbAddGroupMembers,
@@ -39,7 +41,7 @@ import {
   requestJoinCircle as dbRequestJoinCircle
 } from "../../services/api/groupsApi";
 import { getCircleIdeas as dbGetCircleIdeas } from "../../services/api/recommendationsApi";
-import { Avatar, ConvBadge, RetBadge, TypeBadge } from "../../components/common";
+import { Avatar, ConvBadge, RetBadge, SmallAnchoredPopover, TypeBadge } from "../../components/common";
 import { fmtDate, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile, gotoCircle } from "../../utils/navigation";
 import { useIsMobile } from "../../hooks/index";
@@ -48,8 +50,34 @@ import { useIsMobile } from "../../hooks/index";
  * Still backed by ic_groups/group_members (see api/_lib/handlers/groups.js).
  * A circle is 'private' (owner adds Connections directly) or 'public'
  * (subscribable via request + owner approval, or a shareable invite link). */
+// Sort options for the Circles toolbar — same {key,dir}-driven shape and
+// icon-only SmallAnchoredPopover trigger already used for Portfolio's
+// holdings grid and Connections' contact lists, reused here rather than
+// inventing another dropdown pattern.
+const CIRCLE_SORT_OPTIONS = [
+  { value: "created_desc", label: "Newest first",         key: "created", dir: "desc" },
+  { value: "created_asc",  label: "Oldest first",         key: "created", dir: "asc"  },
+  { value: "name_asc",     label: "Name A–Z",             key: "name",    dir: "asc"  },
+  { value: "name_desc",    label: "Name Z–A",             key: "name",    dir: "desc" },
+  { value: "members_desc", label: "Members (high→low)",   key: "members", dir: "desc" },
+  { value: "members_asc",  label: "Members (low→high)",   key: "members", dir: "asc"  },
+];
+const CIRCLE_FILTER_OPTIONS = [
+  { value: "all",     label: "All circles" },
+  { value: "public",  label: "Public" },
+  { value: "private", label: "Private" },
+];
+
 export function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, recsReceived, onOpenRecos, me }) {
+  const isMobile = useIsMobile();
   const [q, setQ] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [sort, setSort] = useState({ key: "created", dir: "desc" });
+  const [sortOpen, setSortOpen] = useState(false);
+  const filterBtnRef = useRef(null);
+  const sortBtnRef = useRef(null);
   const [expanded, setExpanded] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [addTo, setAddTo] = useState(null);
@@ -70,9 +98,17 @@ export function GroupsSection({ groups, setGroups, contacts, configs, canCreateG
 
   const rows = useMemo(()=>{
     let r = [...groups];
+    if(typeFilter!=="all"){ r=r.filter(g=>g.circle_type===typeFilter); }
     if(q.trim()){ const s=q.toLowerCase(); r=r.filter(g=>g.name.toLowerCase().includes(s)); }
+    const memberCount = g => (g.members||[]).filter(m=>m.status==="active").length;
+    const cmp = {
+      created: (a,b)=>new Date(a.created_at)-new Date(b.created_at),
+      name:    (a,b)=>a.name.localeCompare(b.name),
+      members: (a,b)=>memberCount(a)-memberCount(b),
+    }[sort.key];
+    r.sort((a,b)=> sort.dir==="asc" ? cmp(a,b) : -cmp(a,b));
     return r;
-  },[groups,q]);
+  },[groups,q,typeFilter,sort]);
 
   const doCreateGroup = async (name, memberIds, color, circleType, description) => {
     if(groups.some(g=>g.my_role==="admin"&&g.name.toLowerCase()===name.toLowerCase())){
@@ -114,9 +150,61 @@ export function GroupsSection({ groups, setGroups, contacts, configs, canCreateG
 
   return (<>
     <div className="toolbar">
-      <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search circles…"/></div>
+      {/* Search: a full text box on desktop where there's room, an
+          icon toggle on mobile that expands into its own row below —
+          same space-driven pattern Portfolio's holdings grid uses for
+          its own search/filter/sort row, so Filter/Sort/New Circle
+          always stay reachable on one line even while searching. */}
+      {!isMobile ? (
+        <div className="searchbox grow">
+          <Search size={16} color="var(--muted)"/>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search circles…"/>
+        </div>
+      ) : (
+        <button className={"icon-btn"+(searchOpen?" active":"")} style={{width:36,height:36}} title="Search circles" onClick={()=>setSearchOpen(v=>!v)}><Search size={15}/></button>
+      )}
+      <div style={{position:"relative"}}>
+        <button ref={filterBtnRef} className={"icon-btn"+(typeFilter!=="all"?" active":"")} style={{width:36,height:36}} title="Filter circles" onClick={()=>setFilterOpen(v=>!v)}><SlidersHorizontal size={15}/></button>
+        {filterOpen && (
+          <SmallAnchoredPopover anchorEl={filterBtnRef.current} onClose={()=>setFilterOpen(false)}>
+            <div className="cap" style={{marginBottom:6}}>Circle type</div>
+            {CIRCLE_FILTER_OPTIONS.map(o=>{
+              const active = o.value===typeFilter;
+              return (
+                <div key={o.value} onClick={()=>{setTypeFilter(o.value);setFilterOpen(false);}}
+                  style={{padding:"8px 9px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:active?700:500,color:active?"var(--accent-ink)":"var(--ink)",background:active?"var(--accent-soft)":"transparent"}}>
+                  {o.label}
+                </div>
+              );
+            })}
+          </SmallAnchoredPopover>
+        )}
+      </div>
+      <div style={{position:"relative"}}>
+        <button ref={sortBtnRef} className={"icon-btn"+((sort.key!=="created"||sort.dir!=="desc")?" active":"")} style={{width:36,height:36}} title="Sort circles" onClick={()=>setSortOpen(v=>!v)}><ArrowUpDown size={15}/></button>
+        {sortOpen && (
+          <SmallAnchoredPopover anchorEl={sortBtnRef.current} onClose={()=>setSortOpen(false)}>
+            {CIRCLE_SORT_OPTIONS.map(o=>{
+              const active = o.key===sort.key && o.dir===sort.dir;
+              return (
+                <div key={o.value} onClick={()=>{setSort({key:o.key,dir:o.dir});setSortOpen(false);}}
+                  style={{padding:"8px 9px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:active?700:500,color:active?"var(--accent-ink)":"var(--ink)",background:active?"var(--accent-soft)":"transparent"}}>
+                  {o.label}
+                </div>
+              );
+            })}
+          </SmallAnchoredPopover>
+        )}
+      </div>
       <button className="btn btn-pri btn-sm" disabled={!canCreateGroups} onClick={()=>setShowNew(true)}><Plus size={15}/> New Circle</button>
     </div>
+    {isMobile && searchOpen && (
+      <div className="searchbox" style={{marginBottom:16}}>
+        <Search size={14} color="var(--muted)"/>
+        <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search circles…"/>
+        {q && <button onClick={()=>setQ("")} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",display:"flex"}}><X size={13}/></button>}
+      </div>
+    )}
     {rows.length===0 ? <div className="card"><div className="empty">No circles yet. Create one to build a community around your ideas, or share them with a group of connections at once.</div></div> :
     <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:900}}>
       <thead><tr>
