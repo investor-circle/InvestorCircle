@@ -221,19 +221,21 @@ tr.hiddenrow > td{opacity:.55;}
 /* ─── Home feed "brewing" loading state — shown only while the feed's first
    load is genuinely in flight, never once it's known to be empty ─── */
 .feed-brewing{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:44px 28px 36px;text-align:center;}
-.feed-brewing-art{position:relative;width:140px;height:86px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
+.feed-brewing-art{position:relative;width:150px;height:100px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
 .feed-brewing-cup{overflow:visible;}
-/* Wide, shallow café cup modeled on a real cup-and-saucer reference photo
-   (chunky glossy handle, thick cream rim, solid ceramic body) — recolored
-   in the app's own palette: the ceramic takes the brand accent (where the
-   photo's cup was sage green), the coffee stays a true coffee brown for
-   recognizability, and the foam "pour" on top is cream instead of white.
-   No saucer/plate underneath (removed per earlier feedback — this is a cup
-   being poured, not a place setting). */
-.feed-brewing-cupbody{fill:var(--accent);}
-.feed-brewing-handle{stroke:var(--accent);stroke-width:9;fill:none;}
-.feed-brewing-rim{fill:none;stroke:#fdfbf7;stroke-width:4;}
+/* Modeled directly on a real cup-and-saucer reference photo: a matching
+   saucer, a rounded (not flat-sided) ceramic body with a light-to-dark
+   gradient for curvature, a closed-ring handle, a cream rim disc the
+   coffee sits inset in, and a gloss highlight — recolored into the app's
+   own accent + cream/coffee palette rather than the photo's literal
+   sage-green. */
+.feed-brewing-saucer-shadow{fill:var(--ink);opacity:.07;}
+.feed-brewing-saucer{fill:url(#feed-brewing-cup-grad);}
+.feed-brewing-saucer-rim{fill:none;stroke:#fdfbf7;stroke-width:2.5;opacity:.85;}
+.feed-brewing-cupbody,.feed-brewing-handle{fill:url(#feed-brewing-cup-grad);}
+.feed-brewing-rim-outer{fill:#fdfbf7;}
 .feed-brewing-liquid{fill:#5b3a29;}
+.feed-brewing-gloss{stroke:#fff;stroke-width:2.5;opacity:.3;}
 /* Lightbulb "poured" in the foam, standing in for the latte-art heart —
    the idea/circle metaphor instead. The color property drives the group's
    currentColor fills/strokes so the bulb, its base and the little rays
@@ -244,8 +246,7 @@ tr.hiddenrow > td{opacity:.55;}
 .feed-brewing-badge-1{top:2px;left:2px;}
 .feed-brewing-badge-2{top:6px;right:0;}
 .feed-brewing-badge-3{bottom:2px;left:14px;}
-.feed-brewing-title{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--ink);letter-spacing:-.2px;margin:14px auto 8px;max-width:360px;}
-.feed-brewing-sub{max-width:340px;margin:0 auto 20px;line-height:1.6;}
+.feed-brewing-title{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--ink);letter-spacing:-.2px;margin:14px auto 20px;max-width:360px;}
 .feed-brewing-bar{width:180px;height:5px;border-radius:999px;background:var(--surface-2);margin:0 auto 10px;overflow:hidden;}
 .feed-brewing-bar-fill{width:40%;height:100%;border-radius:999px;background:var(--grad);}
 .feed-brewing-caption{letter-spacing:.2px;}
