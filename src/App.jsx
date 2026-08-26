@@ -95,6 +95,24 @@ const AdminInstruments = React.lazy(() => adminModule().then(m => ({ default: m.
 const AdminSebi        = React.lazy(() => adminModule().then(m => ({ default: m.AdminSebi })));
 const AdminSeedData    = React.lazy(() => adminModule().then(m => ({ default: m.AdminSeedData })));
 const AdminUsers       = React.lazy(() => adminModule().then(m => ({ default: m.AdminUsers })));
+
+// Portfolio, Sharing and Profile are their own, independently-navigated
+// pages with no other module statically importing them (verified — unlike
+// e.g. Groups.jsx, which Connections.jsx already pulls into the main chunk
+// eagerly, so lazy-wrapping CirclePage alone wouldn't shrink anything).
+// Code-splitting these off the initial bundle matters most for the exact
+// visitors CLAUDE.md flags as most load-sensitive: someone new following a
+// shared profile/claim link who hasn't signed up yet and would otherwise
+// have to download the entire authenticated app (Portfolio, Recommendations,
+// Connections, Discovery, ...) just to see one profile.
+const portfolioModule = () => import("./features/portfolio/Portfolio");
+const PortfolioIntelligencePage = React.lazy(() => portfolioModule().then(m => ({ default: m.PortfolioIntelligencePage })));
+const sharingModule = () => import("./features/sharing/Sharing");
+const Sharing = React.lazy(() => sharingModule().then(m => ({ default: m.Sharing })));
+const profileModule = () => import("./features/profile/Profile");
+const ClaimProfilePage = React.lazy(() => profileModule().then(m => ({ default: m.ClaimProfilePage })));
+const ProfileEditModal = React.lazy(() => profileModule().then(m => ({ default: m.ProfileEditModal })));
+const PublicProfilePage = React.lazy(() => profileModule().then(m => ({ default: m.PublicProfilePage })));
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { InviteModal, Network } from "./features/connections/Connections";
 import { CirclePage } from "./features/groups/Groups";
@@ -102,10 +120,7 @@ import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./fe
 import { DiscoverModal, DiscoverPeoplePage, OnboardingGate } from "./features/onboarding/Onboarding";
 import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
-import { PortfolioIntelligencePage } from "./features/portfolio/Portfolio";
-import { ClaimProfilePage, ProfileEditModal, PublicProfilePage } from "./features/profile/Profile";
 import { RecoPostPage, Recommendations } from "./features/recommendations/Recommendations";
-import { Sharing } from "./features/sharing/Sharing";
 import { useIsMobile } from "./hooks/index";
 import { VAPID_PUBLIC_KEY, sendEmail, sendPush } from "./services/notify";
 import { STYLES } from "./styles/globalStyles";
@@ -162,6 +177,25 @@ const ADMIN_PATH_TO_PAGE = {
 const ADMIN_PAGE_TO_PATH = Object.fromEntries(
   Object.entries(ADMIN_PATH_TO_PAGE).map(([path, page]) => [page, path])
 );
+
+// Shown while Firebase auth is still resolving, and as the Suspense
+// fallback for lazy-loaded pages reached before the app shell mounts
+// (public profile / claim links). Deliberately matches the static loader
+// in index.html (#initial-loader — same background, spinner and copy) so
+// there's no visual flash when this component takes over from it once
+// React mounts; the index.html one is markup+CSS only, so it can paint
+// before any JS has even downloaded, while this one covers the gap after
+// mount but before we know who — if anyone — is signed in.
+function AppLoadingScreen() {
+  return (
+    <div style={{minHeight:"100vh",background:"#0a0b18",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+      <div style={{width:34,height:34,borderRadius:"50%",border:"3px solid rgba(255,255,255,.14)",borderTopColor:"#8f7bff",animation:"mic-spin .8s linear infinite"}}/>
+      <div style={{color:"#e8e8f5",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15,fontWeight:600}}>Getting your circle ready…</div>
+      <div style={{color:"#7d7fa0",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12.5}}>Just a moment</div>
+      <style>{"@keyframes mic-spin{to{transform:rotate(360deg)}}"}</style>
+    </div>
+  );
+}
 
 export default function App() {
   const { user, role, setRole, userIsAdmin, logout, authLoading, profile, updateProfile, patchProfile } = useAuth();
@@ -1030,6 +1064,7 @@ export default function App() {
     return (
       <div className="app"><style>{STYLES}</style>
         <ProfileErrorBoundary>
+          <React.Suspense fallback={<AppLoadingScreen/>}>
           <PublicProfilePage
             username={pubUsername}
             recoId={pubRecoId}
@@ -1059,17 +1094,14 @@ export default function App() {
               setConnections(c);
             }}
           />
+          </React.Suspense>
         </ProfileErrorBoundary>
       </div>
     );
   }
 
   // ── Auth gate ───────────────────────────────────────────────────────────────
-  if (authLoading) return (
-    <div style={{minHeight:"100vh",background:"#0a0b18",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{color:"#8a8daa",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15}}>Loading…</div>
-    </div>
-  );
+  if (authLoading) return <AppLoadingScreen/>;
   // ── Creator claim flow: show claim page ONLY after auth has resolved ─────────
   // Without !authLoading, a stale mic_claim_token shows ClaimProfilePage for
   // ~300ms on every load while Firebase auth is still resolving (user is briefly
@@ -1079,11 +1111,13 @@ export default function App() {
     return (
       <div className="app">
         <style>{STYLES}</style>
+        <React.Suspense fallback={<AppLoadingScreen/>}>
         <ClaimProfilePage
           profile={claimProfile}
           token={claimToken}
           onBack={() => { setClaimToken(null); setClaimProfile(null); localStorage.removeItem('mic_claim_token'); }}
         />
+        </React.Suspense>
       </div>
     );
   }
@@ -1681,7 +1715,7 @@ export default function App() {
             {isInv && page==="home"      && <SectionErrorBoundary label="Home feed"><HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} recsMade={recsMade} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds} initTab={homeInitTab} onInitTabConsumed={()=>setHomeInitTab(null)}/></SectionErrorBoundary>}
             {isInv && showInvite && <SectionErrorBoundary label="Invite"><InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/></SectionErrorBoundary>}
             {isInv && showDiscover && <SectionErrorBoundary label="Discover"><DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/></SectionErrorBoundary>}
-            {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} onOpenSecurity={openSecurity} setPage={setPage}/></SectionErrorBoundary>}
+            {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><React.Suspense fallback={<div className="empty">Loading Portfolio…</div>}><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} onOpenSecurity={openSecurity} setPage={setPage}/></React.Suspense></SectionErrorBoundary>}
             {isInv && page==="market_intel" && <SectionErrorBoundary label="Market Insights"><MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
             {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity} onBack={()=>setPage(secInsightsFrom)} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
             {isInv && page==="discover"     && <SectionErrorBoundary label="Discover People"><DiscoverPeoplePage ME={ME}/></SectionErrorBoundary>}
@@ -1702,13 +1736,14 @@ export default function App() {
                 tracked={tracked} toggleTrack={toggleTrack}
                 globalSearch={globalSearch}
                 onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/></SectionErrorBoundary>}
-            {isInv && page==="sharing"     && <SectionErrorBoundary label="Sharing"><Sharing myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/></SectionErrorBoundary>}
+            {isInv && page==="sharing"     && <SectionErrorBoundary label="Sharing"><React.Suspense fallback={<div className="empty">Loading…</div>}><Sharing myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/></React.Suspense></SectionErrorBoundary>}
             {isInv && page==="about"        && <SectionErrorBoundary label="About"><AboutPage/></SectionErrorBoundary>}
             {isInv && page==="contact"      && <SectionErrorBoundary label="Contact"><ContactPage setPage={setPage}/></SectionErrorBoundary>}
             {isInv && page==="privacy"      && <SectionErrorBoundary label="Privacy Policy"><PrivacyPolicyPage/></SectionErrorBoundary>}
             {isInv && page==="trackrecord" && (
               ME.username
                 ? <ProfileErrorBoundary key={ME.username}>
+                    <React.Suspense fallback={<div className="empty">Loading…</div>}>
                     <PublicProfilePage
                       username={ME.username}
                       viewerUser={user}
@@ -1722,6 +1757,7 @@ export default function App() {
                       onRequestConnect={()=>{}}
                       onBack={()=>setPage("home")}
                     />
+                    </React.Suspense>
                   </ProfileErrorBoundary>
                 : hasPendingClaim
                   ? <div style={{maxWidth:520}}>
@@ -1784,6 +1820,7 @@ export default function App() {
       {/* ── Edit profile modal — rendered as a portal, accessible from any page ── */}
       {profileEditOpen && isInv && (
         <SectionErrorBoundary label="Edit profile">
+          <React.Suspense fallback={null}>
           <ProfileEditModal
             profile={profile}
             userId={user?.uid}
@@ -1792,6 +1829,7 @@ export default function App() {
             updateProfile={updateProfile}
             onClose={()=>setProfileEditOpen(false)}
           />
+          </React.Suspense>
         </SectionErrorBoundary>
       )}
       {/* ── Mandatory username+consent gate, then a one-time Discover modal —
