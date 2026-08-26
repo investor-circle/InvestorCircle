@@ -149,7 +149,7 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
         reach={reach} contacts={contacts} groups={groups} onSendShare={sendIdeaToTargets} assetClasses={assetClasses}
         setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload} globalSearch={globalSearch}/>}
 
-    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} me={me} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); setShowNew(false); setTab("made"); }}/>}
+    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} me={me} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); setTab("made"); }}/>}
   </>);
 }
 
@@ -1670,6 +1670,8 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
   const [targets,     setTargets]     = useState([]);
   const [isPublic,    setIsPublic]    = useState(true);
   const [sectorOpts,  setSectorOpts]  = useState(FALLBACK_SECTORS);
+  const [submitting,  setSubmitting]  = useState(false);
+  const [posted,      setPosted]      = useState(null); // { id, ticker, assetName } once the idea is live
 
   // Load sector options from sector_master — same pattern as all other DB calls in this app
   useEffect(() => {
@@ -1723,6 +1725,8 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
   useEffect(() => { if (hasPublicCircleSelected) setIsPublic(true); }, [hasPublicCircleSelected]);
 
   const create = async () => {
+    if (submitting) return; // guard against a double-click firing two creates
+    setSubmitting(true);
     const rp = priceData?.price || 0;
     const td = calcTargetDate(TODAY, horizon);
     const recoData = {
@@ -1739,9 +1743,10 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
       priceSource: priceData?.source || null,
     };
     const recipients = targets.map(id=>({ type:groups.some(g=>g.id===id)?"group":"user", id }));
+    let created = null;
     if (me?.id) {
       try {
-        const created = await dbCreateReco(recoData, me.id, recipients);
+        created = await dbCreateReco(recoData, me.id, recipients);
         track('reco_created', {
           rec_type:    recoData.recType  || 'Buy',
           asset_class: recoData.assetClass || '',
@@ -1791,9 +1796,40 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
       catch(e) { console.error("create reco:", e); }
     }
     onCreate({ id:"m"+Date.now(), ...recoData, date:TODAY, recipients:targets, actedList:[], likes:[], exit:false, exitDate:null });
+    setSubmitting(false);
+    // Only show the "posted" confirmation + link when the server actually
+    // gave us back a real reco id — if the create call failed above, there's
+    // no live page to link to, so just close like before instead of
+    // confirming something that didn't happen.
+    if (created?.id && me?.username) {
+      setPosted({ id: String(created.id), ticker: recoData.ticker, assetName: recoData.assetName });
+    } else {
+      onClose();
+    }
   };
 
   const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && (priceData?.price > 0 || !!priceError);
+
+  // Confirmation state: shown in place of the form once the idea is live,
+  // so pressing Send always ends in visible feedback rather than the modal
+  // just staying on the same screen with no sign the post went through.
+  if (posted) {
+    return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
+      <div className="modal-head"><h3>Idea posted</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+      <div className="modal-body" style={{textAlign:"center",padding:"32px 24px"}}>
+        <div style={{width:52,height:52,borderRadius:"50%",background:"var(--gain-soft)",color:"var(--gain)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+          <Check size={26}/>
+        </div>
+        <div style={{fontWeight:700,fontSize:16,marginBottom:6}}>Your idea has been posted</div>
+        <div className="muted small" style={{marginBottom:22}}>
+          {posted.ticker && posted.ticker!=="—" ? posted.ticker : posted.assetName} is now live in your circle.
+        </div>
+        <button className="btn btn-pri" style={{width:"100%"}} onClick={()=>{ openReco(me.username, posted.id); onClose(); }}>
+          Check it here
+        </button>
+      </div>
+    </div></div>);
+  }
 
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> New idea</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
@@ -2000,7 +2036,9 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
     <div className="modal-foot">
       <span className="muted small">Target date: {calcTargetDate(TODAY,horizon)?fmtDate(calcTargetDate(TODAY,horizon)):"—"}</span>
       <div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-pri" disabled={!valid} onClick={create}><Send size={15}/> Send</button></div>
+        <button className="btn btn-pri" disabled={!valid || submitting} onClick={create}>
+          {submitting ? <><Loader size={15} className="spin"/> Posting…</> : <><Send size={15}/> Send</>}
+        </button></div>
     </div>
   </div></div>);
 }

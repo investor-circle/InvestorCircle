@@ -221,15 +221,17 @@ tr.hiddenrow > td{opacity:.55;}
 /* ─── Home feed "brewing" loading state — shown only while the feed's first
    load is genuinely in flight, never once it's known to be empty ─── */
 .feed-brewing{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:44px 28px 36px;text-align:center;}
-.feed-brewing-art{position:relative;width:120px;height:76px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
+.feed-brewing-art{position:relative;width:120px;height:82px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
 .feed-brewing-cup{overflow:visible;}
-/* Outlined mug (stroke + soft fill), not a solid silhouette — reads as a
-   deliberately-drawn icon rather than a flat blob, and no saucer/plate
-   underneath (removed — this is a mug being poured, not a place setting). */
+/* Café-cup silhouette (outlined, not a solid block) — short and wide-rimmed
+   with a real open handle, closer to a café's actual ceramic cup than a
+   generic tall mug. No saucer/plate underneath (removed per feedback —
+   this is a cup being poured, not a place setting). */
 .feed-brewing-cupbody{fill:var(--surface);stroke:var(--ink);stroke-width:3.5;}
 .feed-brewing-handle{stroke:var(--ink);stroke-width:5;fill:none;}
 .feed-brewing-rim{fill:none;stroke:var(--ink);stroke-width:2;opacity:.25;}
 .feed-brewing-liquid{fill:var(--accent);}
+.feed-brewing-crema{fill:var(--surface);opacity:.4;}
 .feed-brewing-steam{stroke:var(--accent);stroke-width:3;opacity:0;}
 .feed-brewing-badge{position:absolute;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);}
 .feed-brewing-badge-1{top:2px;left:2px;}
