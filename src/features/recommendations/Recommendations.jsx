@@ -1560,8 +1560,8 @@ export function ThesisEditor({ value, onChange }) {
 
 /* ─── ThesisRenderer ─────────────────────────────────────────────────────── */
 
-export function ThesisRenderer({ thesis, previewLines=3 }) {
-  const [expanded, setExpanded] = useState(false);
+export function ThesisRenderer({ thesis, previewLines=3, defaultExpanded=false }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   // Both hooks below must run unconditionally, before either early return —
   // `parsed` can legitimately be null (an empty/placeholder thesis), so
   // `text`/`images` are read via optional chaining rather than destructured
@@ -2586,7 +2586,7 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, contacts=[], gr
               <div style={{background:'var(--surface-2)', borderRadius:12, padding:'14px 16px'}}>
                 <div style={{fontSize:10.5, fontWeight:700, color:'var(--muted)', textTransform:'uppercase',
                              letterSpacing:.5, marginBottom:6}}>Investment Thesis</div>
-                <ThesisRenderer thesis={reco.thesis} previewLines={8}/>
+                <ThesisRenderer thesis={reco.thesis} previewLines={8} defaultExpanded/>
               </div>
             )}
           </div>
