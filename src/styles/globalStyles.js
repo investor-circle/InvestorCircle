@@ -221,26 +221,17 @@ tr.hiddenrow > td{opacity:.55;}
 /* ─── Home feed "brewing" loading state — shown only while the feed's first
    load is genuinely in flight, never once it's known to be empty ─── */
 .feed-brewing{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:44px 28px 36px;text-align:center;}
-.feed-brewing-art{position:relative;width:150px;height:100px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
+.feed-brewing-art{position:relative;width:150px;height:82px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
 .feed-brewing-cup{overflow:visible;}
-/* Modeled directly on a real cup-and-saucer reference photo: a matching
-   saucer, a rounded (not flat-sided) ceramic body with a light-to-dark
-   gradient for curvature, a closed-ring handle, a cream rim disc the
-   coffee sits inset in, and a gloss highlight — recolored into the app's
-   own accent + cream/coffee palette rather than the photo's literal
-   sage-green. */
-.feed-brewing-saucer-shadow{fill:var(--ink);opacity:.07;}
-.feed-brewing-saucer{fill:url(#feed-brewing-cup-grad);}
-.feed-brewing-saucer-rim{fill:none;stroke:#fdfbf7;stroke-width:2.5;opacity:.85;}
+/* Modeled on a real cup reference photo: a rounded (not flat-sided)
+   ceramic body with a light-to-dark gradient for curvature, a closed-ring
+   handle, a cream rim disc the coffee sits inset in, and a gloss
+   highlight — recolored into the app's own accent + cream/coffee palette
+   rather than the photo's literal sage-green. No saucer, no foam art. */
 .feed-brewing-cupbody,.feed-brewing-handle{fill:url(#feed-brewing-cup-grad);}
 .feed-brewing-rim-outer{fill:#fdfbf7;}
 .feed-brewing-liquid{fill:#5b3a29;}
 .feed-brewing-gloss{stroke:#fff;stroke-width:2.5;opacity:.3;}
-/* Lightbulb "poured" in the foam, standing in for the latte-art heart —
-   the idea/circle metaphor instead. The color property drives the group's
-   currentColor fills/strokes so the bulb, its base and the little rays
-   share one tone. */
-.feed-brewing-bulb{color:#fdfbf7;}
 .feed-brewing-steam{stroke:var(--accent);stroke-width:3;opacity:0;}
 .feed-brewing-badge{position:absolute;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);}
 .feed-brewing-badge-1{top:2px;left:2px;}

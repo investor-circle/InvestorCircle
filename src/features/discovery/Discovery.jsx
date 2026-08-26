@@ -933,7 +933,7 @@ function FeedBrewingState() {
         <span className="feed-brewing-badge feed-brewing-badge-1"><Lightbulb size={15}/></span>
         <span className="feed-brewing-badge feed-brewing-badge-2"><TrendingUp size={15}/></span>
         <span className="feed-brewing-badge feed-brewing-badge-3"><Sparkles size={13}/></span>
-        <svg className="feed-brewing-cup" viewBox="0 0 160 122" width="128" height="98">
+        <svg className="feed-brewing-cup" viewBox="0 0 160 100" width="128" height="80">
           <defs>
             <linearGradient id="feed-brewing-cup-grad" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#8676ff"/>
@@ -943,16 +943,13 @@ function FeedBrewingState() {
           <path className="feed-brewing-steam feed-brewing-steam-1" d="M52 24 Q46 16 52 8 Q58 0 52 -8" fill="none" strokeLinecap="round"/>
           <path className="feed-brewing-steam feed-brewing-steam-2" d="M66 24 Q60 16 66 8 Q72 0 66 -8" fill="none" strokeLinecap="round"/>
           <path className="feed-brewing-steam feed-brewing-steam-3" d="M80 24 Q74 16 80 8 Q86 0 80 -8" fill="none" strokeLinecap="round"/>
-          {/* Modeled on a real cup-and-saucer reference photo: a matching
-              saucer grounds the cup, the body is a rounded barrel (not a
-              flat-sided trapezoid) with a light-to-dark gradient standing
-              in for the photo's curved, glazed ceramic, and the handle is
-              a proper closed ring rather than a bare stroke. Recolored
-              into the app's own accent + cream/coffee palette rather than
-              the photo's literal sage-green. */}
-          <ellipse className="feed-brewing-saucer-shadow" cx="72" cy="106" rx="56" ry="7"/>
-          <ellipse className="feed-brewing-saucer" cx="72" cy="101" rx="52" ry="10"/>
-          <ellipse className="feed-brewing-saucer-rim" cx="72" cy="100" rx="52" ry="10"/>
+          {/* Modeled on a real cup reference photo: the body is a rounded
+              barrel (not a flat-sided trapezoid) with a light-to-dark
+              gradient standing in for the photo's curved, glazed ceramic,
+              and the handle is a proper closed ring rather than a bare
+              stroke. Recolored into the app's own accent + cream/coffee
+              palette rather than the photo's literal sage-green. No
+              saucer and no foam art — just the cup and the coffee. */}
           {/* Handle: a closed ring (outer + inner cutout via evenodd), not
               a bare thick stroke, so it reads as an actual loop you could
               put a finger through. */}
@@ -972,16 +969,6 @@ function FeedBrewingState() {
           {/* Gloss highlight tracing the cup's near edge, like the photo's
               light catching the left side of the glaze. */}
           <path className="feed-brewing-gloss" d="M42 54 C 39 68, 39 80, 44 89" fill="none" strokeLinecap="round"/>
-          {/* Foam art — a lightbulb "poured" where the reference photo's
-              latte-art heart is, standing in for the idea/circle metaphor. */}
-          <g className="feed-brewing-bulb">
-            <path d="M63 32 L63 36" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-            <path d="M53 34 L56 37.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-            <path d="M73 34 L70 37.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-            <circle cx="63" cy="43" r="7.5" fill="currentColor"/>
-            <rect x="59.5" y="48.5" width="7" height="4.5" rx="1.3" fill="currentColor"/>
-            <path d="M60 43 Q63 46.5 66 43" stroke="#5b3a29" strokeWidth="1.4" fill="none" strokeLinecap="round"/>
-          </g>
         </svg>
       </div>
       <div className="feed-brewing-title">Great ideas from your circle are brewing</div>
