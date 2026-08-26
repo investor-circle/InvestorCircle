@@ -234,60 +234,83 @@ async function getCircleFeed(groupId, userId) {
 
 async function deliverToRecipients(recId, senderId, recipients, reco, { asForward, forwarderId, authorizedGroupIds } = {}) {
   const delivered = new Set();
+  // Dedup decisions (delivered.has/add) all happen synchronously, before any
+  // of the actual insert work is kicked off — that's what keeps concurrent
+  // execution below safe: by the time two writes for the same user could
+  // race, the dedup check has already resolved them to a single winner.
   for (const r of recipients || []) {
     if (r.type === 'user') {
       const rid = String(r.id);
       if (delivered.has(rid)) continue;
       delivered.add(rid);
-      if (asForward) {
-        await sql`
-          INSERT INTO recommendation_deliveries
-            (recommendation_id, delivered_to_user_id, via_type, shared_by_id)
-          VALUES (${recId}, ${rid}, 'forward', ${forwarderId})
-          ON CONFLICT (recommendation_id, delivered_to_user_id) DO NOTHING
-        `;
-      } else {
-        await sql`
-          INSERT INTO recommendation_deliveries
-            (recommendation_id, delivered_to_user_id, via_type)
-          VALUES (${recId}, ${rid}, 'direct')
-          ON CONFLICT (recommendation_id, delivered_to_user_id) DO NOTHING
-        `;
-      }
-      await sql`
-        INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
-        VALUES (${rid}, 'recommendation', ${asForward ? forwarderId : senderId}, ${recId},
-                ${JSON.stringify({ ticker: reco.ticker, assetName: reco.assetName })})
-      `;
+      // These two inserts don't depend on each other's result — running
+      // them concurrently instead of one after another was previously
+      // doubling the number of sequential round-trips a post with several
+      // direct recipients needed before the create() call could return.
+      await Promise.all([
+        asForward
+          ? sql`
+              INSERT INTO recommendation_deliveries
+                (recommendation_id, delivered_to_user_id, via_type, shared_by_id)
+              VALUES (${recId}, ${rid}, 'forward', ${forwarderId})
+              ON CONFLICT (recommendation_id, delivered_to_user_id) DO NOTHING
+            `
+          : sql`
+              INSERT INTO recommendation_deliveries
+                (recommendation_id, delivered_to_user_id, via_type)
+              VALUES (${recId}, ${rid}, 'direct')
+              ON CONFLICT (recommendation_id, delivered_to_user_id) DO NOTHING
+            `,
+        sql`
+          INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
+          VALUES (${rid}, 'recommendation', ${asForward ? forwarderId : senderId}, ${recId},
+                  ${JSON.stringify({ ticker: reco.ticker, assetName: reco.assetName })})
+        `,
+      ]);
     } else if (r.type === 'group') {
       if (!authorizedGroupIds?.has(String(r.id))) continue; // not authorized to post to this circle — see authorizedCircleRecipientIds
-      const circleRows = await sql`SELECT name, slug FROM ic_groups WHERE id = ${r.id} LIMIT 1`;
+      // circleRows and members are independent lookups — fetch both at once
+      // instead of one after another.
+      const [circleRows, members] = await Promise.all([
+        sql`SELECT name, slug FROM ic_groups WHERE id = ${r.id} LIMIT 1`,
+        sql`
+          SELECT user_id FROM group_members
+          WHERE group_id = ${r.id} AND status = 'active' AND user_id != ${senderId}
+        `,
+      ]);
       const circleMeta = {
         ticker: reco.ticker, assetName: reco.assetName,
         groupName: circleRows[0]?.name || '', groupSlug: circleRows[0]?.slug || '',
         recoId: recId,
       };
-      const members = await sql`
-        SELECT user_id FROM group_members
-        WHERE group_id = ${r.id} AND status = 'active' AND user_id != ${senderId}
-      `;
+      // Was 2 sequential round-trips PER MEMBER (delivery insert, then
+      // notification insert) — for even a modest-sized Circle that meant
+      // dozens of back-to-back HTTP requests to Neon's serverless driver
+      // before the post finished, which is exactly the kind of delay users
+      // were noticing when posting to a Circle. Dedup against `delivered`
+      // synchronously first, then fire every member's pair of inserts
+      // concurrently.
+      const toDeliver = [];
       for (const m of members) {
         if (delivered.has(m.user_id)) continue;
         delivered.add(m.user_id);
-        await sql`
+        toDeliver.push(m.user_id);
+      }
+      await Promise.all(toDeliver.map(memberUid => Promise.all([
+        sql`
           INSERT INTO recommendation_deliveries
             (recommendation_id, delivered_to_user_id, via_type, via_group_id)
-          VALUES (${recId}, ${m.user_id}, 'group', ${r.id})
+          VALUES (${recId}, ${memberUid}, 'group', ${r.id})
           ON CONFLICT (recommendation_id, delivered_to_user_id) DO NOTHING
-        `;
+        `,
         // Distinct type from a direct/1:1 share ('recommendation') so the
         // notification can name the Circle and deep-link straight to it
         // (see NotificationPanel.jsx + App.jsx's onNavigate handler).
-        await sql`
+        sql`
           INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
-          VALUES (${m.user_id}, 'circle_idea', ${senderId}, ${recId}, ${JSON.stringify(circleMeta)})
-        `;
-      }
+          VALUES (${memberUid}, 'circle_idea', ${senderId}, ${recId}, ${JSON.stringify(circleMeta)})
+        `,
+      ])));
     }
   }
 }

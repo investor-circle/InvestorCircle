@@ -103,11 +103,28 @@ export default async function handleGroups(req, res) {
         if (!circle) { res.status(404).json({ error: 'not_found' }); return; }
 
         const isOwner = !!uid && uid === circle.created_by;
-        let myMembership = null;
-        if (uid && !isOwner) {
-          const mm = await sql`SELECT role, status FROM group_members WHERE group_id = ${circle.id} AND user_id = ${uid} LIMIT 1`;
-          myMembership = mm[0] || null;
-        }
+        const needsMembership = uid && !isOwner;
+
+        // myMembership and memberRows don't depend on each other — fetching
+        // them concurrently instead of one after another shaves a full
+        // round-trip off opening a Circle page (same class of fix as
+        // public-profile.js). memberRows is fetched even in the case that
+        // later turns out to be an unauthorized private-circle view; that's
+        // a wasted read for that edge case, not a leak — the 404 check
+        // below still runs before any of it reaches the response.
+        const [mm, memberRows] = await Promise.all([
+          needsMembership
+            ? sql`SELECT role, status FROM group_members WHERE group_id = ${circle.id} AND user_id = ${uid} LIMIT 1`
+            : Promise.resolve([]),
+          sql`
+            SELECT gm.user_id, gm.role, up.full_name AS name, up.username, up.avatar_url, up.avatar_color
+            FROM group_members gm
+            JOIN user_profiles up ON up.id = gm.user_id
+            WHERE gm.group_id = ${circle.id} AND gm.status = 'active'
+            ORDER BY gm.joined_at ASC
+          `,
+        ]);
+        const myMembership = needsMembership ? (mm[0] || null) : null;
         const isActiveMember = isOwner || (myMembership?.status === 'active');
 
         // Private circles never reveal their existence or details to non-members.
@@ -115,14 +132,6 @@ export default async function handleGroups(req, res) {
           res.status(404).json({ error: 'not_found' });
           return;
         }
-
-        const memberRows = await sql`
-          SELECT gm.user_id, gm.role, up.full_name AS name, up.username, up.avatar_url, up.avatar_color
-          FROM group_members gm
-          JOIN user_profiles up ON up.id = gm.user_id
-          WHERE gm.group_id = ${circle.id} AND gm.status = 'active'
-          ORDER BY gm.joined_at ASC
-        `;
 
         let myJoinRequestStatus = null;
         if (uid && !isActiveMember) {
@@ -168,25 +177,26 @@ export default async function handleGroups(req, res) {
         if (!ownerId) { res.status(400).json({ error: 'ownerId is required' }); return; }
         const uid = await optionalUid(req);
 
-        const pub = await sql`
-          SELECT g.id, g.name, g.description, g.color, g.slug, g.created_at,
-                 (SELECT COUNT(*) FROM group_members gm WHERE gm.group_id = g.id AND gm.status = 'active')::int AS member_count
-          FROM ic_groups g
-          WHERE g.created_by = ${ownerId} AND g.circle_type = 'public'
-          ORDER BY g.created_at DESC
-        `;
-
-        let priv = [];
-        if (uid) {
-          priv = await sql`
+        // pub and priv are independent of each other — fetch concurrently.
+        const [pub, priv] = await Promise.all([
+          sql`
             SELECT g.id, g.name, g.description, g.color, g.slug, g.created_at,
-                   (SELECT COUNT(*) FROM group_members gm2 WHERE gm2.group_id = g.id AND gm2.status = 'active')::int AS member_count
+                   (SELECT COUNT(*) FROM group_members gm WHERE gm.group_id = g.id AND gm.status = 'active')::int AS member_count
             FROM ic_groups g
-            JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = ${uid} AND gm.status = 'active'
-            WHERE g.created_by = ${ownerId} AND g.circle_type = 'private'
+            WHERE g.created_by = ${ownerId} AND g.circle_type = 'public'
             ORDER BY g.created_at DESC
-          `;
-        }
+          `,
+          uid
+            ? sql`
+                SELECT g.id, g.name, g.description, g.color, g.slug, g.created_at,
+                       (SELECT COUNT(*) FROM group_members gm2 WHERE gm2.group_id = g.id AND gm2.status = 'active')::int AS member_count
+                FROM ic_groups g
+                JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = ${uid} AND gm.status = 'active'
+                WHERE g.created_by = ${ownerId} AND g.circle_type = 'private'
+                ORDER BY g.created_at DESC
+              `
+            : Promise.resolve([]),
+        ]);
         res.status(200).json({ public: pub, private: priv });
         return;
       }
@@ -257,18 +267,24 @@ export default async function handleGroups(req, res) {
       `;
       if (groups.length === 0) { res.status(200).json({ groups: [] }); return; }
       const groupIds = groups.map(g => g.id);
-      const members = await sql`
-        SELECT gm.group_id, gm.user_id, gm.role, gm.status, up.full_name AS name, up.email
-        FROM group_members gm
-        JOIN user_profiles up ON up.id = gm.user_id
-        WHERE gm.group_id = ANY(${groupIds}::uuid[])
-        ORDER BY gm.joined_at ASC
-      `;
-      const pending = await sql`
-        SELECT group_id, COUNT(*)::int AS n FROM circle_join_requests
-        WHERE group_id = ANY(${groupIds}::uuid[]) AND status = 'pending'
-        GROUP BY group_id
-      `;
+      // members and pending both only depend on groupIds, not on each
+      // other — this runs on every login (getMyGroups), so serializing them
+      // added an extra full round-trip to the app's critical path for no
+      // reason.
+      const [members, pending] = await Promise.all([
+        sql`
+          SELECT gm.group_id, gm.user_id, gm.role, gm.status, up.full_name AS name, up.email
+          FROM group_members gm
+          JOIN user_profiles up ON up.id = gm.user_id
+          WHERE gm.group_id = ANY(${groupIds}::uuid[])
+          ORDER BY gm.joined_at ASC
+        `,
+        sql`
+          SELECT group_id, COUNT(*)::int AS n FROM circle_join_requests
+          WHERE group_id = ANY(${groupIds}::uuid[]) AND status = 'pending'
+          GROUP BY group_id
+        `,
+      ]);
       const membersByGroup = members.reduce((acc, m) => { (acc[m.group_id] ??= []).push(m); return acc; }, {});
       const pendingByGroup = pending.reduce((acc, p) => { acc[p.group_id] = p.n; return acc; }, {});
       groups.forEach(g => {

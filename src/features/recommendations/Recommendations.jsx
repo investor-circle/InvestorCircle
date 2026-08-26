@@ -1604,7 +1604,7 @@ export function ThesisRenderer({ thesis, previewLines=3, defaultExpanded=false }
     <div>
       {textNode(false)}
       {images?.map((src,i)=>(
-        <img key={i} src={src} alt="" style={{maxWidth:'100%',borderRadius:8,
+        <img key={i} src={src} alt="" loading="lazy" style={{maxWidth:'100%',borderRadius:8,
           marginTop:8,display:'block',border:'1px solid var(--line)'}}/>
       ))}
     </div>
@@ -1616,7 +1616,7 @@ export function ThesisRenderer({ thesis, previewLines=3, defaultExpanded=false }
         <>
           {textNode(false)}
           {images?.map((src,i)=>(
-            <img key={i} src={src} alt="" style={{maxWidth:'100%',borderRadius:8,
+            <img key={i} src={src} alt="" loading="lazy" style={{maxWidth:'100%',borderRadius:8,
               marginTop:8,display:'block',border:'1px solid var(--line)'}}/>
           ))}
           <button onClick={e=>{e.stopPropagation();setExpanded(false);}} style={{background:'none',border:'none',
