@@ -20,7 +20,9 @@ import {
   ThumbsUp,
   Share2,
   Info,
-  Users
+  Users,
+  ArrowUpDown,
+  SlidersHorizontal
 } from "lucide-react";
 import {
   addGroupMembers as dbAddGroupMembers,
@@ -39,7 +41,7 @@ import {
   requestJoinCircle as dbRequestJoinCircle
 } from "../../services/api/groupsApi";
 import { getCircleIdeas as dbGetCircleIdeas } from "../../services/api/recommendationsApi";
-import { Avatar, ConvBadge, RetBadge, TypeBadge } from "../../components/common";
+import { Avatar, ConvBadge, RetBadge, SmallAnchoredPopover, TypeBadge } from "../../components/common";
 import { fmtDate, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile, gotoCircle } from "../../utils/navigation";
 import { useIsMobile } from "../../hooks/index";
@@ -443,6 +445,23 @@ function CircleSharePopover({ circle, anchorEl, onClose }) {
   );
 }
 
+// Ideas-list sort options for the Circle page — same {key,dir}-driven shape
+// and icon-only SmallAnchoredPopover trigger already used for Portfolio's
+// holdings grid and Connections' contact lists, reused here rather than
+// inventing another dropdown pattern.
+const CIRCLE_IDEAS_SORT_OPTIONS = [
+  { value: "activity_desc", label: "Most recent activity", key: "activity", dir: "desc" },
+  { value: "activity_asc",  label: "Oldest activity",      key: "activity", dir: "asc"  },
+  { value: "likes_desc",    label: "Most liked",           key: "likes",    dir: "desc" },
+  { value: "comments_desc", label: "Most discussed",       key: "comments", dir: "desc" },
+  { value: "ticker_asc",    label: "Ticker A–Z",           key: "ticker",   dir: "asc"  },
+];
+const CIRCLE_IDEAS_FILTER_OPTIONS = [
+  { value: "all",  label: "All ideas" },
+  { value: "Buy",  label: "Buy" },
+  { value: "Sell", label: "Sell" },
+];
+
 export function CirclePage({ slug, inviteCode, highlightIdeaId, autoOpenRequests, viewerUser, onBack, onNavigateProfile }) {
   const [circle,  setCircle]  = useState(undefined); // undefined = loading, null = not found
   const [joining, setJoining] = useState(false);
@@ -451,6 +470,14 @@ export function CirclePage({ slug, inviteCode, highlightIdeaId, autoOpenRequests
   const [showRequests, setShowRequests] = useState(false);
   const [ideas,    setIdeas]    = useState(null); // null = not loaded yet
   const [ideasErr, setIdeasErr] = useState(false);
+  const [ideaQuery,      setIdeaQuery]      = useState("");
+  const [ideaSearchOpen, setIdeaSearchOpen] = useState(false);
+  const [ideaTypeFilter, setIdeaTypeFilter] = useState("all");
+  const [ideaFilterOpen, setIdeaFilterOpen] = useState(false);
+  const [ideaSort,       setIdeaSort]       = useState({ key: "activity", dir: "desc" });
+  const [ideaSortOpen,   setIdeaSortOpen]   = useState(false);
+  const ideaFilterBtnRef = useRef(null);
+  const ideaSortBtnRef   = useRef(null);
   const [shareOpen,    setShareOpen]    = useState(false);
   const shareBtnRef = useRef(null);
   const [descOpen,     setDescOpen]     = useState(false);
@@ -532,6 +559,30 @@ export function CirclePage({ slug, inviteCode, highlightIdeaId, autoOpenRequests
   const toggleMemberSel = (uid) => setSelectedMembers(s=>s.includes(uid)?s.filter(x=>x!==uid):[...s,uid]);
   const allFilteredSelectable = filteredMembers.filter(m=>m.role!=='admin');
   const allFilteredSelected = allFilteredSelectable.length>0 && allFilteredSelectable.every(m=>selectedMembers.includes(m.user_id));
+
+  // Search/filter/sort over the ideas list — same derived-const pattern as
+  // filteredMembers just above (plain computation, not a hook, since we're
+  // already past this component's conditional early returns).
+  let visibleIdeas = ideas;
+  if (ideas) {
+    visibleIdeas = [...ideas];
+    if (ideaTypeFilter!=="all") visibleIdeas = visibleIdeas.filter(i=>i.recommendation_type===ideaTypeFilter);
+    if (ideaQuery.trim()) {
+      const s = ideaQuery.trim().toLowerCase();
+      visibleIdeas = visibleIdeas.filter(i =>
+        (i.ticker||"").toLowerCase().includes(s) ||
+        (i.asset_name||"").toLowerCase().includes(s) ||
+        (i.recommender_name||"").toLowerCase().includes(s)
+      );
+    }
+    const ideaCmp = {
+      activity: (a,b)=>new Date(a.last_activity_at)-new Date(b.last_activity_at),
+      likes:    (a,b)=>(a.likes||0)-(b.likes||0),
+      comments: (a,b)=>(a.comments_count||0)-(b.comments_count||0),
+      ticker:   (a,b)=>(a.ticker||"").localeCompare(b.ticker||""),
+    }[ideaSort.key];
+    visibleIdeas.sort((a,b)=> ideaSort.dir==="asc" ? ideaCmp(a,b) : -ideaCmp(a,b));
+  }
 
   return (<div style={{maxWidth:760,margin:'0 auto'}}>
     <div className="card" style={{marginBottom:14,position:'relative'}}>
@@ -655,12 +706,65 @@ export function CirclePage({ slug, inviteCode, highlightIdeaId, autoOpenRequests
 
     {(circle.is_owner || circle.is_member) && (
       <div className="card" style={{marginTop:16}}>
-        <div className="card-head"><Lightbulb size={14} style={{verticalAlign:-2,marginRight:4}}/> Ideas shared here</div>
+        {/* Search/filter/sort for the ideas list — same icon-only trigger
+            + SmallAnchoredPopover pattern already used for Portfolio's
+            holdings grid and Connections' contact lists. */}
+        <div className="card-head" style={{display:'flex',alignItems:'center',gap:8}}>
+          <span style={{display:'flex',alignItems:'center',gap:6,flex:1,minWidth:0}}><Lightbulb size={14}/> Ideas shared here</span>
+          {ideas && ideas.length>0 && (
+            <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+              <button className={"icon-btn"+(ideaSearchOpen?" active":"")} style={{width:30,height:30}} title="Search ideas" onClick={()=>setIdeaSearchOpen(v=>!v)}><Search size={13}/></button>
+              <div style={{position:'relative'}}>
+                <button ref={ideaFilterBtnRef} className={"icon-btn"+(ideaTypeFilter!=="all"?" active":"")} style={{width:30,height:30}} title="Filter ideas" onClick={()=>setIdeaFilterOpen(v=>!v)}><SlidersHorizontal size={13}/></button>
+                {ideaFilterOpen && (
+                  <SmallAnchoredPopover anchorEl={ideaFilterBtnRef.current} onClose={()=>setIdeaFilterOpen(false)}>
+                    <div className="cap" style={{marginBottom:6}}>Idea type</div>
+                    {CIRCLE_IDEAS_FILTER_OPTIONS.map(o=>{
+                      const active = o.value===ideaTypeFilter;
+                      return (
+                        <div key={o.value} onClick={()=>{setIdeaTypeFilter(o.value);setIdeaFilterOpen(false);}}
+                          style={{padding:'8px 9px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:active?700:500,color:active?'var(--accent-ink)':'var(--ink)',background:active?'var(--accent-soft)':'transparent'}}>
+                          {o.label}
+                        </div>
+                      );
+                    })}
+                  </SmallAnchoredPopover>
+                )}
+              </div>
+              <div style={{position:'relative'}}>
+                <button ref={ideaSortBtnRef} className={"icon-btn"+((ideaSort.key!=="activity"||ideaSort.dir!=="desc")?" active":"")} style={{width:30,height:30}} title="Sort ideas" onClick={()=>setIdeaSortOpen(v=>!v)}><ArrowUpDown size={13}/></button>
+                {ideaSortOpen && (
+                  <SmallAnchoredPopover anchorEl={ideaSortBtnRef.current} onClose={()=>setIdeaSortOpen(false)}>
+                    {CIRCLE_IDEAS_SORT_OPTIONS.map(o=>{
+                      const active = o.key===ideaSort.key && o.dir===ideaSort.dir;
+                      return (
+                        <div key={o.value} onClick={()=>{setIdeaSort({key:o.key,dir:o.dir});setIdeaSortOpen(false);}}
+                          style={{padding:'8px 9px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:active?700:500,color:active?'var(--accent-ink)':'var(--ink)',background:active?'var(--accent-soft)':'transparent'}}>
+                          {o.label}
+                        </div>
+                      );
+                    })}
+                  </SmallAnchoredPopover>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        {ideaSearchOpen && ideas && ideas.length>0 && (
+          <div style={{padding:'12px 16px 0'}}>
+            <div className="searchbox">
+              <Search size={14} color="var(--muted)"/>
+              <input autoFocus value={ideaQuery} onChange={e=>setIdeaQuery(e.target.value)} placeholder="Search ticker, name or ideator…"/>
+              {ideaQuery && <button onClick={()=>setIdeaQuery("")} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',display:'flex'}}><X size={13}/></button>}
+            </div>
+          </div>
+        )}
         <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
           {ideas===null && !ideasErr && <div className="muted small" style={{padding:'8px 0'}}><Loader size={14} className="spin"/> Loading…</div>}
           {ideasErr && <div className="muted small">Couldn&apos;t load ideas right now.</div>}
           {ideas && ideas.length===0 && <div className="empty">No ideas shared with this circle yet.</div>}
-          {ideas && ideas.map(idea=>{
+          {ideas && ideas.length>0 && visibleIdeas.length===0 && <div className="empty">No ideas match your search/filter.</div>}
+          {ideas && visibleIdeas.map(idea=>{
             const isHighlighted = String(idea.id)===String(highlightIdeaId);
             return (
             <div key={idea.id} id={`circle-idea-${idea.id}`} className="hoverable" style={{display:'flex',gap:12,padding:'12px 14px',
