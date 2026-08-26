@@ -933,18 +933,29 @@ function FeedBrewingState() {
         <span className="feed-brewing-badge feed-brewing-badge-1"><Lightbulb size={15}/></span>
         <span className="feed-brewing-badge feed-brewing-badge-2"><TrendingUp size={15}/></span>
         <span className="feed-brewing-badge feed-brewing-badge-3"><Sparkles size={13}/></span>
-        <svg className="feed-brewing-cup" viewBox="0 0 120 92" width="94" height="72">
-          <path className="feed-brewing-steam feed-brewing-steam-1" d="M38 24 Q32 16 38 8 Q44 0 38 -8" fill="none" strokeLinecap="round"/>
-          <path className="feed-brewing-steam feed-brewing-steam-2" d="M52 24 Q46 16 52 8 Q58 0 52 -8" fill="none" strokeLinecap="round"/>
-          <path className="feed-brewing-steam feed-brewing-steam-3" d="M66 24 Q60 16 66 8 Q72 0 66 -8" fill="none" strokeLinecap="round"/>
-          {/* Café-cup silhouette (short, wide-rimmed, narrower foot) with a
-              proper open "D" handle, rather than a tall abstract mug —
-              closer to the small ceramic cups a café actually serves in. */}
-          <path className="feed-brewing-handle" d="M79 42 Q99 42 99 53 Q99 65 79 63" fill="none" strokeLinecap="round"/>
-          <path className="feed-brewing-cupbody" d="M25 32 L32 74 Q34 80 41 80 L67 80 Q74 80 76 74 L79 32 Z"/>
-          <ellipse className="feed-brewing-liquid" cx="52" cy="33" rx="25" ry="6.5"/>
-          <ellipse className="feed-brewing-crema" cx="43" cy="31" rx="8" ry="2.2"/>
-          <ellipse className="feed-brewing-rim" cx="52" cy="32" rx="27" ry="7.5"/>
+        <svg className="feed-brewing-cup" viewBox="0 0 150 104" width="112" height="78">
+          <path className="feed-brewing-steam feed-brewing-steam-1" d="M48 22 Q42 14 48 6 Q54 -2 48 -10" fill="none" strokeLinecap="round"/>
+          <path className="feed-brewing-steam feed-brewing-steam-2" d="M62 22 Q56 14 62 6 Q68 -2 62 -10" fill="none" strokeLinecap="round"/>
+          <path className="feed-brewing-steam feed-brewing-steam-3" d="M76 22 Q70 14 76 6 Q82 -2 76 -10" fill="none" strokeLinecap="round"/>
+          {/* Wide, shallow café cup (cappuccino proportions, not a tall
+              mug) with a chunky glossy handle — modeled on a real ceramic
+              cup-and-saucer reference photo, recolored in the app's own
+              accent + ink/cream palette rather than the photo's literal
+              green/brown. */}
+          <path className="feed-brewing-handle" d="M98 44 Q128 44 128 59 Q128 74 98 72" fill="none" strokeLinecap="round"/>
+          <path className="feed-brewing-cupbody" d="M26 30 L34 82 Q36 88 44 88 L82 88 Q90 88 92 82 L98 30 Z"/>
+          <ellipse className="feed-brewing-liquid" cx="62" cy="31" rx="32" ry="8.5"/>
+          <ellipse className="feed-brewing-rim" cx="62" cy="30" rx="36" ry="10"/>
+          {/* Foam art — a lightbulb "poured" where a latte-art heart would
+              go, standing in for the idea/circle metaphor instead. */}
+          <g className="feed-brewing-bulb">
+            <path d="M54 20 L54 24" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            <path d="M45 22 L48 25" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            <path d="M63 22 L60 25" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            <circle cx="54" cy="30" r="7" fill="currentColor"/>
+            <rect x="51" y="35" width="6" height="4" rx="1.2" fill="currentColor"/>
+            <path d="M51.5 30 Q54 33 56.5 30" stroke="#5b3a29" strokeWidth="1.3" fill="none" strokeLinecap="round"/>
+          </g>
         </svg>
       </div>
       <div className="feed-brewing-title">Great ideas from your circle are brewing</div>

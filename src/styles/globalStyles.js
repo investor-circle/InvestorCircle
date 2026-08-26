@@ -221,17 +221,24 @@ tr.hiddenrow > td{opacity:.55;}
 /* ─── Home feed "brewing" loading state — shown only while the feed's first
    load is genuinely in flight, never once it's known to be empty ─── */
 .feed-brewing{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:44px 28px 36px;text-align:center;}
-.feed-brewing-art{position:relative;width:120px;height:82px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
+.feed-brewing-art{position:relative;width:140px;height:86px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
 .feed-brewing-cup{overflow:visible;}
-/* Café-cup silhouette (outlined, not a solid block) — short and wide-rimmed
-   with a real open handle, closer to a café's actual ceramic cup than a
-   generic tall mug. No saucer/plate underneath (removed per feedback —
-   this is a cup being poured, not a place setting). */
-.feed-brewing-cupbody{fill:var(--surface);stroke:var(--ink);stroke-width:3.5;}
-.feed-brewing-handle{stroke:var(--ink);stroke-width:5;fill:none;}
-.feed-brewing-rim{fill:none;stroke:var(--ink);stroke-width:2;opacity:.25;}
-.feed-brewing-liquid{fill:var(--accent);}
-.feed-brewing-crema{fill:var(--surface);opacity:.4;}
+/* Wide, shallow café cup modeled on a real cup-and-saucer reference photo
+   (chunky glossy handle, thick cream rim, solid ceramic body) — recolored
+   in the app's own palette: the ceramic takes the brand accent (where the
+   photo's cup was sage green), the coffee stays a true coffee brown for
+   recognizability, and the foam "pour" on top is cream instead of white.
+   No saucer/plate underneath (removed per earlier feedback — this is a cup
+   being poured, not a place setting). */
+.feed-brewing-cupbody{fill:var(--accent);}
+.feed-brewing-handle{stroke:var(--accent);stroke-width:9;fill:none;}
+.feed-brewing-rim{fill:none;stroke:#fdfbf7;stroke-width:4;}
+.feed-brewing-liquid{fill:#5b3a29;}
+/* Lightbulb "poured" in the foam, standing in for the latte-art heart —
+   the idea/circle metaphor instead. The color property drives the group's
+   currentColor fills/strokes so the bulb, its base and the little rays
+   share one tone. */
+.feed-brewing-bulb{color:#fdfbf7;}
 .feed-brewing-steam{stroke:var(--accent);stroke-width:3;opacity:0;}
 .feed-brewing-badge{position:absolute;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);}
 .feed-brewing-badge-1{top:2px;left:2px;}
