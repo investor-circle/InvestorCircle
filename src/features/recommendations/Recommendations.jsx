@@ -1767,7 +1767,12 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
             recommenderUsername:  me.username || '',
             recoId:               newRecoId,
           };
-          await dbNotifyPublicContacts(newRecoId, contacts.map(c => c.id), meta);
+          // Not awaited: in-app notification fan-out to every contact is
+          // server-side work the user doesn't need to wait on to see their
+          // own post confirmed — same treatment as the push/email loops
+          // right below, which were already fire-and-forget.
+          dbNotifyPublicContacts(newRecoId, contacts.map(c => c.id), meta)
+            .catch(e => console.warn('notify-public-contacts:', e?.message || e));
           contacts.forEach(c => sendPush(c.id, {
             title: '💡 New idea in your circle',
             body:  `${me.name || 'Someone'} posted a new idea`,
