@@ -161,10 +161,15 @@ export async function compressImage(file) {
     throw new Error(`Image "${file.name}" exceeds ${THESIS_MAX_MB} MB. Please use a smaller file.`);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = reject;
+    // Both onerror handlers previously rejected with the raw ProgressEvent
+    // (no .message), so a transient read/decode hiccup — often just the
+    // browser still finishing writing a just-captured photo to disk, which
+    // clears up a moment later on retry — surfaced as a generic "Image
+    // processing failed." with no indication that trying again would help.
+    reader.onerror = () => reject(new Error(`Couldn't read "${file.name}". Please try uploading it again.`));
     reader.onload = ev => {
       const img = new window.Image();
-      img.onerror = reject;
+      img.onerror = () => reject(new Error(`Couldn't process "${file.name}". Please try uploading it again.`));
       img.onload = () => {
         const canvas = document.createElement('canvas');
         let { width: w, height: h } = img;

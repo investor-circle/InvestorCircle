@@ -1457,7 +1457,7 @@ export function ThesisEditor({ value, onChange }) {
       const compressed = await Promise.all(arr.slice(0, THESIS_MAX_IMAGES - images.length).map(compressImage));
       const ni = [...images, ...compressed];
       setImages(ni); emit(undefined, ni);
-    } catch(e) { setImgErr(e.message || 'Image processing failed.'); }
+    } catch(e) { setImgErr(e.message || 'Something went wrong processing that image. Please try uploading it again.'); }
   };
 
   const removeImage = i => {
