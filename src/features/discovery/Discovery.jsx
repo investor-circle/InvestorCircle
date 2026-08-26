@@ -1245,7 +1245,15 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
              matches the page's actual current name (App.jsx's nav already
              calls it that — "Market Intelligence" was the old name, stale
              only here). ── */}
-        <div style={{display:'flex',gap:10,flexWrap:'wrap',marginTop:isMobile?0:16,marginBottom:12}}>
+        <div style={{display:'flex',gap:10,flexWrap:'nowrap',marginTop:isMobile?0:16,marginBottom:12}}>
+          <div onClick={()=>setFeedTab('feed')}
+            style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+            <Lightbulb size={15} color="var(--accent-ink)"/>
+            <div style={{fontWeight:800,fontSize:12,marginTop:6}}>Feed</div>
+            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>Ideas from your network</div>
+          </div>
           <div onClick={()=>setPage('market_intel')}
             style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
             onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
