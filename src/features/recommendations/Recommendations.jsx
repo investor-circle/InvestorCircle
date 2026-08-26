@@ -1813,6 +1813,30 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
     }
   };
 
+  // "Post another idea" from the confirmation screen — same modal, blanked
+  // back to a fresh form instead of closing, so a user posting several
+  // ideas in one sitting doesn't have to reopen the modal each time.
+  const resetForm = () => {
+    setSelectedInstr(null);
+    setAssetName("");
+    setTicker("");
+    setCls(assetClasses[0]);
+    setCurrency("INR");
+    setRecType("Buy");
+    setConviction("");
+    setSector("");
+    setPriceData(null);
+    setPriceLoading(false);
+    setPriceError("");
+    setTargetPrice("");
+    setStopLoss("");
+    setHorizon("12m");
+    setThesis("");
+    setTargets([]);
+    setIsPublic(true);
+    setPosted(null);
+  };
+
   const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && (priceData?.price > 0 || !!priceError);
 
   // Confirmation state: shown in place of the form once the idea is live,
@@ -1829,9 +1853,14 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
         <div className="muted small" style={{marginBottom:22}}>
           {posted.ticker && posted.ticker!=="—" ? posted.ticker : posted.assetName} is now live in your circle.
         </div>
-        <button className="btn btn-pri" style={{width:"100%"}} onClick={()=>{ openReco(me.username, posted.id); onClose(); }}>
-          Check it here
-        </button>
+        <div style={{display:"flex",gap:10}}>
+          <button className="btn btn-ghost" style={{flex:1,justifyContent:"center"}} onClick={resetForm}>
+            Post another idea
+          </button>
+          <button className="btn btn-pri" style={{flex:1,justifyContent:"center"}} onClick={()=>{ openReco(me.username, posted.id); onClose(); }}>
+            Check it here
+          </button>
+        </div>
       </div>
     </div></div>);
   }
