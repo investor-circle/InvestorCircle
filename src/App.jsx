@@ -1061,6 +1061,13 @@ export default function App() {
     }
 
     // ── Full public profile page ──────────────────────────────────────
+    // Clicking your own name anywhere in the app (a comment, a contact
+    // card, a mention...) lands here too, via the same #/investor/username
+    // route used for everyone else — without this check it rendered as if
+    // you were looking at a stranger, Connect/Track/Subscribe buttons and
+    // all. Only the separate "My track record" tab (isOwnProfile passed
+    // explicitly further below) had that handled.
+    const isViewingOwnProfile = !!user && !!ME?.username && pubUsername.toLowerCase() === ME.username.toLowerCase();
     return (
       <div className="app"><style>{STYLES}</style>
         <ProfileErrorBoundary>
@@ -1074,6 +1081,8 @@ export default function App() {
             contacts={contacts}
             groups={groups}
             mode="standalone"
+            isOwnProfile={isViewingOwnProfile}
+            patchProfile={isViewingOwnProfile ? patchProfile : undefined}
             onBack={()=>{ window.location.hash = ''; }}
             onRequestConnect={async(targetId)=>{
               if (!user) {
