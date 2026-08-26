@@ -149,7 +149,7 @@ export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRe
         reach={reach} contacts={contacts} groups={groups} onSendShare={sendIdeaToTargets} assetClasses={assetClasses}
         setAssetClasses={setAssetClasses} holdings={holdings} me={me} onReload={onReload} globalSearch={globalSearch}/>}
 
-    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} me={me} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); setTab("made"); }}/>}
+    {showNew && <MakeRecoModal assetClasses={assetClasses} setAssetClasses={setAssetClasses} contacts={contacts} groups={groups} holdings={holdings} me={me} recsMade={recsMade} onClose={()=>setShowNew(false)} onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); setTab("made"); }}/>}
   </>);
 }
 
@@ -1637,7 +1637,7 @@ export function ThesisRenderer({ thesis, previewLines=3 }) {
   );
 }
 
-export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, me, onClose, onCreate }) {
+export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, me, onClose, onCreate, recsMade=[] }) {
   const myId = me?.id || "me";
   // Posting permission (product rule): a private Circle is shared between
   // friends, so any active member may post an idea to it. A public Circle
@@ -1705,6 +1705,18 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
     setCurrency(inst.currency || "INR");
     setSector(inst.sector || "");   // auto-fill if available in master
   };
+
+  // Surfaced right where the user just picked the ticker — not a blocker,
+  // just context: do they already have a live (not exited, not expired)
+  // idea out on this same instrument? "Live" mirrors the same exit/expiry
+  // rules used everywhere else in the app (isExpired() + the exit flag).
+  const activeRecoForTicker = useMemo(() => {
+    const tickerUp = (selectedInstr?.symbol || "").toUpperCase();
+    if (!tickerUp) return null;
+    return (recsMade || []).find(r =>
+      (r.ticker || "").toUpperCase() === tickerUp && !r.exit && !isExpired(r)
+    ) || null;
+  }, [selectedInstr?.symbol, recsMade]);
 
   const toggle  = (id) => setTargets(t=>t.includes(id)?t.filter(x=>x!==id):[...t,id]);
   const [peopleOpen,   setPeopleOpen]   = useState(false);
@@ -1908,6 +1920,23 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
           <span className="chip mini" style={{marginLeft:"auto"}}>{selectedInstr.exchange}</span>
           <span className="chip mini">{selectedInstr.assetClass}</span>
           <span className="chip mini">{CURRENCY_SYMBOL[selectedInstr.currency]||selectedInstr.currency} {selectedInstr.currency}</span>
+        </div>
+      )}
+
+      {/* Not a blocker — just a heads-up, right where they can't miss it
+          (immediately under the instrument they just picked) but before
+          anything that would stop them from continuing to post. */}
+      {activeRecoForTicker && (
+        <div className="note warn" style={{marginBottom:14}}>
+          <AlertTriangle size={14}/>
+          <div>
+            You already have a live idea on <b>{activeRecoForTicker.ticker}</b> posted on{" "}
+            {fmtDate(activeRecoForTicker.date)}. You can go ahead and post this one too, or{" "}
+            <a href="#" style={{color:"inherit",fontWeight:800,textDecoration:"underline"}}
+              onClick={e=>{ e.preventDefault(); openReco(me.username, activeRecoForTicker.id); }}>
+              share a follow-up on the original idea
+            </a> instead.
+          </div>
         </div>
       )}
 

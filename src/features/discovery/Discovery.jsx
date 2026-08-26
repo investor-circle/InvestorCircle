@@ -957,7 +957,7 @@ function FeedBrewingState() {
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
 
-export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds, setTrackedCreatorIds, initTab, onInitTabConsumed }) {
+export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, recsMade=[], setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds, setTrackedCreatorIds, initTab, onInitTabConsumed }) {
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
   // 'feed' | 'pulse' — Pulse is the default home experience. Drives which
@@ -1323,6 +1323,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
       <MakeRecoModal
         assetClasses={assetClasses} setAssetClasses={setAssetClasses}
         contacts={contacts} groups={groups} holdings={holdings} me={me}
+        recsMade={recsMade}
         onClose={()=>setShowNewReco(false)}
         onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); }}
       />
