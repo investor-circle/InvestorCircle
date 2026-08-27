@@ -51,6 +51,7 @@ import { useIsMobile } from "../../hooks/index";
  * A circle is 'private' (owner adds Connections directly) or 'public'
  * (subscribable via request + owner approval, or a shareable invite link). */
 export function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, recsReceived, onOpenRecos, me }) {
+  const isMobile = useIsMobile();
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [showNew, setShowNew] = useState(false);
@@ -114,12 +115,94 @@ export function GroupsSection({ groups, setGroups, contacts, configs, canCreateG
     if(code) setGroups(gs=>gs.map(x=>x.id===g.id?{...x,invite_code:code}:x));
   };
 
+  // Shared between the desktop table's expand row and the mobile card's
+  // expanded section — description, invite link, member list with
+  // add/remove — so the two layouts don't carry two copies of this logic.
+  const renderCircleExpandedContent = (g, iAmAdmin, isPublic, inviteLink) => (<>
+    {g.description && <div className="muted small" style={{marginBottom:12}}>{g.description}</div>}
+    {isPublic && inviteLink && (
+      <div style={{display:"flex",alignItems:"center",gap:8,background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10,padding:"8px 12px",marginBottom:12,flexWrap:"wrap"}}>
+        <span className="muted small" style={{flex:1,minWidth:180,wordBreak:"break-all"}}>{inviteLink}</span>
+        <button className="btn btn-ghost btn-sm" onClick={()=>navigator.clipboard.writeText(inviteLink)}><Copy size={13}/> Copy link</button>
+        {iAmAdmin && <button className="btn btn-ghost btn-sm" onClick={()=>doRegenerateInvite(g)}>Regenerate</button>}
+      </div>
+    )}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <b style={{fontSize:14}}>Members of {g.name}</b>
+      {iAmAdmin && <button className="btn btn-soft btn-sm" onClick={()=>setAddTo(g)}><UserPlus size={14}/> Add members</button>}
+    </div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
+      {(g.members||[]).filter(m=>m.status==="active").map(m=>(
+        <div key={m.user_id} style={{display:"flex",alignItems:"center",gap:8,background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10,padding:"6px 12px"}}>
+          {/* Avatar + name: click opens public profile */}
+          <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
+            title={`View ${m.name||nameOf(m.user_id)}'s public profile`}
+            onClick={()=>gotoUserProfile(m.user_id)}>
+            <Avatar f={avOf(m.user_id)} size={28}/>
+            <div>
+              <div style={{fontWeight:600,fontSize:13,color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{m.name||nameOf(m.user_id)}</div>
+              <div className="muted" style={{fontSize:11}}>{m.role==="admin"?"Owner":"Member"}</div>
+            </div>
+          </div>
+          {iAmAdmin && m.user_id!==myId && <button className="iconbtn danger" style={{marginLeft:4}} onClick={()=>doRemoveMember(g.id,m.user_id)}><X size={13}/></button>}
+          {!iAmAdmin && m.user_id===myId && <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)",marginLeft:4}} onClick={()=>doExitGroup(g)}>Exit</button>}
+        </div>
+      ))}
+    </div>
+  </>);
+
   return (<>
     <div className="toolbar">
       <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search circles…"/></div>
       <button className="btn btn-pri btn-sm" disabled={!canCreateGroups} onClick={()=>setShowNew(true)}><Plus size={15}/> New Circle</button>
     </div>
     {rows.length===0 ? <div className="card"><div className="empty">No circles yet. Create one to build a community around your ideas, or share them with a group of connections at once.</div></div> :
+    isMobile ? (
+      /* Mobile: one card per circle (avatar+name, badges, then metrics/
+         actions in the same row — same layout conventions as the reco
+         and contact cards elsewhere) instead of a table nobody can read
+         without scrolling sideways. Tapping the card still expands the
+         same members/invite-link section the desktop table's row does. */
+      <div>{rows.map(g=>{ const open=expanded===g.id; const iAmAdmin=g.my_role==="admin"; const isPublic=g.circle_type==="public";
+        const inviteLink = g.slug ? `${window.location.origin}${window.location.pathname}#/circle/${g.slug}` : null;
+        const memberCount = (g.members||[]).filter(m=>m.status==="active").length;
+        return (
+          <div key={g.id} className="card" style={{padding:"12px 14px",marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setExpanded(open?null:g.id)}>
+              <span className="av" style={{width:40,height:40,background:g.color,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:11,flexShrink:0}}><Layers size={17}/></span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</div>
+                <div className="muted small">{fmtDate(g.created_at)}</div>
+              </div>
+              <ChevronDown size={16} className="muted" style={{transform:open?"rotate(180deg)":"none",transition:".15s",flexShrink:0}}/>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:9}}>
+              {isPublic
+                ? <span className="pill accent" style={{fontSize:11}}><Globe size={11} style={{verticalAlign:-1,marginRight:3}}/>Public</span>
+                : <span className="pill" style={{fontSize:11}}><Lock size={11} style={{verticalAlign:-1,marginRight:3}}/>Private</span>}
+              <span className="pill">{memberCount} member{memberCount!==1?"s":""}</span>
+              {iAmAdmin ? <span className="pill accent">Owner</span> : <span className="pill">Member</span>}
+              {iAmAdmin && isPublic && g.pending_request_count>0 && (
+                <span className="pill" style={{background:"#f59e0b22",color:"#b45309"}} onClick={e=>{e.stopPropagation();setRequestsFor(g);}}>
+                  <Bell size={10} style={{verticalAlign:-1,marginRight:2}}/>{g.pending_request_count} request{g.pending_request_count>1?"s":""}
+                </span>
+              )}
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginTop:10,paddingTop:10,borderTop:"1px solid var(--line)"}} onClick={e=>e.stopPropagation()}>
+              <button className="btn btn-ghost btn-sm" onClick={()=>gotoCircle(g.slug)}>Open</button>
+              {iAmAdmin && <><button className="iconbtn" title="Circle settings" onClick={()=>setEditGroup(g)}><Pencil size={14}/></button>
+              <button className="iconbtn danger" title="Delete circle" onClick={()=>doDeleteGroup(g)}><Trash2 size={14}/></button></>}
+              {!iAmAdmin && <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)"}} onClick={()=>doExitGroup(g)}>Exit</button>}
+            </div>
+            {open && (
+              <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--line)"}} onClick={e=>e.stopPropagation()}>
+                {renderCircleExpandedContent(g, iAmAdmin, isPublic, inviteLink)}
+              </div>
+            )}
+          </div>
+        );
+      })}</div>
+    ) : (
     <div className="card"><div className="card-body" style={{padding:"8px 0"}}><div className="tscroll"><table className="grid" style={{minWidth:900}}>
       <thead><tr>
         <th>Circle</th><th>Type</th><th>Created on</th><th>Members</th><th>My role</th><th style={{textAlign:"right"}}>Actions</th>
@@ -152,40 +235,11 @@ export function GroupsSection({ groups, setGroups, contacts, configs, canCreateG
             </td>
           </tr>
           {open && <tr className="expand-row"><td colSpan={6}><div className="expand-inner" onClick={e=>e.stopPropagation()}>
-            {g.description && <div className="muted small" style={{marginBottom:12}}>{g.description}</div>}
-            {isPublic && inviteLink && (
-              <div style={{display:"flex",alignItems:"center",gap:8,background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10,padding:"8px 12px",marginBottom:12,flexWrap:"wrap"}}>
-                <span className="muted small" style={{flex:1,minWidth:180,wordBreak:"break-all"}}>{inviteLink}</span>
-                <button className="btn btn-ghost btn-sm" onClick={()=>navigator.clipboard.writeText(inviteLink)}><Copy size={13}/> Copy link</button>
-                {iAmAdmin && <button className="btn btn-ghost btn-sm" onClick={()=>doRegenerateInvite(g)}>Regenerate</button>}
-              </div>
-            )}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <b style={{fontSize:14}}>Members of {g.name}</b>
-              {iAmAdmin && <button className="btn btn-soft btn-sm" onClick={()=>setAddTo(g)}><UserPlus size={14}/> Add members</button>}
-            </div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
-              {(g.members||[]).filter(m=>m.status==="active").map(m=>(
-                <div key={m.user_id} style={{display:"flex",alignItems:"center",gap:8,background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10,padding:"6px 12px"}}>
-                  {/* Avatar + name: click opens public profile */}
-                  <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
-                    title={`View ${m.name||nameOf(m.user_id)}'s public profile`}
-                    onClick={()=>gotoUserProfile(m.user_id)}>
-                    <Avatar f={avOf(m.user_id)} size={28}/>
-                    <div>
-                      <div style={{fontWeight:600,fontSize:13,color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{m.name||nameOf(m.user_id)}</div>
-                      <div className="muted" style={{fontSize:11}}>{m.role==="admin"?"Owner":"Member"}</div>
-                    </div>
-                  </div>
-                  {iAmAdmin && m.user_id!==myId && <button className="iconbtn danger" style={{marginLeft:4}} onClick={()=>doRemoveMember(g.id,m.user_id)}><X size={13}/></button>}
-                  {!iAmAdmin && m.user_id===myId && <button className="btn btn-ghost btn-sm" style={{color:"var(--loss)",marginLeft:4}} onClick={()=>doExitGroup(g)}>Exit</button>}
-                </div>
-              ))}
-            </div>
+            {renderCircleExpandedContent(g, iAmAdmin, isPublic, inviteLink)}
           </div></td></tr>}
         </React.Fragment>);
       })}</tbody>
-    </table></div></div></div>}
+    </table></div></div></div>)}
     {showNew && <CircleModal title="New Circle" contacts={contacts} max={configs.maxGroupMembers} alreadyIn={[myId,"me"]}
         onClose={()=>setShowNew(false)} onSave={(name,ids,color,circleType,description)=>doCreateGroup(name,ids,color,circleType,description)}/>}
     {addTo && <AddMembersModal group={addTo} max={configs.maxGroupMembers}
