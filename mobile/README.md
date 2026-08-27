@@ -87,10 +87,21 @@ simulator — useful in CI or a sandboxed dev environment.
 ## Deployment (EAS)
 
 `eas.json` has `development` / `preview` / `production` build profiles.
-Not yet run against a real EAS project (needs `eas login` +
-`eas build:configure` to set `extra.eas.projectId` in `app.json`, which
-requires an Expo account this session doesn't have). Path once that's set
-up:
+
+**Important limitation of this sandboxed session**: the coding environment
+this app was built in has outbound network access to `expo.dev` /
+`api.expo.dev` (and `ngrok.com`, used for Expo Go's tunnel mode) blocked by
+its organization's egress policy — confirmed via explicit 403 responses,
+not a timeout or misconfiguration. That means **no build produced from
+inside this session** — not an EAS cloud build, not a local `expo start`
+dev-server your phone could connect to — is possible here. There is also
+no Android SDK installed in this sandbox for a local Gradle build. The
+build has to be triggered from a machine that can actually reach Expo's
+servers — realistically, your own computer (or another Claude Code
+environment without that restriction). See the root-level runbook this
+repo's mobile README links to for exact commands.
+
+Once a build is possible:
 
 - **Android**: `eas build -p android --profile preview` → internal
   distribution for testing, then `--profile production` → Play Store via
@@ -115,6 +126,12 @@ up:
   sign-out); their API calls (`getPublicFeed`, `getNetworkEngagementFeed`,
   `getMyMadeRecos`) are already wired in `src/services/api/recommendationsApi.js`,
   UI not yet built
+- `metro.config.js` disables Metro's package-exports resolution
+  (`unstable_enablePackageExports = false`) — without it, `firebase/auth`'s
+  React Native persistence build never gets picked up (see the comment in
+  that file), and login sessions would silently fail to survive closing the
+  app. This is a real bug fix, not a preference — verify item 9 in the
+  physical-device test checklist against a build made *after* this change.
 
 ## Deliberately not yet built
 
