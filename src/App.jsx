@@ -447,7 +447,15 @@ export default function App() {
     requireAccountApproval:true,
     maxGroupMembers:8, groupCreationPolicy:"all",
   });
-  const [providers, setProviders] = useState(["Fidelity","Vanguard","Robinhood","Coinbase","Schwab","E*TRADE"]);
+  // Admin → App Configuration → "Supported account providers": leftover
+  // mockup seed data from an early US-market prototype (Fidelity/Vanguard/
+  // Robinhood/Coinbase/Schwab/E*TRADE aren't relevant to this India-focused
+  // CAS/PAN-import product). This list is also never persisted server-side
+  // — it's local React state that resets on every reload — and nothing
+  // else in the app reads it, so it never actually gated or displayed
+  // brokerage options anywhere real. Starts empty now, matching every
+  // other "starts empty until real data exists" default in this file.
+  const [providers, setProviders] = useState([]);
 
   // Derived: confirmed contacts only (accepted connections, shaped for UI backward compat)
   const contacts = useMemo(() =>
