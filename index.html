@@ -6,14 +6,57 @@
     <title>InvestorCircle</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Loaded non-render-blocking: a plain <link rel="stylesheet"> to a
+      cross-origin host is a render-blocking request by default, which was
+      undermining the #initial-loader below — the very thing meant to paint
+      before anything else was still waiting on this font CSS round-trip.
+      The media="print" trick lets the browser fetch it without blocking
+      first paint, then the onload swap applies it once it arrives; the
+      <noscript> tag is the fallback for the (rare) no-JS case.
+    -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"
       rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"
+      media="print"
+      onload="this.media='all'"
     />
-    <script type="module" crossorigin src="/assets/index-DeBxI37W.js"></script>
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" />
+    </noscript>
+    <!--
+      Inlined so it paints before any JS downloads/parses/executes — on a
+      slow connection or an older phone that gap can be a real number of
+      seconds, and until now it was just a blank white page for that whole
+      window, with no indication anything was happening. React's
+      createRoot(...).render() call in main.jsx replaces #root's entire
+      contents on mount, so this needs no cleanup code of its own — it just
+      disappears the instant the real app takes over. App.jsx's own
+      AppLoadingScreen (shown while Firebase auth resolves, after mount)
+      intentionally matches this one's background/spinner/copy so there's
+      no visual flash at the handoff.
+    -->
+    <style>
+      #initial-loader{position:fixed;inset:0;background:#0a0b18;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;}
+      #initial-loader .spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.14);border-top-color:#8f7bff;animation:mic-spin .8s linear infinite;}
+      #initial-loader .title{color:#e8e8f5;font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:800;letter-spacing:-.2px;}
+      #initial-loader .msg{color:#e8e8f5;font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:600;}
+      #initial-loader .sub{color:#7d7fa0;font-family:'Plus Jakarta Sans',sans-serif;font-size:12.5px;}
+      @keyframes mic-spin{to{transform:rotate(360deg);}}
+    </style>
+    <script type="module" crossorigin src="/assets/index-DYaQQLa0.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-E7_sEGRI.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-firebase-DyNy-HUW.js">
     <link rel="stylesheet" crossorigin href="/assets/index-BJhtpRWC.css">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="initial-loader">
+        <div class="spinner"></div>
+        <div class="title">InvestorCircle</div>
+        <div class="msg">Getting your circle ready…</div>
+        <div class="sub">Just a moment</div>
+      </div>
+    </div>
   </body>
 </html>
