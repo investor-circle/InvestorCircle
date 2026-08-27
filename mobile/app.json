@@ -2,6 +2,7 @@
   "expo": {
     "name": "myInvestorCircle",
     "slug": "myinvestorcircle",
+    "owner": "myinvestorcircle.com",
     "scheme": "myinvestorcircle",
     "version": "1.0.0",
     "orientation": "portrait",
