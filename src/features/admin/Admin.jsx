@@ -960,7 +960,6 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
   const [q, setQ] = useState(""); const [showAdd, setShowAdd] = useState(false);
   const filtered = users.filter(u=>(u.name+u.email).toLowerCase().includes(q.toLowerCase()));
   const setStatus=(id,status)=>setUsers(us=>us.map(u=>u.id===id?{...u,status}:u));
-  const setRole=(id,role)=>setUsers(us=>us.map(u=>u.id===id?{...u,role}:u));
   const sp=(s)=>s==="Active"?"gain":s==="Suspended"?"loss":"";
 
   const hardDelete = async (u) => {
@@ -1038,7 +1037,7 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
               ? <span style={{fontFamily:'monospace',fontSize:12,color:'var(--accent-ink)'}}>@{u.username}</span>
               : <span className="muted small">—</span>}
           </td>
-          <td><select className="inline-select" value={u.role} onChange={e=>setRole(u.id,e.target.value)}>{["Investor","Moderator","Admin"].map(r=><option key={r}>{r}</option>)}</select></td>
+          <td>{u.role==="Admin" ? <span className="pill accent">Admin</span> : <span className="pill">Investor</span>}</td>
           <td><span className={"pill "+sp(u.status)}>{u.status}</span></td>
           <td style={{textAlign:"center"}}>{u.accounts}</td>
           <td className="muted small">{u.joined}</td>
@@ -1079,7 +1078,6 @@ export function AddUserModal({ onClose, onAdd }) {
   const [email,    setEmail]    = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [role,     setRole]     = useState("Investor");
   const [busy,     setBusy]     = useState(false);
   const [err,      setErr]      = useState("");
   const [unStatus, setUnStatus] = useState("idle"); // idle|checking|available|taken|invalid
@@ -1113,7 +1111,11 @@ export function AddUserModal({ onClose, onAdd }) {
           firstName: fn, lastName: ln, username: username.trim() || null,
         });
       } catch(e) { console.warn("user_profiles insert failed:", e.message); }
-      onAdd({ id:cred.user.uid, name:name.trim(), email:email.trim(), role, status:"Active", accounts:0, joined:new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
+      // Always created as a plain Investor account — the backend's
+      // create-user-profile action hardcodes is_admin=false, so there was
+      // never a real way to grant admin from this form regardless of what
+      // was displayed here.
+      onAdd({ id:cred.user.uid, name:name.trim(), email:email.trim(), role:"Investor", status:"Active", accounts:0, joined:new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"}) });
     } catch(e) {
       if (e.code === "auth/email-already-in-use") {
         // User exists in Firebase but may not be in Neon user_profiles yet.
@@ -1158,7 +1160,6 @@ export function AddUserModal({ onClose, onAdd }) {
         {unStatus==="taken"   && <div style={{color:"var(--loss)",fontSize:12,marginTop:4}}>This username is already taken</div>}
       </div>
       <div className="field"><label>Temporary password <span className="muted small">(min 6 characters)</span></label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="They can change it after logging in"/></div>
-      <div className="field"><label>Role</label><select value={role} onChange={e=>setRole(e.target.value)}>{["Investor","Moderator","Admin"].map(r=><option key={r}>{r}</option>)}</select></div>
       {err && <div className="note warn"><AlertTriangle size={15}/><div>{err}</div></div>}
     </div>
     <div className="modal-foot"><span/><div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -1241,14 +1242,10 @@ export function AdminConfigs({ configs, setConfigs, providers, setProviders }) {
     </div>
     <div className="card" style={{ marginTop:18 }}><div className="card-head"><span style={{display:"flex",gap:8,alignItems:"center"}}><Layers size={16}/> Groups</span></div>
       <div className="card-body" style={{paddingTop:2,paddingBottom:2}}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 0", borderBottom:"1px solid var(--line)" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 0" }}>
           <div style={{paddingRight:20}}><div style={{fontWeight:700,fontSize:14}}>Maximum members per group</div><div className="muted small" style={{marginTop:2}}>Caps how many people any single group can contain</div></div>
           <input type="number" min={2} max={500} value={configs.maxGroupMembers} onChange={e=>setConfigs(c=>({...c,maxGroupMembers:Math.max(2,parseInt(e.target.value||"2",10))}))}
             style={{width:90,border:"1px solid var(--line-2)",borderRadius:10,padding:"8px 11px",fontSize:14,fontWeight:700,textAlign:"center",outline:"none"}}/></div>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 0" }}>
-          <div style={{paddingRight:20}}><div style={{fontWeight:700,fontSize:14}}>Who can create groups</div><div className="muted small" style={{marginTop:2}}>Controls the “New group” action across the app</div></div>
-          <select className="inline-select" value={configs.groupCreationPolicy} onChange={e=>setConfigs(c=>({...c,groupCreationPolicy:e.target.value}))}>
-            <option value="all">Everyone</option><option value="mods">Moderators &amp; Admins</option><option value="admins">Admins only</option></select></div>
       </div></div>
     <div className="card" style={{ marginTop:18 }}><div className="card-head">Supported account providers</div><div className="card-body">
       <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:15 }}>

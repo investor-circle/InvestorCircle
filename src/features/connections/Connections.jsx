@@ -45,7 +45,7 @@ import { fmtDate, fmtSigned, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile } from "../../utils/navigation";
 
 export function Network({ connections, setConnections, groups, setGroups, configs,
-    canCreateGroups, recsReceived, onOpenRecos, me, setPage,
+    recsReceived, onOpenRecos, me, setPage,
     initTab, onInitTabConsumed, trackingCounts, onTrackingCountsChange }) {
   const [tab, setTab] = useState(initTab || "contacts");
   useEffect(()=>{
@@ -91,7 +91,7 @@ export function Network({ connections, setConnections, groups, setGroups, config
       {tab==="tracking" && <ImTrackingSection me={me} setConnections={setConnections} onTrackingCountsChange={onTrackingCountsChange}/>}
       {tab==="groups" && <GroupsSection groups={groups} setGroups={setGroups}
             contacts={connections.filter(c=>c.status==="accepted").map((c,i)=>({id:c.user_id,name:c.name,color:CONTACT_COLORS[i%CONTACT_COLORS.length],connectionId:c.connection_id}))}
-            configs={configs} canCreateGroups={canCreateGroups} me={me}
+            configs={configs} me={me}
             recsReceived={recsReceived} onOpenRecos={onOpenRecos}/>}
     </>
   );

@@ -50,7 +50,7 @@ import { useIsMobile } from "../../hooks/index";
  * Still backed by ic_groups/group_members (see api/_lib/handlers/groups.js).
  * A circle is 'private' (owner adds Connections directly) or 'public'
  * (subscribable via request + owner approval, or a shareable invite link). */
-export function GroupsSection({ groups, setGroups, contacts, configs, canCreateGroups, recsReceived, onOpenRecos, me }) {
+export function GroupsSection({ groups, setGroups, contacts, configs, recsReceived, onOpenRecos, me }) {
   const isMobile = useIsMobile();
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState(null);
@@ -154,7 +154,7 @@ export function GroupsSection({ groups, setGroups, contacts, configs, canCreateG
   return (<>
     <div className="toolbar">
       <div className="searchbox grow"><Search size={16} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search circles…"/></div>
-      <button className="btn btn-pri btn-sm" disabled={!canCreateGroups} onClick={()=>setShowNew(true)}><Plus size={15}/> New Circle</button>
+      <button className="btn btn-pri btn-sm" onClick={()=>setShowNew(true)}><Plus size={15}/> New Circle</button>
     </div>
     {rows.length===0 ? <div className="card"><div className="empty">No circles yet. Create one to build a community around your ideas, or share them with a group of connections at once.</div></div> :
     isMobile ? (

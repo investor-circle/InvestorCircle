@@ -445,7 +445,7 @@ export default function App() {
   const [configs,       setConfigs]       = useState({
     enableRecommendations:true, allowCryptoAccounts:true, publicFeed:true,
     requireAccountApproval:true,
-    maxGroupMembers:8, groupCreationPolicy:"all",
+    maxGroupMembers:8,
   });
   // Admin → App Configuration → "Supported account providers": leftover
   // mockup seed data from an early US-market prototype (Fidelity/Vanguard/
@@ -1169,8 +1169,6 @@ export default function App() {
     : (p) => { setAdminPage(p); track('page_view', { page_name: p });
                if (ADMIN_PAGE_TO_PATH[p]) navigate(ADMIN_PAGE_TO_PATH[p]); };
 
-  const canCreateGroups = configs.groupCreationPolicy==="all";
-
   const navSections = isInv ? [
     { label:"DISCOVER", items: [
       { id:"home",         label:"Ideas",           icon:Lightbulb,  iconColor:"#fbbf24", iconBg:"rgba(251,191,36,.13)" },
@@ -1739,7 +1737,7 @@ export default function App() {
             {isInv && page==="network"   && <SectionErrorBoundary label="Network"><Network
                 connections={connections} setConnections={setConnections}
                 groups={groups} setGroups={setGroups}
-                configs={configs} canCreateGroups={canCreateGroups}
+                configs={configs}
                 recsReceived={recsReceived} me={ME} setPage={setPage}
                 onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}
                 initTab={networkInitTab} onInitTabConsumed={()=>setNetworkInitTab(null)}
