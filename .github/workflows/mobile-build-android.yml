@@ -62,6 +62,17 @@ jobs:
           EXPO_PUBLIC_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}
           EOF
 
+      # First run only in practice: creates the EAS project the first time,
+      # then just links to the existing one on every run after (matched by
+      # app.json's slug under this account) — a robot token can't do this
+      # interactively, which is what failed the previous run ("EAS project
+      # not configured"). Requires app.json's "owner" to be set, since a
+      # non-interactive token can't be prompted to pick an account either.
+      - name: Link/create EAS project
+        run: eas init --non-interactive --account myinvestorcircle.com
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
       - name: Build on EAS (cloud)
         run: eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait
         env:
