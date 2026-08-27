@@ -6,10 +6,24 @@
     <title>InvestorCircle</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Loaded non-render-blocking: a plain <link rel="stylesheet"> to a
+      cross-origin host is a render-blocking request by default, which was
+      undermining the #initial-loader below — the very thing meant to paint
+      before anything else was still waiting on this font CSS round-trip.
+      The media="print" trick lets the browser fetch it without blocking
+      first paint, then the onload swap applies it once it arrives; the
+      <noscript> tag is the fallback for the (rare) no-JS case.
+    -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"
       rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" />
+    </noscript>
     <!--
       Inlined so it paints before any JS downloads/parses/executes — on a
       slow connection or an older phone that gap can be a real number of
