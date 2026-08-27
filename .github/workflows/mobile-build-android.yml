@@ -30,8 +30,16 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
+      # Not `npm ci`: this dependency tree has real (not just stale-lockfile)
+      # peer-dependency conflicts at the currently pinned Expo SDK 57
+      # versions — react-dom resolves newer than the react-native-pinned
+      # react version, and react-native-worklets' peer range doesn't quite
+      # match what expo-modules-core wants. `npm ci` correctly refuses to
+      # paper over that; `--legacy-peer-deps` is what was actually used and
+      # validated (npx expo export) throughout development, so CI matches
+      # that rather than a stricter install that was never the tested path.
       - name: Install dependencies
-        run: npm ci
+        run: npm install --legacy-peer-deps
 
       - name: Install EAS CLI
         run: npm install -g eas-cli
