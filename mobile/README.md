@@ -101,7 +101,15 @@ servers — realistically, your own computer (or another Claude Code
 environment without that restriction). See the root-level runbook this
 repo's mobile README links to for exact commands.
 
-Once a build is possible:
+**Phone-only path**: `.github/workflows/mobile-build-android.yml` runs the
+build on GitHub's own servers instead — triggered with a button tap from
+the GitHub Actions tab (works from the GitHub mobile app or a phone
+browser, no terminal). It reuses the same `VITE_FIREBASE_*` secrets
+`ci.yml` already has configured for the web app (same Firebase project),
+so the only new secret needed is `EXPO_TOKEN`. See the repo root for setup
+steps, or ask for the walkthrough again.
+
+Once a build is possible (from a computer or via that workflow):
 
 - **Android**: `eas build -p android --profile preview` → internal
   distribution for testing, then `--profile production` → Play Store via
