@@ -56,11 +56,11 @@ import {
   forwardRecommendation as dbForwardReco
 } from "../../services/api/recommendationsApi";
 import { IdeaSharePopover, ThesisRenderer } from "../recommendations/Recommendations";
-import { ConvBadge, IciDonut, RetBadge, ScoreBox, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClosedInfoLine, ConvBadge, IciDonut, RetBadge, ScoreBox, SmallAnchoredPopover, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
 import { SECTOR_EMOJI } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
-import { initialsOf } from "../../utils/format";
+import { getClosedInfo, initialsOf } from "../../utils/format";
 
 /* ── ProfileSharePopover — Copy link / Share on WhatsApp for a profile,
    same anchored-popover-on-desktop / bottom-sheet-on-mobile pattern as the
@@ -69,35 +69,6 @@ import { initialsOf } from "../../utils/format";
 /* ── SmallAnchoredPopover — lightweight floating dropdown for the Investment
    Ideas toolbar's filter/sort controls. Portal-based so it isn't clipped by
    the `.card` it's triggered from (overflow:hidden). ── */
-function SmallAnchoredPopover({ anchorEl, onClose, children, width=200 }) {
-  const [pos, setPos] = useState(null);
-  const popRef = useRef(null);
-
-  useEffect(() => {
-    if (anchorEl) {
-      const rect = anchorEl.getBoundingClientRect();
-      setPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
-    }
-    // anchorEl.contains(), not a strict !== check — the anchor is usually an
-    // icon-only button, so a real click's e.target is the child <svg>/icon
-    // inside it, not the button element itself. A strict !== comparison
-    // treats that as an outside click, closes the popover on mousedown, and
-    // then the button's own onClick toggle re-opens it on the same click —
-    // the popover could only ever be dismissed by clicking elsewhere.
-    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && !anchorEl?.contains(e.target)) onClose(); };
-    setTimeout(() => document.addEventListener('mousedown', h), 0);
-    return () => document.removeEventListener('mousedown', h);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!pos) return null;
-  return createPortal(
-    <div ref={popRef} style={{position:'fixed',top:pos.top,right:pos.right,zIndex:9999,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,.18)',padding:10,minWidth:width,fontFamily:'var(--font)'}} onClick={e=>e.stopPropagation()}>
-      {children}
-    </div>,
-    document.body
-  );
-}
-
 function ProfileSharePopover({ profileUrl, displayName, anchorEl, onClose }) {
   const isMobile = useIsMobile();
   const [copied, setCopied] = useState(false);
@@ -1097,6 +1068,9 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                           </div>
                         ))}
                       </div>
+                      {(() => { const closed = getClosedInfo(r); return closed && (
+                        <div style={{marginBottom:10}}><ClosedInfoLine info={closed}/></div>
+                      ); })()}
                       {r.thesis&&r.thesis!=='—'&&(
                         <div style={{marginBottom:10}}><ThesisRenderer thesis={r.thesis} previewLines={2}/></div>
                       )}

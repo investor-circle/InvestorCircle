@@ -23,6 +23,8 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
     recommendation:          "shared an idea with you",
     circle_idea:             "shared an idea in a Circle",
     exit_signal:             "issued an exit signal",
+    idea_expired:            "expired",
+    idea_expiring_today:     "expires today",
     contact_recommendation:  "posted a new idea",
     contact_comment:         "commented on your idea",
     contact_like:            "liked your idea",
@@ -78,6 +80,15 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
       return <><b>{n.from_name||'Someone'}</b> liked {ticker}{byLine}</>;
     if (n.type === 'network_comment')
       return <><b>{n.from_name||'Someone'}</b> commented on {ticker||'an idea'}{byLine}</>;
+
+    // Idea lifecycle: exited by its recommender, expired past target date,
+    // or (for the recommender themselves) about to expire today.
+    if (n.type === 'exit_signal')
+      return <><b>{n.from_name||'Someone'}</b> exited {ticker||'a tracked idea'}{byLine}</>;
+    if (n.type === 'idea_expired')
+      return <>{ticker||'An idea you track'}{byLine} has expired</>;
+    if (n.type === 'idea_expiring_today')
+      return <>Your idea {ticker||''} expires today</>;
 
     // Other engagement types
     if (n.type === 'contact_comment')
@@ -147,7 +158,7 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
             : (n.type==='contact_comment'||n.type==='network_comment') ? '#0ea5b7'
             : '#22863a'
             : '#6d5df5';
-          const isNavReco = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation'].includes(n.type);
+          const isNavReco = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation','exit_signal','idea_expired','idea_expiring_today'].includes(n.type);
           const isNavConn = ['connection_request','connection_accepted','connection_rejected'].includes(n.type);
           const isNavTracking = n.type === 'tracking_new';
           const isNavCircleIdea = n.type === 'circle_idea';

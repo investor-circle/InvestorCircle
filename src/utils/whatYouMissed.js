@@ -89,6 +89,14 @@ const MIN_SCORE_TO_SHOW = 4;
 
 const MAX_RESULTS = 3;
 
+// Of the MAX_RESULTS slots shown, at least this many must be positive-return
+// ideas when enough positive candidates exist — "what you missed" reads as
+// FOMO-on-gains; a widget dominated by ideas that fell isn't the intended
+// framing. This is a floor, not a quota: it never manufactures a positive
+// slot that doesn't exist in the real ranked pool, it just prefers filling
+// the cap with real positive candidates over lower-priority negative ones.
+const MIN_POSITIVE_RESULTS = 2;
+
 /** Relevance tier for one candidate, given the caller's relationship data. */
 function relevanceTierFor(r, { trackedCreatorIds, contactIds }) {
   if (trackedCreatorIds?.has(r.from)) return 'tracked';
@@ -152,12 +160,14 @@ export function rankWhatYouMissed(recos, ctx = {}) {
     .sort((a, b) => b.s.score - a.s.score);
 
   // Avoid repetition: at most one idea per ticker (highest-scoring wins),
-  // and cap how many slots one creator can take up.
+  // and cap how many slots one creator can take up. Dedup over the whole
+  // ranked pool (not just the first MAX_RESULTS) so the positivity floor
+  // below has real candidates to draw from instead of only whatever
+  // happened to survive an early cutoff.
   const seenTickers = new Set();
   const perCreatorCount = new Map();
-  const results = [];
+  const deduped = [];
   for (const { c, s } of scored) {
-    if (results.length >= MAX_RESULTS) break;
     const tickerKey = c.r.ticker || c.r.assetName;
     if (tickerKey && seenTickers.has(tickerKey)) continue;
     const creatorCount = perCreatorCount.get(c.r.from) || 0;
@@ -166,7 +176,7 @@ export function rankWhatYouMissed(recos, ctx = {}) {
     if (tickerKey) seenTickers.add(tickerKey);
     perCreatorCount.set(c.r.from, creatorCount + 1);
 
-    results.push({
+    deduped.push({
       idea: c.r,
       creator: { id: c.r.from, name: resolveCreatorName?.(c.r) || c.r.byName || 'Someone' },
       movement: { pct: s.retPct, direction: s.retPct >= 0 ? 'up' : 'down' },
@@ -175,7 +185,19 @@ export function rankWhatYouMissed(recos, ctx = {}) {
       score: s.score,
     });
   }
-  return results;
+
+  // Positivity floor: fill as many of the MIN_POSITIVE_RESULTS slots as
+  // real positive candidates allow, then backfill the rest of MAX_RESULTS
+  // by score regardless of direction, then re-sort the final slate by
+  // score so display order still reflects ranking.
+  const positives = deduped.filter(x => x.movement.pct > 0);
+  const floorCount = Math.min(MIN_POSITIVE_RESULTS, positives.length);
+  const picked = positives.slice(0, floorCount);
+  const pickedIds = new Set(picked.map(x => x.idea.id));
+  const remaining = deduped.filter(x => !pickedIds.has(x.idea.id));
+  picked.push(...remaining.slice(0, MAX_RESULTS - picked.length));
+
+  return picked.sort((a, b) => b.score - a.score);
 }
 
 // ── Seen-state tracking (client-side, additive, no schema change) ──────────

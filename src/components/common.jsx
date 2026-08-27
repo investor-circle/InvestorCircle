@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Search,
   TrendingUp,
@@ -10,7 +11,7 @@ import {
   Loader
 } from "lucide-react";
 import { SOCIAL_BRAND, SOCIAL_PATHS, TYPE_COLORS } from "../constants/app";
-import { classColor, consensusStrengthColor, fmt, fmtSigned, initialsOf } from "../utils/format";
+import { classColor, consensusStrengthColor, fmt, fmtDate, initialsOf } from "../utils/format";
 import { loadInstruments } from "../utils/instruments";
 
 export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;
@@ -26,29 +27,13 @@ export const Avatar = ({ f, size=40 }) => {
 
 /* ── useIsMobile — JS-driven responsive control (bypasses CSS media query issues) ── */
 
-export function SortTh({ label, k, sort, setSort, align }) {
+export function SortTh({ label, k, sort, setSort, align, hint }) {
   const active = sort.key===k;
   return (
-    <th className={"sortable"+(active?" sorted":"")} style={align?{textAlign:align}:null}
+    <th className={"sortable"+(active?" sorted":"")} style={align?{textAlign:align}:null} title={hint}
         onClick={()=>setSort(s=>({ key:k, dir: s.key===k && s.dir==="asc" ? "desc":"asc" }))}>
       {label}<span className="si">{active ? (sort.dir==="asc"?<ChevronDown size={13} style={{transform:"rotate(180deg)"}}/>:<ChevronDown size={13}/>) : <ArrowUpDown size={12}/>}</span>
     </th>
-  );
-}
-
-export function RecoBreakdown({ stats, onPnl, pnlLabel }) {
-  return (
-    <div className="statgrid">
-      <div className="stat"><div className="v">{stats.count}</div><div className="l">Ideas</div></div>
-      <div className="stat"><div className="v">{stats.acted}</div><div className="l">I acted on</div></div>
-      <div className="stat"><div className="v">{stats.liked}</div><div className="l">I liked</div></div>
-      <div className="stat"><div className="v">{stats.disliked}</div><div className="l">I disliked</div></div>
-      <div className="stat"><div className="v pos">{stats.inMoney}</div><div className="l">In the money</div></div>
-      <div className="stat"><div className="v neg">{stats.outMoney}</div><div className="l">Out of money</div></div>
-      <div className="stat click" onClick={(e)=>{ e.stopPropagation(); onPnl(); }}>
-        <div className={"v "+(stats.pnl>=0?"pos":"neg")}>{fmtSigned(stats.pnl)}</div>
-        <div className="l" style={{color:"var(--accent-ink)"}}>{pnlLabel||"My P&L"} ↗</div></div>
-    </div>
   );
 }
 
@@ -191,6 +176,33 @@ export function StatusBadge2({ status }) {
   return <span style={{fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:5,background:cfg.bg,color:cfg.col}}>{status}</span>;
 }
 
+/**
+ * Compact info line for a CLOSED idea (exited or expired) — the label,
+ * closing date, closing price, and the return from posting price to that
+ * close. Renders nothing for an idea that's still open (getClosedInfo(r)
+ * returns null). Takes the {kind,date,price,pending,retPct} shape
+ * src/utils/format.js's getClosedInfo() produces, not a raw reco row —
+ * callers compute that once and pass it in, so this stays a pure renderer.
+ */
+export function ClosedInfoLine({ info, cur='INR' }) {
+  if (!info) return null;
+  const exited = info.kind === 'exited';
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',fontSize:11.5,padding:'7px 10px',borderRadius:8,
+      background: exited ? 'var(--loss-soft)' : 'var(--surface-2)',
+      color: exited ? 'var(--loss)' : 'var(--ink-soft)'}}>
+      <b>{exited ? 'Exited' : 'Expired'}</b>
+      {info.date && <span>{fmtDate(info.date)}</span>}
+      {info.pending
+        ? <span style={{color:'var(--muted)'}}>· {exited ? 'exit' : 'expiry'} price pending</span>
+        : <>
+            <span>· {fmt(info.price, cur)}</span>
+            {info.retPct != null && <><span>·</span><RetBadge pct={info.retPct*100} size={11.5}/></>}
+          </>}
+    </div>
+  );
+}
+
 /* ─── SharePublicPopover (unchanged) ────────────────────────────────────────── */
 /* ─── ReceivedSharePopover — for received recommendations ─────────────────────── */
 
@@ -217,6 +229,84 @@ export class ProfileErrorBoundary extends React.Component {
     }
     return this.props.children;
   }
+}
+
+/**
+ * Generic render-error boundary — catches a thrown error anywhere in its
+ * subtree and shows a small inline "X failed to load" card with the error
+ * message instead of taking down everything above it. Without a boundary
+ * like this, an uncaught render error unmounts React all the way up to
+ * whichever ancestor (if any) does have one — with nothing between a page
+ * section and the app root, that section's crash blanks the entire app.
+ * `label` names the section in the fallback text (e.g. "Home feed").
+ */
+export class SectionErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(err) { return { error: err }; }
+  componentDidCatch(err, info) { console.error(`${this.props.label || 'Section'} render error:`, err, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{padding:'24px 18px',textAlign:'center',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16}}>
+          <AlertTriangle size={26} color="var(--loss)" style={{marginBottom:10}}/>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:6,color:'var(--ink)'}}>{this.props.label || 'This section'} failed to load</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Try refreshing the page. If it keeps happening, this detail may help:</div>
+          <div style={{background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:8,
+              padding:'8px 12px',fontSize:11,fontFamily:'monospace',color:'var(--loss)',textAlign:'left',wordBreak:'break-all'}}>
+            {this.state.error.message}
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
+ * Small popover anchored below an icon-only trigger button — the filter/
+ * sort pattern used by the search/filter/sort icon row on both the
+ * public-profile Investment Ideas list and Portfolio's holdings grid.
+ * Closes on any click outside itself or the anchor button.
+ */
+export function SmallAnchoredPopover({ anchorEl, onClose, children, width=200 }) {
+  const [pos, setPos] = useState(null);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    if (anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+    }
+    // anchorEl.contains(), not a strict !== check — the anchor is usually an
+    // icon-only button, so a real click's e.target is the child <svg>/icon
+    // inside it, not the button element itself. A strict !== comparison
+    // treats that as an outside click, closes the popover on mousedown, and
+    // then the button's own onClick toggle re-opens it on the same click —
+    // the popover could only ever be dismissed by clicking elsewhere.
+    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && !anchorEl?.contains(e.target)) onClose(); };
+    setTimeout(() => document.addEventListener('mousedown', h), 0);
+    // The popover is `position:fixed`, computed once from the anchor
+    // button's rect at open time — it does not track the button as the page
+    // scrolls (the anchor sits in normal document flow and moves; the fixed
+    // popover doesn't), so it visually detaches from its trigger and is left
+    // floating over unrelated content. Closing on any scroll (capture: true,
+    // since scroll doesn't bubble) is the same fix outside-click already
+    // applies for the equivalent "this popover no longer makes sense" case.
+    const onScroll = () => onClose();
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', h);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!pos) return null;
+  return createPortal(
+    <div ref={popRef} style={{position:'fixed',top:pos.top,right:pos.right,zIndex:9999,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,.18)',padding:10,minWidth:width,fontFamily:'var(--font)'}} onClick={e=>e.stopPropagation()}>
+      {children}
+    </div>,
+    document.body
+  );
 }
 
 export function WidgetHeader({ icon: Icon, emoji, label, action, onAction }) {

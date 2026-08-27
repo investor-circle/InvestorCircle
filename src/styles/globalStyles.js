@@ -221,19 +221,23 @@ tr.hiddenrow > td{opacity:.55;}
 /* ─── Home feed "brewing" loading state — shown only while the feed's first
    load is genuinely in flight, never once it's known to be empty ─── */
 .feed-brewing{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:44px 28px 36px;text-align:center;}
-.feed-brewing-art{position:relative;width:120px;height:88px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
+.feed-brewing-art{position:relative;width:150px;height:82px;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;}
 .feed-brewing-cup{overflow:visible;}
-.feed-brewing-cupbody{fill:var(--ink);}
-.feed-brewing-handle{stroke:var(--ink);stroke-width:6;fill:none;}
-.feed-brewing-saucer{fill:var(--surface-2);}
-.feed-brewing-liquid{fill:var(--accent);}
+/* Modeled on a real cup reference photo: a rounded (not flat-sided)
+   ceramic body with a light-to-dark gradient for curvature, a closed-ring
+   handle, a cream rim disc the coffee sits inset in, and a gloss
+   highlight — recolored into the app's own accent + cream/coffee palette
+   rather than the photo's literal sage-green. No saucer, no foam art. */
+.feed-brewing-cupbody,.feed-brewing-handle{fill:url(#feed-brewing-cup-grad);}
+.feed-brewing-rim-outer{fill:#fdfbf7;}
+.feed-brewing-liquid{fill:#5b3a29;}
+.feed-brewing-gloss{stroke:#fff;stroke-width:2.5;opacity:.3;}
 .feed-brewing-steam{stroke:var(--accent);stroke-width:3;opacity:0;}
 .feed-brewing-badge{position:absolute;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);}
 .feed-brewing-badge-1{top:2px;left:2px;}
 .feed-brewing-badge-2{top:6px;right:0;}
 .feed-brewing-badge-3{bottom:2px;left:14px;}
-.feed-brewing-title{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--ink);letter-spacing:-.2px;margin:14px auto 8px;max-width:360px;}
-.feed-brewing-sub{max-width:340px;margin:0 auto 20px;line-height:1.6;}
+.feed-brewing-title{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--ink);letter-spacing:-.2px;margin:14px auto 20px;max-width:360px;}
 .feed-brewing-bar{width:180px;height:5px;border-radius:999px;background:var(--surface-2);margin:0 auto 10px;overflow:hidden;}
 .feed-brewing-bar-fill{width:40%;height:100%;border-radius:999px;background:var(--grad);}
 .feed-brewing-caption{letter-spacing:.2px;}
@@ -366,11 +370,13 @@ tr.hiddenrow > td{opacity:.55;}
   .overlay{align-items:flex-end!important;padding:0!important;}
   .modal{border-radius:20px 20px 0 0!important;width:100%!important;max-height:88vh!important;}
 
-  /* Network tabs (Connections/Circles/Tracking me/I'm tracking): force a single
-     row on mobile — shrink padding/font and let labels wrap to 2 lines instead
-     of the row wrapping to a second line of buttons. */
+  /* Network tabs (Connections/Circles/Tracking me/I'm tracking): each button
+     now renders its label and count as two FIXED lines (see Network in
+     Connections.jsx) instead of one "Label · N" string, so every button has
+     the same deterministic height regardless of label length or count — no
+     text-wrap-dependent row breaking, no need to scroll. */
   .net-tabs{flex-wrap:nowrap!important;width:100%;}
-  .net-tabs button{flex:1 1 0;min-width:0;padding:7px 4px;font-size:11px;gap:4px;white-space:normal;text-align:center;justify-content:center;line-height:1.15;}
+  .net-tabs button{flex:1 1 0;min-width:0;padding:8px 4px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 }
 
 @media(max-width:480px){

@@ -42,6 +42,9 @@ export default async function handleConnections(req, res, myId) {
           CASE WHEN c.requester_id = ${myId} THEN c.addressee_id
                ELSE c.requester_id END                                  AS user_id,
           up.full_name                                                  AS name,
+          up.username,
+          up.avatar_url,
+          up.avatar_color,
           up.email
         FROM connections c
         JOIN user_profiles up

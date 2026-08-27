@@ -22,7 +22,9 @@ import {
   Zap,
   Target,
   Clock,
-  Share2
+  Share2,
+  ArrowLeft,
+  Home
 } from "lucide-react";
 import {
   getInvestorIciBatch as dbGetInvestorIciBatch
@@ -36,11 +38,12 @@ import {
 } from "../../services/api/recommendationsApi";
 import {
   reactToReco as dbReactToReco,
-  trackReco as dbTrackReco
+  trackReco as dbTrackReco,
+  getMyTrackedRecos as dbGetMyTrackedRecos
 } from "../../services/api/engagementApi";
-import { ConsensusBar, ConvBadge, InstrumentSearch, SparkLine, WidgetHeader } from "../../components/common";
+import { ConsensusBar, ConvBadge, InstrumentSearch, SectionErrorBoundary, SparkLine, WidgetHeader } from "../../components/common";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
-import { useDerivedHoldings, useIsMobile } from "../../hooks/index";
+import { useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
 import { fetchPublicProfileInfo, openProfile } from "../../utils/navigation";
 import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
@@ -357,7 +360,47 @@ function TrackedActivityRow({ item, contacts }) {
 export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoInit, me, contacts }) {
   const [mode, setMode] = useState('yesterday'); // 'yesterday' | 'tracking' — default "Since yesterday" per spec
 
-  const trackedList = useMemo(() => recsReceived.filter(r=>tracked.has(r.id)), [recsReceived, tracked]);
+  // Authoritative tracked-ideas list, fetched from recommendation_tracking
+  // directly (same source the "View all tracked" page uses via
+  // dbGetMyTrackedRecos) — NOT derived by filtering recsReceived/
+  // allFeedRecos against `tracked`. That in-memory pool is bounded to
+  // direct deliveries plus a paginated slice of the public feed, so an
+  // idea tracked from elsewhere (a connection's profile, a group, or one
+  // that's aged out of the feed window) was silently missing from the
+  // widget's count even though it's genuinely tracked.
+  const [trackedRows, setTrackedRows] = useState([]);
+  useEffect(() => {
+    if (!me?.id) { setTrackedRows([]); return; }
+    let cancelled = false;
+    dbGetMyTrackedRecos()
+      .then(rows => { if (!cancelled) setTrackedRows(rows || []); })
+      .catch(() => { if (!cancelled) setTrackedRows([]); });
+    return () => { cancelled = true; };
+  }, [me?.id, tracked.size]);
+
+  // Reshaped to the camelCase idea shape the rest of this widget (and
+  // src/utils/trackedActivity.js) already expects — the API route itself
+  // keeps its original snake_case field names since TrackedSection.jsx
+  // (the full "View all tracked" page) consumes those rows as-is.
+  const trackedList = useMemo(() => trackedRows.map(r => ({
+    id:            r.id,
+    assetName:     r.asset_name,
+    ticker:        r.ticker,
+    assetClass:    r.asset_class,
+    priceAt:       Number(r.reco_price || 0),
+    price:         Number(r.current_price || 0),
+    date:          r.created_at ? String(r.created_at).slice(0, 10) : null,
+    exitSignal:    r.exit_signal,
+    exitDate:      r.exit_date,
+    exitPrice:     r.exit_price ? Number(r.exit_price) : null,
+    targetDate:    r.target_date ? String(r.target_date).slice(0, 10) : null,
+    expiryPrice:   r.expiry_price ? Number(r.expiry_price) : null,
+    commentCount:  Number(r.comment_count || 0),
+    from:          r.recommender_id,
+    from_username: r.recommender_username,
+    invested:      r.is_invested,
+    investedPrice: r.invested_price ? Number(r.invested_price) : null,
+  })), [trackedRows]);
 
   // Phase 9: real "since yesterday" price deltas, read from the persisted
   // instrument daily-price snapshots (never from a market-data provider).
@@ -425,7 +468,7 @@ export function TrackedSummaryWidget({ recsReceived, tracked, setPage, setRecoIn
     dailyPrices,
   }), [trackedList, recsReceived, mode, me?.id, dailyPrices]);
 
-  if (total===0) return (
+  if (tracked.size===0) return (
     <div style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:16,boxShadow:'var(--shadow)',overflow:'hidden',marginBottom:12}}>
       <WidgetHeader icon={TrendingUp} label="My Tracked"/>
       <WidgetEmptyState icon="🎯" setPage={setPage}
@@ -890,18 +933,50 @@ function FeedBrewingState() {
         <span className="feed-brewing-badge feed-brewing-badge-1"><Lightbulb size={15}/></span>
         <span className="feed-brewing-badge feed-brewing-badge-2"><TrendingUp size={15}/></span>
         <span className="feed-brewing-badge feed-brewing-badge-3"><Sparkles size={13}/></span>
-        <svg className="feed-brewing-cup" viewBox="0 0 120 96" width="88" height="70">
-          <path className="feed-brewing-steam feed-brewing-steam-1" d="M46 34 Q40 26 46 18 Q52 10 46 2" fill="none" strokeLinecap="round"/>
-          <path className="feed-brewing-steam feed-brewing-steam-2" d="M60 34 Q54 26 60 18 Q66 10 60 2" fill="none" strokeLinecap="round"/>
-          <path className="feed-brewing-steam feed-brewing-steam-3" d="M74 34 Q68 26 74 18 Q80 10 74 2" fill="none" strokeLinecap="round"/>
-          <ellipse className="feed-brewing-saucer" cx="60" cy="86" rx="38" ry="6"/>
-          <path className="feed-brewing-handle" d="M92 46 Q112 46 112 60 Q112 74 92 74" fill="none" strokeLinecap="round"/>
-          <rect className="feed-brewing-cupbody" x="28" y="40" width="64" height="38" rx="10"/>
-          <ellipse className="feed-brewing-liquid" cx="60" cy="42" rx="29" ry="6"/>
+        <svg className="feed-brewing-cup" viewBox="0 0 160 100" width="128" height="80">
+          <defs>
+            <linearGradient id="feed-brewing-cup-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#8676ff"/>
+              <stop offset="100%" stopColor="#5a49e6"/>
+            </linearGradient>
+          </defs>
+          <path className="feed-brewing-steam feed-brewing-steam-1" d="M52 24 Q46 16 52 8 Q58 0 52 -8" fill="none" strokeLinecap="round"/>
+          <path className="feed-brewing-steam feed-brewing-steam-2" d="M66 24 Q60 16 66 8 Q72 0 66 -8" fill="none" strokeLinecap="round"/>
+          <path className="feed-brewing-steam feed-brewing-steam-3" d="M80 24 Q74 16 80 8 Q86 0 80 -8" fill="none" strokeLinecap="round"/>
+          {/* Modeled on a real cup reference photo: the body is a rounded
+              barrel (not a flat-sided trapezoid) with a light-to-dark
+              gradient standing in for the photo's curved, glazed ceramic,
+              and the handle is a proper closed ring rather than a bare
+              stroke. Recolored into the app's own accent + cream/coffee
+              palette rather than the photo's literal sage-green. No
+              saucer and no foam art — just the cup and the coffee. */}
+          {/* Handle: a closed ring (outer + inner cutout via evenodd), not
+              a bare thick stroke, so it reads as an actual loop you could
+              put a finger through. */}
+          <path className="feed-brewing-handle" fillRule="evenodd" d="
+            M105 52
+            C 138 48, 142 82, 108 86
+            C 130 78, 128 58, 105 62
+            Z"/>
+          {/* Tapered foot (narrower base than rim, rounded corners) — with
+              the saucer removed the cup needs its own grounded silhouette
+              rather than a flat-cut slab bottom. */}
+          <path className="feed-brewing-cupbody" d="
+            M33 46
+            C 30 64, 31 80, 39 89
+            Q 44 96 52 96
+            L 90 96
+            Q 98 96 103 89
+            C 111 80 112 64 109 46
+            Z"/>
+          <ellipse className="feed-brewing-rim-outer" cx="71" cy="46" rx="38" ry="12"/>
+          <ellipse className="feed-brewing-liquid" cx="71" cy="45" rx="32" ry="9"/>
+          {/* Gloss highlight tracing the cup's near edge, like the photo's
+              light catching the left side of the glaze. */}
+          <path className="feed-brewing-gloss" d="M42 54 C 39 68, 39 80, 44 89" fill="none" strokeLinecap="round"/>
         </svg>
       </div>
       <div className="feed-brewing-title">Great ideas from your circle are brewing</div>
-      <div className="feed-brewing-sub muted">We're gathering the latest calls, moves and insights from your network.</div>
       <div className="feed-brewing-bar"><div className="feed-brewing-bar-fill"/></div>
       <div className="feed-brewing-caption muted small">Preparing your feed…</div>
     </div>
@@ -910,16 +985,23 @@ function FeedBrewingState() {
 
 /* ─── HomeFeed — redesigned hero page ──────────────────────────────────────────── */
 
-export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds, setTrackedCreatorIds, initTab, onInitTabConsumed }) {
-  const { total, pnl, pnlPct } = useDerivedHoldings(holdings, configs.allowCryptoAccounts);
+export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecsReceived, configs, holdings, contacts, me, assetClasses, setAssetClasses, groups, recsMade=[], setRecsMade, tracked, toggleTrack, effectiveFeedConfig, networkEngagementRecos, setNetworkEngagementRecos, publicFeedRecos=[], setPublicFeedRecos, feedConfigOptions, userFeedPrefs, setUserFeedPrefs, globalSearch, connections=[], onPeopleConnect, onShowInvite, onOpenSecurity, feedLoading=false, trackedCreatorIds, setTrackedCreatorIds, initTab, onInitTabConsumed }) {
   const firstName = me?.firstName || me?.name?.split(' ')[0] || 'there';
   const [showNewReco,    setShowNewReco]    = useState(false);
-  const [mobileFeedTab,  setMobileFeedTab]  = useState(initTab || 'pulse'); // 'feed' | 'pulse' — Pulse is the default home experience
+  // 'feed' | 'pulse' — Pulse is the default home experience. Drives which
+  // section is visible on BOTH mobile and desktop now: a permanent
+  // side-by-side Pulse+Feed layout on desktop looked cramped and imbalanced
+  // (a narrow widget column squeezed against a full feed) — one focused
+  // section at a time, switched via tabs, is the same fix mobile already
+  // had. Both sections stay mounted regardless of which is visible (see the
+  // display:none toggle below, not conditional rendering) so a widget's own
+  // data fetch / scroll position isn't lost when switching tabs back and forth.
+  const [feedTab,  setFeedTab]  = useState(initTab || 'pulse');
   // One-shot: which tab to land on next, driven by how the user navigated here —
   // the top Home icon always requests 'pulse'; DISCOVER > Ideas in the sidebar
   // requests 'feed' on mobile (see App.jsx's homeInitTab).
   useEffect(() => {
-    if (initTab) { setMobileFeedTab(initTab); onInitTabConsumed && onInitTabConsumed(); }
+    if (initTab) { setFeedTab(initTab); onInitTabConsumed && onInitTabConsumed(); }
   }, [initTab]); // eslint-disable-line react-hooks/exhaustive-deps
   // Merged pool for Pulse widgets: direct deliveries + public platform recommendations
   // Deduped so items already in recsReceived don't appear twice.
@@ -941,7 +1023,7 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
   ).length;
   const pulseCount    = Math.min(pulseCountRaw, 5);
   const pulseBadgeText = pulseCount >= 5 ? '5+' : pulseCount > 0 ? String(pulseCount) : null;
-  const showPulseBadge = !!pulseBadgeText && mobileFeedTab !== 'pulse';
+  const showPulseBadge = !!pulseBadgeText && feedTab !== 'pulse';
   const [loadedCount,  setLoadedCount]  = useState(20);
   const sentinelObsRef = useRef(null);
   // Callback ref (not useRef+useEffect) — the sentinel div is conditionally
@@ -1046,10 +1128,10 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             { id:'pulse', label:'Pulse', sub:'Your daily investment dose' },
             { id:'feed',  label:'Feed',  sub:'Ideas from your network' },
           ].map(({id, label, sub})=>{
-            const isActive = mobileFeedTab === id;
+            const isActive = feedTab === id;
             return (
               <button key={id} role="tab" aria-selected={isActive}
-                onClick={()=>setMobileFeedTab(id)}
+                onClick={()=>setFeedTab(id)}
                 style={{
                   flex:1, height:48, border:'none', borderRadius:10,
                   fontFamily:'var(--font)', cursor:'pointer', transition:'.15s',
@@ -1088,8 +1170,14 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         exact height in the flow and nothing hides underneath. */}
     {isMobile && !showNewReco && <div aria-hidden="true" style={{height:130,flexShrink:0}}/>}
 
-    {/* ── Desktop: normal in-flow header ── */}
-    {!isMobile && (
+    {/* ── Desktop: normal in-flow header + tab switcher ──
+         The small .seg pill row this started as went unnoticed — new users
+         landing on Home never realized Feed was one click away. Now two
+         large, card-style buttons (with the same label+subtitle mobile's
+         tab bar already has) instead of a compact pill, so the tab
+         switcher itself reads as a primary piece of the page, not a minor
+         control easy to skim past. ── */}
+    {!isMobile && (<>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
         <div>
           <div style={{fontSize:22,fontWeight:800,letterSpacing:'-.4px'}}>Welcome back, {firstName}! 👋</div>
@@ -1099,51 +1187,88 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
           <Lightbulb size={14}/> New idea
         </button>
       </div>
-    )}
-    <div style={{display:'flex',gap:22,alignItems:'flex-start'}}>
+      <div role="tablist" style={{display:'flex',gap:14,marginBottom:22}}>
+        {[
+          { id:'pulse', label:'Pulse', sub:'Your daily investment dose' },
+          { id:'feed',  label:'Feed',  sub:'Ideas from your network' },
+        ].map(({id,label,sub})=>{
+          const isActive = feedTab===id;
+          return (
+            <button key={id} role="tab" aria-selected={isActive} onClick={()=>setFeedTab(id)}
+              style={{
+                flex:'0 1 280px', textAlign:'left', cursor:'pointer', fontFamily:'var(--font)',
+                borderRadius:14, padding:'14px 20px', transition:'.15s',
+                border: isActive ? '2px solid var(--accent)' : '1px solid var(--line)',
+                background: isActive ? 'var(--accent-soft)' : 'var(--surface)',
+                boxShadow: isActive ? '0 3px 14px rgba(109,93,245,.15)' : 'none',
+              }}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <span style={{fontSize:16,fontWeight:800,color:isActive?'var(--accent-ink)':'var(--ink)'}}>{label}</span>
+                {id==='pulse' && showPulseBadge && (
+                  <span className="nav-badge" style={{position:'static'}}>{pulseBadgeText}</span>
+                )}
+              </div>
+              <div style={{fontSize:12,color:isActive?'var(--accent-ink)':'var(--muted)',marginTop:2,opacity:isActive?.8:1}}>{sub}</div>
+            </button>
+          );
+        })}
+      </div>
+    </>)}
+    <div>
 
-      {/* ── Pulse column (left, the default home experience): desktop = fixed
-           252px aside; mobile = full-width, shown only on the Pulse tab.
-           Rendered first so it's the left column on desktop. Widget order:
-           Fresh Ideas, Trending, What You Missed, My Tracked. ── */}
-      <div style={{
-        width: isMobile ? '100%' : 252,
-        flexShrink: isMobile ? 1 : 0,
-        display: isMobile && mobileFeedTab==='feed' ? 'none' : undefined,
-      }}>
-        {/* Same "brewing" filler the Feed column shows while the initial
+      {/* ── Pulse section: shown only on the Pulse tab. Mobile = single
+           vertical stack (unchanged); desktop = a 2-column grid now that it
+           has the full page width to itself instead of a squeezed 252px
+           aside, capped at a sensible max-width so it doesn't stretch thin
+           across a very wide monitor. Widget order: Fresh Ideas, Trending,
+           What You Missed, My Tracked. Stays mounted when the Feed tab is
+           active (display:none, not unmounted) so its data fetches and any
+           local state survive switching tabs back and forth. ── */}
+      <div style={{ display: feedTab==='feed' ? 'none' : undefined }}>
+        {/* Same "brewing" filler the Feed section shows while the initial
             post-login data load is in flight — shown here too now that
             Pulse is the default tab, so whichever tab the user lands on
             (or quickly switches to before data arrives) sees it rather
             than a blank widget column. */}
         {feedLoading ? <FeedBrewingState/> : (<>
-        {/* Widget #1 — Fresh Ideas (network + public platform) */}
-        <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
-          setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
-          setPage={setPage}
-          onViewAll={()=>{ if (isMobile) setMobileFeedTab('feed'); }}/>
+        {/* Widget #1 — Fresh Ideas (network + public platform).
+            Each Pulse widget gets its own error boundary so one widget's
+            bug shows a small inline "failed to load" card instead of
+            blanking the whole Pulse section (or, without any boundary
+            above HomeFeed at all, the whole app). Single vertical stack,
+            same as mobile, just spanning the full page width now instead
+            of a narrow 252px aside — a 2-column arrangement (grid or
+            masonry) read as busier and harder to scan than one wide,
+            unhurried column of full-width cards. */}
+        <SectionErrorBoundary label="Fresh Ideas">
+          <FreshIdeasWidget recsReceived={allFeedRecos} contacts={contacts} groups={groups} me={me} tracked={tracked} toggleTrack={toggleTrack}
+            setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos}
+            setPage={setPage}
+            onViewAll={()=>setFeedTab('feed')}/>
+        </SectionErrorBoundary>
 
         {/* Widget #2 — Trending on MIC.
             Fed publicFeedRecos (the platform-wide public pool), not
             allFeedRecos: this is a discovery surface and must be able to
-            show creators the viewer has never encountered. "See all" goes
-            to the Feed, which is where public platform ideas live — on
-            mobile that means switching tabs, on desktop the feed column
-            is now on the right, so we scroll it back to the top. */}
-        <TrendingWidget publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos}
-          contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
-          trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}
-          setPage={setPage}
-          onSeeAll={()=>{
-            if (isMobile) setMobileFeedTab('feed');
-            else window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}/>
+            show creators the viewer has never encountered. "See all"
+            switches to the Feed tab, where public platform ideas live. */}
+        <SectionErrorBoundary label="Trending on MIC">
+          <TrendingWidget publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos}
+            contacts={contacts} me={me} tracked={tracked} toggleTrack={toggleTrack}
+            trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds}
+            setPage={setPage}
+            onSeeAll={()=>setFeedTab('feed')}/>
+        </SectionErrorBoundary>
 
         {/* Widget #3 — What You Missed */}
-        <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} toggleTrack={toggleTrack} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
+        <SectionErrorBoundary label="What You Missed">
+          <WhatYouMissedWidget recsReceived={allFeedRecos} tracked={tracked} toggleTrack={toggleTrack} contacts={contacts} me={me} trackedCreatorIds={trackedCreatorIds} setPage={setPage}/>
+        </SectionErrorBoundary>
 
         {/* Widget #4 — Tracked Summary Donut (My Tracked) */}
-        <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
+        <SectionErrorBoundary label="My Tracked">
+          <TrackedSummaryWidget recsReceived={allFeedRecos} tracked={tracked} setPage={setPage} setRecoInit={setRecoInit} me={me} contacts={contacts}/>
+        </SectionErrorBoundary>
         </>)}
 
         {/* ── Market Insights + Invite Friends — compact, side-by-side clickable
@@ -1151,7 +1276,15 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
              matches the page's actual current name (App.jsx's nav already
              calls it that — "Market Intelligence" was the old name, stale
              only here). ── */}
-        <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:12}}>
+        <div style={{display:'flex',gap:10,flexWrap:'nowrap',marginTop:isMobile?0:16,marginBottom:12}}>
+          <div onClick={()=>setFeedTab('feed')}
+            style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+            <Lightbulb size={15} color="var(--accent-ink)"/>
+            <div style={{fontWeight:800,fontSize:12,marginTop:6}}>Feed</div>
+            <div style={{fontSize:10.5,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>Ideas from your network</div>
+          </div>
           <div onClick={()=>setPage('market_intel')}
             style={{flex:'1 1 140px',cursor:'pointer',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:14,padding:'12px 14px',transition:'.12s'}}
             onMouseEnter={e=>e.currentTarget.style.boxShadow='0 3px 14px rgba(20,20,50,.08)'}
@@ -1171,11 +1304,8 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
         </div>
       </div>
 
-      {/* ── Feed column (right): JS-controlled visibility on mobile ── */}
-      <div style={{
-        flex:1, minWidth:0,
-        display: isMobile && mobileFeedTab==='pulse' ? 'none' : undefined,
-      }}>
+      {/* ── Feed section: shown only on the Feed tab, full page width. ── */}
+      <div style={{ display: feedTab==='pulse' ? 'none' : undefined }}>
 
         {/* Feed cards — searched via top nav bar */}
         {feedLoading && !globalSearch
@@ -1196,8 +1326,10 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
             </div>
           : (<>
               {visibleFeed.map(r=>(
-                <FeedCard key={r.id} r={r} me={me} contacts={contacts} groups={groups}
-                  setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} tracked={tracked} toggleTrack={toggleTrack} onOpenSecurity={onOpenSecurity}/>
+                <SectionErrorBoundary key={r.id} label="This idea">
+                  <FeedCard r={r} me={me} contacts={contacts} groups={groups}
+                    setRecsReceived={setRecsReceived} setPublicFeedRecos={setPublicFeedRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} tracked={tracked} toggleTrack={toggleTrack} onOpenSecurity={onOpenSecurity}/>
+                </SectionErrorBoundary>
               ))}
               {!globalSearch && loadedCount < feedRecs.length && (
                 <div ref={sentinelRef} style={{height:8,textAlign:'center',padding:'12px 0',color:'var(--muted)',fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
@@ -1219,8 +1351,9 @@ export function HomeFeed({ isMobile, setPage, setRecoInit, recsReceived, setRecs
       <MakeRecoModal
         assetClasses={assetClasses} setAssetClasses={setAssetClasses}
         contacts={contacts} groups={groups} holdings={holdings} me={me}
+        recsMade={recsMade}
         onClose={()=>setShowNewReco(false)}
-        onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); setShowNewReco(false); }}
+        onCreate={(rec)=>{ setRecsMade(rs=>[rec,...rs]); }}
       />
     )}
   </>
@@ -1799,7 +1932,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
    SECURITY INTELLIGENCE
    ═══════════════════════════════════════════════════════════════════ */
 
-export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity }) {
+export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity, onBack, onHome }) {
   const isMobile = useIsMobile();
   const { ticker, name } = securityTicker || {};
   const [recos, setRecos]     = useState([]);
@@ -1875,6 +2008,16 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
     return { months, convMap, firstDate, total:recos.length, active:activeR.length, exited:exitedR.length };
   },[recos]);
 
+  // Shown whenever this page was reached via a drill-down (a holding card,
+  // a reco card's "Stock Insights" link, etc.) so there's always a quick
+  // way back to where the user came from, not just the top-nav Home icon.
+  const backHomeButtons = (onBack || onHome) && (
+    <div style={{display:'flex',gap:6,flexShrink:0}}>
+      {onBack && <button className="btn btn-ghost btn-sm" onClick={onBack} title="Go back"><ArrowLeft size={13}/> Back</button>}
+      {onHome && <button className="btn btn-ghost btn-sm" onClick={onHome} title="Home"><Home size={13}/> Home</button>}
+    </div>
+  );
+
   if (!ticker) return (
     <>
       <div className="page-head">
@@ -1882,6 +2025,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           <div className="eyebrow">Insights</div>
           <div className="page-title">Stock Insights</div>
         </div>
+        {backHomeButtons}
       </div>
 
       {/* ── Discovery landing ── */}
@@ -1967,6 +2111,8 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           <div className="page-sub">{activeRecos.length} active idea{activeRecos.length!==1?'s':''} · {investors.length} investor{investors.length!==1?'s':''} tracking</div>
         </div>
 
+        {backHomeButtons}
+
         {/* ── Switch-security search — compact, tucked into the header's empty space.
              On mobile there's no spare width, so it starts collapsed to an icon. ── */}
         {isMobile ? (
@@ -2003,11 +2149,15 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
         background:'var(--surface-2)', border:'1px solid var(--line)', borderRadius:14, padding:5,
       }}>
         {[
+          /* eslint-disable react/jsx-key -- lookup-table tuples destructured
+             by the .map() below, never rendered as an array themselves; the
+             actual rendered element (the <button> below) already has a key. */
           ['consensus', 'Consensus',    <Activity size={15}/> ],
-          ['timeline',  'Rec. History', <Clock size={15}/>    ],
+          ['timeline',  'Idea History', <Clock size={15}/>    ],
           ['investors', 'Investors',    <Users size={15}/>    ],
           ['stats',     'Statistics',   <BarChart2 size={15}/>],
           ['ai',        'AI Summary',   <Sparkles size={15}/>],
+          /* eslint-enable react/jsx-key */
         ].map(([v,l,icon])=>(
           <button key={v}
             onClick={()=>{ setTab(v); if(v==='ai') buildAiSummary(); }}

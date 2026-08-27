@@ -59,6 +59,7 @@ import { pathToFileURL } from 'url';
 import {
   fetchDailySeries,
   fetchPrice,
+  fetchFundDailySeriesByIsin,
   mapWithConcurrency,
 } from '../api/_lib/priceProvider.js';
 
@@ -102,6 +103,15 @@ const SERIES_RANGE = '7d';
 const IN_SCOPE_ASSET_CLASSES = ['Equity', 'ETF'];
 const IN_SCOPE_SET = new Set(IN_SCOPE_ASSET_CLASSES.map(c => c.toLowerCase()));
 function isInScope(assetClass) { return IN_SCOPE_SET.has(String(assetClass || '').trim().toLowerCase()); }
+
+// Mutual funds are priced through a completely separate identity/provider
+// path (ISIN -> Yahoo search -> Yahoo chart, see runFundPricing() below),
+// not the ticker+exchange path IN_SCOPE_ASSET_CLASSES gates — a fund has no
+// exchange ticker at all. This is just the asset_class label the minted
+// `instruments` rows and instrument_daily_prices snapshots carry, matching
+// src/constants/app.js's DEFAULT_CLASSES so the same label means the same
+// thing everywhere in the app.
+const FUND_ASSET_CLASS = 'Mutual Funds';
 
 // Exchange fallback order for sourcing a price. NSE is deeper/more liquid and
 // is this app's default everywhere else, so it is tried first for every
@@ -210,14 +220,37 @@ export async function resolvePrice(symbol, exchange, isoDate, bhavMap) {
 
 // ── Task 1 support: the active-instrument universe ────────────────────────────
 /**
- * Every DISTINCT instrument referenced by at least one currently-active idea.
+ * Every DISTINCT instrument referenced by at least one currently-active idea,
+ * PLUS every instrument referenced by an idea that's still being tracked by
+ * at least one user even though the idea itself is closed/expired.
  *
  * "Active" is this codebase's existing lifecycle rule, unchanged:
  *     NOT exit_signal AND (target_date IS NULL OR target_date >= CURRENT_DATE)
  *
+ * The tracked-but-closed half exists because My Tracked's "since yesterday"
+ * daily deltas (api/_lib/handlers/pricing.js `action=daily`, read from
+ * instrument_daily_prices) go stale the moment a ticker drops out of this
+ * universe — and before this addition, a ticker whose ONLY ideas had all
+ * been closed by their recommenders dropped out immediately, even for users
+ * still actively tracking one of those closed ideas. Users don't stop
+ * caring about a stock's daily move just because the recommender exited it.
+ * current_price on the underlying idea is deliberately NOT touched by this
+ * addition — Task 1's UPDATE below still re-applies the exit_signal/
+ * target_date filter itself, so a tracked-but-closed idea's current_price
+ * stays frozen at whatever it was, exactly as before.
+ *
  * Dedup happens in SQL on (UPPER(TRIM(ticker)), asset_class) — NOT exchange —
  * so a stock referenced by 50 ideas across both NSE and BSE tags appears
  * exactly ONCE, and is therefore fetched exactly once.
+ *
+ * ALSO includes every Stock/ETF ticker held in ANYONE's portfolio
+ * (portfolio_holdings), even one with zero recommendations ever made or
+ * tracked on it — otherwise a ticker a user only ever added manually to
+ * their portfolio (never recommended, never tracked) would never enter the
+ * universe at all, and Portfolio Intelligence would have no batch price to
+ * read for it. These rows contribute 0 to active_idea_count (portfolio
+ * holdings aren't "ideas"); that count is ordering/logging only, never a
+ * filter.
  *
  * ALL asset classes are returned; the caller splits them, so an out-of-scope
  * class is still refreshed on ic_recommendations and merely skips the history
@@ -225,18 +258,66 @@ export async function resolvePrice(symbol, exchange, isoDate, bhavMap) {
  */
 async function getActiveInstrumentUniverse(db) {
   const { rows } = await db.query(`
+    WITH reco_universe AS (
+      SELECT
+        UPPER(TRIM(r.ticker))                               AS symbol,
+        COALESCE(NULLIF(TRIM(r.asset_class), ''), 'Equity') AS asset_class,
+        NULLIF(TRIM(r.asset_name), '')                      AS asset_name,
+        (r.exit_signal = false AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE)) AS is_active
+      FROM ic_recommendations r
+      WHERE r.ticker IS NOT NULL
+        AND TRIM(r.ticker) <> ''
+        AND (
+          (r.exit_signal = false AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE))
+          OR EXISTS (SELECT 1 FROM recommendation_tracking rt WHERE rt.reco_id = r.id)
+        )
+    ),
+    portfolio_universe AS (
+      SELECT
+        UPPER(TRIM(h.sym))                          AS symbol,
+        CASE WHEN h.type = 'ETF' THEN 'ETF' ELSE 'Equity' END AS asset_class,
+        NULLIF(TRIM(h.name), '')                    AS asset_name,
+        false                                        AS is_active
+      FROM portfolio_holdings h
+      WHERE h.type IN ('Stock', 'ETF')
+        AND h.sym IS NOT NULL
+        AND TRIM(h.sym) <> ''
+    ),
+    combined AS (
+      SELECT * FROM reco_universe
+      UNION ALL
+      SELECT * FROM portfolio_universe
+    )
     SELECT
-      UPPER(TRIM(ticker))                                AS symbol,
-      COALESCE(NULLIF(TRIM(asset_class), ''), 'Equity')  AS asset_class,
-      MIN(NULLIF(TRIM(asset_name), ''))                  AS asset_name,
-      COUNT(*)::int                                      AS active_idea_count
-    FROM ic_recommendations
-    WHERE ticker IS NOT NULL
-      AND TRIM(ticker) <> ''
-      AND exit_signal = false
-      AND (target_date IS NULL OR target_date >= CURRENT_DATE)
+      symbol, asset_class,
+      MIN(asset_name)                       AS asset_name,
+      COUNT(*) FILTER (WHERE is_active)::int AS active_idea_count
+    FROM combined
     GROUP BY 1, 2
     ORDER BY active_idea_count DESC, symbol ASC
+  `);
+  return rows;
+}
+
+/**
+ * Every DISTINCT mutual fund ISIN held in ANYONE's portfolio
+ * (portfolio_holdings.type = 'Fund'). CAS-imported fund holdings carry an
+ * ISIN (see api/cas.py); manually-added fund holdings may not, and are
+ * simply excluded here — there is no ISIN to resolve a Yahoo symbol from,
+ * same rule the ticker-based universe already applies (a symbol/identity it
+ * can't fetch on is dropped rather than guessed at).
+ */
+async function getFundInstrumentUniverse(db) {
+  const { rows } = await db.query(`
+    SELECT
+      UPPER(TRIM(h.isin))                   AS isin,
+      MIN(NULLIF(TRIM(h.name), ''))         AS name
+    FROM portfolio_holdings h
+    WHERE h.type = 'Fund'
+      AND h.isin IS NOT NULL
+      AND TRIM(h.isin) <> ''
+    GROUP BY 1
+    ORDER BY 1
   `);
   return rows;
 }
@@ -417,6 +498,91 @@ async function persistSnapshots(db, rows) {
   return rows.length;
 }
 
+// ── Task 2 support: notifications ──────────────────────────────────────────
+/**
+ * Notify everyone with a stake in a just-expired idea — its delivery
+ * recipients AND anyone tracking it (recommendation_tracking), unioned so
+ * nobody who cares about the idea is missed and nobody is double-notified.
+ * Called once per idea, right after its expiry_price is successfully
+ * stamped — Task 2's own WHERE (`expiry_price IS NULL`) guarantees a given
+ * idea only reaches this once, ever, so there's no separate dedup needed
+ * here the way notifyIdeasExpiringToday() needs one below.
+ *
+ * This script runs standalone in GitHub Actions (see the file header) with
+ * only NEON_DATABASE_URL available — no RESEND_API_KEY/VAPID secrets — so
+ * this writes the in-app `notifications` row only, the same row every other
+ * notification in this app is built from (src/db.js getMyNotifications).
+ * Push/email fan-out for these rows can be layered on later once this job
+ * is given those secrets, same as the interactive API handlers already do.
+ */
+async function notifyIdeaExpired(db, recId) {
+  const { rows: recRows } = await db.query(`
+    SELECT r.ticker, r.asset_name, r.recommender_id,
+           up.username AS recommender_username, up.full_name AS recommender_name
+    FROM ic_recommendations r
+    JOIN user_profiles up ON up.id = r.recommender_id
+    WHERE r.id = $1
+  `, [recId]);
+  const rec = recRows[0];
+  if (!rec) return;
+
+  const { rows: recipients } = await db.query(`
+    SELECT delivered_to_user_id AS user_id FROM recommendation_deliveries WHERE recommendation_id = $1
+    UNION
+    SELECT user_id FROM recommendation_tracking WHERE reco_id = $1
+  `, [recId]);
+  if (!recipients.length) return;
+
+  const metadata = JSON.stringify({
+    ticker: rec.ticker,
+    assetName: rec.asset_name,
+    recoId: recId,
+    recommenderUsername: rec.recommender_username,
+    recommenderName: rec.recommender_name,
+  });
+  for (const { user_id } of recipients) {
+    if (user_id === rec.recommender_id) continue; // the recommender doesn't need "an idea you track expired" about their own idea
+    await db.query(
+      `INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
+       VALUES ($1, 'idea_expired', $2, $3, $4)`,
+      [user_id, rec.recommender_id, recId, metadata]
+    );
+  }
+}
+
+/**
+ * Same-day heads-up to a recommender: "your idea expires today." Unlike
+ * notifyIdeaExpired() this has no natural one-shot guard from the price
+ * columns (expiry_price isn't stamped until the day AFTER target_date, once
+ * that close is available), so a NOT EXISTS check against previously-sent
+ * notifications makes this idempotent across manual re-runs / same-day retries.
+ */
+async function notifyIdeasExpiringToday(db) {
+  const { rows } = await db.query(`
+    SELECT r.id, r.ticker, r.asset_name, r.recommender_id, up.username AS recommender_username
+    FROM ic_recommendations r
+    JOIN user_profiles up ON up.id = r.recommender_id
+    WHERE r.target_date = CURRENT_DATE
+      AND r.exit_signal = false
+      AND NOT EXISTS (
+        SELECT 1 FROM notifications n
+        WHERE n.type = 'idea_expiring_today' AND n.reference_id = r.id::text AND n.user_id = r.recommender_id
+      )
+  `);
+  for (const rec of rows) {
+    const metadata = JSON.stringify({
+      ticker: rec.ticker, assetName: rec.asset_name, recoId: rec.id,
+      recommenderUsername: rec.recommender_username,
+    });
+    await db.query(
+      `INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
+       VALUES ($1, 'idea_expiring_today', NULL, $2, $3)`,
+      [rec.recommender_id, rec.id, metadata]
+    );
+  }
+  console.log(`  ${rows.length} recommender(s) notified their idea expires today`);
+}
+
 /**
  * TASK 1 — the consolidated live-price refresh.
  *
@@ -444,7 +610,7 @@ async function persistSnapshots(db, rows) {
  */
 async function runTask1(db, bhavMap) {
   const allGroups = await getActiveInstrumentUniverse(db);
-  console.log(`  Found ${allGroups.length} distinct active instrument(s) across all asset classes`);
+  console.log(`  Found ${allGroups.length} distinct active-or-tracked instrument(s) across all asset classes`);
 
   const inScope  = allGroups.filter(g => isInScope(g.asset_class));
   const excluded = allGroups.filter(g => !isInScope(g.asset_class));
@@ -525,6 +691,85 @@ async function runTask1(db, bhavMap) {
   return { instruments: entries.length, priced: pricedInstruments, failed: failedInstruments, updatedRecos, stored, priceMap };
 }
 
+/**
+ * Resolve ONE mutual fund's NAV series via its ISIN. Returns null (not a
+ * throw) on any failure — Yahoo not covering a given fund, or the ISIN not
+ * resolving to a symbol at all, is an ordinary outcome (same as an
+ * equity/ETF the provider chain can't price), not a run-stopping error.
+ */
+async function resolveFundPrice(isin) {
+  try {
+    const { series, currency, yahooSymbol } = await fetchFundDailySeriesByIsin(isin, SERIES_RANGE);
+    const latest = series[series.length - 1];
+    const prev   = series.length > 1 ? series[series.length - 2] : null;
+    return { date: latest.date, close: latest.close, currency: currency || 'INR', source: 'yahoo_finance', sourceExchange: null, prev, yahooSymbol };
+  } catch (e) {
+    console.warn(`  [fund] ${isin}: ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * TASK 1b — mutual fund NAV pricing, ISIN-based.
+ *
+ * A parallel, standalone version of Task 1's "mint instrument rows -> fetch
+ * once -> persist snapshots" shape, but for portfolio-held mutual funds:
+ *   - identity is (ISIN, 'Mutual Funds') instead of (ticker, asset_class) —
+ *     funds have no exchange ticker, so ISIN is the only stable identifier
+ *     CAS statements give us (see api/cas.py);
+ *   - the fetch is Yahoo-search-by-ISIN -> Yahoo chart, not the NSE/BSE
+ *     ticker candidate chain;
+ *   - there is no `current_price` side to update — ic_recommendations rows
+ *     are never keyed by ISIN, so unlike Task 1 this only ever writes
+ *     instrument_daily_prices, read back by Portfolio Intelligence via the
+ *     same getDailyPrices()/priceKey() plumbing every other holding uses,
+ *     keyed by the holding's ISIN instead of its ticker for Fund-type rows.
+ */
+async function runFundPricing(db) {
+  const universe = await getFundInstrumentUniverse(db);
+  console.log(`  Found ${universe.length} distinct mutual fund ISIN(s) held in portfolios`);
+  if (!universe.length) return { total: 0, priced: 0, failed: 0, stored: 0 };
+
+  const canonical = await resolveInstruments(
+    db,
+    universe.map(u => ({ symbol: u.isin, asset_class: FUND_ASSET_CLASS, asset_name: u.name }))
+  );
+  const byIsin = new Map(canonical.map(c => [c.symbol, c]));
+
+  const settled = await mapWithConcurrency(universe, FETCH_CONCURRENCY, u => resolveFundPrice(u.isin));
+
+  let priced = 0, failed = 0;
+  const snapshots = [];
+  for (const outcome of settled) {
+    if (!outcome) continue;
+    const { item, value, error } = outcome;
+    if (error || !value || !(value.close > 0)) {
+      failed++;
+      if (error) console.warn(`  Failed fund ${item.isin}: ${error.message}`);
+      continue;
+    }
+    const inst = byIsin.get(item.isin);
+    if (!inst) { failed++; continue; }
+    priced++;
+    snapshots.push({
+      instrumentId:   inst.id,
+      date:           value.date,
+      close:          value.close,
+      currency:       value.currency || 'INR',
+      source:         value.source,
+      sourceExchange: value.sourceExchange,
+      prevClose:      value.prev ? value.prev.close : null,
+      prevDate:       value.prev ? value.prev.date  : null,
+    });
+  }
+
+  await backfillPrevFromDb(db, snapshots);
+  const stored = await persistSnapshots(db, snapshots);
+  console.log(`  Done: ${priced} mutual fund(s) priced, ${failed} failed`);
+  console.log(`        ${stored} instrument_daily_prices row(s) upserted (Mutual Funds, ISIN-based)`);
+  return { total: universe.length, priced, failed, stored };
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log(`\n=== InvestorCircle Price Stamp — ${TODAY_ISO} ===\n`);
@@ -549,6 +794,13 @@ async function main() {
   // "now", it cannot answer for a date that isn't today.
   console.log('\n[Task 1] Refreshing current_price for active recommendations and collecting instrument price history…');
   const task1 = await runTask1(db, bhavMap);
+
+  // Task 1b: mutual fund NAVs for portfolio holdings, ISIN-based — see
+  // runFundPricing()'s header for why this is a separate task rather than
+  // folded into Task 1 (different identity, different provider path, no
+  // current_price side-effect).
+  console.log('\n[Task 1b] Refreshing mutual fund NAVs (ISIN-based) for portfolio holdings…');
+  const fundTask = await runFundPricing(db);
 
   // Task 0: stamp reco_price for recommendations published without a price
   console.log('\n[Task 0] Stamping reco_price for new recommendations missing entry price…');
@@ -634,6 +886,7 @@ async function main() {
           [reused.close, reused.source, rec.id]
         );
         expStamped++; expFromTask1++;
+        await notifyIdeaExpired(db, rec.id).catch(e => console.warn(`  Failed expiry notification ${rec.ticker}: ${e.message}`));
       } catch (e) { console.warn(`  Failed expiry ${rec.ticker}: ${e.message}`); }
     } else {
       expiringToFetch.push(rec);
@@ -656,9 +909,17 @@ async function main() {
         [result.price, result.source, rec.id]
       );
       expStamped++;
+      await notifyIdeaExpired(db, rec.id).catch(e => console.warn(`  Failed expiry notification ${rec.ticker}: ${e.message}`));
     } catch (e) { console.warn(`  Failed expiry ${rec.ticker}: ${e.message}`); }
   }
   console.log(`  Done: ${expStamped} expiry prices stamped (${expFromTask1} reused from Task 1, ${expStamped - expFromTask1} fetched)`);
+
+  // Same-day heads-up: recommenders whose idea's target_date is today get
+  // notified now, before expiry_price even exists for it (that's stamped on
+  // a LATER run once the day's close is available) — see
+  // notifyIdeasExpiringToday()'s header for why this needs its own dedup.
+  console.log('\n[Task 2b] Notifying recommenders whose idea expires today…');
+  await notifyIdeasExpiringToday(db).catch(e => console.warn(`  Failed expiring-today notifications: ${e.message}`));
 
   // Task 3: backfill exit_price for exited recommendations missing it
   console.log('\n[Task 3] Backfilling missing exit prices…');
@@ -689,13 +950,15 @@ async function main() {
   console.log(`  Instruments priced       : ${task1.priced} / ${task1.instruments} (${task1.failed} failed)`);
   console.log(`  Active current_price set : ${task1.updatedRecos}`);
   console.log(`  Price-history rows       : ${task1.stored}`);
+  console.log(`  Mutual funds priced      : ${fundTask.priced} / ${fundTask.total} (${fundTask.failed} failed)`);
+  console.log(`  Fund price-history rows  : ${fundTask.stored}`);
   console.log(`  Expiry stamped           : ${expStamped}`);
   console.log(`  Exit backfilled          : ${exitStamped}`);
 }
 
 // Exported for local/offline validation harnesses; the CLI entry point below
 // is what GitHub Actions runs.
-export { runTask1, getActiveInstrumentUniverse, resolveInstruments, resolveInstrumentPrice, backfillPrevFromDb, persistSnapshots, isInScope, exchangesFor };
+export { runTask1, runFundPricing, getActiveInstrumentUniverse, getFundInstrumentUniverse, resolveInstruments, resolveInstrumentPrice, resolveFundPrice, backfillPrevFromDb, persistSnapshots, isInScope, exchangesFor, notifyIdeaExpired, notifyIdeasExpiringToday };
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {

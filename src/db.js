@@ -102,8 +102,8 @@ export async function callApi(path, { method = "GET", body } = {}) {
  * Load all connections for the current user (all statuses).
  * Returns an array ready to use as the `connections` React state.
  *
- * Each element:
- *   { connectionId, userId, name, email, status, direction }
+ * Each element (raw SQL row shape — NOT camelCased, see connections.js):
+ *   { connection_id, user_id, name, username, avatar_url, avatar_color, email, status, direction }
  *   direction: 'sent' = I requested | 'received' = they requested
  */
 export async function getMyConnections(myId) {
@@ -186,15 +186,15 @@ export async function getTrackingCounts() {
   return api.ok ? { trackersCount: api.data.trackersCount || 0, trackingCount: api.data.trackingCount || 0 } : { trackersCount: 0, trackingCount: 0 };
 }
 
-/** Paginated "Tracking me" list — people who track the current user. sort: 'date_desc'(default)|'date_asc'|'name_asc'|'name_desc'. */
-export async function getMyTrackers(limit=20, offset=0, sort='date_desc') {
-  const api = await callApi(`/data?resource=tracking&action=trackers&limit=${limit}&offset=${offset}&sort=${sort}`);
+/** Paginated "Tracking me" list — people who track the current user. sort: 'date_desc'(default)|'date_asc'|'name_asc'|'name_desc'. q: optional name/username search. */
+export async function getMyTrackers(limit=20, offset=0, sort='date_desc', q='') {
+  const api = await callApi(`/data?resource=tracking&action=trackers&limit=${limit}&offset=${offset}&sort=${sort}&q=${encodeURIComponent(q)}`);
   return api.ok ? { people: api.data.people || [], hasMore: !!api.data.hasMore } : { people: [], hasMore: false };
 }
 
-/** Paginated "I'm tracking" list — people the current user tracks. sort: 'date_desc'(default)|'date_asc'|'name_asc'|'name_desc'. */
-export async function getMyTrackingList(limit=20, offset=0, sort='date_desc') {
-  const api = await callApi(`/data?resource=tracking&action=tracking-list&limit=${limit}&offset=${offset}&sort=${sort}`);
+/** Paginated "I'm tracking" list — people the current user tracks. sort: 'date_desc'(default)|'date_asc'|'name_asc'|'name_desc'. q: optional name/username search. */
+export async function getMyTrackingList(limit=20, offset=0, sort='date_desc', q='') {
+  const api = await callApi(`/data?resource=tracking&action=tracking-list&limit=${limit}&offset=${offset}&sort=${sort}&q=${encodeURIComponent(q)}`);
   return api.ok ? { people: api.data.people || [], hasMore: !!api.data.hasMore } : { people: [], hasMore: false };
 }
 
@@ -449,25 +449,6 @@ export async function markNotifRead(notifId, userId) {
 /** Mark all notifications as read for a user. */
 export async function markAllNotifRead(userId) {
   const api = await callApi("/data?resource=notifications", { method: "POST", body: { action: "mark-all-read" } });
-  if (api.ok || api.denied) return;
-  return;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SHARING PREFERENCES
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Load all sharing preferences for a user as { targetId → {visibility, level, selected} }. */
-export async function getSharingPrefs(userId) {
-  const api = await callApi("/data?resource=sharing-prefs");
-  if (api.ok) return api.data.prefs || {};
-  if (api.denied) return {};
-  return {};
-}
-
-/** Save (upsert) a sharing preference for one target. */
-export async function upsertSharingPref(userId, targetId, targetType, prefs) {
-  const api = await callApi("/data?resource=sharing-prefs", { method: "POST", body: { targetId, targetType, prefs } });
   if (api.ok || api.denied) return;
   return;
 }

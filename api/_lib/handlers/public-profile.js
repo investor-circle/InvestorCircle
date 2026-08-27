@@ -41,24 +41,30 @@ export default async function handlePublicProfile(req, res) {
     if (!users[0]) { res.status(404).json({ error: 'not_found' }); return; }
     const userId = users[0].id;
 
-    const summary = await sql`
-      SELECT
-        COUNT(*)                                                   AS total,
-        COUNT(CASE WHEN NOT exit_signal
-                        AND (target_date IS NULL OR target_date >= CURRENT_DATE)
-                   THEN 1 END)                                     AS active,
-        COUNT(CASE WHEN exit_signal THEN 1 END)                   AS closed,
-        COUNT(CASE WHEN NOT exit_signal
-                        AND target_date IS NOT NULL
-                        AND target_date < CURRENT_DATE
-                   THEN 1 END)                                     AS expired,
-        ROUND(EXTRACT(EPOCH FROM (now() - MIN(created_at))) / 86400 / 365, 1) AS years_history
-      FROM ic_recommendations
-      WHERE recommender_id = ${userId} AND is_public = true
-    `;
-    const sumRow = summary[0] || {};
-
-    const live = await sql`
+    // Everything below depends only on userId (resolved above), not on each
+    // other's results — the neon() HTTP driver sends each `sql` call as its
+    // own request, so awaiting them one at a time serializes 8 independent
+    // network round-trips end to end. Running them concurrently cuts total
+    // handler latency to roughly the slowest single query instead of their
+    // sum, which is the dominant cost in how long a freshly-posted reco's
+    // page takes to open.
+    const [summary, live, bestLive, worstLive, realized, bestClosed, sectors, recos] = await Promise.all([
+      sql`
+        SELECT
+          COUNT(*)                                                   AS total,
+          COUNT(CASE WHEN NOT exit_signal
+                          AND (target_date IS NULL OR target_date >= CURRENT_DATE)
+                     THEN 1 END)                                     AS active,
+          COUNT(CASE WHEN exit_signal THEN 1 END)                   AS closed,
+          COUNT(CASE WHEN NOT exit_signal
+                          AND target_date IS NOT NULL
+                          AND target_date < CURRENT_DATE
+                     THEN 1 END)                                     AS expired,
+          ROUND(EXTRACT(EPOCH FROM (now() - MIN(created_at))) / 86400 / 365, 1) AS years_history
+        FROM ic_recommendations
+        WHERE recommender_id = ${userId} AND is_public = true
+      `,
+      sql`
       SELECT
         COUNT(*)                                                   AS active_count,
         COUNT(CASE WHEN
@@ -80,8 +86,8 @@ export default async function handlePublicProfile(req, res) {
       WHERE recommender_id = ${userId} AND is_public = true
         AND NOT exit_signal
         AND (target_date IS NULL OR target_date >= CURRENT_DATE)
-    `;
-    const bestLive = await sql`
+    `,
+      sql`
       SELECT ticker, asset_name,
         CASE recommendation_type
           WHEN 'Sell' THEN ROUND(((COALESCE(reco_price,0) - COALESCE(current_price, reco_price, 0)) / NULLIF(reco_price,0) * 100)::numeric, 2)
@@ -91,8 +97,8 @@ export default async function handlePublicProfile(req, res) {
       WHERE recommender_id = ${userId} AND is_public = true
         AND NOT exit_signal AND (target_date IS NULL OR target_date >= CURRENT_DATE)
       ORDER BY ret_pct DESC LIMIT 1
-    `;
-    const worstLive = await sql`
+    `,
+      sql`
       SELECT ticker, asset_name,
         CASE recommendation_type
           WHEN 'Sell' THEN ROUND(((COALESCE(reco_price,0) - COALESCE(current_price, reco_price, 0)) / NULLIF(reco_price,0) * 100)::numeric, 2)
@@ -102,9 +108,8 @@ export default async function handlePublicProfile(req, res) {
       WHERE recommender_id = ${userId} AND is_public = true
         AND NOT exit_signal AND (target_date IS NULL OR target_date >= CURRENT_DATE)
       ORDER BY ret_pct ASC LIMIT 1
-    `;
-
-    const realized = await sql`
+    `,
+      sql`
       WITH closed_rets AS (
         SELECT
           CASE recommendation_type
@@ -126,8 +131,8 @@ export default async function handlePublicProfile(req, res) {
         ROUND((AVG(ret_pct) / NULLIF(STDDEV_POP(ret_pct), 0))::numeric, 2)                       AS risk_adjusted_return,
         ROUND(AVG(hold_days)::numeric, 0)                     AS avg_holding_days
       FROM closed_rets
-    `;
-    const bestClosed = await sql`
+    `,
+      sql`
       SELECT ticker, asset_name,
         ROUND((CASE recommendation_type
           WHEN 'Sell' THEN (COALESCE(reco_price,0) - COALESCE(exit_price, current_price, reco_price, 0)) / NULLIF(reco_price,0) * 100
@@ -136,9 +141,8 @@ export default async function handlePublicProfile(req, res) {
       FROM ic_recommendations
       WHERE recommender_id = ${userId} AND is_public = true AND exit_signal = true
       ORDER BY ret_pct DESC LIMIT 1
-    `;
-
-    const sectors = await sql`
+    `,
+      sql`
       SELECT
         COALESCE(sector, 'Uncategorised')                      AS sector,
         COUNT(*)                                               AS total_recs,
@@ -167,13 +171,13 @@ export default async function handlePublicProfile(req, res) {
       WHERE recommender_id = ${userId} AND is_public = true
       GROUP BY COALESCE(sector, 'Uncategorised')
       ORDER BY total_recs DESC
-    `;
-
-    const recos = await sql`
+    `,
+      sql`
       SELECT
         r.id, r.ticker, r.asset_name, r.asset_class,
         r.recommendation_type, r.sector, r.conviction,
         r.reco_price, r.current_price, r.exit_price,
+        r.expiry_price, r.expiry_price_source,
         r.target_price, r.stop_loss,
         r.horizon, r.target_date, r.thesis,
         r.exit_signal, r.exit_date, r.is_public, r.created_at,
@@ -182,11 +186,22 @@ export default async function handlePublicProfile(req, res) {
           WHEN r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE           THEN 'Expired'
           ELSE                                                                           'Active'
         END AS status,
+        -- Exited wins over expired when both apply (a deliberate exit is a
+        -- stronger signal than the passive target-date clock). An expired-
+        -- but-not-exited idea's return freezes at expiry_price, the actual
+        -- close on its target date — falling through to current_price here
+        -- would silently keep moving the "return" of an idea that's no
+        -- longer being tracked against a live thesis.
         ROUND((CASE
           WHEN r.exit_signal THEN
             CASE r.recommendation_type
               WHEN 'Sell' THEN (COALESCE(r.reco_price,0) - COALESCE(r.exit_price, r.current_price, r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
               ELSE             (COALESCE(r.exit_price, r.current_price, r.reco_price,0) - COALESCE(r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+            END
+          WHEN r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE THEN
+            CASE r.recommendation_type
+              WHEN 'Sell' THEN (COALESCE(r.reco_price,0) - COALESCE(r.expiry_price, r.current_price, r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+              ELSE             (COALESCE(r.expiry_price, r.current_price, r.reco_price,0) - COALESCE(r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
             END
           ELSE
             CASE r.recommendation_type
@@ -196,16 +211,19 @@ export default async function handlePublicProfile(req, res) {
         END)::numeric, 2)                                        AS return_pct,
         CASE
           WHEN r.exit_signal THEN COALESCE(r.exit_date::date, CURRENT_DATE) - r.created_at::date
+          WHEN r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE THEN r.target_date::date - r.created_at::date
           ELSE CURRENT_DATE - r.created_at::date
         END                                                      AS holding_days
       FROM ic_recommendations r
       WHERE r.recommender_id = ${userId} AND r.is_public = true
       ORDER BY r.created_at DESC
       LIMIT 100
-    `;
+    `,
+    ]);
 
+    const sumRow  = summary[0]  || {};
     const realRow = realized[0] || {};
-    const liveRow  = live[0]     || {};
+    const liveRow = live[0]     || {};
 
     res.status(200).json({
       profile: users[0],

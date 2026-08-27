@@ -1,0 +1,58 @@
+name: Post-deploy smoke test
+
+# Runs automatically after every production deploy — no manual trigger
+# needed. Triggered by the completion of "Deploy to GitHub Pages" (which
+# itself runs on push to main), not by the push directly, so this always
+# checks the site AFTER the new build is actually live rather than racing
+# it. Catches what a local build/preview can't: base-path or asset-path
+# misconfiguration, stale CDN cache, DNS/custom-domain issues, or a
+# genuinely broken production deploy — the last line of defense before a
+# real user hits it.
+on:
+  workflow_run:
+    workflows: ["Deploy to GitHub Pages"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright's browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for the new deploy to actually be served
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf https://myinvestorcircle.com > /dev/null && break
+            sleep 10
+          done
+
+      - name: Smoke test (production)
+        run: npm run smoke
+        env:
+          SMOKE_BASE_URL: https://myinvestorcircle.com
+
+      - name: Upload smoke failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-smoke-results
+          path: test-results/
+          retention-days: 7
+
+      - name: Alert on production smoke failure
+        if: failure()
+        run: |
+          echo "::error::Production smoke test failed after deploy — https://myinvestorcircle.com may be broken for real users. Check the uploaded test-results artifact."

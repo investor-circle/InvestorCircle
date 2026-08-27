@@ -20,10 +20,38 @@ export const fmtDate = (d) => {
 
 export const initialsOf = (name) => name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
 
+/**
+ * P&L per acted-on idea uses a flat assumed ₹NOTIONAL stake (see constants/
+ * app.js) — it's a directional "would this person's ideas have made money"
+ * indicator, not a record of real amounts invested.
+ *
+ * Two correctness rules, both required for the number to mean what it
+ * claims to mean:
+ *  - CLOSED ideas (exited or expired) price off getClosedInfo()'s exit/
+ *    expiry price, not the idea's still-live current_price — the current
+ *    price keeps drifting long after the idea closed and no longer
+ *    reflects what tracking it would actually have returned.
+ *  - An idea with no priced outcome yet (current_price not stamped yet —
+ *    e.g. an out-of-scope asset class the nightly batch doesn't cover, or
+ *    simply too new — coerces to 0 upstream) is EXCLUDED from the sum
+ *    rather than counted as a -100% loss. Reducing over `r.price` directly
+ *    without this check silently manufactured a full loss for every
+ *    unpriced idea, which is not a real outcome — just missing data.
+ * `pnlPending` reports how many acted-on ideas were excluded for this
+ * reason, so a caller can flag "N idea(s) not yet priced" if it wants to.
+ */
 export const recoStats = (recs, pred) => {
   const list = recs.filter(pred);
   const acted = list.filter(r=>r.invested);
-  const pnl = acted.reduce((s,r)=> s + NOTIONAL*((r.price/(r.investedPrice||r.priceAt))-1), 0);
+  let pnl = 0, pnlPending = 0;
+  acted.forEach(r => {
+    const entry = r.investedPrice || r.priceAt;
+    if (!entry) { pnlPending++; return; }
+    const closed = getClosedInfo(r);
+    const outcome = closed ? closed.price : (r.price || null);
+    if (outcome == null || outcome <= 0) { pnlPending++; return; }
+    pnl += NOTIONAL * (outcome / entry - 1);
+  });
   return {
     count:list.length, acted:acted.length,
     liked:list.filter(r=>r.reaction==="like").length,
@@ -31,6 +59,7 @@ export const recoStats = (recs, pred) => {
     inMoney:list.filter(r=>(r.price-r.priceAt)/r.priceAt>=0).length,
     outMoney:list.filter(r=>(r.price-r.priceAt)/r.priceAt<0).length,
     pnl,
+    pnlPending,
   };
 };
 
@@ -38,7 +67,16 @@ export const ret = (r) => (r.priceAt && r.priceAt !== 0) ? (r.price - r.priceAt)
 
 export const calcTargetDate = (date, horizon) => {
   if (!date || !horizon) return null;
-  const d = new Date(date + "T00:00:00");
+  // `date` is a bare "YYYY-MM-DD" from most sources (e.g. mapReceivedRow),
+  // but some (public-feed/network-engagement rows select created_at AS
+  // date directly — see api/_lib/handlers/lookups.js) hand over a full ISO
+  // timestamp instead. Concatenating "T00:00:00" onto a timestamp produces
+  // a malformed string ("...Z T00:00:00"), which parses to an Invalid
+  // Date — and toISOString() on an Invalid Date THROWS ("Invalid time
+  // value"), not returns null. Slicing to the date portion first makes
+  // this robust to either input shape.
+  const d = new Date(String(date).slice(0, 10) + "T00:00:00");
+  if (isNaN(d)) return null;
   if (horizon==="<3m") d.setMonth(d.getMonth()+3);
   else if (horizon==="6m")  d.setMonth(d.getMonth()+6);
   else if (horizon==="12m") d.setMonth(d.getMonth()+12);
@@ -50,6 +88,55 @@ export const calcTargetDate = (date, horizon) => {
 export const getTargetDate = (r) => r.targetDate || calcTargetDate(r.date, r.horizon) || null;
 
 export const isExpired = (r) => { const td=getTargetDate(r); return td ? td < TODAY : false; };
+
+const numOrNull = (v) => (v === null || v === undefined || v === '') ? null : Number(v);
+
+/**
+ * Lifecycle status for a CLOSED idea — 'exited' (the recommender deliberately
+ * closed it) or 'expired' (its target date passed with no exit signal).
+ * Returns null for an idea that's still open.
+ *
+ * Exited always wins when both apply: a deliberate exit is a stronger signal
+ * than the passive target-date clock, matching the status label already
+ * computed server-side in api/_lib/handlers/public-profile.js's `recos`
+ * query ('Closed' beats 'Expired' there too).
+ *
+ * Accepts either the camelCase shape most of the frontend reads
+ * (exitSignal/exitDate/exitPrice/expiryPrice/targetDate) or the raw
+ * snake_case DB row shape a few components read directly
+ * (exit_signal/exit_date/...), since different pages source from different
+ * endpoints. `retPct` mirrors ret()'s existing convention of not flipping
+ * sign for a Sell idea — same math the rest of the frontend already uses,
+ * just anchored to the closing price instead of the live one.
+ */
+export function getClosedInfo(r) {
+  const exited = !!(r.exitSignal ?? r.exit_signal ?? r.exit);
+  const priceAt = numOrNull(r.priceAt ?? r.reco_price) || null;
+
+  if (exited) {
+    const price = numOrNull(r.exitPrice ?? r.exit_price);
+    return {
+      kind: 'exited',
+      date: r.exitDate ?? r.exit_date ?? null,
+      price,
+      pending: price == null,
+      retPct: (priceAt && price != null) ? (price - priceAt) / priceAt : null,
+    };
+  }
+
+  const targetDate = r.targetDate ?? r.target_date ?? getTargetDate(r);
+  if (targetDate && String(targetDate).slice(0,10) < TODAY) {
+    const price = numOrNull(r.expiryPrice ?? r.expiry_price);
+    return {
+      kind: 'expired',
+      date: targetDate,
+      price,
+      pending: price == null,
+      retPct: (priceAt && price != null) ? (price - priceAt) / priceAt : null,
+    };
+  }
+  return null;
+}
 
 export function parseThesis(raw) {
   if (!raw || raw === '—') return null;
@@ -74,10 +161,15 @@ export async function compressImage(file) {
     throw new Error(`Image "${file.name}" exceeds ${THESIS_MAX_MB} MB. Please use a smaller file.`);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = reject;
+    // Both onerror handlers previously rejected with the raw ProgressEvent
+    // (no .message), so a transient read/decode hiccup — often just the
+    // browser still finishing writing a just-captured photo to disk, which
+    // clears up a moment later on retry — surfaced as a generic "Image
+    // processing failed." with no indication that trying again would help.
+    reader.onerror = () => reject(new Error(`Couldn't read "${file.name}". Please try uploading it again.`));
     reader.onload = ev => {
       const img = new window.Image();
-      img.onerror = reject;
+      img.onerror = () => reject(new Error(`Couldn't process "${file.name}". Please try uploading it again.`));
       img.onload = () => {
         const canvas = document.createElement('canvas');
         let { width: w, height: h } = img;

@@ -98,34 +98,82 @@ export async function fetchDailySeries(symbol, exchange = 'NSE', range = '5d') {
   let lastError;
   for (const yahooSym of yahooSymbolCandidates(symbol, exchange)) {
     try {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1d&range=${range}`;
-      const res = await fetch(url, { headers: YAHOO_HEADERS });
-      if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
-
-      const json   = await res.json();
-      const result = json?.chart?.result?.[0];
-      if (!result) throw new Error('Yahoo: no result');
-
-      const timestamps = result.timestamp || [];
-      const closes     = result.indicators?.quote?.[0]?.close || [];
-      const currency   = result.meta?.currency || 'INR';
-
-      const series = [];
-      timestamps.forEach((ts, i) => {
-        const close = closes[i];
-        if (close == null || !(close > 0)) return; // provider gap — skip, never interpolate
-        series.push({ date: new Date(ts * 1000).toISOString().slice(0, 10), close: +Number(close).toFixed(6) });
-      });
-      if (!series.length) throw new Error('Yahoo: empty close series');
-
-      // Yahoo returns ascending, but do not rely on it.
-      series.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-      return { series, currency, source: 'yahoo_finance', yahooSymbol: yahooSym };
+      return await fetchDailySeriesForYahooSymbol(yahooSym, range);
     } catch (e) {
       lastError = e;
     }
   }
   throw lastError || new Error('Yahoo: no candidate symbols');
+}
+
+/**
+ * Same series fetch as fetchDailySeries(), but for a Yahoo symbol that is
+ * already known (no NSE/BSE candidate-suffix guessing). Used directly for
+ * ISIN-resolved mutual fund symbols, which don't follow the NSE/BSE ticker
+ * convention at all, and internally by fetchDailySeries() for each of its
+ * candidate symbols.
+ */
+export async function fetchDailySeriesForYahooSymbol(yahooSymbol, range = '5d') {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=${range}`;
+  const res = await fetch(url, { headers: YAHOO_HEADERS });
+  if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
+
+  const json   = await res.json();
+  const result = json?.chart?.result?.[0];
+  if (!result) throw new Error('Yahoo: no result');
+
+  const timestamps = result.timestamp || [];
+  const closes     = result.indicators?.quote?.[0]?.close || [];
+  const currency   = result.meta?.currency || 'INR';
+
+  const series = [];
+  timestamps.forEach((ts, i) => {
+    const close = closes[i];
+    if (close == null || !(close > 0)) return; // provider gap — skip, never interpolate
+    series.push({ date: new Date(ts * 1000).toISOString().slice(0, 10), close: +Number(close).toFixed(6) });
+  });
+  if (!series.length) throw new Error('Yahoo: empty close series');
+
+  // Yahoo returns ascending, but do not rely on it.
+  series.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return { series, currency, source: 'yahoo_finance', yahooSymbol };
+}
+
+/**
+ * Resolve a mutual fund's ISIN to a Yahoo Finance symbol via Yahoo's search
+ * endpoint. CAS statements carry each mutual fund holding's ISIN (see
+ * api/cas.py), and Yahoo's search indexes Indian mutual fund NAVs by ISIN —
+ * unlike the NSE/BSE ticker convention fetchDailySeries() relies on, which
+ * doesn't apply to funds at all (no exchange listing, no ticker symbol).
+ * Returns null (not a throw) when Yahoo has no match, since "this fund isn't
+ * covered" is an expected, ordinary outcome, not an error — the same
+ * philosophy fetchPrice()'s null-close handling already applies elsewhere.
+ */
+export async function resolveYahooSymbolByIsin(isin) {
+  const q = String(isin || '').trim().toUpperCase();
+  if (!q) return null;
+  const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=5&newsCount=0`;
+  const res = await fetch(url, { headers: YAHOO_HEADERS });
+  if (!res.ok) throw new Error(`Yahoo search HTTP ${res.status}`);
+  const json = await res.json();
+  const quotes = json?.quotes || [];
+  if (!quotes.length) return null;
+  // Prefer a quote whose own ISIN field echoes back an exact match; Yahoo's
+  // search is fuzzy, so the top hit is usually but not always the fund itself.
+  const hit = quotes.find(qt => String(qt.isin || '').toUpperCase() === q) || quotes[0];
+  return hit?.symbol || null;
+}
+
+/**
+ * ISIN -> daily close series, for the mutual fund pricing path. Resolves the
+ * Yahoo symbol once, then reuses the same series-fetch logic every other
+ * instrument uses, so a fund's history row is computed (prev close, delta)
+ * identically to an equity/ETF's.
+ */
+export async function fetchFundDailySeriesByIsin(isin, range = '7d') {
+  const yahooSymbol = await resolveYahooSymbolByIsin(isin);
+  if (!yahooSymbol) throw new Error(`No Yahoo symbol found for ISIN ${isin}`);
+  return fetchDailySeriesForYahooSymbol(yahooSymbol, range);
 }
 
 // ── Yahoo Finance provider (single-price form used by api/price.js) ──────────

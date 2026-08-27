@@ -28,7 +28,6 @@ import {
   Info,
   Bookmark
 } from "lucide-react";
-import { fetchLivePrices, isFinnhubConfigured } from "./services/priceService";
 import { useAuth } from "./AuthContext";
 import { track } from "./firebase";
 import LoginPage from "./LoginPage";
@@ -82,10 +81,7 @@ import {
   getMyMadeRecos,
   getMyReceivedRecos
 } from "./services/api/recommendationsApi";
-import {
-  getSharingPrefs
-} from "./services/api/sharingApi";
-import { ProfileErrorBoundary } from "./components/common";
+import { ProfileErrorBoundary, SectionErrorBoundary } from "./components/common";
 import { CONTACT_COLORS, DEFAULT_CLASSES, HOLDINGS } from "./constants/app";
 // Admin screens are code-split into their own chunk: only admin-role users
 // ever navigate here, so investors never pay for this bundle weight.
@@ -99,6 +95,24 @@ const AdminInstruments = React.lazy(() => adminModule().then(m => ({ default: m.
 const AdminSebi        = React.lazy(() => adminModule().then(m => ({ default: m.AdminSebi })));
 const AdminSeedData    = React.lazy(() => adminModule().then(m => ({ default: m.AdminSeedData })));
 const AdminUsers       = React.lazy(() => adminModule().then(m => ({ default: m.AdminUsers })));
+
+// Portfolio, Sharing and Profile are their own, independently-navigated
+// pages with no other module statically importing them (verified — unlike
+// e.g. Groups.jsx, which Connections.jsx already pulls into the main chunk
+// eagerly, so lazy-wrapping CirclePage alone wouldn't shrink anything).
+// Code-splitting these off the initial bundle matters most for the exact
+// visitors CLAUDE.md flags as most load-sensitive: someone new following a
+// shared profile/claim link who hasn't signed up yet and would otherwise
+// have to download the entire authenticated app (Portfolio, Recommendations,
+// Connections, Discovery, ...) just to see one profile.
+const portfolioModule = () => import("./features/portfolio/Portfolio");
+const PortfolioIntelligencePage = React.lazy(() => portfolioModule().then(m => ({ default: m.PortfolioIntelligencePage })));
+const sharingModule = () => import("./features/sharing/Sharing");
+const Sharing = React.lazy(() => sharingModule().then(m => ({ default: m.Sharing })));
+const profileModule = () => import("./features/profile/Profile");
+const ClaimProfilePage = React.lazy(() => profileModule().then(m => ({ default: m.ClaimProfilePage })));
+const ProfileEditModal = React.lazy(() => profileModule().then(m => ({ default: m.ProfileEditModal })));
+const PublicProfilePage = React.lazy(() => profileModule().then(m => ({ default: m.PublicProfilePage })));
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { InviteModal, Network } from "./features/connections/Connections";
 import { CirclePage } from "./features/groups/Groups";
@@ -106,10 +120,7 @@ import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./fe
 import { DiscoverModal, DiscoverPeoplePage, OnboardingGate } from "./features/onboarding/Onboarding";
 import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
-import { PortfolioIntelligencePage } from "./features/portfolio/Portfolio";
-import { ClaimProfilePage, ProfileEditModal, PublicProfilePage } from "./features/profile/Profile";
 import { RecoPostPage, Recommendations } from "./features/recommendations/Recommendations";
-import { Sharing } from "./features/sharing/Sharing";
 import { useIsMobile } from "./hooks/index";
 import { VAPID_PUBLIC_KEY, sendEmail, sendPush } from "./services/notify";
 import { STYLES } from "./styles/globalStyles";
@@ -167,6 +178,25 @@ const ADMIN_PAGE_TO_PATH = Object.fromEntries(
   Object.entries(ADMIN_PATH_TO_PAGE).map(([path, page]) => [page, path])
 );
 
+// Shown while Firebase auth is still resolving, and as the Suspense
+// fallback for lazy-loaded pages reached before the app shell mounts
+// (public profile / claim links). Deliberately matches the static loader
+// in index.html (#initial-loader — same background, spinner and copy) so
+// there's no visual flash when this component takes over from it once
+// React mounts; the index.html one is markup+CSS only, so it can paint
+// before any JS has even downloaded, while this one covers the gap after
+// mount but before we know who — if anyone — is signed in.
+function AppLoadingScreen() {
+  return (
+    <div style={{minHeight:"100vh",background:"#0a0b18",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+      <div style={{width:34,height:34,borderRadius:"50%",border:"3px solid rgba(255,255,255,.14)",borderTopColor:"#8f7bff",animation:"mic-spin .8s linear infinite"}}/>
+      <div style={{color:"#e8e8f5",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15,fontWeight:600}}>Getting your circle ready…</div>
+      <div style={{color:"#7d7fa0",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12.5}}>Just a moment</div>
+      <style>{"@keyframes mic-spin{to{transform:rotate(360deg)}}"}</style>
+    </div>
+  );
+}
+
 export default function App() {
   const { user, role, setRole, userIsAdmin, logout, authLoading, profile, updateProfile, patchProfile } = useAuth();
   const ME = useMemo(() => {
@@ -218,7 +248,6 @@ export default function App() {
   const [groups,        setGroups]        = useState([]); // shared groups from ic_groups
   const [recsReceived,  setRecsReceived]  = useState([]); // from recommendation_deliveries
   const [recsMade,      setRecsMade]      = useState([]); // from ic_recommendations
-  const [sharing,       setSharing]       = useState({});
   const [notifications, setNotifications] = useState([]);
   const [tracked,       setTracked]       = useState(new Set()); // Set of reco IDs the user has tracked
   const [trackedCreatorIds, setTrackedCreatorIds] = useState(new Set()); // Set of investor/creator IDs the user tracks (Pulse "What You Missed" relevance signal)
@@ -228,7 +257,7 @@ export default function App() {
   // list, so a creator with thousands of trackers doesn't load them all here.
   const [trackingCounts,  setTrackingCounts]  = useState({ trackersCount: 0, trackingCount: 0 });
   const [networkInitTab,  setNetworkInitTab]  = useState(null); // one-shot: which Network tab to open next (e.g. from a notification)
-  const [homeInitTab,     setHomeInitTab]      = useState(null); // one-shot: which HomeFeed mobile tab to open next — Pulse (top Home icon) vs Feed (DISCOVER > Ideas nav item, mobile only)
+  const [homeInitTab,     setHomeInitTab]      = useState(null); // one-shot: which HomeFeed tab to open next (desktop + mobile alike) — Pulse (top Home icon) vs Feed (DISCOVER > Ideas nav item)
   // Feed configuration
   const [feedConfigOptions,       setFeedConfigOptions]       = useState([]); // admin-defined options
   const [userFeedPrefs,           setUserFeedPrefs]           = useState({}); // {key: boolean} user overrides
@@ -385,7 +414,6 @@ export default function App() {
     setRecsReceived([]);
     setRecsMade([]);
     setNotifications([]);
-    setSharing({});
     setUsers([]);
     setPublicFeedRecos([]);
     setNetworkEngagementRecos([]);
@@ -416,12 +444,18 @@ export default function App() {
   const [users,         setUsers]         = useState([]);
   const [configs,       setConfigs]       = useState({
     enableRecommendations:true, allowCryptoAccounts:true, publicFeed:true,
-    requireAccountApproval:true, allowAmountSharing:true, defaultDisclosure:"names",
-    maxGroupMembers:8, groupCreationPolicy:"all",
+    requireAccountApproval:true,
+    maxGroupMembers:8,
   });
-  const [providers, setProviders] = useState(["Fidelity","Vanguard","Robinhood","Coinbase","Schwab","E*TRADE"]);
-  const [priceRefresh, setPriceRefresh] = useState({ busy:false, lastAt:null, errors:[] });
-  const [pendingInvites, setPendingInvites] = useState([]);
+  // Admin → App Configuration → "Supported account providers": leftover
+  // mockup seed data from an early US-market prototype (Fidelity/Vanguard/
+  // Robinhood/Coinbase/Schwab/E*TRADE aren't relevant to this India-focused
+  // CAS/PAN-import product). This list is also never persisted server-side
+  // — it's local React state that resets on every reload — and nothing
+  // else in the app reads it, so it never actually gated or displayed
+  // brokerage options anywhere real. Starts empty now, matching every
+  // other "starts empty until real data exists" default in this file.
+  const [providers, setProviders] = useState([]);
 
   // Derived: confirmed contacts only (accepted connections, shaped for UI backward compat)
   const contacts = useMemo(() =>
@@ -435,7 +469,6 @@ export default function App() {
         initials:     initialsOf(c.name),
         color:        CONTACT_COLORS[i % CONTACT_COLORS.length],
         title:        "My Investor Circle member",
-        shared:       { level:"none", holdings:[] },
       })),
     [connections]
   );
@@ -478,20 +511,6 @@ export default function App() {
     } else {
       setTracked(s => new Set([...s, recoId]));
       if (user?.uid) dbTrackReco(recoId).catch(console.warn);
-    }
-  };
-
-  const refreshPrices = async () => {
-    if (!isFinnhubConfigured) return;                          // boolean, not a function
-    setPriceRefresh({ busy:true, lastAt:null, errors:[] });
-    try {
-      const { results, errors } = await fetchLivePrices(holdings); // takes full holdings array
-      setHoldings(hs => hs.map(h =>
-        results[h.sym]?.price != null ? {...h, price:results[h.sym].price} : h
-      ));
-      setPriceRefresh({ busy:false, lastAt:new Date(), errors });
-    } catch(e) {
-      setPriceRefresh({ busy:false, lastAt:null, errors:[e.message] });
     }
   };
 
@@ -806,21 +825,25 @@ export default function App() {
       const trackedPromise    = dbGetMyTrackedRecoIds();
       const feedCfgPromise    = dbGetFeedConfigAndPrefs();
       const publicFeedPromise = dbGetPublicFeed();
+      // "My Ideas" and notifications aren't needed for Home's first paint
+      // (the feed only reads recsReceived/publicFeedRecos/networkEngagement-
+      // Recos) — they used to sit in the same Promise.all as connections/
+      // groups/received below, so a slow made-recos or notifications query
+      // (either can grow large over time) directly delayed the home feed
+      // leaving its loading state even though neither is shown there.
+      // Firing them independently means they populate whenever they're
+      // ready without holding up anything else.
+      getMyMadeRecos(user.uid).then(setRecsMade).catch(e=>console.warn('made recos load:', e?.message||e));
+      getMyNotifications(user.uid).then(setNotifications).catch(e=>console.warn('notifications load:', e?.message||e));
       try {
-        const [conns, grps, recv, made, notifs, shr] = await Promise.all([
+        const [conns, grps, recv] = await Promise.all([
           getMyConnections(user.uid),
           getMyGroups(user.uid),
           getMyReceivedRecos(user.uid),
-          getMyMadeRecos(user.uid),
-          getMyNotifications(user.uid),
-          getSharingPrefs(user.uid),
         ]);
         setConnections(conns);
         setGroups(grps);
         setRecsReceived(recv);
-        setRecsMade(made);
-        setNotifications(notifs);
-        setSharing(shr);
         // Hydrate reactions from recommendation_reactions — fire-and-forget, never breaks main load
         if (recv.length > 0) {
           const ids = recv.map(r => String(r.id));
@@ -874,11 +897,17 @@ export default function App() {
           setEffectiveFeedConfig(effective);
         }
 
-        // Load network-engaged recos and public recos in parallel — the public
-        // feed doesn't depend on the network-engagement fetch (only on the feed
-        // config resolved above), so these two independent round-trips no
-        // longer need to be serialized either.
-        const networkEngagementLoad = (async () => {
+        // Network-engaged recos: fire-and-forget, NOT part of the
+        // feedLoading gate below. It's just one of three Feed-tab sources
+        // (direct delivery + public are the other two, both already
+        // resolved by this point) and Pulse doesn't read it at all, so
+        // holding the home feed's loading state on it was adding a whole
+        // extra sequential round-trip — it can only start once `conns`
+        // (above) and `effective` (just resolved) are both known — for data
+        // that isn't required to render anything. It now populates
+        // networkEngagementRecos whenever it lands, same as the reaction-
+        // hydration calls elsewhere in this function already do.
+        (async () => {
           // Load network-engaged recos (recos liked/commented by connections not in my direct feed)
           if (!effective.src_network_engagement) return;
           try {
@@ -906,15 +935,15 @@ export default function App() {
               }
             }
           } catch(_) {}
-        })();
+        })(); // not awaited — see comment above
 
-        const publicFeedLoad = (async () => {
-          // Load public recommendations — visible to all users when is_public = true.
-          // Excludes the user's own recos and ones already in their direct feed.
-          // (publicFeedPromise was already kicked off above, in parallel with
-          // the first batch, so this is usually just awaiting an
-          // already-in-flight or already-resolved request.)
-          try {
+        // Public feed — awaited (unlike network-engagement above): it's a
+        // Pulse source too (Trending on MIC), not just a Feed-tab extra, and
+        // publicFeedPromise was already kicked off at the top of load(), in
+        // parallel with the connections/groups/received batch, so awaiting
+        // it here is normally just picking up an already-settled promise —
+        // not a real extra round-trip on the critical path.
+        try {
             const pubRows = await publicFeedPromise;
             const pubMapped = pubRows.map(r => ({
               ...r,
@@ -952,10 +981,7 @@ export default function App() {
                   setPublicFeedRecos(rs=>rs.map(x=>rxMap[String(x.id)]?{...x,reaction:rxMap[String(x.id)]}:x));
                 }).catch(()=>{});
             }
-          } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
-        })();
-
-        await Promise.allSettled([networkEngagementLoad, publicFeedLoad]);
+        } catch(e) { console.warn('Public feed load failed:', e?.message||e); }
       } catch(e) { console.warn("Data load failed:", e.message); }
       finally { setFeedLoading(false); }
       // Load registered users for admin panel (admin only — non-admins skip this
@@ -987,6 +1013,10 @@ export default function App() {
 
   // securityTicker must be here — before ANY conditional return — Rules of Hooks
   const [securityTicker, setSecurityTicker] = useState(null);
+  // Which page Stock Insights was opened from, so its Back button returns
+  // there instead of always landing on Home — captured at the moment of
+  // navigation (openSecurity below), not derived after the fact.
+  const [secInsightsFrom, setSecInsightsFrom] = useState('home');
 
   // ── Circle route — no auth required (shareable, works from an invite link) ──
   // Matches: #/circle/slug  (optionally ?invite=<code> appended by an invite link)
@@ -1039,9 +1069,17 @@ export default function App() {
     }
 
     // ── Full public profile page ──────────────────────────────────────
+    // Clicking your own name anywhere in the app (a comment, a contact
+    // card, a mention...) lands here too, via the same #/investor/username
+    // route used for everyone else — without this check it rendered as if
+    // you were looking at a stranger, Connect/Track/Subscribe buttons and
+    // all. Only the separate "My track record" tab (isOwnProfile passed
+    // explicitly further below) had that handled.
+    const isViewingOwnProfile = !!user && !!ME?.username && pubUsername.toLowerCase() === ME.username.toLowerCase();
     return (
       <div className="app"><style>{STYLES}</style>
         <ProfileErrorBoundary>
+          <React.Suspense fallback={<AppLoadingScreen/>}>
           <PublicProfilePage
             username={pubUsername}
             recoId={pubRecoId}
@@ -1051,6 +1089,8 @@ export default function App() {
             contacts={contacts}
             groups={groups}
             mode="standalone"
+            isOwnProfile={isViewingOwnProfile}
+            patchProfile={isViewingOwnProfile ? patchProfile : undefined}
             onBack={()=>{ window.location.hash = ''; }}
             onRequestConnect={async(targetId)=>{
               if (!user) {
@@ -1071,17 +1111,14 @@ export default function App() {
               setConnections(c);
             }}
           />
+          </React.Suspense>
         </ProfileErrorBoundary>
       </div>
     );
   }
 
   // ── Auth gate ───────────────────────────────────────────────────────────────
-  if (authLoading) return (
-    <div style={{minHeight:"100vh",background:"#0a0b18",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{color:"#8a8daa",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15}}>Loading…</div>
-    </div>
-  );
+  if (authLoading) return <AppLoadingScreen/>;
   // ── Creator claim flow: show claim page ONLY after auth has resolved ─────────
   // Without !authLoading, a stale mic_claim_token shows ClaimProfilePage for
   // ~300ms on every load while Firebase auth is still resolving (user is briefly
@@ -1091,11 +1128,13 @@ export default function App() {
     return (
       <div className="app">
         <style>{STYLES}</style>
+        <React.Suspense fallback={<AppLoadingScreen/>}>
         <ClaimProfilePage
           profile={claimProfile}
           token={claimToken}
           onBack={() => { setClaimToken(null); setClaimProfile(null); localStorage.removeItem('mic_claim_token'); }}
         />
+        </React.Suspense>
       </div>
     );
   }
@@ -1118,15 +1157,17 @@ export default function App() {
   // see the useEffect that keeps investorPage/adminPage synced with the URL.)
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
   // page + setPage — setPage also closes the mobile nav drawer for investors
-  const openSecurity = (ticker, name, tab) => { setSecurityTicker({ ticker, name, tab }); setPage('sec_intel'); };
+  const openSecurity = (ticker, name, tab) => {
+    if (page !== 'sec_intel') setSecInsightsFrom(page);
+    setSecurityTicker({ ticker, name, tab });
+    setPage('sec_intel');
+  };
   const page    = isInv ? investorPage : adminPage;
   const setPage = isInv
     ? (p) => { setInvestorPage(p); setNavOpen(false); track('page_view', { page_name: p });
                if (INVESTOR_PAGE_TO_PATH[p]) navigate(INVESTOR_PAGE_TO_PATH[p]); }
     : (p) => { setAdminPage(p); track('page_view', { page_name: p });
                if (ADMIN_PAGE_TO_PATH[p]) navigate(ADMIN_PAGE_TO_PATH[p]); };
-
-  const canCreateGroups = configs.groupCreationPolicy==="all";
 
   const navSections = isInv ? [
     { label:"DISCOVER", items: [
@@ -1142,7 +1183,7 @@ export default function App() {
       { id:"portfolio",   label:"Portfolio",         icon:PieChart,iconColor:"#fb923c", iconBg:"rgba(251,146,60,.13)" },
     ]},
     { label:"ACCOUNT & SUPPORT", items: [
-      { id:"sharing",  label:"Privacy & Sharing", icon:Lock,        iconColor:"#f472b6", iconBg:"rgba(244,114,182,.13)" },
+      { id:"sharing",  label:"Feed Settings", icon:Lock,        iconColor:"#f472b6", iconBg:"rgba(244,114,182,.13)" },
       { id:"about",    label:"About MIC",         icon:Info,        iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
       { id:"contact",  label:"Contact Us",        icon:ExternalLink,iconColor:"#a78bfa", iconBg:"rgba(167,139,250,.13)" },
     ]},
@@ -1234,7 +1275,7 @@ export default function App() {
                 {sec.label && <div className="side-section">{sec.label}</div>}
                 {sec.items.map(n=>(
                   <div key={n.id} className={"nav-item"+(page===n.id?" active":"")} onClick={()=>{
-                      if(n.id==='home' && isMobile) setHomeInitTab('feed'); // DISCOVER > Ideas, mobile → land on the Feed tab, not Pulse
+                      if(n.id==='home') setHomeInitTab('feed'); // DISCOVER > Ideas → land on the Feed tab, not Pulse (desktop + mobile alike)
                       setPage(n.id);
                       if(isMobile)setNavOpen(false);
                     }}>
@@ -1275,7 +1316,7 @@ export default function App() {
             <div style={{display:'flex',alignItems:'center',gap:isMobile?4:8,flexShrink:0}}>
               {/* Permanent Home icon — always visible, desktop and mobile, works from any page.
                   Always lands on the Pulse tab (the daily home experience), as opposed to
-                  DISCOVER > Ideas in the sidebar, which lands mobile users on Feed. */}
+                  DISCOVER > Ideas in the sidebar, which lands on the Feed tab instead. */}
               {isInv && (
                 <button
                   className={"icon-btn"+(page==='home'?" active":"")}
@@ -1461,7 +1502,7 @@ export default function App() {
                     }
                     setNotifOpen(false);
 
-                    const recoTypes = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation'];
+                    const recoTypes = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation','exit_signal','idea_expired','idea_expiring_today'];
 
                     if (recoTypes.includes(n.type)) {
                       const recoId   = n.metadata?.recoId   || null;
@@ -1686,24 +1727,22 @@ export default function App() {
                 <button className="icon-btn" onClick={()=>setConnectConfirm(null)} title="Dismiss"><X size={16}/></button>
               </div>
             )}
-            {isInv && page==="home"      && <HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds} initTab={homeInitTab} onInitTabConsumed={()=>setHomeInitTab(null)}/>}
-            {isInv && showInvite && <InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/>}
-            {isInv && showDiscover && <DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/>}
-            {isInv && page==="portfolio"    && <PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} refreshPrices={refreshPrices} priceRefresh={priceRefresh} onOpenSecurity={openSecurity} setPage={setPage}/>}
-            {isInv && page==="market_intel" && <MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
-            {isInv && page==="sec_intel"    && <SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity}/>}
-            {isInv && page==="discover"     && <DiscoverPeoplePage ME={ME}/>}
-            {isInv && page==="network"   && <Network
+            {isInv && page==="home"      && <SectionErrorBoundary label="Home feed"><HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} recsMade={recsMade} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds} initTab={homeInitTab} onInitTabConsumed={()=>setHomeInitTab(null)}/></SectionErrorBoundary>}
+            {isInv && showInvite && <SectionErrorBoundary label="Invite"><InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/></SectionErrorBoundary>}
+            {isInv && showDiscover && <SectionErrorBoundary label="Discover"><DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/></SectionErrorBoundary>}
+            {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><React.Suspense fallback={<div className="empty">Loading Portfolio…</div>}><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} onOpenSecurity={openSecurity} setPage={setPage}/></React.Suspense></SectionErrorBoundary>}
+            {isInv && page==="market_intel" && <SectionErrorBoundary label="Market Insights"><MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
+            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity} onBack={()=>setPage(secInsightsFrom)} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
+            {isInv && page==="discover"     && <SectionErrorBoundary label="Discover People"><DiscoverPeoplePage ME={ME}/></SectionErrorBoundary>}
+            {isInv && page==="network"   && <SectionErrorBoundary label="Network"><Network
                 connections={connections} setConnections={setConnections}
                 groups={groups} setGroups={setGroups}
-                sharing={sharing} setSharing={setSharing}
-                configs={configs} canCreateGroups={canCreateGroups}
-                pendingInvites={pendingInvites} setPendingInvites={setPendingInvites}
-                recsReceived={recsReceived} me={ME}
+                configs={configs}
+                recsReceived={recsReceived} me={ME} setPage={setPage}
                 onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}
                 initTab={networkInitTab} onInitTabConsumed={()=>setNetworkInitTab(null)}
-                trackingCounts={trackingCounts} onTrackingCountsChange={setTrackingCounts}/>}
-            {isInv && page==="recs"      && <Recommendations
+                trackingCounts={trackingCounts} onTrackingCountsChange={setTrackingCounts}/></SectionErrorBoundary>}
+            {isInv && page==="recs"      && <SectionErrorBoundary label="Ideas"><Recommendations
                 recsReceived={recsReceived} setRecsReceived={setRecsReceived}
                 recsMade={recsMade} setRecsMade={setRecsMade}
                 contacts={contacts} groups={groups}
@@ -1711,14 +1750,15 @@ export default function App() {
                 initFilter={recoInit} holdings={holdings} me={ME}
                 tracked={tracked} toggleTrack={toggleTrack}
                 globalSearch={globalSearch}
-                onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/>}
-            {isInv && page==="sharing"     && <Sharing sharing={sharing} setSharing={setSharing} configs={configs} holdings={holdings} contacts={contacts} groups={groups} myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/>}
-            {isInv && page==="about"        && <AboutPage/>}
-            {isInv && page==="contact"      && <ContactPage setPage={setPage}/>}
-            {isInv && page==="privacy"      && <PrivacyPolicyPage/>}
+                onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/></SectionErrorBoundary>}
+            {isInv && page==="sharing"     && <SectionErrorBoundary label="Sharing"><React.Suspense fallback={<div className="empty">Loading…</div>}><Sharing myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/></React.Suspense></SectionErrorBoundary>}
+            {isInv && page==="about"        && <SectionErrorBoundary label="About"><AboutPage/></SectionErrorBoundary>}
+            {isInv && page==="contact"      && <SectionErrorBoundary label="Contact"><ContactPage setPage={setPage}/></SectionErrorBoundary>}
+            {isInv && page==="privacy"      && <SectionErrorBoundary label="Privacy Policy"><PrivacyPolicyPage/></SectionErrorBoundary>}
             {isInv && page==="trackrecord" && (
               ME.username
                 ? <ProfileErrorBoundary key={ME.username}>
+                    <React.Suspense fallback={<div className="empty">Loading…</div>}>
                     <PublicProfilePage
                       username={ME.username}
                       viewerUser={user}
@@ -1732,6 +1772,7 @@ export default function App() {
                       onRequestConnect={()=>{}}
                       onBack={()=>setPage("home")}
                     />
+                    </React.Suspense>
                   </ProfileErrorBoundary>
                 : hasPendingClaim
                   ? <div style={{maxWidth:520}}>
@@ -1772,17 +1813,19 @@ export default function App() {
                   </div>
             )}
             {!isInv && (
-              <React.Suspense fallback={<div className="empty">Loading admin panel…</div>}>
-                {page==="users"       && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={()=>{}}/>}
-                {page==="creators"    && <AdminCreators ME={ME} claimRequests={claimRequests} onClaimAction={loadClaimRequests}/>}
-                {page==="groups"      && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
-                {page==="instruments" && <AdminInstruments/>}
-                {page==="sebi"        && <AdminSebi/>}
-                {page==="feed"        && <AdminFeedConfig feedConfigOptions={feedConfigOptions} setFeedConfigOptions={setFeedConfigOptions} setEffectiveFeedConfig={setEffectiveFeedConfig} userFeedPrefs={userFeedPrefs}/>}
-                {page==="configs"     && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
-                {page==="seed"        && <AdminSeedData/>}
-                {page==="about"       && <AdminAboutEditor/>}
-              </React.Suspense>
+              <SectionErrorBoundary label="Admin panel">
+                <React.Suspense fallback={<div className="empty">Loading admin panel…</div>}>
+                  {page==="users"       && <AdminUsers users={users} setUsers={setUsers} contacts={contacts} setContacts={()=>{}}/>}
+                  {page==="creators"    && <AdminCreators ME={ME} claimRequests={claimRequests} onClaimAction={loadClaimRequests}/>}
+                  {page==="groups"      && <AdminGroups groups={groups} setGroups={setGroups} contacts={contacts} me={ME}/>}
+                  {page==="instruments" && <AdminInstruments/>}
+                  {page==="sebi"        && <AdminSebi/>}
+                  {page==="feed"        && <AdminFeedConfig feedConfigOptions={feedConfigOptions} setFeedConfigOptions={setFeedConfigOptions} setEffectiveFeedConfig={setEffectiveFeedConfig} userFeedPrefs={userFeedPrefs}/>}
+                  {page==="configs"     && <AdminConfigs configs={configs} setConfigs={setConfigs} providers={providers} setProviders={setProviders}/>}
+                  {page==="seed"        && <AdminSeedData/>}
+                  {page==="about"       && <AdminAboutEditor/>}
+                </React.Suspense>
+              </SectionErrorBoundary>
             )}
             {/* ── Site-wide footer — investors only ── */}
             {isInv && <SiteFooter page={page} setPage={setPage}/>}
@@ -1791,20 +1834,24 @@ export default function App() {
       </div>
       {/* ── Edit profile modal — rendered as a portal, accessible from any page ── */}
       {profileEditOpen && isInv && (
-        <ProfileEditModal
-          profile={profile}
-          userId={user?.uid}
-          username={ME.username}
-          patchProfile={patchProfile}
-          updateProfile={updateProfile}
-          onClose={()=>setProfileEditOpen(false)}
-        />
+        <SectionErrorBoundary label="Edit profile">
+          <React.Suspense fallback={null}>
+          <ProfileEditModal
+            profile={profile}
+            userId={user?.uid}
+            username={ME.username}
+            patchProfile={patchProfile}
+            updateProfile={updateProfile}
+            onClose={()=>setProfileEditOpen(false)}
+          />
+          </React.Suspense>
+        </SectionErrorBoundary>
       )}
       {/* ── Mandatory username+consent gate, then a one-time Discover modal —
           both portal overlays gated purely on server-persisted profile state,
           so a user who drops off mid-setup resumes exactly where they left
           off on next login. See features/onboarding/Onboarding.jsx. ── */}
-      {isInv && <OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={setPage}/>}
+      {isInv && <SectionErrorBoundary label="Onboarding"><OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={setPage}/></SectionErrorBoundary>}
     </div>
   );
 }
