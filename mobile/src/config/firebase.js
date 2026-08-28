@@ -4,6 +4,15 @@
 // user base, one Auth backend. The only difference here is persistence:
 // the web SDK persists to localStorage by default, RN has no localStorage,
 // so we point it at AsyncStorage explicitly.
+//
+// Must be the first import in this file, before any firebase import: RN's
+// JS engine (Hermes) has no built-in `crypto` global, and Firebase Auth's
+// internals call crypto.getRandomValues during setup — without this
+// polyfill in place first, that throws immediately (a documented Firebase
+// JS SDK + React Native issue, not specific to this app), crashing the
+// app on launch before any UI renders — no splash, no error screen, just
+// "app keeps stopping".
+import "react-native-get-random-values";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { initializeAuth, getReactNativePersistence, getAuth } from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
