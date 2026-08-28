@@ -73,7 +73,13 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
+      # --verbose-logs so a failure on EAS's remote build worker (a
+      # different environment than this job — see mobile/.npmrc) prints
+      # its phase-by-phase output straight into this Actions log, instead
+      # of only "Unknown error, see build logs" with the detail sitting on
+      # the expo.dev dashboard where the previous failure was invisible
+      # from here.
       - name: Build on EAS (cloud)
-        run: eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait
+        run: eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait --verbose-logs
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
