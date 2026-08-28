@@ -73,13 +73,14 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      # --verbose-logs so a failure on EAS's remote build worker (a
-      # different environment than this job — see mobile/.npmrc) prints
-      # its phase-by-phase output straight into this Actions log, instead
-      # of only "Unknown error, see build logs" with the detail sitting on
-      # the expo.dev dashboard where the previous failure was invisible
-      # from here.
+      # --build-logger-level debug (not --verbose-logs, which only affects
+      # eas-cli's own local logging, not the remote build's log stream —
+      # learned the hard way after run #4 still only printed a "see logs"
+      # dashboard link instead of the actual Gradle failure) streams the
+      # EAS remote build worker's own phase-by-phase output into this
+      # Actions log directly, so a future failure there is diagnosable
+      # from here instead of needing the expo.dev dashboard.
       - name: Build on EAS (cloud)
-        run: eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait --verbose-logs
+        run: eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait --build-logger-level debug
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
