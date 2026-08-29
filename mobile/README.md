@@ -110,18 +110,16 @@ so the only new secret needed is `EXPO_TOKEN`. See the repo root for setup
 steps, or ask for the walkthrough again.
 
 **About the `development` build profile**: `eas.json`'s `development`
-profile (`developmentClient: true`, needs `expo-dev-client` — now
-installed) is meant for connecting to a locally running Metro bundler for
-live JS reloading during development. Without a computer running that
+profile (`developmentClient: true`, needs `expo-dev-client` installed) is
+meant for connecting to a locally running Metro bundler for live JS
+reloading during development. Without a computer running that
 server, installing a `development`-profile build does **not** show this
 app's actual screens — it opens Expo's own dev-launcher UI asking you to
 connect to a server. It's not a substitute for the `preview` profile
 you've actually been testing with. Its only relevance to phone-only
 debugging: it's a debug-variant native build, so if it *also* crashed
 before reaching even that launcher screen, that would point to something
-below the JS layer entirely — Sentry (above) should make that
-distinction moot in practice, since its native crash handler initializes
-independently of whether the JS layer ever runs.
+below the JS layer entirely.
 
 Once a build is possible (from a computer or via that workflow):
 
@@ -154,17 +152,6 @@ Once a build is possible (from a computer or via that workflow):
   that file), and login sessions would silently fail to survive closing the
   app. This is a real bug fix, not a preference — verify item 9 in the
   physical-device test checklist against a build made *after* this change.
-- **Crash reporting (Sentry)**: `index.js` (package.json's `"main"`, not
-  `expo-router/entry` directly) calls `Sentry.init()` as the very first
-  thing in the JS bundle, before any other import — see the comment there
-  for why. Needs `EXPO_PUBLIC_SENTRY_DSN` at runtime (public, same
-  embed-in-the-bundle caveat as the Firebase keys) and, for a build's
-  crash reports to show real (not minified) stack traces,
-  `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT` at build time only
-  (never in `.env`, never in the bundle) — see `.env.example`. Was added
-  specifically because guessing at launch-crash root causes from build
-  logs alone stopped being good enough; going forward, an actual device
-  crash produces a real report at sentry.io instead of another guess.
 - **Native dependency versions**: every native module (anything with
   platform-specific code, not pure JS) must match the exact version in
   `expo/bundledNativeModules.json` for the installed Expo SDK — not just
