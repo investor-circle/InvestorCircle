@@ -51,11 +51,6 @@ jobs:
       # them up when `eas build` reads the app config before uploading —
       # never printed to the log, never committed (mobile/.gitignore
       # excludes .env).
-      # EXPO_PUBLIC_SENTRY_DSN is meant to be public (embedded in the
-      # client bundle by design, same as the Firebase keys above) — the
-      # actual secret is SENTRY_AUTH_TOKEN, passed separately below to the
-      # build step's own env (never written to this file, never inlined
-      # into the app bundle).
       - name: Write mobile env file
         run: |
           cat > .env << EOF
@@ -65,7 +60,6 @@ jobs:
           EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           EXPO_PUBLIC_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}
-          EXPO_PUBLIC_SENTRY_DSN=${{ secrets.SENTRY_DSN }}
           EOF
 
       # First run only in practice: creates the EAS project the first time,
@@ -89,21 +83,12 @@ jobs:
       # `|| true`: a failed build still writes valid JSON to stdout before
       # exiting non-zero — capture it and let the final step below be the
       # actual pass/fail gate, after logs have had a chance to print.
-      # SENTRY_AUTH_TOKEN/ORG/PROJECT are read automatically by the Sentry
-      # Expo plugin (app.json) during the build to upload symbolicated
-      # source maps — without this, a release-build JS crash's stack
-      # trace on Sentry would be minified/useless (see
-      # https://docs.sentry.io/platforms/react-native/manual-setup/).
-      # Build-time only — never written to .env, never in the app bundle.
       - name: Build on EAS (cloud)
         run: |
           eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait --json > eas-build-result.json || true
           cat eas-build-result.json
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
 
       # Two failed attempts at decoding the raw logFiles archive (assumed
       # gzip, then confirmed that guess wrong too — still garbled after
