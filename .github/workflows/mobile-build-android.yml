@@ -137,17 +137,46 @@ jobs:
           if [ -z "$LOG_URLS" ]; then
             exit 0
           fi
+          # Three prior guesses at this file's format (plain text, gzip via
+          # gzip -t + gunzip) were all wrong — still garbled output each
+          # time. Guessing a fourth time isn't good enough. This dumps hard
+          # evidence (file type, size, hex of the first bytes) FIRST, tries
+          # every compression `file` can plausibly identify, and only
+          # falls back to strings/raw as a last resort — so either this
+          # decodes correctly, or the diagnostic output makes the actual
+          # format obvious instead of another blind guess.
+          #
+          # Also dropped the Authorization header for this fetch: these
+          # logFiles URLs are Google Cloud Storage V4 *signed* URLs
+          # (storage.googleapis.com?X-Goog-Signature=...) — the signature
+          # in the query string is the auth; GCS signed URLs are meant to
+          # be fetched anonymously, and sending an extra bearer token
+          # neither helps nor is how they're designed to be used.
           i=0
           for url in $LOG_URLS; do
             i=$((i+1))
             echo ""
             echo "================================================================"
-            echo "RAW LOG (best-effort — format not confirmed, may not decode): $url"
+            echo "LOG $i: $url"
             echo "================================================================"
-            curl -sSL -H "Authorization: Bearer ${EXPO_TOKEN}" "$url" -o "phase-$i.log" || { echo "(fetch failed)"; continue; }
+            curl -sSL "$url" -o "phase-$i.log" || { echo "(fetch failed)"; continue; }
+            echo "--- file type & size ---"
+            file "phase-$i.log" || true
+            wc -c "phase-$i.log"
+            echo "--- first 32 bytes (hex) ---"
+            od -An -tx1 -N 32 "phase-$i.log"
+            echo "--- decoded content ---"
             if gzip -t "phase-$i.log" 2>/dev/null; then
+              echo "(detected: gzip)"
               gunzip -c "phase-$i.log" > "phase-$i.txt"
+            elif command -v zstd >/dev/null && zstd -t "phase-$i.log" 2>/dev/null; then
+              echo "(detected: zstd)"
+              zstd -dc "phase-$i.log" > "phase-$i.txt"
+            elif command -v brotli >/dev/null && brotli -t "phase-$i.log" 2>/dev/null; then
+              echo "(detected: brotli)"
+              brotli -dc "phase-$i.log" > "phase-$i.txt"
             else
+              echo "(no known compression detected — treating as-is)"
               cp "phase-$i.log" "phase-$i.txt"
             fi
             jq -r '.msg? // empty' "phase-$i.txt" 2>/dev/null || strings "phase-$i.txt"
