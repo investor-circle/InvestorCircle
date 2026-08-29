@@ -169,9 +169,13 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
+      # eas-cli's --json output reports status as "FINISHED" (uppercase) —
+      # confirmed on an actual successful run whose job still failed here
+      # because this comparison was case-sensitive against a lowercase
+      # literal, wrongly treating a real success as a failure.
       - name: Check build actually succeeded
         if: always()
         run: |
           STATUS=$(jq -r 'if type=="array" then .[0].status else .status end' eas-build-result.json 2>/dev/null || echo "")
           echo "Final build status: $STATUS"
-          [ "$STATUS" = "finished" ]
+          [ "$(echo "$STATUS" | tr '[:upper:]' '[:lower:]')" = "finished" ]
