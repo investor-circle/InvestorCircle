@@ -44,24 +44,6 @@ jobs:
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
-      # Same Firebase project as the web app — reusing the VITE_FIREBASE_*
-      # secrets ci.yml already uses (repo root), just under the
-      # EXPO_PUBLIC_ prefix Expo requires for values inlined into the app
-      # bundle. Written to mobile/.env so Expo's config resolution picks
-      # them up when `eas build` reads the app config before uploading —
-      # never printed to the log, never committed (mobile/.gitignore
-      # excludes .env).
-      - name: Write mobile env file
-        run: |
-          cat > .env << EOF
-          EXPO_PUBLIC_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}
-          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          EXPO_PUBLIC_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          EXPO_PUBLIC_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}
-          EOF
-
       # First run only in practice: creates the EAS project the first time,
       # then just links to the existing one on every run after (matched by
       # app.json's slug under this account) — a robot token can't do this
@@ -72,6 +54,39 @@ jobs:
         run: eas init --non-interactive --account myinvestorcircle.com
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      # Root-caused a real device crash (auth/invalid-api-key from Firebase,
+      # confirmed via the on-device crash logger) to this: writing
+      # mobile/.env on this runner (the previous approach here) never
+      # actually reached the app, because `eas build` uploads the project
+      # to EAS's remote build servers via `git archive`, which — correctly —
+      # excludes gitignored files, .env included. The Firebase keys were
+      # never in the built app at all, on any run, not just this one.
+      # `eas env:set` registers these as EAS project environment variables
+      # instead, which *are* included in what the remote build worker sees
+      # (confirmed: EXPO_PUBLIC_API_ORIGIN, set the same way via eas.json's
+      # profile `env`, does show up there) — the officially supported
+      # mechanism for exactly this. `env:set` creates-or-updates, so this is
+      # safe to run on every build. These are the same public, non-secret
+      # Firebase web config values already embedded in the deployed web
+      # app's bundle (see CLAUDE.md's EXPO_PUBLIC_/VITE_ convention) —
+      # `plaintext` visibility is correct, not `secret`.
+      - name: Sync Firebase config to EAS environment variables
+        run: |
+          set -e
+          for NAME in EXPO_PUBLIC_FIREBASE_API_KEY EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN EXPO_PUBLIC_FIREBASE_PROJECT_ID EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID EXPO_PUBLIC_FIREBASE_APP_ID; do
+            eas env:set --non-interactive --scope project \
+              --name "$NAME" --value "${!NAME}" --visibility plaintext \
+              --environment production --environment preview --environment development
+          done
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
 
       # Neither --verbose-logs nor --build-logger-level debug (both tried
       # in earlier fixes) actually streams the remote build worker's
