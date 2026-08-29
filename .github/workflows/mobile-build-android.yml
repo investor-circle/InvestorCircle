@@ -79,13 +79,16 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      # --build-logger-level debug (not --verbose-logs, which only affects
-      # eas-cli's own local logging, not the remote build's log stream —
-      # learned the hard way after run #4 still only printed a "see logs"
-      # dashboard link instead of the actual Gradle failure) streams the
-      # EAS remote build worker's own phase-by-phase output into this
-      # Actions log directly, so a future failure there is diagnosable
-      # from here instead of needing the expo.dev dashboard.
+      # Neither --verbose-logs nor --build-logger-level debug (both tried
+      # in earlier fixes) actually streams the remote build worker's
+      # phase-by-phase output into this job's log — confirmed twice now,
+      # not assumed. `--json` instead gives a machine-readable result
+      # (including the build ID) that the next step uses to fetch the
+      # real per-phase logs directly via the EAS API, which does not
+      # depend on any eas-cli logging flag behaving a particular way.
+      # `|| true`: a failed build still writes valid JSON to stdout before
+      # exiting non-zero — capture it and let the final step below be the
+      # actual pass/fail gate, after logs have had a chance to print.
       # SENTRY_AUTH_TOKEN/ORG/PROJECT are read automatically by the Sentry
       # Expo plugin (app.json) during the build to upload symbolicated
       # source maps — without this, a release-build JS crash's stack
@@ -93,9 +96,45 @@ jobs:
       # https://docs.sentry.io/platforms/react-native/manual-setup/).
       # Build-time only — never written to .env, never in the app bundle.
       - name: Build on EAS (cloud)
-        run: eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait --build-logger-level debug
+        run: |
+          eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait --json > eas-build-result.json || true
+          cat eas-build-result.json
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+
+      - name: Fetch full build phase logs
+        if: always()
+        run: |
+          BUILD_ID=$(jq -r 'if type=="array" then .[0].id else .id end' eas-build-result.json 2>/dev/null || echo "")
+          if [ -z "$BUILD_ID" ] || [ "$BUILD_ID" = "null" ]; then
+            echo "Could not determine a build ID — raw eas build output was:"
+            cat eas-build-result.json
+            exit 0
+          fi
+          echo "Build ID: $BUILD_ID"
+          eas build:view "$BUILD_ID" --json > build-view.json
+          LOG_URLS=$(jq -r '.logFiles[]? // empty' build-view.json)
+          if [ -z "$LOG_URLS" ]; then
+            echo "No logFiles on this build — full build-view.json:"
+            cat build-view.json
+            exit 0
+          fi
+          for url in $LOG_URLS; do
+            echo ""
+            echo "================================================================"
+            echo "LOG: $url"
+            echo "================================================================"
+            curl -sSL -H "Authorization: Bearer ${EXPO_TOKEN}" "$url" || echo "(fetch failed)"
+          done
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Check build actually succeeded
+        if: always()
+        run: |
+          STATUS=$(jq -r 'if type=="array" then .[0].status else .status end' eas-build-result.json 2>/dev/null || echo "")
+          echo "Final build status: $STATUS"
+          [ "$STATUS" = "finished" ]
