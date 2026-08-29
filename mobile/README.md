@@ -165,6 +165,20 @@ Once a build is possible (from a computer or via that workflow):
   catches. When adding or upgrading any native package here, verify it
   against `require('expo/bundledNativeModules.json')` before assuming
   `npm install` picked something safe.
+- **Crash logger** (`plugins/withCrashLogger.js`): an Expo config plugin
+  that injects a `Thread.setDefaultUncaughtExceptionHandler` as the first
+  statement of the generated `MainApplication.onCreate()` — before
+  `super.onCreate()`, before React Native loads, before any Expo module
+  initializes. On any uncaught exception it appends the stack trace to
+  `crash-log.txt` in the app's external files dir (`getExternalFilesDir(null)`,
+  i.e. `Android/data/com.myinvestorcircle.app/files/crash-log.txt` under
+  internal storage) before chaining to the default handler, so Android's
+  normal crash dialog still shows. That path needs no runtime permission
+  and no adb/root to read — any file manager app can browse to it. Added
+  specifically to diagnose the still-unresolved instant-launch crash on a
+  physical device without needing a computer for `adb logcat`. Only
+  catches crashes from the point `onCreate()` is reached onward — a crash
+  during earlier class loading/static init would still be invisible here.
 
 ## Deliberately not yet built
 
