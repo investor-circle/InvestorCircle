@@ -6,8 +6,9 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import { initialsOf } from "../../src/utils/format";
+import { withBoundary } from "../../src/components/ErrorBoundary";
 
-export default function ProfileScreen() {
+function ProfileScreen() {
   const { profile, logout, userIsAdmin } = useAuth();
   const router = useRouter();
 
@@ -29,7 +30,11 @@ export default function ProfileScreen() {
 
         <View style={styles.menu}>
           <MenuRow icon="people-outline" label="Your network" onPress={() => router.push("/network")} />
-          <MenuRow icon="notifications-outline" label="Notifications" onPress={() => router.push("/notifications")} last />
+          <MenuRow icon="search-outline" label="Find investors" onPress={() => router.push("/people")} />
+          <MenuRow icon="albums-outline" label="Your Circles" onPress={() => router.push("/circles")} />
+          <MenuRow icon="briefcase-outline" label="Portfolio" onPress={() => router.push("/portfolio")} />
+          <MenuRow icon="notifications-outline" label="Notifications" onPress={() => router.push("/notifications")} />
+          <MenuRow icon="bug-outline" label="Diagnostics" onPress={() => router.push("/debug")} last />
         </View>
 
         {profile?.email ? (
@@ -127,3 +132,5 @@ const styles = StyleSheet.create({
   },
   signOutText: { color: colors.loss, fontFamily: fonts.bold, fontSize: 15 },
 });
+
+export default withBoundary(ProfileScreen, "Profile");

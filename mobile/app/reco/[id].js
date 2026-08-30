@@ -25,8 +25,9 @@ import {
 } from "../../src/services/api/engagementApi";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts } from "../../src/theme/colors";
+import { withBoundary } from "../../src/components/ErrorBoundary";
 
-export default function RecoDetailScreen() {
+function RecoDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { profile } = useAuth();
@@ -105,7 +106,15 @@ export default function RecoDetailScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
           {reco ? (
-            <RecoCard reco={reco} />
+            <>
+              <RecoCard reco={reco} />
+              {reco.from_username ? (
+                <Pressable style={styles.authorLink} onPress={() => router.push(`/investor/${reco.from_username}`)}>
+                  <Ionicons name="person-circle-outline" size={17} color={colors.accentInk} />
+                  <Text style={styles.authorLinkText}>View {reco.byName || "investor"}'s profile</Text>
+                </Pressable>
+              ) : null}
+            </>
           ) : (
             <View style={styles.missing}>
               <Text style={styles.missingText}>This idea isn't available. Open it from your feed.</Text>
@@ -194,6 +203,15 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 24 },
   topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16 },
+  authorLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingVertical: 4,
+  },
+  authorLinkText: { color: colors.accentInk, fontFamily: fonts.semibold, fontSize: 13 },
   missing: { padding: 24, alignItems: "center" },
   missingText: { color: colors.muted, fontFamily: fonts.regular, fontSize: 14, textAlign: "center" },
 
@@ -263,3 +281,5 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: colors.line2 },
 });
+
+export default withBoundary(RecoDetailScreen, "Idea detail");

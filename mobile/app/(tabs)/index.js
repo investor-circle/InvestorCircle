@@ -19,7 +19,9 @@ import {
   mapNetworkReco,
 } from "../../src/utils/feed";
 import { putReco } from "../../src/utils/recoStore";
+import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
+import { withBoundary } from "../../src/components/ErrorBoundary";
 
 // Progressive load: the user's own direct deliveries (received) come back
 // fast, so we render those first (received-only merge) and paint the feed
@@ -38,6 +40,7 @@ async function loadFeedProgressive(onPartial) {
 
   // First paint — received only, newest-first via scoreFeedRec.
   const received = await receivedP;
+  debugLog(`feed: received=${received?.length ?? "null"}`);
   onPartial(buildFeed({ received, cfg: {} }));
 
   // Full merge once the remaining independent calls resolve. Use allSettled
@@ -65,7 +68,23 @@ async function loadFeedProgressive(onPartial) {
     }
   }
 
-  return buildFeed({
+  // Per-source counts + which calls failed — this is what tells us whether a
+  // short feed is "the server returned little" or "a source failed".
+  debugLog(
+    `feed sources: received=${received.length} public=${publicRaw.length}` +
+      ` network=${networkRecos.length} activeConns=${activeConns.length}` +
+      ` tracked=${trackedIds.length} cfg(public=${cfg.src_public !== false},network=${!!cfg.src_network_engagement})` +
+      ` rejected=[${[
+        publicR.status === "rejected" && "public",
+        connsR.status === "rejected" && "conns",
+        cfgR.status === "rejected" && "cfg",
+        trackedR.status === "rejected" && "tracked",
+      ]
+        .filter(Boolean)
+        .join(",")}]`
+  );
+
+  const merged = buildFeed({
     received,
     networkRecos,
     publicRecos: (publicRaw || []).map(mapPublicReco),
@@ -73,9 +92,11 @@ async function loadFeedProgressive(onPartial) {
     trackedIds,
     contactIds,
   });
+  debugLog(`feed: merged total=${merged.length}`);
+  return merged;
 }
 
-export default function FeedScreen() {
+function FeedScreen() {
   const router = useRouter();
   const [recos, setRecos] = useState(null); // null = initial loading
   const [refreshing, setRefreshing] = useState(false);
@@ -207,3 +228,5 @@ const styles = StyleSheet.create({
   },
   retryText: { color: colors.accent, fontFamily: fonts.semibold, fontSize: 14 },
 });
+
+export default withBoundary(FeedScreen, "Feed");

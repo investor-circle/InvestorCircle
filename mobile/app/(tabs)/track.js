@@ -7,6 +7,7 @@ import { getMyTrackedRecos } from "../../src/services/api/engagementApi";
 import { mapTrackedReco } from "../../src/utils/feed";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts } from "../../src/theme/colors";
+import { withBoundary } from "../../src/components/ErrorBoundary";
 
 // Track = the user's own posted ideas ("Made by me") and the ideas they've
 // tracked/invested in — the two personal lists from the web app, surfaced as
@@ -16,7 +17,7 @@ const TABS = [
   { id: "tracked", label: "Tracked" },
 ];
 
-export default function TrackScreen() {
+function TrackScreen() {
   const { profile } = useAuth();
   const [tab, setTab] = useState("made");
 
@@ -80,3 +81,5 @@ const styles = StyleSheet.create({
   tabText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 14 },
   tabTextActive: { color: "#fff" },
 });
+
+export default withBoundary(TrackScreen, "Track");

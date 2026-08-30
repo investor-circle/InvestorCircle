@@ -124,6 +124,32 @@ export function mapTrackedReco(r) {
   };
 }
 
+// Map a raw Circle-feed row (scope=circle) into the UI shape. The circle
+// query returns recommender_* columns and comments_count (note the different
+// spelling from the other feeds).
+export function mapCircleReco(r) {
+  return {
+    ...r,
+    assetName: r.asset_name,
+    priceAt: Number(r.reco_price || 0),
+    price: Number(r.current_price || 0),
+    targetPrice: r.target_price ? Number(r.target_price) : null,
+    date: r.created_at ? String(r.created_at).slice(0, 10) : null,
+    byName: r.recommender_name,
+    from: r.recommender_id,
+    from_username: r.recommender_username,
+    recType: r.recommendation_type || "Buy",
+    exitSignal: r.exit_signal,
+    likes: Number(r.likes || 0),
+    commentCount: Number(r.comments_count || 0),
+    feedSource: "group",
+    reaction: "none",
+    hidden: false,
+    invested: false,
+    deliveryId: null,
+  };
+}
+
 /**
  * Compose the ranked Feed list from the three already-mapped sources.
  * Mirrors `feedRecs` in Discovery.jsx: direct first, then network-engagement
@@ -156,6 +182,12 @@ export function buildFeed({ received = [], networkRecos = [], publicRecos = [], 
   if (cfg.filter_hide_invested) items = items.filter((r) => !r.invested);
 
   return items
-    .map((r) => ({ ...r, _score: scoreFeedRec(r, trackedHas, cfg, contactIds) }))
+    .map((r) => {
+      // A reco with a null/unparseable date yields NaN from the recency term,
+      // which makes the comparator below inconsistent and the resulting order
+      // arbitrary. Fall back to 0 so those items simply rank last instead.
+      const s = scoreFeedRec(r, trackedHas, cfg, contactIds);
+      return { ...r, _score: Number.isFinite(s) ? s : 0 };
+    })
     .sort((a, b) => b._score - a._score);
 }

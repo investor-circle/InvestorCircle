@@ -15,6 +15,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { createRecommendation } from "../src/services/api/recommendationsApi";
 import { colors, fonts } from "../src/theme/colors";
+import { withBoundary } from "../src/components/ErrorBoundary";
 
 // New recommendation. v1 posts a public idea (no per-circle recipient
 // selection yet — that mirrors the web's more complex share step and is the
@@ -23,7 +24,7 @@ import { colors, fonts } from "../src/theme/colors";
 // horizon/thesis.
 const TYPES = ["Buy", "Sell"];
 
-export default function NewRecoScreen() {
+function NewRecoScreen() {
   const router = useRouter();
   const [assetName, setAssetName] = useState("");
   const [ticker, setTicker] = useState("");
@@ -191,3 +192,5 @@ const styles = StyleSheet.create({
   },
   submitText: { color: "#fff", fontFamily: fonts.bold, fontSize: 16 },
 });
+
+export default withBoundary(NewRecoScreen, "New idea");

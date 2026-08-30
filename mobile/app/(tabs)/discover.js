@@ -3,6 +3,7 @@ import RecoListScreen from "../../src/components/RecoListScreen";
 import GradientHero from "../../src/components/GradientHero";
 import { getPublicFeed } from "../../src/services/api/recommendationsApi";
 import { mapPublicReco } from "../../src/utils/feed";
+import { withBoundary } from "../../src/components/ErrorBoundary";
 
 // Discover = public recommendations from across the platform (same source as
 // the web Pulse "Trending on MIC" / public feed). Server returns them
@@ -12,7 +13,7 @@ async function loadDiscover() {
   return (rows || []).map(mapPublicReco);
 }
 
-export default function DiscoverScreen() {
+function DiscoverScreen() {
   const loader = useCallback(() => loadDiscover(), []);
   return (
     <RecoListScreen
@@ -23,3 +24,5 @@ export default function DiscoverScreen() {
     />
   );
 }
+
+export default withBoundary(DiscoverScreen, "Discover");

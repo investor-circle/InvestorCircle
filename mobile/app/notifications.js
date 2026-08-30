@@ -7,8 +7,9 @@ import { getMyNotifications, markNotifRead, markAllNotifRead } from "../src/serv
 import { notifText, notifIcon, notifRecoId } from "../src/utils/notifications";
 import { fmtDate } from "../src/utils/format";
 import { colors, fonts } from "../src/theme/colors";
+import { withBoundary } from "../src/components/ErrorBoundary";
 
-export default function NotificationsScreen() {
+function NotificationsScreen() {
   const router = useRouter();
   const [items, setItems] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -131,3 +132,5 @@ const styles = StyleSheet.create({
   emptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16, marginTop: 12 },
   emptySub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, textAlign: "center", marginTop: 6, lineHeight: 19 },
 });
+
+export default withBoundary(NotificationsScreen, "Notifications");

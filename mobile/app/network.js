@@ -12,13 +12,14 @@ import {
 } from "../src/services/api/connectionsApi";
 import { initialsOf } from "../src/utils/format";
 import { colors, fonts, GRADIENT } from "../src/theme/colors";
+import { withBoundary } from "../src/components/ErrorBoundary";
 
 const TABS = [
   { id: "connections", label: "Connections" },
   { id: "requests", label: "Requests" },
 ];
 
-export default function NetworkScreen() {
+function NetworkScreen() {
   const router = useRouter();
   const [tab, setTab] = useState("connections");
   const [rows, setRows] = useState(null);
@@ -214,3 +215,5 @@ const styles = StyleSheet.create({
   emptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16, marginTop: 12 },
   emptySub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, textAlign: "center", marginTop: 6, lineHeight: 19 },
 });
+
+export default withBoundary(NetworkScreen, "Network");
