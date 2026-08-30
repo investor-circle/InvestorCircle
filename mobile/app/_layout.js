@@ -43,6 +43,8 @@ function RootNavigator() {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="reco/[id]" />
+      <Stack.Screen name="notifications" />
+      <Stack.Screen name="network" />
       <Stack.Screen name="new" options={{ presentation: "modal" }} />
     </Stack>
   );

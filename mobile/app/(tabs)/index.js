@@ -11,6 +11,7 @@ import {
 } from "../../src/services/api/recommendationsApi";
 import { getMyConnections } from "../../src/services/api/connectionsApi";
 import { getFeedConfigAndPrefs, getMyTrackedRecoIds } from "../../src/services/api/feedApi";
+import { getMyNotifications } from "../../src/services/api/notificationsApi";
 import {
   buildFeed,
   computeEffectiveFeedConfig,
@@ -26,6 +27,8 @@ import { colors, fonts } from "../../src/theme/colors";
 // re-rank once they resolve. This is what makes the Feed feel fast — the old
 // version awaited ALL five endpoints (plus a sequential network-engagement
 // call) before showing anything.
+const settledOr = (r, fallback) => (r.status === "fulfilled" ? r.value : fallback);
+
 async function loadFeedProgressive(onPartial) {
   const receivedP = getMyReceivedRecos();
   const publicP = getPublicFeed();
@@ -37,16 +40,29 @@ async function loadFeedProgressive(onPartial) {
   const received = await receivedP;
   onPartial(buildFeed({ received, cfg: {} }));
 
-  // Full merge once the remaining independent calls resolve.
-  const [publicRaw, connections, feedCfg, trackedIds] = await Promise.all([publicP, connsP, cfgP, trackedP]);
+  // Full merge once the remaining independent calls resolve. Use allSettled
+  // so one failing source (e.g. a transient network blip on the public feed)
+  // degrades to "that source missing" rather than collapsing the whole feed
+  // back to received-only — the earlier cause of the feed showing only a
+  // handful of ideas.
+  const [publicR, connsR, cfgR, trackedR] = await Promise.allSettled([publicP, connsP, cfgP, trackedP]);
+  const publicRaw = settledOr(publicR, []);
+  const connections = settledOr(connsR, []);
+  const feedCfg = settledOr(cfgR, { options: [], prefs: [] });
+  const trackedIds = settledOr(trackedR, []);
+
   const cfg = computeEffectiveFeedConfig(feedCfg.options, feedCfg.prefs);
   const activeConns = (connections || []).filter((c) => c.status === "active");
   const contactIds = new Set(activeConns.map((c) => c.user_id));
 
   let networkRecos = [];
   if (cfg.src_network_engagement && activeConns.length > 0) {
-    const networkRaw = await getNetworkEngagementFeed(activeConns.map((c) => c.user_id));
-    networkRecos = networkRaw.map(mapNetworkReco);
+    try {
+      const networkRaw = await getNetworkEngagementFeed(activeConns.map((c) => c.user_id));
+      networkRecos = (networkRaw || []).map(mapNetworkReco);
+    } catch (_) {
+      /* network-engagement is an enrichment, not required */
+    }
   }
 
   return buildFeed({
@@ -64,6 +80,7 @@ export default function FeedScreen() {
   const [recos, setRecos] = useState(null); // null = initial loading
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
+  const [unread, setUnread] = useState(0);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -71,6 +88,15 @@ export default function FeedScreen() {
     return () => {
       mounted.current = false;
     };
+  }, []);
+
+  // Unread notification count — fetched off the feed's critical path (own
+  // effect, not awaited by the feed load) so the badge never delays render.
+  useEffect(() => {
+    (async () => {
+      const list = await getMyNotifications();
+      if (mounted.current) setUnread(list.filter((n) => !n.is_read).length);
+    })();
   }, []);
 
   const load = useCallback(async () => {
@@ -117,6 +143,9 @@ export default function FeedScreen() {
           ? `Fresh recommendations · ${recos.length} idea${recos.length === 1 ? "" : "s"}`
           : "Recommendations from your circle & the platform"
       }
+      icon="notifications-outline"
+      badge={unread}
+      onIconPress={() => router.push("/notifications")}
     />
   );
 
@@ -142,7 +171,6 @@ export default function FeedScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         initialNumToRender={6}
         windowSize={11}
-        removeClippedSubviews
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>{error ? "Couldn't load your feed" : "No ideas yet"}</Text>

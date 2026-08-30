@@ -2,12 +2,14 @@ import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import { initialsOf } from "../../src/utils/format";
 
 export default function ProfileScreen() {
   const { profile, logout, userIsAdmin } = useAuth();
+  const router = useRouter();
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
@@ -25,6 +27,11 @@ export default function ProfileScreen() {
           ) : null}
         </LinearGradient>
 
+        <View style={styles.menu}>
+          <MenuRow icon="people-outline" label="Your network" onPress={() => router.push("/network")} />
+          <MenuRow icon="notifications-outline" label="Notifications" onPress={() => router.push("/notifications")} last />
+        </View>
+
         {profile?.email ? (
           <View style={styles.infoCard}>
             <Ionicons name="mail-outline" size={18} color={colors.muted} />
@@ -41,8 +48,30 @@ export default function ProfileScreen() {
   );
 }
 
+function MenuRow({ icon, label, onPress, last }) {
+  return (
+    <Pressable style={[styles.menuRow, !last && styles.menuRowBorder]} onPress={onPress}>
+      <Ionicons name={icon} size={20} color={colors.accentInk} />
+      <Text style={styles.menuLabel}>{label}</Text>
+      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
+  menu: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginTop: 16,
+    overflow: "hidden",
+  },
+  menuRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 15 },
+  menuRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.line },
+  menuLabel: { flex: 1, color: colors.ink, fontFamily: fonts.semibold, fontSize: 15 },
   hero: {
     alignItems: "center",
     paddingTop: 36,

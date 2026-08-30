@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,7 +12,7 @@ import { fmt, fmtDate, fmtPct, initialsOf, returnPct } from "../utils/format";
 // + invested state. Tappable (onPress) to open the detail screen.
 const SOURCE_LABELS = { public: "Public", network_engagement: "From your network" };
 
-export default function RecoCard({ reco, onPress }) {
+function RecoCard({ reco, onPress }) {
   const pct = returnPct(reco);
   const positive = pct >= 0;
   const isBuy = (reco.recType || "Buy") !== "Sell";
@@ -137,6 +138,9 @@ export default function RecoCard({ reco, onPress }) {
   }
   return CardBody;
 }
+
+// Memoized so scrolling / parent state changes don't re-render every card.
+export default memo(RecoCard);
 
 const styles = StyleSheet.create({
   card: {

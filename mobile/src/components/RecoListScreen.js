@@ -89,7 +89,6 @@ export default function RecoListScreen({ hero, loader, subHeader, emptyTitle, em
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         initialNumToRender={6}
         windowSize={11}
-        removeClippedSubviews
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>{error ? "Couldn't load" : emptyTitle}</Text>

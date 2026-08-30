@@ -2,10 +2,16 @@ import { View, Pressable, StyleSheet } from "react-native";
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 
 export default function TabsLayout() {
   const router = useRouter();
+  // Gesture-nav / on-screen buttons eat the bottom edge — reserve the real
+  // inset so the tab bar isn't hidden behind the Android system controls.
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 8);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Tabs
@@ -16,8 +22,8 @@ export default function TabsLayout() {
           tabBarStyle: {
             backgroundColor: colors.surface,
             borderTopColor: colors.line,
-            height: 60,
-            paddingBottom: 8,
+            height: 58 + bottomInset,
+            paddingBottom: bottomInset,
             paddingTop: 6,
           },
           tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11 },
@@ -54,8 +60,12 @@ export default function TabsLayout() {
       </Tabs>
 
       {/* Gradient New-idea FAB — the web app's primary "New idea" action,
-          always reachable above the tab bar. */}
-      <Pressable style={styles.fab} onPress={() => router.push("/new")} hitSlop={8}>
+          always reachable above the tab bar (sits above the safe-area inset). */}
+      <Pressable
+        style={[styles.fab, { bottom: 74 + bottomInset }]}
+        onPress={() => router.push("/new")}
+        hitSlop={8}
+      >
         <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.fabInner}>
           <Ionicons name="add" size={30} color="#fff" />
         </LinearGradient>
@@ -68,7 +78,6 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: 18,
-    bottom: 76,
     width: 58,
     height: 58,
     borderRadius: 29,
