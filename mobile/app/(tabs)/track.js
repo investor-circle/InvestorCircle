@@ -1,11 +1,12 @@
 import { useCallback, useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import RecoListScreen from "../../src/components/RecoListScreen";
+import GradientHero from "../../src/components/GradientHero";
 import { getMyMadeRecos } from "../../src/services/api/recommendationsApi";
 import { getMyTrackedRecos } from "../../src/services/api/engagementApi";
 import { mapTrackedReco } from "../../src/utils/feed";
 import { useAuth } from "../../src/context/AuthContext";
-import { colors } from "../../src/theme/colors";
+import { colors, fonts } from "../../src/theme/colors";
 
 // Track = the user's own posted ideas ("Made by me") and the ideas they've
 // tracked/invested in — the two personal lists from the web app, surfaced as
@@ -31,7 +32,7 @@ export default function TrackScreen() {
     return rows.map(mapTrackedReco);
   }, [tab, profile?.full_name]);
 
-  const header = (
+  const subHeader = (
     <View style={styles.tabs}>
       {TABS.map((t) => {
         const active = tab === t.id;
@@ -50,9 +51,9 @@ export default function TrackScreen() {
 
   return (
     <RecoListScreen
-      title="Track"
+      hero={<GradientHero eyebrow="Track" title="My Recommendations" subtitle="Ideas you've posted and tracked" />}
+      subHeader={subHeader}
       loader={loader}
-      ListHeader={header}
       emptyTitle={tab === "made" ? "You haven't posted any ideas yet" : "You're not tracking any ideas yet"}
       emptySubtitle={
         tab === "made"
@@ -64,18 +65,18 @@ export default function TrackScreen() {
 }
 
 const styles = StyleSheet.create({
-  tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
+  tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.bg },
   tab: {
     flex: 1,
     height: 40,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: colors.line,
   },
   tabActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  tabText: { color: colors.textMuted, fontSize: 14, fontWeight: "600" },
+  tabText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 14 },
   tabTextActive: { color: "#fff" },
 });

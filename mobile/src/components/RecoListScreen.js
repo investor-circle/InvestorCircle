@@ -1,31 +1,43 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, RefreshControl, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import RecoCard from "./RecoCard";
-import { colors } from "../theme/colors";
+import { putReco } from "../utils/recoStore";
+import { colors, fonts } from "../theme/colors";
 
 /**
- * Shared reco-list screen used by Feed, Discover and Track — one place for
- * the loading / empty / error / pull-to-refresh behaviour and the FlatList
- * performance props, so the three list screens stay consistent.
+ * Shared reco-list screen used by Discover and Track — one place for the
+ * loading / empty / error / pull-to-refresh behaviour, the FlatList perf
+ * props, and card→detail navigation.
  *
- * @param title       header text
+ * @param hero        element rendered as the scrolling list header (GradientHero)
  * @param loader      async () => reco[]  (already composed/sorted by caller)
+ * @param subHeader   optional element rendered between hero and list (e.g. tabs)
  * @param emptyTitle / emptySubtitle  copy for the genuine empty state
- * @param renderItem  optional custom row (defaults to <RecoCard/>)
- * @param ListHeader  optional element rendered above the list (e.g. sub-tabs)
  */
-export default function RecoListScreen({ title, loader, emptyTitle, emptySubtitle, renderItem, ListHeader }) {
-  const [recos, setRecos] = useState(null); // null = initial loading
+export default function RecoListScreen({ hero, loader, subHeader, emptyTitle, emptySubtitle }) {
+  const router = useRouter();
+  const [recos, setRecos] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     try {
       const data = await loader();
+      if (!mounted.current) return;
       setRecos(data);
       setError(false);
     } catch (e) {
+      if (!mounted.current) return;
       setError(true);
       setRecos((prev) => prev ?? []);
     }
@@ -41,42 +53,55 @@ export default function RecoListScreen({ title, loader, emptyTitle, emptySubtitl
     setRefreshing(false);
   };
 
+  const openReco = useCallback(
+    (reco) => {
+      putReco(reco);
+      router.push(`/reco/${reco.id}`);
+    },
+    [router]
+  );
+
   if (recos === null) {
     return (
-      <SafeAreaView style={styles.center} edges={["top"]}>
-        <ActivityIndicator color={colors.accent} size="large" />
-      </SafeAreaView>
+      <View style={styles.flex}>
+        {hero}
+        {subHeader}
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.accent} size="large" />
+        </View>
+      </View>
     );
   }
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
-      <Text style={styles.heading}>{title}</Text>
-      {ListHeader}
       <FlatList
         data={recos}
         keyExtractor={(item) => String(item.deliveryId ?? item.id)}
-        renderItem={renderItem || (({ item }) => <RecoCard reco={item} />)}
-        contentContainerStyle={recos.length === 0 ? styles.emptyContainer : { paddingBottom: 24 }}
+        renderItem={({ item }) => <RecoCard reco={item} onPress={openReco} />}
+        ListHeaderComponent={
+          <>
+            {hero}
+            {subHeader}
+          </>
+        }
+        contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        initialNumToRender={8}
+        initialNumToRender={6}
         windowSize={11}
         removeClippedSubviews
         ListEmptyComponent={
-          error ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>Couldn't load</Text>
-              <Text style={styles.emptySubtitle}>Check your connection and pull down to try again.</Text>
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>{error ? "Couldn't load" : emptyTitle}</Text>
+            <Text style={styles.emptySubtitle}>
+              {error ? "Check your connection and pull down to try again." : emptySubtitle}
+            </Text>
+            {error ? (
               <Pressable style={styles.retry} onPress={onRefresh}>
                 <Text style={styles.retryText}>Retry</Text>
               </Pressable>
-            </View>
-          ) : (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>{emptyTitle}</Text>
-              <Text style={styles.emptySubtitle}>{emptySubtitle}</Text>
-            </View>
-          )
+            ) : null}
+          </View>
         }
       />
     </SafeAreaView>
@@ -85,12 +110,10 @@ export default function RecoListScreen({ title, loader, emptyTitle, emptySubtitl
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg },
-  heading: { color: colors.text, fontSize: 24, fontWeight: "700", paddingHorizontal: 16, paddingVertical: 12 },
-  emptyContainer: { flexGrow: 1 },
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
-  emptyTitle: { color: colors.text, fontSize: 17, fontWeight: "600", marginBottom: 6 },
-  emptySubtitle: { color: colors.textMuted, fontSize: 14, textAlign: "center", lineHeight: 20 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 40 },
+  empty: { alignItems: "center", justifyContent: "center", paddingHorizontal: 32, paddingTop: 60 },
+  emptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17, marginBottom: 6 },
+  emptySubtitle: { color: colors.muted, fontFamily: fonts.regular, fontSize: 14, textAlign: "center", lineHeight: 20 },
   retry: {
     marginTop: 16,
     borderWidth: 1,
@@ -99,5 +122,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
   },
-  retryText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
+  retryText: { color: colors.accent, fontFamily: fonts.semibold, fontSize: 14 },
 });

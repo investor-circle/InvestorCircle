@@ -153,9 +153,28 @@ Once a build is possible (from a computer or via that workflow):
 - Track tab: segmented "Made by me" (`getMyMadeRecos`) / "Tracked"
   (`getMyTrackedRecos`) lists of the caller's own posted and tracked ideas.
 - Profile tab: avatar/name/username/admin badge + working sign-out.
-- Shared `RecoListScreen` (`src/components/RecoListScreen.js`) backs Feed,
+- Shared `RecoListScreen` (`src/components/RecoListScreen.js`) backs
   Discover and Track — one place for the list/loading/empty/error/refresh
-  behaviour and FlatList perf props, so the three stay consistent.
+  behaviour and FlatList perf props, so they stay consistent.
+- **Design system matches the web app**: `src/theme/colors.js` carries the
+  exact tokens from `src/styles/globalStyles.js` (light theme, `#6d5df5`
+  purple accent, the 135° purple→magenta `GRADIENT`, gain/loss greens/reds);
+  Plus Jakarta Sans is loaded via `@expo-google-fonts` in `app/_layout.js`
+  with weight presets in `src/theme/type.js`. `GradientHero` reproduces the
+  web `.hero-grad` header; `RecoCard` matches the web feed card (gradient
+  avatar, Buy/Sell pill, price+return inset, reco-price/target/horizon/
+  conviction grid, status/sector pills, invested state).
+- **Feed loads progressively**: the user's direct deliveries (fast) paint
+  first, then public + network-engagement fold in and re-rank — so the feed
+  is usable immediately instead of blocking on all five endpoints.
+- **Reco detail** (`app/reco/[id].js`): opens instantly from an in-memory
+  hand-off (`src/utils/recoStore.js`, no refetch) and loads engagement
+  (`getEngagement`) for like / track / mark-invested / comments, all through
+  the existing `engagement` endpoints.
+- **New idea** (`app/new.js`, gradient FAB in the tab bar): posts a public
+  recommendation via `createRecommendation` (per-circle recipient selection
+  is the next increment).
+- Bottom nav relabelled to match the web (Home / Pulse / My Recs / Profile).
 - `metro.config.js` disables Metro's package-exports resolution
   (`unstable_enablePackageExports = false`) — without it, `firebase/auth`'s
   React Native persistence build never gets picked up (see the comment in

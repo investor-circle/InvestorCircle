@@ -11,7 +11,7 @@ import {
   Image,
 } from "react-native";
 import { useAuth } from "../../src/context/AuthContext";
-import { colors } from "../../src/theme/colors";
+import { colors, fonts } from "../../src/theme/colors";
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -91,20 +91,21 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   container: { flex: 1, justifyContent: "center", paddingHorizontal: 24 },
   logo: { width: 72, height: 72, alignSelf: "center", marginBottom: 16, borderRadius: 16 },
-  title: { fontSize: 26, fontWeight: "700", color: colors.text, textAlign: "center" },
-  subtitle: { fontSize: 15, color: colors.textMuted, textAlign: "center", marginTop: 6, marginBottom: 32 },
+  title: { fontSize: 26, fontFamily: fonts.extrabold, color: colors.ink, textAlign: "center" },
+  subtitle: { fontSize: 15, fontFamily: fonts.regular, color: colors.muted, textAlign: "center", marginTop: 6, marginBottom: 32 },
   form: { gap: 12 },
   input: {
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.card,
+    borderColor: colors.line2,
+    backgroundColor: colors.surface,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: colors.text,
+    color: colors.ink,
+    fontFamily: fonts.regular,
     fontSize: 16,
   },
-  error: { color: colors.red, fontSize: 14 },
+  error: { color: colors.loss, fontFamily: fonts.semibold, fontSize: 14 },
   button: {
     backgroundColor: colors.accent,
     borderRadius: 12,
@@ -112,5 +113,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 4,
   },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  buttonText: { color: "#fff", fontSize: 16, fontFamily: fonts.bold },
 });
