@@ -140,12 +140,22 @@ Once a build is possible (from a computer or via that workflow):
 - Navigation shell (Expo Router, auth-gated stack + bottom tabs)
 - Firebase email/password auth, mirroring `src/AuthContext.jsx` (blacklist
   check before session commit, profile sync/create, same server endpoints)
-- Feed tab: real data from `GET /api/data?resource=recommendations&scope=received`,
-  loading/empty/error-safe states, pull-to-refresh
-- Discover/Track/Profile tabs: navigable placeholders (Profile has working
-  sign-out); their API calls (`getPublicFeed`, `getNetworkEngagementFeed`,
-  `getMyMadeRecos`) are already wired in `src/services/api/recommendationsApi.js`,
-  UI not yet built
+- Feed tab: the **same three-source merge as the web Feed tab** — direct
+  deliveries (`scope=received`) + network-engagement recos + public platform
+  recos — deduped by id, filtered by the effective feed config, and ranked by
+  the shared `scoreFeedRec`. Composition lives in `src/utils/feed.js` (mirrors
+  `feedRecs` in `src/features/discovery/Discovery.jsx` plus the source mapping
+  and effective-config resolution in `src/App.jsx`). Loading/empty/error
+  states, pull-to-refresh. (Earlier this tab showed only direct deliveries — a
+  strict subset — which was the "limited ideas" discrepancy.)
+- Discover tab: public recommendations from across the platform (`getPublicFeed`,
+  same source as the web Pulse "Trending on MIC"/public feed), newest-first.
+- Track tab: segmented "Made by me" (`getMyMadeRecos`) / "Tracked"
+  (`getMyTrackedRecos`) lists of the caller's own posted and tracked ideas.
+- Profile tab: avatar/name/username/admin badge + working sign-out.
+- Shared `RecoListScreen` (`src/components/RecoListScreen.js`) backs Feed,
+  Discover and Track — one place for the list/loading/empty/error/refresh
+  behaviour and FlatList perf props, so the three stay consistent.
 - `metro.config.js` disables Metro's package-exports resolution
   (`unstable_enablePackageExports = false`) — without it, `firebase/auth`'s
   React Native persistence build never gets picked up (see the comment in

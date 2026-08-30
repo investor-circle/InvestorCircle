@@ -24,6 +24,33 @@ export const fmtDate = (d) => {
   return isNaN(dt) ? "—" : dt.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
 };
 
+// Feed ranking — ported verbatim from src/utils/format.js (scoreFeedRec) so
+// the mobile Feed orders ideas identically to the web Feed tab. Pure function,
+// no JSX; keep in sync with the web copy if that one changes.
+export function scoreFeedRec(r, tracked, cfg, contactIds) {
+  const src = r.feedSource;
+  let score =
+    !src || src === "direct" ? 10 : src === "group" ? 8 : src === "network_engagement" ? 8 : 5; // public
+
+  const recommenderId = r.from || r.from_id || r.recommender_id;
+  if (contactIds && recommenderId && contactIds.has(recommenderId)) score += 15;
+
+  const daysSince = (Date.now() - new Date(r.date)) / 86400000;
+  score += Math.max(0, 100 - daysSince * 3.5);
+
+  score += (r.likes || 0) * 8;
+  score += (r.commentCount || 0) * 5;
+
+  if (cfg.rank_price_movement && r.priceAt > 0) {
+    const absRet = Math.abs((r.price - r.priceAt) / r.priceAt);
+    if (absRet > 0.05) score += Math.min(40, absRet * 200);
+  }
+
+  if (cfg.rank_untracked_first && (tracked.has(r.id) || r.invested)) score -= 20;
+
+  return score;
+}
+
 export const initialsOf = (name) =>
   (name || "?")
     .split(" ")

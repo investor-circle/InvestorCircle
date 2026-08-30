@@ -2,9 +2,12 @@ import { View, Text, StyleSheet } from "react-native";
 import { colors } from "../theme/colors";
 import { fmt, fmtDate, fmtPct, initialsOf, returnPct } from "../utils/format";
 
+const SOURCE_LABELS = { public: "Public", network_engagement: "From your network" };
+
 export default function RecoCard({ reco }) {
   const pct = returnPct(reco);
   const positive = pct >= 0;
+  const sourceLabel = SOURCE_LABELS[reco.feedSource];
 
   return (
     <View style={styles.card}>
@@ -14,7 +17,15 @@ export default function RecoCard({ reco }) {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.byName}>{reco.byName || "Unknown"}</Text>
-          <Text style={styles.meta}>{fmtDate(reco.date)}</Text>
+          <View style={styles.metaRow}>
+            <Text style={styles.meta}>{fmtDate(reco.date)}</Text>
+            {sourceLabel ? (
+              <>
+                <Text style={styles.metaDot}>·</Text>
+                <Text style={styles.sourceLabel}>{sourceLabel}</Text>
+              </>
+            ) : null}
+          </View>
         </View>
         <View style={[styles.typeBadge, reco.recType === "Sell" && styles.sellBadge]}>
           <Text style={styles.typeBadgeText}>{reco.recType || "Buy"}</Text>
@@ -73,7 +84,10 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: colors.text, fontWeight: "700", fontSize: 13 },
   byName: { color: colors.text, fontWeight: "600", fontSize: 14 },
-  meta: { color: colors.textMuted, fontSize: 12, marginTop: 1 },
+  metaRow: { flexDirection: "row", alignItems: "center", marginTop: 1, gap: 5 },
+  meta: { color: colors.textMuted, fontSize: 12 },
+  metaDot: { color: colors.textMuted, fontSize: 12 },
+  sourceLabel: { color: colors.accent, fontSize: 11, fontWeight: "600" },
   typeBadge: { backgroundColor: "rgba(34,197,94,0.15)", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   sellBadge: { backgroundColor: "rgba(239,68,68,0.15)" },
   typeBadgeText: { color: colors.text, fontSize: 11, fontWeight: "700" },

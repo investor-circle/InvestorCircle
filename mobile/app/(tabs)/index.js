@@ -1,72 +1,64 @@
-import { useCallback, useEffect, useState } from "react";
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import RecoCard from "../../src/components/RecoCard";
-import { getMyReceivedRecos } from "../../src/services/api/recommendationsApi";
-import { colors } from "../../src/theme/colors";
+import { useCallback } from "react";
+import RecoListScreen from "../../src/components/RecoListScreen";
+import {
+  getMyReceivedRecos,
+  getPublicFeed,
+  getNetworkEngagementFeed,
+} from "../../src/services/api/recommendationsApi";
+import { getMyConnections } from "../../src/services/api/connectionsApi";
+import { getFeedConfigAndPrefs, getMyTrackedRecoIds } from "../../src/services/api/feedApi";
+import {
+  buildFeed,
+  computeEffectiveFeedConfig,
+  mapPublicReco,
+  mapNetworkReco,
+} from "../../src/utils/feed";
 
-export default function FeedScreen() {
-  const [recos, setRecos] = useState(null); // null = initial loading
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(false);
+// Feed = the same three-source merge the web Feed tab does (direct received +
+// network-engagement + public), deduped, filtered by the effective feed
+// config, and ranked by scoreFeedRec. See src/utils/feed.js for the shared
+// composition that mirrors the web behaviour.
+async function loadFeed() {
+  // Independent round-trips fire concurrently (received, public, connections,
+  // feed-config, tracked-ids) — none depends on another. Network-engagement
+  // is the only sequential step: it needs the active connection ids and the
+  // resolved config to know whether it's even enabled.
+  const [received, publicRaw, connections, feedCfg, trackedIds] = await Promise.all([
+    getMyReceivedRecos(),
+    getPublicFeed(),
+    getMyConnections(),
+    getFeedConfigAndPrefs(),
+    getMyTrackedRecoIds(),
+  ]);
 
-  const load = useCallback(async () => {
-    setError(false);
-    const data = await getMyReceivedRecos();
-    setRecos(data);
-    if (data.length === 0) {
-      // getMyReceivedRecos() degrades to [] on both "no data" and
-      // "infra/auth failure" (see callApi) — can't distinguish here, so
-      // an empty result is treated as a valid empty state, not an error.
-    }
-  }, []);
+  const cfg = computeEffectiveFeedConfig(feedCfg.options, feedCfg.prefs);
+  const activeConns = (connections || []).filter((c) => c.status === "active");
+  const contactIds = new Set(activeConns.map((c) => c.user_id));
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
-
-  if (recos === null) {
-    return (
-      <SafeAreaView style={styles.center} edges={["top"]}>
-        <ActivityIndicator color={colors.accent} size="large" />
-      </SafeAreaView>
-    );
+  let networkRecos = [];
+  if (cfg.src_network_engagement && activeConns.length > 0) {
+    const networkRaw = await getNetworkEngagementFeed(activeConns.map((c) => c.user_id));
+    networkRecos = networkRaw.map(mapNetworkReco);
   }
 
-  return (
-    <SafeAreaView style={styles.flex} edges={["top"]}>
-      <Text style={styles.heading}>Feed</Text>
-      <FlatList
-        data={recos}
-        keyExtractor={(item) => String(item.deliveryId ?? item.id)}
-        renderItem={({ item }) => <RecoCard reco={item} />}
-        contentContainerStyle={recos.length === 0 ? styles.emptyContainer : { paddingBottom: 24 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No ideas yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Recommendations shared with you by your circle will show up here.
-            </Text>
-          </View>
-        }
-      />
-    </SafeAreaView>
-  );
+  return buildFeed({
+    received,
+    networkRecos,
+    publicRecos: (publicRaw || []).map(mapPublicReco),
+    cfg,
+    trackedIds,
+    contactIds,
+  });
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg },
-  heading: { color: colors.text, fontSize: 24, fontWeight: "700", paddingHorizontal: 16, paddingVertical: 12 },
-  emptyContainer: { flexGrow: 1 },
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
-  emptyTitle: { color: colors.text, fontSize: 17, fontWeight: "600", marginBottom: 6 },
-  emptySubtitle: { color: colors.textMuted, fontSize: 14, textAlign: "center", lineHeight: 20 },
-});
+export default function FeedScreen() {
+  const loader = useCallback(() => loadFeed(), []);
+  return (
+    <RecoListScreen
+      title="Feed"
+      loader={loader}
+      emptyTitle="No ideas yet"
+      emptySubtitle="Recommendations from your circle and across the platform will show up here."
+    />
+  );
+}
