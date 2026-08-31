@@ -98,10 +98,21 @@ jobs:
       # `|| true`: a failed build still writes valid JSON to stdout before
       # exiting non-zero — capture it and let the final step below be the
       # actual pass/fail gate, after logs have had a chance to print.
+      # stderr is captured separately, not discarded: eas-cli writes the
+      # machine-readable result to stdout (--json) but the human-readable
+      # reason a build never started — plan/quota limits, credential
+      # problems — only to stderr. A run that hit the Free-plan monthly
+      # Android build cap previously surfaced as nothing but an empty
+      # "Final build status:" and exit 1, which reads exactly like a broken
+      # build and sent us hunting a code bug that did not exist.
       - name: Build on EAS (cloud)
         run: |
-          eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait --json > eas-build-result.json || true
+          eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait --json \
+            > eas-build-result.json 2> eas-build-stderr.txt || true
+          echo "--- eas stdout (json result) ---"
           cat eas-build-result.json
+          echo "--- eas stderr (messages) ---"
+          cat eas-build-stderr.txt
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
@@ -192,5 +203,28 @@ jobs:
         if: always()
         run: |
           STATUS=$(jq -r 'if type=="array" then .[0].status else .status end' eas-build-result.json 2>/dev/null || echo "")
-          echo "Final build status: $STATUS"
+          echo "Final build status: ${STATUS:-(no build was created)}"
+
+          # A build that never STARTED is a different problem from a build
+          # that started and failed, and must not be reported the same way —
+          # conflating the two cost a debugging cycle chasing a code bug that
+          # did not exist. Surface the account-level reasons explicitly.
+          if [ -z "$STATUS" ] || [ "$STATUS" = "null" ]; then
+            echo ""
+            echo "================================================================"
+            if grep -qiE "used its .*builds from the Free plan|billing:subscribe|upgrade your plan" eas-build-stderr.txt 2>/dev/null; then
+              echo "NO BUILD RAN — Expo plan build quota exhausted."
+              echo "This is an account/billing limit, NOT a problem with the app code."
+              echo "The quota resets automatically; re-run this workflow after that,"
+              echo "or upgrade the Expo plan. Relevant eas-cli output:"
+              grep -iE "Free plan|billing:subscribe|upgrade your plan|reset" eas-build-stderr.txt || true
+            else
+              echo "NO BUILD RAN — eas build exited before creating a build."
+              echo "Full eas-cli stderr:"
+              cat eas-build-stderr.txt 2>/dev/null || echo "(no stderr captured)"
+            fi
+            echo "================================================================"
+            exit 1
+          fi
+
           [ "$(echo "$STATUS" | tr '[:upper:]' '[:lower:]')" = "finished" ]
