@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { friendlyAuthError, googleErrorMessage } from "./authErrors";
+import { friendlyAuthError, googleErrorMessage, googleOnlyAccountHint } from "./authErrors";
 
 // These strings are the only explanation a user gets when sign-in fails, so
 // the important properties are: a known code never falls through to the
@@ -75,5 +75,45 @@ describe("googleErrorMessage", () => {
     // give up instead of being offered the link.
     const msg = googleErrorMessage("auth/account-exists-with-different-credential");
     expect(msg).toContain("auth/account-exists-with-different-credential");
+  });
+});
+
+describe("googleOnlyAccountHint — the mirror of the account-link case", () => {
+  it("points a Google-only account at the Google button when there is one", () => {
+    const hint = googleOnlyAccountHint(["google.com"], true);
+    expect(hint).toMatch(/Google Sign-In/);
+    expect(hint).toMatch(/Continue with Google/);
+  });
+
+  it("sends them to the website when this build has no Google button", () => {
+    // Pointing at a button that isn't rendered would be worse than saying
+    // nothing; this user cannot sign in on mobile at all, so say where they can.
+    const hint = googleOnlyAccountHint(["google.com"], false);
+    expect(hint).toMatch(/website/i);
+    expect(hint).not.toMatch(/Continue with Google/);
+  });
+
+  it("stays silent when the account also has a password", () => {
+    // A real wrong-password typo on a linked account — the generic message is
+    // correct and the hint would be actively misleading.
+    expect(googleOnlyAccountHint(["google.com", "password"], true)).toBeNull();
+    expect(googleOnlyAccountHint(["password"], true)).toBeNull();
+  });
+
+  it("stays silent when Firebase tells us nothing", () => {
+    // An empty list is exactly what email-enumeration protection returns, so
+    // this is the common production case, not an edge case.
+    for (const methods of [[], null, undefined, "google.com", {}, [null]]) {
+      expect(googleOnlyAccountHint(methods, true)).toBeNull();
+    }
+  });
+
+  it("never reveals that an account does not exist", () => {
+    // The hint must only ever say "use Google instead" — never "no such
+    // account", which would turn a failed login into an email prober.
+    for (const methods of [[], ["google.com"], ["password"], ["google.com", "password"]]) {
+      const hint = googleOnlyAccountHint(methods, true);
+      if (hint) expect(hint).not.toMatch(/no account|not found|doesn't exist|unregistered/i);
+    }
   });
 });

@@ -14,6 +14,9 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../../src/context/AuthContext";
 import { pwValid, pwCheck, USERNAME_RE, requestPasswordReset } from "../../src/services/api/authApi";
+import { fetchSignInMethodsForEmail } from "firebase/auth";
+import { auth } from "../../src/config/firebase";
+import { friendlyAuthError, googleOnlyAccountHint } from "../../src/utils/authErrors";
 import { isGoogleSignInConfigured } from "../../src/services/googleAuth";
 import GoogleSignInButton from "../../src/components/GoogleSignInButton";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
@@ -56,9 +59,29 @@ export default function LoginScreen() {
       await login(email.trim(), password);
       // Navigation happens in app/_layout.js once onAuthStateChanged fires.
     } catch (e) {
-      // Same generic message as the web LoginPage — Firebase's email
-      // enumeration protection makes a specific hint unreliable.
-      setError("Incorrect email or password");
+      // If this email has no password sign-in method (the account was created
+      // with Google), "incorrect password" is true but useless — there is no
+      // password to get right. Give the targeted hint instead, mirroring the
+      // web LoginPage's handleLogin.
+      //
+      // Best-effort by design: with Firebase's email-enumeration protection
+      // enabled this returns [] and we fall through to the generic message,
+      // which is the correct outcome rather than a bug to work around.
+      let message = friendlyAuthError(e?.code);
+      if (
+        e?.code === "auth/user-not-found" ||
+        e?.code === "auth/invalid-credential" ||
+        e?.code === "auth/wrong-password"
+      ) {
+        try {
+          const methods = await fetchSignInMethodsForEmail(auth, email.trim());
+          const hint = googleOnlyAccountHint(methods, isGoogleSignInConfigured);
+          if (hint) message = hint;
+        } catch (_) {
+          /* keep the generic message */
+        }
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }

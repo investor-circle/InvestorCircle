@@ -40,6 +40,37 @@ export function friendlyAuthError(code, isSignup = false) {
   }
 }
 
+/**
+ * The mirror of the account-link case: someone whose account was created with
+ * Google types an email and password instead. Firebase answers "wrong
+ * credentials", which is true but useless — there is no password on that
+ * account to get right. Mirrors the hint in the web LoginPage's handleLogin.
+ *
+ * @param methods         fetchSignInMethodsForEmail() result for that email
+ * @param googleAvailable whether this build actually shows a Google button
+ * @returns a replacement message, or null to keep the generic one
+ *
+ * Returns null whenever the answer isn't certain — an empty list (which is
+ * also what Firebase returns when email-enumeration protection is on), an
+ * account that does have a password, or anything unexpected. A wrong hint is
+ * worse than a generic message, and this must never become a way to probe
+ * which emails are registered: it only ever runs after a failed sign-in
+ * attempt for that exact address, and never reports "no such account".
+ */
+export function googleOnlyAccountHint(methods, googleAvailable) {
+  const list = Array.isArray(methods) ? methods : [];
+  if (!list.includes("google.com")) return null;
+  if (list.includes("password")) return null;
+
+  return googleAvailable
+    ? 'This account uses Google Sign-In. Tap "Continue with Google" below instead.'
+    : // Google sign-in isn't configured in this build, so there is no button
+      // to point at — and this user genuinely cannot sign in here. Say so,
+      // and send them somewhere that works, rather than looping them through
+      // a password they don't have.
+      "This account uses Google Sign-In, which isn't available in this version of the app yet. Please sign in on the website for now.";
+}
+
 export function googleErrorMessage(code) {
   switch (code) {
     case "auth/operation-not-allowed":
