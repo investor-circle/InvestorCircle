@@ -1,21 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { getPortfolioHoldings } from "../src/services/api/portfolioApi";
+import {
+  getPortfolioHoldings,
+  addPortfolioHolding,
+  deletePortfolioHolding,
+} from "../src/services/api/portfolioApi";
+import AddHoldingModal from "../src/components/AddHoldingModal";
+import { portfolioTotals } from "../src/utils/portfolio";
 import { fmt, fmtPct } from "../src/utils/format";
 import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
-// Read-only holdings view. Value/cost/P&L are computed here purely for
-// display from the server's own sh/cost/price fields — the same arithmetic
-// the web portfolio table does. (Adding/importing holdings stays on web for
-// now; CAS/PAN import is a desktop-file flow.)
+// Holdings view with manual add/delete. Value/cost/P&L are computed here
+// purely for display from the server's own sh/cost/price fields — the same
+// arithmetic the web portfolio table does (portfolioTotals).
+//
+// CAS/PAN statement import deliberately stays web-only: it is a
+// pick-a-PDF-from-disk flow that belongs on desktop.
 function PortfolioScreen() {
   const router = useRouter();
   const [holdings, setHoldings] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [adding, setAdding] = useState(false);
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
@@ -37,17 +46,44 @@ function PortfolioScreen() {
     setRefreshing(false);
   };
 
-  const totals = useMemo(() => {
-    const rows = holdings || [];
-    let value = 0;
-    let cost = 0;
-    rows.forEach((h) => {
-      const sh = Number(h.sh) || 0;
-      value += sh * (Number(h.price) || 0);
-      cost += sh * (Number(h.cost) || 0);
-    });
-    return { value, cost, pnl: value - cost, pct: cost > 0 ? (value - cost) / cost : 0 };
-  }, [holdings]);
+  const totals = useMemo(() => portfolioTotals(holdings), [holdings]);
+
+  // Optimistic add: show the row immediately, then reconcile with the server
+  // so a server-side normalization (holdingFields) wins over what we guessed.
+  const addHolding = useCallback(async (holding) => {
+    const ok = await addPortfolioHolding(holding);
+    if (!ok) return false;
+    if (mounted.current) setHoldings((p) => [...(p || []), holding]);
+    load();
+    return true;
+  }, [load]);
+
+  const confirmDelete = useCallback(
+    (holding) => {
+      Alert.alert(
+        "Remove holding",
+        `Remove ${holding.sym} from your portfolio? This doesn't affect any ideas you've shared.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Remove",
+            style: "destructive",
+            onPress: async () => {
+              // Optimistic removal, restored if the server rejects it.
+              const prev = holdings || [];
+              setHoldings(prev.filter((h) => String(h.id) !== String(holding.id)));
+              const ok = await deletePortfolioHolding(holding.id);
+              if (!ok && mounted.current) {
+                setHoldings(prev);
+                Alert.alert("Couldn't remove", "That holding is still there — please try again.");
+              }
+            },
+          },
+        ]
+      );
+    },
+    [holdings]
+  );
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
@@ -56,7 +92,9 @@ function PortfolioScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.ink} />
         </Pressable>
         <Text style={styles.topTitle}>Portfolio</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => setAdding(true)} hitSlop={10} style={{ width: 40, alignItems: "flex-end" }}>
+          <Ionicons name="add" size={26} color={colors.accent} />
+        </Pressable>
       </View>
 
       {holdings === null ? (
@@ -96,7 +134,12 @@ function PortfolioScreen() {
             const pct = cost > 0 ? (value - cost) / cost : 0;
             const up = pct >= 0;
             return (
-              <View style={styles.card}>
+              <Pressable
+                style={styles.card}
+                onLongPress={() => confirmDelete(item)}
+                delayLongPress={350}
+                android_ripple={{ color: colors.line }}
+              >
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.sym} numberOfLines={1}>
                     {item.sym}
@@ -114,7 +157,7 @@ function PortfolioScreen() {
                     {up ? "▲" : "▼"} {fmtPct(pct)}
                   </Text>
                 </View>
-              </View>
+              </Pressable>
             );
           }}
           ListEmptyComponent={
@@ -122,12 +165,22 @@ function PortfolioScreen() {
               <Ionicons name="briefcase-outline" size={40} color={colors.line2} />
               <Text style={styles.emptyTitle}>No holdings yet</Text>
               <Text style={styles.emptySub}>
-                Add holdings (or import a CAS statement) on the web app and they'll appear here.
+                Tap + to add a holding. To import a CAS statement, use the web app.
               </Text>
+              <Pressable style={styles.emptyBtn} onPress={() => setAdding(true)}>
+                <Ionicons name="add" size={17} color="#fff" />
+                <Text style={styles.emptyBtnText}>Add a holding</Text>
+              </Pressable>
             </View>
           }
         />
       )}
+
+      {holdings && holdings.length > 0 ? (
+        <Text style={styles.hintBar}>Long-press a holding to remove it.</Text>
+      ) : null}
+
+      <AddHoldingModal visible={adding} onClose={() => setAdding(false)} onAdded={addHolding} />
     </SafeAreaView>
   );
 }
@@ -178,6 +231,24 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40, paddingTop: 80 },
   emptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16, marginTop: 12 },
   emptySub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, textAlign: "center", marginTop: 6, lineHeight: 19 },
+  emptyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.accent,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    marginTop: 18,
+  },
+  emptyBtnText: { color: "#fff", fontFamily: fonts.bold, fontSize: 14 },
+  hintBar: {
+    color: colors.muted,
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    textAlign: "center",
+    paddingVertical: 8,
+  },
 });
 
 export default withBoundary(PortfolioScreen, "Portfolio");

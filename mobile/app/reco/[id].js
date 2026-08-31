@@ -16,6 +16,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import RecoCard from "../../src/components/RecoCard";
 import { getReco } from "../../src/utils/recoStore";
+import { getPublicFeed } from "../../src/services/api/recommendationsApi";
+import { mapPublicReco } from "../../src/utils/feed";
 import { fmtDate } from "../../src/utils/format";
 import {
   getEngagement,
@@ -32,18 +34,24 @@ import {
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
+import ShareRecoSheet from "../../src/components/ShareRecoSheet";
 
 function RecoDetailScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, username } = useLocalSearchParams();
   const router = useRouter();
   const { profile, user } = useAuth();
-  const reco = getReco(id); // handed over from the list; instant, no refetch
+  // Normally handed over in memory from the list — instant, no refetch. On a
+  // cold deep link there is no hand-off, so fall back to looking the idea up
+  // in the public feed (see resolve effect below).
+  const [reco, setReco] = useState(() => getReco(id));
+  const [resolving, setResolving] = useState(!getReco(id));
 
   const [eng, setEng] = useState(null); // { likes, myReaction, tracking, comments }
   const [comment, setComment] = useState("");
   const [posting, setPosting] = useState(false);
   const [exited, setExited] = useState(!!reco?.exitSignal);
   const [ownerBusy, setOwnerBusy] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const mounted = useRef(true);
 
   // Owner-only controls. The server independently enforces that only the
@@ -60,6 +68,25 @@ function RecoDetailScreen() {
       mounted.current = false;
     };
   }, [id]);
+
+  // Cold deep link: try to find the idea among the public recos. There is no
+  // single-reco endpoint, so a non-public idea genuinely can't be resolved
+  // this way — in that case we say so and offer the author's profile rather
+  // than pretending to load forever.
+  useEffect(() => {
+    if (reco) return;
+    let cancelled = false;
+    (async () => {
+      const rows = await getPublicFeed();
+      const found = (rows || []).find((r) => String(r.id) === String(id));
+      if (cancelled) return;
+      if (found) setReco(mapPublicReco(found));
+      setResolving(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reco, id]);
 
   const liked = eng?.myReaction === "like";
   const likeCount = eng?.likes ?? reco?.likes ?? 0;
@@ -141,7 +168,9 @@ function RecoDetailScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.ink} />
         </Pressable>
         <Text style={styles.topTitle}>Idea</Text>
-        <View style={{ width: 24 }} />
+        <Pressable onPress={() => setShareOpen(true)} hitSlop={10} style={{ width: 24, alignItems: "flex-end" }}>
+          <Ionicons name="share-social-outline" size={21} color={colors.accentInk} />
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -158,7 +187,21 @@ function RecoDetailScreen() {
             </>
           ) : (
             <View style={styles.missing}>
-              <Text style={styles.missingText}>This idea isn't available. Open it from your feed.</Text>
+              {resolving ? (
+                <ActivityIndicator color={colors.accent} />
+              ) : (
+                <>
+                  <Text style={styles.missingText}>
+                    This idea isn't publicly viewable, so it can't be opened from a link.
+                  </Text>
+                  {username ? (
+                    <Pressable style={styles.authorLink} onPress={() => router.push(`/investor/${username}`)}>
+                      <Ionicons name="person-circle-outline" size={17} color={colors.accentInk} />
+                      <Text style={styles.authorLinkText}>View @{username}'s profile</Text>
+                    </Pressable>
+                  ) : null}
+                </>
+              )}
             </View>
           )}
 
@@ -252,6 +295,8 @@ function RecoDetailScreen() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <ShareRecoSheet visible={shareOpen} reco={reco} onClose={() => setShareOpen(false)} />
     </SafeAreaView>
   );
 }

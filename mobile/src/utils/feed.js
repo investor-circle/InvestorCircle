@@ -70,6 +70,13 @@ export function mapPublicReco(r) {
     isPublic: true,
     likes: r.likes_count || 0,
     commentCount: r.comment_count || 0,
+    // Recent-window engagement for Pulse's "Trending on MIC" ranking. Left
+    // undefined (not 0) when the API predates these columns, so trending.js
+    // can tell "no recent activity" apart from "no velocity data". Mirrors
+    // pubMapped in src/App.jsx.
+    recentLikes: r.recent_likes,
+    recentComments: r.recent_comments,
+    lastActivityAt: r.last_activity_at,
     recType: r.recommendation_type || "Buy",
   };
 }

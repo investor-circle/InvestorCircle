@@ -54,7 +54,13 @@ function CircleDetailScreen() {
         <Text style={styles.topTitle} numberOfLines={1}>
           {name || "Circle"}
         </Text>
-        <View style={{ width: 40 }} />
+        <Pressable
+          onPress={() => router.push(`/circle/manage?id=${encodeURIComponent(id)}`)}
+          hitSlop={10}
+          style={{ width: 40, alignItems: "flex-end" }}
+        >
+          <Ionicons name="settings-outline" size={21} color={colors.accentInk} />
+        </Pressable>
       </View>
 
       {ideas === null ? (

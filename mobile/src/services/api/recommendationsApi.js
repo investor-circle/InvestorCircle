@@ -47,6 +47,21 @@ export async function createRecommendation(reco, recipients = []) {
 }
 
 /**
+ * Forward an existing idea to more people/Circles. Recipients are
+ * { type: 'user'|'group', id } — the server re-runs the same Circle
+ * authorization check the create flow uses, so a forward can never widen
+ * access beyond what the forwarder is entitled to share.
+ */
+export async function forwardRecommendation(recommendationId, recipients) {
+  const api = await callApi("/data?resource=recommendations", {
+    method: "POST",
+    body: { action: "forward", recommendationId, recipients },
+  });
+  if (api.ok) return { ok: true };
+  return { ok: false, error: api.denied ? "not_authorized" : "unreachable" };
+}
+
+/**
  * Flag an idea as exited. Server stamps the exit price/source and enforces
  * that only the recommender may do this.
  */

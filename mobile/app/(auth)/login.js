@@ -14,6 +14,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../../src/context/AuthContext";
 import { pwValid, pwCheck, USERNAME_RE, requestPasswordReset } from "../../src/services/api/authApi";
+import { isGoogleSignInConfigured } from "../../src/services/googleAuth";
+import GoogleSignInButton from "../../src/components/GoogleSignInButton";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 
 // Three modes, mirroring the web LoginPage: sign in, create account, forgot
@@ -226,6 +228,15 @@ export default function LoginScreen() {
               )}
             </LinearGradient>
           </Pressable>
+
+          {/* Only when this build has OAuth client ids configured. The flag
+              must gate the COMPONENT, not something inside it: the hook it
+              uses throws during render without those ids, which would take
+              the whole login screen down with it. Not offered in "forgot
+              password" mode, where it makes no sense. */}
+          {isGoogleSignInConfigured && tab !== "forgot" ? (
+            <GoogleSignInButton disabled={loading} />
+          ) : null}
 
           {tab === "login" ? (
             <Pressable onPress={() => reset("forgot")} style={styles.linkWrap}>

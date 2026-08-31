@@ -40,7 +40,9 @@ function CirclesScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.ink} />
         </Pressable>
         <Text style={styles.topTitle}>Your Circles</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => router.push("/circle/new")} hitSlop={10} style={{ width: 40, alignItems: "flex-end" }}>
+          <Ionicons name="add" size={26} color={colors.accent} />
+        </Pressable>
       </View>
 
       {groups === null ? (
@@ -83,6 +85,10 @@ function CirclesScreen() {
               <Text style={styles.emptySub}>
                 Circles are private groups where you share ideas with a chosen set of investors.
               </Text>
+              <Pressable style={styles.createBtn} onPress={() => router.push("/circle/new")}>
+                <Ionicons name="add" size={17} color="#fff" />
+                <Text style={styles.createText}>Create a Circle</Text>
+              </Pressable>
             </View>
           }
         />
@@ -123,6 +129,11 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40, paddingTop: 80 },
   emptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16, marginTop: 12 },
   emptySub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, textAlign: "center", marginTop: 6, lineHeight: 19 },
+  createBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6, marginTop: 18,
+    backgroundColor: colors.accent, borderRadius: 11, paddingHorizontal: 18, paddingVertical: 11,
+  },
+  createText: { color: "#fff", fontFamily: fonts.bold, fontSize: 14 },
 });
 
 export default withBoundary(CirclesScreen, "Circles");

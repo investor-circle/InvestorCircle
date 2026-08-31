@@ -10,6 +10,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppState } from "react-native";
+import * as Linking from "expo-linking";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -20,6 +21,7 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import ErrorBoundary from "../src/components/ErrorBoundary";
+import { parseDeepLink } from "../src/utils/deepLinks";
 import { colors } from "../src/theme/colors";
 
 function RootNavigator() {
@@ -44,6 +46,31 @@ function RootNavigator() {
     return () => sub.remove();
   }, []);
 
+  // Deep links. The web app's shareable URLs are HashRouter URLs, so the
+  // route is in the fragment and expo-router's own linking would drop it —
+  // parse and navigate deliberately instead. Deferred until the user is
+  // resolved so a link never lands on a screen behind the auth gate.
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let cancelled = false;
+
+    const go = (url) => {
+      const target = parseDeepLink(url);
+      if (!target || cancelled) return;
+      addLog("info", `deeplink: ${url} -> ${target.path}`);
+      router.push(
+        target.username ? `${target.path}?username=${encodeURIComponent(target.username)}` : target.path
+      );
+    };
+
+    Linking.getInitialURL().then((url) => url && go(url));
+    const sub = Linking.addEventListener("url", ({ url }) => go(url));
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, [authLoading, user, router]);
+
   useEffect(() => {
     if (authLoading) return;
     const inAuthGroup = segments[0] === "(auth)";
@@ -62,6 +89,8 @@ function RootNavigator() {
       <Stack.Screen name="reco/[id]" />
       <Stack.Screen name="investor/[username]" />
       <Stack.Screen name="circle/[id]" />
+      <Stack.Screen name="circle/new" options={{ presentation: "modal" }} />
+      <Stack.Screen name="circle/manage" />
       <Stack.Screen name="notifications" />
       <Stack.Screen name="network" />
       <Stack.Screen name="circles" />

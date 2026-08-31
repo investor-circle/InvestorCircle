@@ -71,7 +71,7 @@ jobs:
       # Firebase web config values already embedded in the deployed web
       # app's bundle (see CLAUDE.md's EXPO_PUBLIC_/VITE_ convention) —
       # `plaintext` visibility is correct, not `secret`.
-      - name: Sync Firebase config to EAS environment variables
+      - name: Sync Firebase + Google OAuth config to EAS environment variables
         run: |
           set -e
           for NAME in EXPO_PUBLIC_FIREBASE_API_KEY EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN EXPO_PUBLIC_FIREBASE_PROJECT_ID EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID EXPO_PUBLIC_FIREBASE_APP_ID; do
@@ -79,8 +79,26 @@ jobs:
               --name "$NAME" --value "${!NAME}" --visibility plaintext \
               --environment production --environment preview --environment development
           done
+          # Google sign-in OAuth client ids. OPTIONAL: unset ones are skipped,
+          # and the app hides the Google button entirely when they're absent
+          # (src/services/googleAuth.js), so a repo that hasn't configured
+          # Google OAuth still builds and ships email/password sign-in exactly
+          # as before. Client IDs are public by design (they appear in the
+          # redirect URL of any OAuth flow); the client SECRET is not used by
+          # this PKCE installed-app flow and must never be added here.
+          for NAME in EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID; do
+            if [ -n "${!NAME}" ]; then
+              eas env:set --non-interactive --scope project \
+                --name "$NAME" --value "${!NAME}" --visibility plaintext \
+                --environment production --environment preview --environment development
+            else
+              echo "· $NAME not configured — Google sign-in will be hidden in this build."
+            fi
+          done
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
           EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
           EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
