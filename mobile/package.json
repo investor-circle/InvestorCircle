@@ -32,10 +32,12 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:android:preview": "eas build --platform android --profile preview",
-    "build:android:dev": "eas build --platform android --profile development"
+    "build:android:dev": "eas build --platform android --profile development",
+    "test": "vitest run --config vitest.config.js"
   },
   "private": true,
   "devDependencies": {
-    "babel-preset-expo": "^57.0.9"
+    "babel-preset-expo": "^57.0.9",
+    "vitest": "^3.2.7"
   }
 }

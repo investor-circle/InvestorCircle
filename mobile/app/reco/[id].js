@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -23,6 +24,11 @@ import {
   trackReco,
   untrackReco,
 } from "../../src/services/api/engagementApi";
+import {
+  setExitSignal,
+  cancelExitSignal,
+  deleteRecommendation,
+} from "../../src/services/api/recommendationsApi";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
@@ -30,13 +36,19 @@ import { withBoundary } from "../../src/components/ErrorBoundary";
 function RecoDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const reco = getReco(id); // handed over from the list; instant, no refetch
 
   const [eng, setEng] = useState(null); // { likes, myReaction, tracking, comments }
   const [comment, setComment] = useState("");
   const [posting, setPosting] = useState(false);
+  const [exited, setExited] = useState(!!reco?.exitSignal);
+  const [ownerBusy, setOwnerBusy] = useState(false);
   const mounted = useRef(true);
+
+  // Owner-only controls. The server independently enforces that only the
+  // recommender may exit or delete — this just decides what to render.
+  const isOwner = !!user?.uid && (reco?.from === user.uid || reco?.recommender_id === user.uid);
 
   useEffect(() => {
     mounted.current = true;
@@ -78,6 +90,35 @@ function RecoDetailScreen() {
     setEng((e) => ({ ...e, tracking: { ...(e.tracking || {}), isInvested: next } }));
     await trackReco(id, next, next ? reco?.price ?? undefined : undefined);
   }, [eng, isInvested, id, reco?.price]);
+
+  const toggleExit = useCallback(async () => {
+    setOwnerBusy(true);
+    const next = !exited;
+    // Exit price is stamped server-side from market data; don't invent one.
+    const res = next ? await setExitSignal(id) : await cancelExitSignal(id);
+    if (mounted.current) {
+      if (res) setExited(next);
+      setOwnerBusy(false);
+    }
+  }, [exited, id]);
+
+  const confirmDelete = useCallback(() => {
+    Alert.alert("Delete this idea?", "This removes it for everyone it was shared with. This can't be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          setOwnerBusy(true);
+          const ok = await deleteRecommendation(id);
+          if (!mounted.current) return;
+          setOwnerBusy(false);
+          if (ok) router.back();
+          else Alert.alert("Couldn't delete", "Please try again.");
+        },
+      },
+    ]);
+  }, [id, router]);
 
   const submitComment = useCallback(async () => {
     const text = comment.trim();
@@ -148,6 +189,32 @@ function RecoDetailScreen() {
               </Text>
             </Pressable>
           </View>
+
+          {/* Owner-only: exit signal + delete */}
+          {isOwner ? (
+            <View style={styles.ownerBar}>
+              {ownerBusy ? (
+                <ActivityIndicator color={colors.accent} />
+              ) : (
+                <>
+                  <Pressable style={[styles.ownerBtn, exited && styles.ownerBtnOn]} onPress={toggleExit}>
+                    <Ionicons
+                      name={exited ? "flag" : "flag-outline"}
+                      size={17}
+                      color={exited ? colors.accentInk : colors.inkSoft}
+                    />
+                    <Text style={[styles.ownerText, exited && { color: colors.accentInk }]}>
+                      {exited ? "Exited — undo" : "Signal exit"}
+                    </Text>
+                  </Pressable>
+                  <Pressable style={[styles.ownerBtn, styles.ownerBtnDanger]} onPress={confirmDelete}>
+                    <Ionicons name="trash-outline" size={17} color={colors.loss} />
+                    <Text style={[styles.ownerText, { color: colors.loss }]}>Delete</Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          ) : null}
 
           {/* Comments */}
           <Text style={styles.sectionTitle}>Comments</Text>
@@ -233,6 +300,22 @@ const styles = StyleSheet.create({
   actionOnGain: { backgroundColor: colors.gainSoft, borderColor: colors.gainSoft },
   actionText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13 },
 
+  ownerBar: { flexDirection: "row", gap: 10, paddingHorizontal: 16, marginTop: 4, alignItems: "center" },
+  ownerBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  ownerBtnOn: { backgroundColor: colors.accentSoft, borderColor: colors.accentLine },
+  ownerBtnDanger: { borderColor: colors.lossSoft, backgroundColor: colors.lossSoft },
+  ownerText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13 },
   sectionTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16, paddingHorizontal: 16, marginTop: 16, marginBottom: 8 },
   noComments: { color: colors.muted, fontFamily: fonts.regular, fontSize: 14, paddingHorizontal: 16 },
   comment: {

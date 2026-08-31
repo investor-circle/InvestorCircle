@@ -175,6 +175,33 @@ Once a build is possible (from a computer or via that workflow):
   recommendation via `createRecommendation` (per-circle recipient selection
   is the next increment).
 - Bottom nav relabelled to match the web (Home / Pulse / My Recs / Profile).
+- **Auth**: sign in, create account (Firebase + `api/profile/signup`, same
+  username/password rules the server enforces) and forgot-password
+  (`api/reset`, which always returns 200 — the UI shows the same
+  confirmation either way, so it never reveals whether an address exists).
+- **Sharing an idea**: the new-idea form picks recipients — specific
+  connections and/or Circles, and/or public. The server re-validates every
+  recipient (`authorizedCircleRecipientIds`); the picker is convenience only.
+- **Own ideas**: the detail screen shows exit-signal and delete controls to
+  the recommender only (the server independently enforces ownership).
+- **Settings** (`app/settings.js`): edit your name, and toggle feed sources.
+  Options are rendered from the admin-defined `feed_config_options` rather
+  than a hardcoded list; `always_on` / admin-disabled options render locked.
+- **Diagnostics** (`app/debug.js`) + `src/utils/logger.js`: on-device log of
+  console output, uncaught errors, unhandled rejections and every API
+  failure, persisted so it survives a freeze and force-close, with
+  copy-to-clipboard. This is how device-only problems get diagnosed without
+  adb.
+
+## Tests
+
+`npm test` (Vitest, `mobile/vitest.config.js` — scoped to `mobile/` so the
+web app's own root config is untouched). Covers the PURE logic where a
+regression is silent and expensive: feed composition/dedup/config gating,
+notification wording, and the display/business formatters (including the
+Sell-return inversion and the two date shapes from the CLAUDE.md incident
+note). Component rendering is not covered — that needs a React Native test
+preset this project doesn't have.
 - `metro.config.js` disables Metro's package-exports resolution
   (`unstable_enablePackageExports = false`) — without it, `firebase/auth`'s
   React Native persistence build never gets picked up (see the comment in

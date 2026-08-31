@@ -46,6 +46,36 @@ export async function createRecommendation(reco, recipients = []) {
   return { ok: false, error: "unreachable" };
 }
 
+/**
+ * Flag an idea as exited. Server stamps the exit price/source and enforces
+ * that only the recommender may do this.
+ */
+export async function setExitSignal(recommendationId, exitPrice, exitPriceSource) {
+  const api = await callApi("/data?resource=recommendations", {
+    method: "POST",
+    body: { action: "set-exit-signal", recommendationId, exitPrice, exitPriceSource },
+  });
+  return api.ok ? api.data.recommendation : null;
+}
+
+/** Undo an exit signal, clearing all exit fields. */
+export async function cancelExitSignal(recommendationId) {
+  const api = await callApi("/data?resource=recommendations", {
+    method: "POST",
+    body: { action: "cancel-exit-signal", recommendationId },
+  });
+  return api.ok ? api.data.recommendation : null;
+}
+
+/** Delete one of the caller's own recommendations (server checks ownership). */
+export async function deleteRecommendation(recommendationId) {
+  const api = await callApi("/data?resource=recommendations", {
+    method: "POST",
+    body: { action: "delete-reco", recommendationId },
+  });
+  return api.ok;
+}
+
 /** Update a delivery row (mark invested, react, hide). */
 export async function updateDelivery(deliveryId, patch) {
   const api = await callApi("/data?resource=recommendations", {

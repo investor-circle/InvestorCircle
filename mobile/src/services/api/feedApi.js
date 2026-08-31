@@ -20,3 +20,12 @@ export async function getMyTrackedRecoIds() {
   const api = await callApi("/data?resource=engagement&action=my-tracked");
   return api.ok ? api.data.recoIds || [] : [];
 }
+
+/** Turn one feed source/ranking option on or off for the caller. */
+export async function setFeedPref(configKey, enabled) {
+  const api = await callApi("/data?resource=lookups", {
+    method: "POST",
+    body: { action: "feed-pref-set", configKey, enabled },
+  });
+  return api.ok;
+}

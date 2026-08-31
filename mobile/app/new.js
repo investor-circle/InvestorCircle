@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -14,14 +14,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { createRecommendation } from "../src/services/api/recommendationsApi";
+import { getMyConnections } from "../src/services/api/connectionsApi";
+import { getMyGroups } from "../src/services/api/groupsApi";
+import { initialsOf } from "../src/utils/format";
 import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
-// New recommendation. v1 posts a public idea (no per-circle recipient
-// selection yet — that mirrors the web's more complex share step and is the
-// next increment). Fields + validation mirror the web's create form: asset
-// name + ticker required, prices numeric, Buy/Sell type, optional target/
-// horizon/thesis.
+// New recommendation. Fields + validation mirror the web's create form
+// (asset name + ticker required, numeric prices, Buy/Sell, optional
+// target/horizon/thesis), plus the share step: an idea can go to specific
+// connections and/or Circles, and/or be posted publicly. The server
+// re-validates every recipient (authorizedCircleRecipientIds) — this picker
+// is a convenience, never the authority.
 const TYPES = ["Buy", "Sell"];
 
 function NewRecoScreen() {
@@ -36,6 +40,31 @@ function NewRecoScreen() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Share targets
+  const [isPublic, setIsPublic] = useState(true);
+  const [connections, setConnections] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [selUsers, setSelUsers] = useState({}); // userId -> true
+  const [selGroups, setSelGroups] = useState({}); // groupId -> true
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    (async () => {
+      const [conns, grps] = await Promise.all([getMyConnections(), getMyGroups()]);
+      if (!mounted.current) return;
+      setConnections((conns || []).filter((c) => c.status === "active"));
+      setGroups(grps || []);
+    })();
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const toggle = (setter) => (id) => setter((m) => ({ ...m, [id]: !m[id] }));
+  const recipientCount =
+    Object.values(selUsers).filter(Boolean).length + Object.values(selGroups).filter(Boolean).length;
+
   const submit = async () => {
     if (!assetName.trim() || !ticker.trim()) {
       setError("Asset name and ticker are required.");
@@ -47,8 +76,22 @@ function NewRecoScreen() {
       setError("Prices must be numbers.");
       return;
     }
+    if (!isPublic && recipientCount === 0) {
+      setError("Choose at least one recipient, or make the idea public.");
+      return;
+    }
     setError("");
     setSaving(true);
+
+    const recipients = [
+      ...Object.keys(selUsers)
+        .filter((id) => selUsers[id])
+        .map((id) => ({ type: "user", id })),
+      ...Object.keys(selGroups)
+        .filter((id) => selGroups[id])
+        .map((id) => ({ type: "group", id })),
+    ];
+
     const res = await createRecommendation(
       {
         assetName: assetName.trim(),
@@ -59,9 +102,9 @@ function NewRecoScreen() {
         targetPrice: targetNum,
         horizon: horizon.trim() || null,
         thesis: thesis.trim() || null,
-        isPublic: true,
+        isPublic,
       },
-      []
+      recipients
     );
     setSaving(false);
     if (res.ok) {
@@ -127,7 +170,70 @@ function NewRecoScreen() {
             />
           </Field>
 
-          <Text style={styles.note}>This idea will be shared publicly to the platform feed.</Text>
+          {/* Share step — who sees this idea */}
+          <Text style={styles.sectionLabel}>Share with</Text>
+
+          <Pressable style={styles.checkRow} onPress={() => setIsPublic((v) => !v)}>
+            <Ionicons
+              name={isPublic ? "checkbox" : "square-outline"}
+              size={22}
+              color={isPublic ? colors.accent : colors.muted}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.checkLabel}>Post publicly</Text>
+              <Text style={styles.checkSub}>Visible to everyone on the platform feed</Text>
+            </View>
+          </Pressable>
+
+          {groups.length > 0 ? (
+            <>
+              <Text style={styles.groupLabel}>Circles</Text>
+              {groups.map((g) => (
+                <Pressable key={String(g.id)} style={styles.checkRow} onPress={() => toggle(setSelGroups)(g.id)}>
+                  <Ionicons
+                    name={selGroups[g.id] ? "checkbox" : "square-outline"}
+                    size={22}
+                    color={selGroups[g.id] ? colors.accent : colors.muted}
+                  />
+                  <View style={[styles.swatch, { backgroundColor: g.color || colors.accent }]}>
+                    <Ionicons name="people" size={13} color="#fff" />
+                  </View>
+                  <Text style={styles.checkLabel} numberOfLines={1}>
+                    {g.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </>
+          ) : null}
+
+          {connections.length > 0 ? (
+            <>
+              <Text style={styles.groupLabel}>Connections</Text>
+              {connections.map((c) => (
+                <Pressable key={String(c.user_id)} style={styles.checkRow} onPress={() => toggle(setSelUsers)(c.user_id)}>
+                  <Ionicons
+                    name={selUsers[c.user_id] ? "checkbox" : "square-outline"}
+                    size={22}
+                    color={selUsers[c.user_id] ? colors.accent : colors.muted}
+                  />
+                  <View style={styles.miniAvatar}>
+                    <Text style={styles.miniAvatarText}>{initialsOf(c.name)}</Text>
+                  </View>
+                  <Text style={styles.checkLabel} numberOfLines={1}>
+                    {c.name || c.username || "Investor"}
+                  </Text>
+                </Pressable>
+              ))}
+            </>
+          ) : null}
+
+          <Text style={styles.note}>
+            {recipientCount > 0
+              ? `Sharing with ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}${isPublic ? " · also public" : ""}`
+              : isPublic
+              ? "This idea will be posted publicly."
+              : "Pick at least one recipient, or make it public."}
+          </Text>
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <Pressable style={[styles.submit, saving && { opacity: 0.7 }]} onPress={submit} disabled={saving}>
@@ -181,7 +287,30 @@ const styles = StyleSheet.create({
   segBtnActive: { backgroundColor: colors.surface, shadowColor: "#141432", shadowOpacity: 0.12, shadowRadius: 4, elevation: 1 },
   segText: { color: colors.muted, fontFamily: fonts.bold, fontSize: 14 },
   segTextActive: { color: colors.accentInk },
-  note: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginBottom: 8 },
+  sectionLabel: {
+    color: colors.muted,
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  groupLabel: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 12, marginTop: 12, marginBottom: 4 },
+  checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9 },
+  checkLabel: { flex: 1, color: colors.ink, fontFamily: fonts.semibold, fontSize: 14 },
+  checkSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
+  swatch: { width: 26, height: 26, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  miniAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.surface2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  miniAvatarText: { color: colors.inkSoft, fontFamily: fonts.bold, fontSize: 10 },
+  note: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 10, marginBottom: 8 },
   error: { color: colors.loss, fontFamily: fonts.semibold, fontSize: 13, marginBottom: 8 },
   submit: {
     backgroundColor: colors.accent,

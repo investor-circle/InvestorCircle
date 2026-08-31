@@ -9,9 +9,16 @@
  * console — deliberately deferred rather than half-wired.
  */
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile as fbUpdateProfile,
+  signOut,
+} from "firebase/auth";
 import { auth } from "../config/firebase";
 import { API_ORIGIN } from "../services/api";
+import { completeSignup } from "../services/api/authApi";
 
 const AuthContext = createContext(null);
 
@@ -114,6 +121,34 @@ export function AuthProvider({ children }) {
   const login = (email, password) => signInWithEmailAndPassword(auth, email, password);
   const logout = () => signOut(auth);
 
+  /**
+   * Create an account, then write name/username/consent to the profile row.
+   * Order matters (same as the web signup): the profile write happens before
+   * onAuthStateChanged's own sync would fall back to email.split("@")[0] as
+   * the display name.
+   */
+  const signup = async ({ email, password, firstName, lastName, username }) => {
+    const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    const fullName = `${firstName.trim()} ${(lastName || "").trim()}`.trim();
+    try {
+      await fbUpdateProfile(cred.user, { displayName: fullName });
+    } catch (_) {
+      /* display name is cosmetic — the profile row below is the source of truth */
+    }
+    const idToken = await cred.user.getIdToken();
+    const res = await completeSignup(idToken, { firstName, lastName, username });
+    if (res.ok) {
+      setProfile((p) => ({
+        ...(p || {}),
+        first_name: firstName.trim(),
+        last_name: (lastName || "").trim(),
+        full_name: fullName,
+        username: username.trim(),
+      }));
+    }
+    return res;
+  };
+
   const updateProfile = async (firstName, lastName) => {
     if (!user || !firstName.trim()) return { error: "First name is required" };
     const fn = firstName.trim();
@@ -143,7 +178,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, authLoading, login, logout, userIsAdmin, updateProfile, patchProfile }}
+      value={{ user, profile, authLoading, login, signup, logout, userIsAdmin, updateProfile, patchProfile }}
     >
       {children}
     </AuthContext.Provider>
