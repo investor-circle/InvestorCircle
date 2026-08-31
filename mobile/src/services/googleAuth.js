@@ -1,9 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
-import { GoogleAuthProvider, signInWithCredential } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  signInWithCredential,
+  signInWithEmailAndPassword,
+  linkWithCredential,
+} from "firebase/auth";
 import { auth } from "../config/firebase";
 import { addLog } from "../utils/logger";
+import { friendlyAuthError, googleErrorMessage } from "../utils/authErrors";
 
 /**
  * Google sign-in, via expo-auth-session -> a Google OAuth id_token ->
@@ -56,6 +62,11 @@ export const isGoogleSignInConfigured = Boolean(WEB_CLIENT_ID && (ANDROID_CLIENT
 export function useGoogleSignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Set when Google reports that this email already has a password account.
+  // { email } — the pending Google credential itself is held in a ref, not
+  // in state, so it is never a render dependency and never logged.
+  const [linkPending, setLinkPending] = useState(null);
+  const pendingCredential = useRef(null);
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId: WEB_CLIENT_ID || undefined,
@@ -76,15 +87,39 @@ export function useGoogleSignIn() {
         setBusy(false);
         return;
       }
-      signInWithCredential(auth, GoogleAuthProvider.credential(idToken))
+      const credential = GoogleAuthProvider.credential(idToken);
+      signInWithCredential(auth, credential)
         .then(() => addLog("info", "google sign-in: firebase credential accepted"))
         .catch((e) => {
+          if (e?.code === "auth/account-exists-with-different-credential") {
+            // This email already has an email/password account. Firebase will
+            // not silently merge the two; the documented safe path (and what
+            // the web app does) is to sign the user in with their EXISTING
+            // method first, then link the Google credential onto that same
+            // account — so they end up with one InvestorCircle profile
+            // instead of two. Ask for the password to do that.
+            //
+            // credentialFromError is the documented way to recover the
+            // credential Firebase rejected; fall back to the one we just
+            // built from the same id_token, which is equivalent.
+            const email = e.customData?.email || "";
+            if (!email) {
+              // Firebase normally reports the conflicting email here. Without
+              // it there is nothing to sign in as, so a password prompt would
+              // just fail with "invalid email" and look broken — fall back to
+              // telling the user plainly what happened.
+              addLog("warn", "google sign-in: account conflict reported without an email — cannot offer link");
+              setError("That email is already registered with a password. Please sign in with your password instead.");
+              return;
+            }
+            pendingCredential.current = GoogleAuthProvider.credentialFromError(e) || credential;
+            setLinkPending({ email });
+            addLog("info", "google sign-in: email already has a password account — offering to link");
+            setError("");
+            return;
+          }
           addLog("error", `google sign-in: firebase rejected credential — ${e?.code || e?.message}`);
-          setError(
-            e?.code === "auth/account-exists-with-different-credential"
-              ? "That email is already registered with a password. Sign in with your password instead."
-              : "Couldn't complete Google sign-in. Please try again."
-          );
+          setError(googleErrorMessage(e?.code));
         })
         .finally(() => setBusy(false));
       return;
@@ -98,10 +133,55 @@ export function useGoogleSignIn() {
     setBusy(false);
   }, [response]);
 
+  /**
+   * Finish the link: verify the existing password account, then attach the
+   * pending Google credential to it. Mirrors handleLinkGoogleAccount() in the
+   * web app's LoginPage.
+   *
+   * The email is the one Firebase itself reported in the error — it is never
+   * taken from user input — so this cannot be used to attempt a sign-in
+   * against an arbitrary address.
+   */
+  const linkAccount = async (password) => {
+    if (!linkPending || !password) return;
+    setBusy(true);
+    setError("");
+    try {
+      const cred = await signInWithEmailAndPassword(auth, linkPending.email, password);
+      try {
+        await linkWithCredential(cred.user, pendingCredential.current);
+        addLog("info", "google sign-in: linked google credential to existing account");
+      } catch (linkErr) {
+        // The password sign-in already succeeded, so the user IS signed in to
+        // the right account — only the Google link failed. Degrade quietly
+        // rather than showing an error over a screen they've already left;
+        // next Google attempt simply offers to link again.
+        addLog("warn", `google sign-in: link failed after sign-in — ${linkErr?.code || linkErr?.message}`);
+      }
+      pendingCredential.current = null;
+      setLinkPending(null);
+      // onAuthStateChanged has already fired — the user is in.
+    } catch (e) {
+      addLog("warn", `google sign-in: link sign-in failed — ${e?.code}`);
+      setError(friendlyAuthError(e?.code));
+      setBusy(false);
+    }
+  };
+
+  const cancelLink = () => {
+    pendingCredential.current = null;
+    setLinkPending(null);
+    setError("");
+    setBusy(false);
+  };
+
   return {
     available: isGoogleSignInConfigured && !!request,
     busy,
     error,
+    linkPending,
+    linkAccount,
+    cancelLink,
     signIn: () => {
       setError("");
       setBusy(true);
