@@ -1,4 +1,3 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Why this file exists:
 //
@@ -10,8 +9,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // isGoogleSignInConfigured, and it is only safe if it is false whenever the
 // ids are missing or partial. That is what these tests pin.
 
-const loadFlag = async (env) => {
-  vi.resetModules();
+const loadFlag = (env) => {
+  jest.resetModules();
   for (const k of [
     "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID",
     "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID",
@@ -20,7 +19,10 @@ const loadFlag = async (env) => {
     delete process.env[k];
   }
   Object.assign(process.env, env);
-  const mod = await import("./googleAuth");
+  // require, not dynamic import: jest's CJS runtime honours resetModules +
+  // doMock for require, whereas a dynamic import needs VM modules enabled.
+  // eslint-disable-next-line global-require
+  const mod = require("./googleAuth");
   return mod.isGoogleSignInConfigured;
 };
 
@@ -28,54 +30,54 @@ const loadFlag = async (env) => {
 // runs under plain Node. The stubs are irrelevant to what's being tested —
 // only the env-var logic is.
 beforeEach(() => {
-  vi.doMock("expo-auth-session/providers/google", () => ({ useIdTokenAuthRequest: () => [null, null, vi.fn()] }));
-  vi.doMock("expo-web-browser", () => ({ maybeCompleteAuthSession: () => {} }));
-  vi.doMock("firebase/auth", () => ({
+  jest.doMock("expo-auth-session/providers/google", () => ({ useIdTokenAuthRequest: () => [null, null, jest.fn()] }));
+  jest.doMock("expo-web-browser", () => ({ maybeCompleteAuthSession: () => {} }));
+  jest.doMock("firebase/auth", () => ({
     GoogleAuthProvider: { credential: () => ({}) },
-    signInWithCredential: vi.fn(),
+    signInWithCredential: jest.fn(),
   }));
-  vi.doMock("../config/firebase", () => ({ auth: {} }));
-  vi.doMock("../utils/logger", () => ({ addLog: () => {} }));
+  jest.doMock("../config/firebase", () => ({ auth: {} }));
+  jest.doMock("../utils/logger", () => ({ addLog: () => {} }));
 });
 
 afterEach(() => {
-  vi.doUnmock("expo-auth-session/providers/google");
-  vi.resetModules();
+  jest.dontMock("expo-auth-session/providers/google");
+  jest.resetModules();
 });
 
 describe("isGoogleSignInConfigured — the crash gate", () => {
-  it("is false when nothing is configured (the default build)", async () => {
-    expect(await loadFlag({})).toBe(false);
+  it("is false when nothing is configured (the default build)", () => {
+    expect(loadFlag({})).toBe(false);
   });
 
-  it("is false when only the web client id is set", async () => {
+  it("is false when only the web client id is set", () => {
     // The web id alone can't drive the Android flow — androidClientId would
     // be undefined and the hook would throw.
-    expect(await loadFlag({ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: "web.apps.googleusercontent.com" })).toBe(false);
+    expect(loadFlag({ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: "web.apps.googleusercontent.com" })).toBe(false);
   });
 
-  it("is false when only the android client id is set", async () => {
+  it("is false when only the android client id is set", () => {
     // Firebase validates the id_token against the web client id, so without
     // it sign-in would fail at the credential exchange.
-    expect(await loadFlag({ EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: "android.apps.googleusercontent.com" })).toBe(false);
+    expect(loadFlag({ EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: "android.apps.googleusercontent.com" })).toBe(false);
   });
 
-  it("is false for empty-string vars (an unset GitHub secret expands to '')", async () => {
+  it("is false for empty-string vars (an unset GitHub secret expands to '')", () => {
     expect(
-      await loadFlag({ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: "", EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: "" })
+      loadFlag({ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: "", EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: "" })
     ).toBe(false);
   });
 
-  it("is true only with a web id plus a platform id", async () => {
+  it("is true only with a web id plus a platform id", () => {
     expect(
-      await loadFlag({
+      loadFlag({
         EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: "web.apps.googleusercontent.com",
         EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: "android.apps.googleusercontent.com",
       })
     ).toBe(true);
 
     expect(
-      await loadFlag({
+      loadFlag({
         EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: "web.apps.googleusercontent.com",
         EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: "ios.apps.googleusercontent.com",
       })

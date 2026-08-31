@@ -1,4 +1,3 @@
-import { describe, it, expect } from "vitest";
 import { notifText, notifIcon, notifRecoId } from "./notifications";
 
 // These strings are a port of the web NotificationPanel's notifText(). If the

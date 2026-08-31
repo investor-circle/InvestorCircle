@@ -18,8 +18,8 @@ import { withBoundary } from "../src/components/ErrorBoundary";
 // purely for display from the server's own sh/cost/price fields — the same
 // arithmetic the web portfolio table does (portfolioTotals).
 //
-// CAS/PAN statement import deliberately stays web-only: it is a
-// pick-a-PDF-from-disk flow that belongs on desktop.
+// CAS statement import lives on its own screen (app/portfolio-import.js) and
+// uses the same server-side parser as the web app.
 function PortfolioScreen() {
   const router = useRouter();
   const [holdings, setHoldings] = useState(null);
@@ -92,9 +92,14 @@ function PortfolioScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.ink} />
         </Pressable>
         <Text style={styles.topTitle}>Portfolio</Text>
-        <Pressable onPress={() => setAdding(true)} hitSlop={10} style={{ width: 40, alignItems: "flex-end" }}>
-          <Ionicons name="add" size={26} color={colors.accent} />
-        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+          <Pressable onPress={() => router.push("/portfolio-import")} hitSlop={10}>
+            <Ionicons name="cloud-upload-outline" size={21} color={colors.accent} />
+          </Pressable>
+          <Pressable onPress={() => setAdding(true)} hitSlop={10}>
+            <Ionicons name="add" size={26} color={colors.accent} />
+          </Pressable>
+        </View>
       </View>
 
       {holdings === null ? (
@@ -165,11 +170,14 @@ function PortfolioScreen() {
               <Ionicons name="briefcase-outline" size={40} color={colors.line2} />
               <Text style={styles.emptyTitle}>No holdings yet</Text>
               <Text style={styles.emptySub}>
-                Tap + to add a holding. To import a CAS statement, use the web app.
+                Tap + to add a holding, or import a CAS statement from your broker.
               </Text>
               <Pressable style={styles.emptyBtn} onPress={() => setAdding(true)}>
                 <Ionicons name="add" size={17} color="#fff" />
                 <Text style={styles.emptyBtnText}>Add a holding</Text>
+              </Pressable>
+              <Pressable style={styles.emptyLink} onPress={() => router.push("/portfolio-import")}>
+                <Text style={styles.emptyLinkText}>Import a CAS statement</Text>
               </Pressable>
             </View>
           }
@@ -242,6 +250,8 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
   emptyBtnText: { color: "#fff", fontFamily: fonts.bold, fontSize: 14 },
+  emptyLink: { paddingVertical: 12 },
+  emptyLinkText: { color: colors.accentInk, fontFamily: fonts.semibold, fontSize: 13 },
   hintBar: {
     color: colors.muted,
     fontFamily: fonts.regular,

@@ -195,13 +195,33 @@ Once a build is possible (from a computer or via that workflow):
 
 ## Tests
 
-`npm test` (Vitest, `mobile/vitest.config.js` — scoped to `mobile/` so the
-web app's own root config is untouched). Covers the PURE logic where a
-regression is silent and expensive: feed composition/dedup/config gating,
-notification wording, and the display/business formatters (including the
-Sell-return inversion and the two date shapes from the CLAUDE.md incident
-note). Component rendering is not covered — that needs a React Native test
-preset this project doesn't have.
+`npm test` (Jest with the `jest-expo` preset, `mobile/jest.config.js` —
+scoped to `mobile/` so the web app's own root Vitest config is untouched).
+
+This replaced an earlier Vitest setup that could only run pure logic.
+`jest-expo` supplies the babel transform and RN module mocks needed to
+actually render components, so both kinds of test live in one runner rather
+than one runner per kind.
+
+Two layers:
+
+- **Pure logic** — where a regression is silent and expensive: feed
+  composition/dedup/config gating, Pulse ranking against each endpoint's real
+  row shape, the `portfolio-add` payload contract, CAS import de-duplication,
+  instrument search matching, deep-link parsing, auth error/hint selection,
+  notification wording, and the display/business formatters (including the
+  Sell-return inversion and the two date shapes from the CLAUDE.md incident
+  note).
+- **Components** (`@testing-library/react-native`) — where the wiring between
+  a form and its logic can break without any pure test noticing: Add Holding
+  (validation blocks a save, typed values reach the payload in the server's
+  shape, picking an instrument fills the dependent fields) and the Google
+  account-link prompt (it appears only on a real conflict, a wrong password
+  keeps the user in the prompt, the typed password does not survive the
+  prompt closing).
+
+New tests are expected to be non-vacuous: when adding one, verify it fails
+against a deliberate mutation of the code it covers before trusting it.
 - `metro.config.js` disables Metro's package-exports resolution
   (`unstable_enablePackageExports = false`) — without it, `firebase/auth`'s
   React Native persistence build never gets picked up (see the comment in

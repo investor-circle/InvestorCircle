@@ -18,6 +18,7 @@ import { getMyConnections } from "../src/services/api/connectionsApi";
 import { getMyGroups } from "../src/services/api/groupsApi";
 import { initialsOf } from "../src/utils/format";
 import { colors, fonts } from "../src/theme/colors";
+import InstrumentSearch from "../src/components/InstrumentSearch";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
 // New recommendation. Fields + validation mirror the web's create form
@@ -32,6 +33,13 @@ function NewRecoScreen() {
   const router = useRouter();
   const [assetName, setAssetName] = useState("");
   const [ticker, setTicker] = useState("");
+  // Populated only when a listed instrument is picked. The nightly pricing
+  // job identifies an instrument by (symbol, asset_class), so sending these
+  // through is what lets a mobile-created idea be priced and categorised the
+  // same way a web-created one is — previously mobile sent neither.
+  const [assetClass, setAssetClass] = useState(null);
+  const [sector, setSector] = useState(null);
+  const [exchange, setExchange] = useState(null);
   const [recType, setRecType] = useState("Buy");
   const [priceAt, setPriceAt] = useState("");
   const [targetPrice, setTargetPrice] = useState("");
@@ -96,6 +104,11 @@ function NewRecoScreen() {
       {
         assetName: assetName.trim(),
         ticker: ticker.trim().toUpperCase(),
+        assetClass,
+        sector,
+        // The server defaults exchange to NSE when this is absent; only send
+        // one we actually got from the instrument master.
+        ...(exchange ? { exchange } : {}),
         recType,
         priceAt: priceNum,
         price: priceNum, // current == entry at creation time
@@ -130,7 +143,26 @@ function NewRecoScreen() {
             <TextInput style={styles.input} placeholder="Hindustan Aeronautics" placeholderTextColor={colors.muted} value={assetName} onChangeText={setAssetName} />
           </Field>
           <Field label="Ticker *">
-            <TextInput style={styles.input} placeholder="HAL" placeholderTextColor={colors.muted} autoCapitalize="characters" value={ticker} onChangeText={setTicker} />
+            <InstrumentSearch
+              value={ticker}
+              placeholder="HAL"
+              onChangeText={(t) => {
+                setTicker(t);
+                // Hand-typed ticker: drop the details that belonged to the
+                // previously selected instrument rather than mislabelling
+                // this one with them.
+                setAssetClass(null);
+                setSector(null);
+                setExchange(null);
+              }}
+              onSelect={(sel) => {
+                setTicker(sel.symbol);
+                if (sel.name) setAssetName(sel.name);
+                setAssetClass(sel.assetClass);
+                setSector(sel.sector);
+                setExchange(sel.exchange);
+              }}
+            />
           </Field>
 
           <Field label="Type">

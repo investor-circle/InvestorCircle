@@ -96,6 +96,7 @@ function RootNavigator() {
       <Stack.Screen name="circles" />
       <Stack.Screen name="people" />
       <Stack.Screen name="portfolio" />
+      <Stack.Screen name="portfolio-import" />
       <Stack.Screen name="settings" />
       <Stack.Screen name="debug" />
       <Stack.Screen name="new" options={{ presentation: "modal" }} />

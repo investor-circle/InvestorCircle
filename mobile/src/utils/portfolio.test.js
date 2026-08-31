@@ -1,4 +1,3 @@
-import { describe, it, expect } from "vitest";
 import { buildHolding, validateHolding, newHoldingId, portfolioTotals } from "./portfolio";
 
 // portfolio-add is one of the few endpoints that takes a CLIENT-supplied

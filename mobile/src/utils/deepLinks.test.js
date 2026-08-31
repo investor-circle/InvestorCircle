@@ -1,4 +1,3 @@
-import { describe, it, expect } from "vitest";
 import { parseDeepLink } from "./deepLinks";
 
 // The web app's shareable URLs are HashRouter URLs, so the route lives in the

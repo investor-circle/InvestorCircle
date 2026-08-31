@@ -1,4 +1,3 @@
-import { describe, it, expect } from "vitest";
 import { fmt, fmtPct, fmtDate, initialsOf, returnPct, scoreFeedRec } from "./format";
 
 describe("fmtDate", () => {

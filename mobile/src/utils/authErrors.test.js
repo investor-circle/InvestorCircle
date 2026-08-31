@@ -1,4 +1,3 @@
-import { describe, it, expect } from "vitest";
 import { friendlyAuthError, googleErrorMessage, googleOnlyAccountHint } from "./authErrors";
 
 // These strings are the only explanation a user gets when sign-in fails, so
@@ -7,22 +6,19 @@ import { friendlyAuthError, googleErrorMessage, googleOnlyAccountHint } from "./
 // to report.
 
 describe("friendlyAuthError", () => {
-  it("gives a specific message for each documented code", () => {
-    const cases = {
-      "auth/user-not-found": /No account found/,
-      "auth/wrong-password": /Incorrect password/,
-      "auth/invalid-credential": /Incorrect email or password/,
-      "auth/invalid-email": /valid email/,
-      "auth/too-many-requests": /Too many attempts/,
-      "auth/user-disabled": /disabled/,
-      "auth/email-already-in-use": /already exists/,
-      "auth/weak-password": /at least 6/,
-      "auth/operation-not-allowed": /not enabled/,
-      "auth/network-request-failed": /Network error/,
-    };
-    for (const [code, pattern] of Object.entries(cases)) {
-      expect(friendlyAuthError(code), code).toMatch(pattern);
-    }
+  it.each([
+    ["auth/user-not-found", /No account found/],
+    ["auth/wrong-password", /Incorrect password/],
+    ["auth/invalid-credential", /Incorrect email or password/],
+    ["auth/invalid-email", /valid email/],
+    ["auth/too-many-requests", /Too many attempts/],
+    ["auth/user-disabled", /disabled/],
+    ["auth/email-already-in-use", /already exists/],
+    ["auth/weak-password", /at least 6/],
+    ["auth/operation-not-allowed", /not enabled/],
+    ["auth/network-request-failed", /Network error/],
+  ])("gives a specific message for %s", (code, pattern) => {
+    expect(friendlyAuthError(code)).toMatch(pattern);
   });
 
   it("distinguishes sign-in from sign-up in the fallback", () => {
@@ -51,16 +47,14 @@ describe("googleErrorMessage", () => {
     expect(googleErrorMessage("auth/configuration-not-found")).toMatch(/temporarily unavailable/);
   });
 
-  it("always points at email sign-in as the way out", () => {
-    for (const code of [
-      "auth/operation-not-allowed",
-      "auth/internal-error",
-      "auth/invalid-api-key",
-      "auth/configuration-not-found",
-      "auth/who-knows",
-    ]) {
-      expect(googleErrorMessage(code), code).toMatch(/email sign-in/i);
-    }
+  it.each([
+    "auth/operation-not-allowed",
+    "auth/internal-error",
+    "auth/invalid-api-key",
+    "auth/configuration-not-found",
+    "auth/who-knows",
+  ])("always points at email sign-in as the way out (%s)", (code) => {
+    expect(googleErrorMessage(code)).toMatch(/email sign-in/i);
   });
 
   it("includes the raw code in the fallback so a failure stays diagnosable", () => {

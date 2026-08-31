@@ -13,16 +13,21 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { buildHolding, validateHolding, HOLDING_TYPES, CURRENCIES } from "../utils/portfolio";
+import { holdingTypeFor } from "../utils/instruments";
+import InstrumentSearch from "./InstrumentSearch";
 import { colors, fonts } from "../theme/colors";
 
 /**
  * Add a manual holding. Mirrors the web AddHoldingModal's manual mode.
  *
- * The web modal also has a "search" mode backed by instrument lookup, which
- * fills ISIN/sector automatically. Mobile has no instrument search yet (the
- * new-idea screen is manual too), so this is manual entry only — the payload
- * shape is identical either way, ISIN simply stays empty, exactly as it does
- * when a web user types a ticker the search didn't match.
+ * Picking a result from the instrument search fills in the name, sector,
+ * currency and type, the same way the web modal's search mode does. Typing a
+ * symbol that isn't in the master is still allowed — the master doesn't cover
+ * everything, and the payload shape is identical either way.
+ *
+ * ISIN is only ever populated from a matched instrument; the instruments
+ * endpoint doesn't currently expose one, so it stays empty for manual
+ * entries exactly as it does on web when the search finds no match.
  */
 export default function AddHoldingModal({ visible, onClose, onAdded }) {
   const [ticker, setTicker] = useState("");
@@ -32,6 +37,7 @@ export default function AddHoldingModal({ visible, onClose, onAdded }) {
   const [currency, setCurrency] = useState("INR");
   const [qty, setQty] = useState("");
   const [purchPrice, setPurchPrice] = useState("");
+  const [isin, setIsin] = useState("");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -43,6 +49,7 @@ export default function AddHoldingModal({ visible, onClose, onAdded }) {
     setCurrency("INR");
     setQty("");
     setPurchPrice("");
+    setIsin("");
     setErr("");
   };
 
@@ -53,7 +60,7 @@ export default function AddHoldingModal({ visible, onClose, onAdded }) {
   };
 
   const submit = async () => {
-    const form = { ticker, name, assetType, sector, currency, qty, purchPrice };
+    const form = { ticker, name, assetType, sector, currency, qty, purchPrice, isin };
     const problem = validateHolding(form);
     if (problem) {
       setErr(problem);
@@ -85,15 +92,25 @@ export default function AddHoldingModal({ visible, onClose, onAdded }) {
           </View>
 
           <ScrollView style={{ maxHeight: 430 }} keyboardShouldPersistTaps="handled">
-            <Field label="Ticker / symbol" required>
-              <TextInput
-                style={styles.input}
+            <Field label="Ticker / symbol" required hint="search or type your own">
+              <InstrumentSearch
                 value={ticker}
-                onChangeText={setTicker}
                 placeholder="INFY"
-                placeholderTextColor={colors.muted}
-                autoCapitalize="characters"
-                autoCorrect={false}
+                onChangeText={(t) => {
+                  setTicker(t);
+                  // Typing over a picked instrument invalidates the details
+                  // that came with it — keep what the user typed, but don't
+                  // silently attach the old instrument's ISIN to it.
+                  setIsin("");
+                }}
+                onSelect={(sel) => {
+                  setTicker(sel.symbol);
+                  setName(sel.name);
+                  setAssetType(holdingTypeFor(sel));
+                  if (sel.sector) setSector(sel.sector);
+                  if (sel.currency) setCurrency(sel.currency);
+                  setIsin(sel.isin || "");
+                }}
               />
             </Field>
 
