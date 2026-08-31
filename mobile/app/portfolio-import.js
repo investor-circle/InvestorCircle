@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -43,6 +43,16 @@ function PortfolioImportScreen() {
   const [error, setError] = useState("");
   const [done, setDone] = useState(null); // { added, failed }
   const mounted = useRef(true);
+
+  // Parsing can run for up to a minute and saving walks the whole list, so
+  // leaving this screen mid-import is entirely plausible — without the
+  // cleanup the guards below would never actually guard anything.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const pick = useCallback(async () => {
     setError("");
