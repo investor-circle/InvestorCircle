@@ -1,6 +1,6 @@
 // Diagnostics first: installing the logger before anything else runs means
 // errors thrown during the rest of module init are still captured.
-import { installLogger, loadPersistedLogs } from "../src/utils/logger";
+import { installLogger, loadPersistedLogs, addLog } from "../src/utils/logger";
 installLogger();
 loadPersistedLogs();
 
@@ -9,7 +9,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { View, ActivityIndicator } from "react-native";
+import { AppState } from "react-native";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -31,6 +31,18 @@ function RootNavigator() {
   // router.replace during a navigation transition. Depend on its string
   // form instead, which only changes when the route actually changes.
   const segKey = segments.join("/");
+
+  // Lifecycle breadcrumbs: if the app hangs, the last entries in the log say
+  // which route it was on and whether the OS had backgrounded it, which is
+  // the difference between "our code hung" and "Android froze/killed us".
+  useEffect(() => {
+    addLog("info", `nav: route="${segKey || "/"}" authLoading=${authLoading} signedIn=${!!user}`);
+  }, [segKey, authLoading, user]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => addLog("info", `appstate: ${s}`));
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     if (authLoading) return;
@@ -70,15 +82,25 @@ export default function RootLayout() {
     PlusJakartaSans_800ExtraBold,
   });
 
+  // Fonts are PURELY cosmetic and must never gate the UI. A previous version
+  // covered the app with a full-screen spinner until useFonts() resolved —
+  // if that promise never settles (neither loaded nor error) the overlay
+  // stays up forever, which on a device is indistinguishable from the app
+  // freezing, and leaves no trace in the log. Text simply falls back to the
+  // system font until the faces are ready. These transitions are logged so
+  // Diagnostics can confirm whether fonts ever resolve.
   useEffect(() => {
-    if (fontError) console.warn("font load failed:", fontError?.message || fontError);
-  }, [fontError]);
+    addLog("info", `fonts: loaded=${!!fontsLoaded} error=${fontError ? fontError.message || fontError : "none"}`);
+  }, [fontsLoaded, fontError]);
 
-  // Render the navigator unconditionally — unmounting/remounting it once
-  // fonts resolve resets navigation state mid-redirect. Fonts failing to
-  // load must never block the app either (it falls back to the system
-  // font), so proceed on either fontsLoaded or fontError.
-  const fontsReady = fontsLoaded || !!fontError;
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (!fontsLoaded && !fontError) {
+        addLog("warn", "fonts: still unresolved after 4s — rendering with system font fallback");
+      }
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [fontsLoaded, fontError]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -89,26 +111,8 @@ export default function RootLayout() {
           <ErrorBoundary label="app root">
             <RootNavigator />
           </ErrorBoundary>
-          {!fontsReady ? (
-            <View style={styles.splash} pointerEvents="none">
-              <ActivityIndicator color={colors.accent} size="large" />
-            </View>
-          ) : null}
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
-
-const styles = {
-  splash: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.bg,
-  },
-};

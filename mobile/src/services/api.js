@@ -7,8 +7,35 @@
  * (api/data.js) the web app uses, with identity derived from a verified
  * Firebase ID token — never a client-supplied uid.
  */
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../config/firebase";
 import { addLog } from "../utils/logger";
+
+/**
+ * Resolves once Firebase has finished restoring the persisted session.
+ *
+ * Without this, every call made during app startup raced auth: screens mount
+ * and fetch immediately, but `auth.currentUser` is still null for the first
+ * few hundred ms while the session is read back out of AsyncStorage, so each
+ * request bailed out as "no signed-in user" and the screen rendered empty
+ * even though the user was signed in. Confirmed from an on-device log where
+ * all six startup requests were skipped while the session was valid.
+ */
+let authReadyPromise = null;
+function authReady() {
+  if (!authReadyPromise) {
+    authReadyPromise =
+      typeof auth.authStateReady === "function"
+        ? auth.authStateReady()
+        : new Promise((resolve) => {
+            const unsub = onAuthStateChanged(auth, () => {
+              unsub();
+              resolve();
+            });
+          });
+  }
+  return authReadyPromise;
+}
 
 export const API_ORIGIN = process.env.EXPO_PUBLIC_API_ORIGIN || "https://investor-circle.vercel.app";
 export const API_BASE = API_ORIGIN + "/api";
@@ -21,6 +48,9 @@ export const API_BASE = API_ORIGIN + "/api";
 const REQUEST_TIMEOUT_MS = 15000;
 
 export async function callApi(path, { method = "GET", body } = {}) {
+  // Wait for the persisted session to be restored before concluding the
+  // caller is signed out — see authReady() above.
+  await authReady();
   if (!auth.currentUser) {
     addLog("warn", `api ${method} ${path} skipped — no signed-in user`);
     return { ok: false, infra: true };
