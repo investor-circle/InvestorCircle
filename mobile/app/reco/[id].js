@@ -30,6 +30,7 @@ import {
   setExitSignal,
   cancelExitSignal,
   deleteRecommendation,
+  dismissDelivery,
 } from "../../src/services/api/recommendationsApi";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts } from "../../src/theme/colors";
@@ -128,6 +129,28 @@ function RecoDetailScreen() {
       setOwnerBusy(false);
     }
   }, [exited, id]);
+
+  // Removes only YOUR copy of a shared idea; the idea itself and everyone
+  // else's copy are untouched. Different action, different endpoint, and a
+  // different confirmation so the two are not confused.
+  const confirmDismiss = useCallback(() => {
+    Alert.alert(
+      "Remove from your feed?",
+      "This hides it for you only. The person who shared it, and anyone else it went to, are not affected.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            const ok = await dismissDelivery(reco.deliveryId);
+            if (ok) router.back();
+            else Alert.alert("Couldn't remove", "Please try again.");
+          },
+        },
+      ]
+    );
+  }, [reco, router]);
 
   const confirmDelete = useCallback(() => {
     Alert.alert("Delete this idea?", "This removes it for everyone it was shared with. This can't be undone.", [
@@ -232,6 +255,17 @@ function RecoDetailScreen() {
               </Text>
             </Pressable>
           </View>
+
+          {/* Not yours, but delivered to you: you can remove your own copy.
+              Only offered when there IS a delivery row — a public idea you
+              found via Pulse was never delivered to you, so there is nothing
+              to dismiss and the button would fail. */}
+          {!isOwner && reco?.deliveryId ? (
+            <Pressable style={styles.dismissBtn} onPress={confirmDismiss}>
+              <Ionicons name="eye-off-outline" size={17} color={colors.muted} />
+              <Text style={styles.dismissText}>Remove from my feed</Text>
+            </Pressable>
+          ) : null}
 
           {/* Owner-only: exit signal + delete */}
           {isOwner ? (
@@ -345,6 +379,20 @@ const styles = StyleSheet.create({
   actionOnGain: { backgroundColor: colors.gainSoft, borderColor: colors.gainSoft },
   actionText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13 },
 
+  dismissBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.surface,
+  },
+  dismissText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 14 },
   ownerBar: { flexDirection: "row", gap: 10, paddingHorizontal: 16, marginTop: 4, alignItems: "center" },
   ownerBtn: {
     flex: 1,

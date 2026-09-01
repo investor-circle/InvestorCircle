@@ -5,25 +5,48 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { getPublicProfile } from "../../src/services/api/peopleApi";
+import { getInvestorIciBatch } from "../../src/services/api/trackingApi";
+import { iciFromStatsRow } from "../../src/utils/ici";
+import TrackButton from "../../src/components/TrackButton";
+import IciBadge, { IciBreakdown } from "../../src/components/IciBadge";
+import { useAuth } from "../../src/context/AuthContext";
 import { initialsOf } from "../../src/utils/format";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 
 // Public investor profile — the same shareable profile the web app exposes
 // at #/investor/:username, including the server-computed performance summary
-// (live / realized). Read-only: all numbers come from the API, none are
-// recomputed here (ICI and P&L are sensitive business calculations).
+// (live / realized) and the investor's ICI score.
+//
+// Performance numbers come from the API and are never recomputed here. The
+// ICI score IS computed client-side, because that is how the web app does it
+// too: the endpoint returns raw counts and src/utils/ici.js (a byte-identical
+// copy of the web's computeIci) turns them into the score, so both clients
+// produce the same number from the same inputs.
 function InvestorProfileScreen() {
   const { username } = useLocalSearchParams();
   const router = useRouter();
+  const { user } = useAuth();
   const [data, setData] = useState(undefined); // undefined=loading, null=not found
+  const [ici, setIci] = useState(null);
   const mounted = useRef(true);
 
   useEffect(() => {
     mounted.current = true;
     (async () => {
       const res = await getPublicProfile(username);
-      if (mounted.current) setData(res);
+      if (!mounted.current) return;
+      setData(res);
+
+      // Second, dependent call: the ICI batch is keyed by uid, which only the
+      // profile response can give us. Kept off the first paint so the profile
+      // renders as soon as it arrives.
+      const uid = res?.profile?.id;
+      if (!uid) return;
+      const stats = await getInvestorIciBatch([uid]);
+      if (!mounted.current) return;
+      const row = (stats || []).find((r) => String(r.uid) === String(uid));
+      setIci(iciFromStatsRow(row));
     })();
     return () => {
       mounted.current = false;
@@ -63,7 +86,31 @@ function InvestorProfileScreen() {
             <Text style={styles.name}>{profile.full_name || "Investor"}</Text>
             {profile.username ? <Text style={styles.username}>@{profile.username}</Text> : null}
             {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+
+            {/* Tracking is one-way, so it is offered to anyone except the
+                viewer themselves — following your own profile is meaningless
+                and the server would reject it anyway. */}
+            {profile.id && String(profile.id) !== String(user?.uid) ? (
+              <View style={{ marginTop: 12 }}>
+                <TrackButton targetId={profile.id} />
+              </View>
+            ) : null}
           </LinearGradient>
+
+          {ici ? (
+            <View style={styles.iciCard}>
+              <View style={styles.iciHead}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.iciTitle}>Credibility</Text>
+                  <Text style={styles.iciSub}>
+                    Based on {ici.total} public idea{ici.total === 1 ? "" : "s"}
+                  </Text>
+                </View>
+                <IciBadge ici={ici} />
+              </View>
+              <IciBreakdown ici={ici} />
+            </View>
+          ) : null}
 
           {summary ? (
             <View style={styles.statGrid}>
@@ -129,6 +176,18 @@ function Row({ label, value, valueColor }) {
 }
 
 const styles = StyleSheet.create({
+  iciCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 14,
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 14,
+  },
+  iciHead: { flexDirection: "row", alignItems: "center", gap: 10 },
+  iciTitle: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 15 },
+  iciSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
   flex: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   topbar: {

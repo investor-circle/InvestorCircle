@@ -16,6 +16,15 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../src/context/AuthContext";
 import { getFeedConfigAndPrefs, setFeedPref } from "../src/services/api/feedApi";
+import { saveProfileEdit } from "../src/services/api/profileApi";
+import {
+  profileToForm,
+  buildProfilePayload,
+  validateProfile,
+  isSebiStatus,
+  REG_STATUSES,
+  REG_LABELS,
+} from "../src/utils/profile";
 import { computeEffectiveFeedConfig } from "../src/utils/feed";
 import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -27,12 +36,20 @@ import { withBoundary } from "../src/components/ErrorBoundary";
 // locked instead of being silently ignored.
 function SettingsScreen() {
   const router = useRouter();
-  const { profile, updateProfile } = useAuth();
+  const { profile, patchProfile } = useAuth();
 
-  const [firstName, setFirstName] = useState(profile?.first_name || "");
-  const [lastName, setLastName] = useState(profile?.last_name || "");
+  // One form object rather than a state variable per field: profile-edit-save
+  // is a whole-record write, so the payload must always carry every field
+  // (see src/utils/profile.js). Keeping them together makes that natural.
+  const [form, setForm] = useState(() => profileToForm(profile));
   const [savingName, setSavingName] = useState(false);
   const [nameMsg, setNameMsg] = useState("");
+  const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Re-seed once the profile arrives (it can be null on first render).
+  useEffect(() => {
+    if (profile) setForm(profileToForm(profile));
+  }, [profile]);
 
   const [options, setOptions] = useState(null);
   const [prefs, setPrefs] = useState({});
@@ -54,13 +71,26 @@ function SettingsScreen() {
   }, []);
 
   const saveName = useCallback(async () => {
+    const problem = validateProfile(form);
+    if (problem) {
+      setNameMsg(problem);
+      return;
+    }
     setSavingName(true);
     setNameMsg("");
-    const res = await updateProfile(firstName, lastName);
-    if (!mounted.current) return;
-    setSavingName(false);
-    setNameMsg(res?.error ? res.error : "Saved");
-  }, [firstName, lastName, updateProfile]);
+    try {
+      const saved = await saveProfileEdit(buildProfilePayload(form));
+      if (!mounted.current) return;
+      // Reflect the server's own row back into context so the rest of the app
+      // (avatar initials, display name) updates without a reload.
+      if (saved) patchProfile(saved);
+      setNameMsg("Saved");
+    } catch (e) {
+      if (mounted.current) setNameMsg(e?.message || "Could not save");
+    } finally {
+      if (mounted.current) setSavingName(false);
+    }
+  }, [form, patchProfile]);
 
   const togglePref = useCallback(async (key, next) => {
     setBusyKey(key);
@@ -83,25 +113,107 @@ function SettingsScreen() {
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-          <Text style={styles.sectionTitle}>Your name</Text>
+          <Text style={styles.sectionTitle}>Your profile</Text>
           <View style={styles.card}>
             <View style={styles.row}>
               <TextInput
                 style={[styles.input, { flex: 1 }]}
                 placeholder="First name"
                 placeholderTextColor={colors.muted}
-                value={firstName}
-                onChangeText={setFirstName}
+                value={form.firstName}
+                onChangeText={set("firstName")}
               />
               <TextInput
                 style={[styles.input, { flex: 1 }]}
                 placeholder="Last name"
                 placeholderTextColor={colors.muted}
-                value={lastName}
-                onChangeText={setLastName}
+                value={form.lastName}
+                onChangeText={set("lastName")}
               />
             </View>
             {profile?.username ? <Text style={styles.readonly}>@{profile.username}</Text> : null}
+
+            <Text style={styles.fieldLabel}>Bio</Text>
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              placeholder="A line about how you invest"
+              placeholderTextColor={colors.muted}
+              value={form.bio}
+              onChangeText={set("bio")}
+              multiline
+              maxLength={500}
+            />
+            <Text style={styles.counter}>{form.bio.length}/500</Text>
+
+            <Text style={styles.fieldLabel}>Links</Text>
+            {[
+              ["twitter", "X / Twitter URL"],
+              ["linkedin", "LinkedIn URL"],
+              ["telegram", "Telegram URL"],
+              ["instagram", "Instagram URL"],
+            ].map(([key, ph]) => (
+              <TextInput
+                key={key}
+                style={styles.input}
+                placeholder={ph}
+                placeholderTextColor={colors.muted}
+                value={form[key]}
+                onChangeText={set(key)}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+            ))}
+
+            <Text style={styles.fieldLabel}>You are</Text>
+            <View style={styles.chips}>
+              {REG_STATUSES.map((st) => {
+                const on = form.registrationStatus === st;
+                return (
+                  <Pressable
+                    key={st}
+                    style={[styles.chip, on && styles.chipOn]}
+                    onPress={() => set("registrationStatus")(st)}
+                  >
+                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{REG_LABELS[st]}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* SEBI details only apply to a registered status. Changing to one
+                puts the account back into review server-side, so say that
+                rather than letting the badge silently disappear. */}
+            {isSebiStatus(form.registrationStatus) ? (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="SEBI registration number"
+                  placeholderTextColor={colors.muted}
+                  value={form.sebiNum}
+                  onChangeText={set("sebiNum")}
+                  autoCapitalize="characters"
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Valid till (YYYY-MM-DD)"
+                  placeholderTextColor={colors.muted}
+                  value={form.sebiTill}
+                  onChangeText={set("sebiTill")}
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Firm name"
+                  placeholderTextColor={colors.muted}
+                  value={form.sebiFirm}
+                  onChangeText={set("sebiFirm")}
+                />
+                <Text style={styles.note}>
+                  Changing your registration status sends it for verification again.
+                </Text>
+              </>
+            ) : null}
             <Pressable style={[styles.saveBtn, savingName && { opacity: 0.7 }]} onPress={saveName} disabled={savingName}>
               {savingName ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save</Text>}
             </Pressable>
@@ -156,6 +268,22 @@ function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  fieldLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 12, marginTop: 14, marginBottom: 6 },
+  multiline: { minHeight: 78, textAlignVertical: "top", paddingTop: 10 },
+  counter: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, textAlign: "right", marginTop: 4 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.bg,
+  },
+  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 12 },
+  chipTextOn: { color: "#fff" },
+  note: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, lineHeight: 16, marginTop: 8 },
   flex: { flex: 1, backgroundColor: colors.bg },
   topbar: {
     flexDirection: "row",

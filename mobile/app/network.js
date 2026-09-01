@@ -10,13 +10,20 @@ import {
   rejectConnection,
   removeConnection,
 } from "../src/services/api/connectionsApi";
+import { getMyTrackingList, getMyTrackers, getTrackingCounts } from "../src/services/api/trackingApi";
+import TrackButton from "../src/components/TrackButton";
 import { initialsOf } from "../src/utils/format";
 import { colors, fonts, GRADIENT } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
+// Connections are mutual and need acceptance; tracking is one-way and does
+// not. They are different relationships, so they get different tabs rather
+// than one merged "network" list — same split as the web Network page.
 const TABS = [
   { id: "connections", label: "Connections" },
   { id: "requests", label: "Requests" },
+  { id: "tracking", label: "Tracking" },
+  { id: "trackers", label: "Tracking me" },
 ];
 
 function NetworkScreen() {
@@ -25,11 +32,27 @@ function NetworkScreen() {
   const [rows, setRows] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState({}); // connectionId -> true while a mutation runs
+  const [tracking, setTracking] = useState(null);
+  const [trackers, setTrackers] = useState(null);
+  const [counts, setCounts] = useState({ trackingCount: 0, trackersCount: 0 });
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
-    const data = await getMyConnections();
-    if (mounted.current) setRows(data);
+    // All four tabs are backed by independent endpoints, so they are fetched
+    // together rather than one-per-tab-switch: the counts are needed for the
+    // badges immediately anyway, and serialising them would make every tab
+    // switch feel slow (see CLAUDE.md on avoidable sequential round-trips).
+    const [conns, tr, trs, cnt] = await Promise.all([
+      getMyConnections(),
+      getMyTrackingList(50),
+      getMyTrackers(50),
+      getTrackingCounts(),
+    ]);
+    if (!mounted.current) return;
+    setRows(conns);
+    setTracking(tr.people);
+    setTrackers(trs.people);
+    setCounts(cnt);
   }, []);
 
   useEffect(() => {
@@ -50,7 +73,16 @@ function NetworkScreen() {
   const active = all.filter((c) => c.status === "active");
   const incoming = all.filter((c) => c.status === "pending" && c.direction === "received");
   const outgoing = all.filter((c) => c.status === "pending" && c.direction === "sent");
-  const list = tab === "connections" ? active : [...incoming, ...outgoing];
+  const list =
+    tab === "connections"
+      ? active
+      : tab === "requests"
+      ? [...incoming, ...outgoing]
+      : tab === "tracking"
+      ? tracking || []
+      : trackers || [];
+
+  const isPeopleTab = tab === "tracking" || tab === "trackers";
 
   const withBusy = (id, fn) => async () => {
     setBusy((b) => ({ ...b, [id]: true }));
@@ -102,6 +134,51 @@ function NetworkScreen() {
     );
   };
 
+  // A tracked/tracking person is a plain profile row, not a connection: there
+  // is no request to accept or reject, only the one-way toggle. On the
+  // "Tracking me" tab the toggle reflects whether YOU track THEM back, which
+  // is independent of them tracking you — so it fetches its own status there
+  // rather than assuming symmetry.
+  const renderPerson = ({ item }) => {
+    const uid = item.id ?? item.user_id;
+    const name = item.name || item.full_name || item.username || "Investor";
+    return (
+      <Pressable
+        style={styles.row}
+        onPress={() => item.username && router.push(`/investor/${encodeURIComponent(item.username)}`)}
+        disabled={!item.username}
+      >
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{initialsOf(name)}</Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.name} numberOfLines={1}>
+            {name}
+          </Text>
+          {item.username ? (
+            <Text style={styles.sub} numberOfLines={1}>
+              @{item.username}
+            </Text>
+          ) : null}
+        </View>
+        <TrackButton
+          targetId={uid}
+          initialTracking={tab === "tracking" ? true : undefined}
+          compact
+          onChange={(now) => {
+            // Keep the list honest when someone untracks from this screen:
+            // the row should leave the Tracking tab, not sit there contradicting
+            // its own button.
+            if (tab === "tracking" && !now) {
+              setTracking((p) => (p || []).filter((x) => String(x.id ?? x.user_id) !== String(uid)));
+              setCounts((c) => ({ ...c, trackingCount: Math.max(0, c.trackingCount - 1) }));
+            }
+          }}
+        />
+      </Pressable>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
       <View style={styles.topbar}>
@@ -115,7 +192,17 @@ function NetworkScreen() {
       <View style={styles.tabs}>
         {TABS.map((t) => {
           const activeTab = tab === t.id;
-          const count = t.id === "connections" ? active.length : incoming.length;
+          // Connections/requests counts come from the already-loaded list;
+          // the tracking counts come from the dedicated counts endpoint,
+          // which is cheap indexed COUNTs rather than a list payload.
+          const count =
+            t.id === "connections"
+              ? active.length
+              : t.id === "requests"
+              ? incoming.length
+              : t.id === "tracking"
+              ? counts.trackingCount
+              : counts.trackersCount;
           return (
             <Pressable key={t.id} style={[styles.tab, activeTab && styles.tabActive]} onPress={() => setTab(t.id)}>
               <Text style={[styles.tabText, activeTab && styles.tabTextActive]}>
@@ -134,20 +221,30 @@ function NetworkScreen() {
       ) : (
         <FlatList
           data={list}
-          keyExtractor={(c) => String(c.connection_id)}
-          renderItem={renderItem}
+          keyExtractor={(c, i) => String(isPeopleTab ? c.id ?? c.user_id ?? i : c.connection_id)}
+          renderItem={isPeopleTab ? renderPerson : renderItem}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           contentContainerStyle={list.length === 0 ? styles.emptyWrap : { paddingVertical: 8 }}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="people-outline" size={40} color={colors.line2} />
               <Text style={styles.emptyTitle}>
-                {tab === "connections" ? "No connections yet" : "No pending requests"}
+                {tab === "connections"
+                  ? "No connections yet"
+                  : tab === "requests"
+                  ? "No pending requests"
+                  : tab === "tracking"
+                  ? "Not tracking anyone yet"
+                  : "Nobody is tracking you yet"}
               </Text>
               <Text style={styles.emptySub}>
                 {tab === "connections"
                   ? "Connect with other investors to see their ideas in your feed."
-                  : "Connection requests will appear here."}
+                  : tab === "requests"
+                  ? "Connection requests will appear here."
+                  : tab === "tracking"
+                  ? "Track an investor to follow their ideas without needing them to accept."
+                  : "People who track you will appear here."}
               </Text>
             </View>
           }

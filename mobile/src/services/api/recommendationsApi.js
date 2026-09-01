@@ -100,3 +100,19 @@ export async function updateDelivery(deliveryId, patch) {
   if (api.ok) return api.data.delivery;
   return null;
 }
+
+/**
+ * Remove a received idea from your own feed.
+ *
+ * Distinct from deleteRecommendation(): that deletes the IDEA for everyone
+ * and is only available to its author. This deletes only the DELIVERY — your
+ * copy — leaving the idea itself and everyone else's copy untouched. Mirrors
+ * deleteDelivery() in the web app.
+ */
+export async function dismissDelivery(deliveryId) {
+  const api = await callApi("/data?resource=recommendations", {
+    method: "POST",
+    body: { action: "delete-delivery", deliveryId },
+  });
+  return api.ok;
+}

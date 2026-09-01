@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
+    "expo-image-picker": "^57.0.14",
     "firebase": "^11.0.0",
     "firebase-admin": "^12.7.0",
     "lucide-react": "^0.383.0",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@vitejs/plugin-react": "^4.3.1",
