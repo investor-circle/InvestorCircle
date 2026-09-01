@@ -41,8 +41,16 @@ yarn-error.*
 /ios
 /android
 
-# Firebase Cloud Messaging config for Android device push. Not secret (it
-# holds public project identifiers), but whether to commit it is the repo
-# owner's call — app.config.js wires it up only when present, so the build
-# works either way. See README.md, "Enabling device push".
-google-services.json
+# NOTE: google-services.json is deliberately NOT ignored.
+#
+# It is the Firebase Cloud Messaging config for Android push. EAS uploads the
+# project to its build servers with `git archive`, which excludes ignored
+# files — so ignoring this one would mean it never reaches the build and push
+# would silently never work, which is exactly how the Firebase env vars were
+# lost earlier in this project's history.
+#
+# It contains public project identifiers (project id, sender id, and an
+# Android API key restricted to this app's package + signing certificate) —
+# the same class of value as the VITE_FIREBASE_* config already shipped in
+# the web bundle. It is not a secret. The FCM *service account key*, which
+# is a real secret, is uploaded to Expo and never stored here.
