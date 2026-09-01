@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "435836738972",
+    "project_id": "investorcircle",
+    "storage_bucket": "investorcircle.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:435836738972:android:22d3e7e1f879339be77c59",
+        "android_client_info": {
+          "package_name": "com.myinvestorcircle.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "435836738972-fkrgf0igc9r4ogskntqe223poh8ler9d.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyApLhEuMnDv3jHEYNHoe-tDJUqTkm23-lI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "435836738972-fkrgf0igc9r4ogskntqe223poh8ler9d.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
