@@ -16,6 +16,9 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    include: ["src/**/*.test.{js,jsx}"],
+    // api/** included so the server-side push delivery rules are covered by
+    // the same `npm test` the rest of the web app uses. These are pure
+    // modules (no Neon, no network) for exactly that reason.
+    include: ["src/**/*.test.{js,jsx}", "api/**/*.test.js"],
   },
 });

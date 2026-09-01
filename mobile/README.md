@@ -193,6 +193,34 @@ Once a build is possible (from a computer or via that workflow):
   copy-to-clipboard. This is how device-only problems get diagnosed without
   adb.
 
+## Enabling device push
+
+Push is implemented end to end, but Android delivery needs Firebase Cloud
+Messaging configuration that only the repo owner can supply. Until it is
+supplied the app builds and runs normally — token registration simply no-ops
+and says why in Profile → Diagnostics.
+
+Three steps, in this order:
+
+1. **Run the migration.** `supabase/phase10_expo_push_tokens.sql` creates the
+   `expo_push_tokens` table. It is additive and safe to re-run; it does not
+   touch `push_subscriptions` or web push. `api/push.js` tolerates the table
+   being absent, so the code can ship before this runs.
+2. **Give Expo your FCM credentials.** In the Firebase console (same project
+   as web auth) enable Cloud Messaging, create a service account key, and
+   upload it to the Expo project under Credentials → Android → FCM V1.
+3. **Add `google-services.json`.** Download it from the Firebase console for
+   the Android app with package `com.myinvestorcircle.app`, and place it at
+   `mobile/google-services.json`. It is gitignored by default because
+   whether to commit it is your call — but note EAS uploads the project with
+   `git archive`, so a gitignored file **does not reach the build**. To ship
+   it, either commit it (it holds public identifiers, not secrets) or supply
+   it through EAS. `app.config.js` wires it up only when present, so a build
+   without it still succeeds.
+
+No change is needed to the notification triggers: everything already calls
+`/api/push`, which now fans out to browsers and devices alike.
+
 ## Tests
 
 `npm test` (Jest with the `jest-expo` preset, `mobile/jest.config.js` —

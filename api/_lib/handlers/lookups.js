@@ -28,6 +28,8 @@
  *     user-lookup:        { by: 'id'|'username'|'email', value }         (auth: user)
  *     user-lookup-batch:  { by: 'id', values: [...] }                    (auth: user)
  *     avatar-upload:      { dataUrl }                                    (auth: user)
+ *     expo-push-register:   { token, platform? }                          (auth: user)
+ *     expo-push-unregister: { token }                                     (auth: user)
  *     onboarding-complete:{ step: 'discover' }                           (auth: user)
  * GET  ?resource=lookups&action=discover-people                         (auth: user)
  * GET  ?resource=lookups&action=discover-more                           (auth: user)
@@ -60,6 +62,9 @@ const AVATAR_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/
 // onboarding_cv_done is set there and this action only ever needs to mark
 // the one-time Discover modal as dismissed/completed.
 const ONBOARDING_STEPS = ['discover'];
+// Expo push tokens are "ExponentPushToken[...]" (older clients: ExpoPushToken).
+// Validated so a malformed value can't be stored and then fail every send.
+const EXPO_PUSH_TOKEN_RE = /^Expo(nent)?PushToken\[[^\]\s]+\]$/;
 
 async function isUsernameAvailable(username, excludeId) {
   const rows = excludeId
@@ -659,6 +664,38 @@ export default async function handleLookups(req, res) {
         VALUES (${uid}, ${endpoint}, ${p256dh}, ${authKey})
         ON CONFLICT (endpoint) DO UPDATE SET user_id = ${uid}
       `;
+      res.status(200).json({ success: true });
+      return;
+    }
+
+    // Mobile device push. Separate from push-subscribe above because an Expo
+    // token has no p256dh/auth key pair — see supabase/phase10_expo_push_tokens.sql.
+    // Identity comes from the verified Firebase token, never the body.
+    if (action === 'expo-push-register') {
+      let uid;
+      try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+      const token = String(body.token || '');
+      const platform = String(body.platform || '').slice(0, 16) || null;
+      if (!EXPO_PUSH_TOKEN_RE.test(token)) { res.status(400).json({ error: 'a valid expo push token is required' }); return; }
+      await sql`
+        INSERT INTO expo_push_tokens (token, user_id, platform)
+        VALUES (${token}, ${uid}, ${platform})
+        ON CONFLICT (token) DO UPDATE
+          SET user_id = ${uid}, platform = ${platform}, updated_at = now()
+      `;
+      res.status(200).json({ success: true });
+      return;
+    }
+
+    if (action === 'expo-push-unregister') {
+      let uid;
+      try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+      const token = String(body.token || '');
+      if (!token) { res.status(400).json({ error: 'token is required' }); return; }
+      // Scoped to the caller: a signed-in user may only detach a token from
+      // their OWN account, so this cannot be used to silence someone else's
+      // notifications by guessing or replaying a token.
+      await sql`DELETE FROM expo_push_tokens WHERE token = ${token} AND user_id = ${uid}`;
       res.status(200).json({ success: true });
       return;
     }

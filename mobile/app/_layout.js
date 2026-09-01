@@ -22,6 +22,8 @@ import {
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import ErrorBoundary from "../src/components/ErrorBoundary";
 import { parseDeepLink } from "../src/utils/deepLinks";
+import * as Notifications from "expo-notifications";
+import { registerDevice, unregisterDevice, urlFromNotification } from "../src/services/pushNotifications";
 import { colors } from "../src/theme/colors";
 
 function RootNavigator() {
@@ -65,11 +67,53 @@ function RootNavigator() {
 
     Linking.getInitialURL().then((url) => url && go(url));
     const sub = Linking.addEventListener("url", ({ url }) => go(url));
+
+    // A tapped push notification routes through the SAME parser: the server
+    // puts the web app's own URL in data.url (api/_lib/expoPush.js), so a
+    // notification lands on exactly the screen the equivalent shared link
+    // would. Covers both a tap while running and a cold start from a tap.
+    const openFromNotification = (response) => {
+      const url = urlFromNotification(response);
+      if (!url) return;
+      addLog("info", "push: opened from notification");
+      go(url);
+    };
+
+    const tapSub = Notifications.addNotificationResponseReceivedListener(openFromNotification);
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => response && openFromNotification(response))
+      .catch(() => {});
+
     return () => {
       cancelled = true;
       sub.remove();
+      tapSub.remove();
     };
   }, [authLoading, user, router]);
+
+  // Register this device for push once the user is known. Fire-and-forget:
+  // registerDevice() never throws and returns null when push isn't available
+  // (emulator, permission denied, no FCM config in this build).
+  //
+  // Detaching at sign-out is NOT done here. Unregistering is an authenticated
+  // call, and a cleanup only runs once `user` is already null — by which time
+  // Firebase has signed out and the call would silently no-op, leaving the
+  // token attached to the account that just left. AuthContext.logout() does it
+  // while still signed in. The one case still worth handling here is a sign-out
+  // that lands mid-registration, which would otherwise re-attach the token
+  // moments after logout already detached it.
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let cancelled = false;
+
+    registerDevice().then((token) => {
+      if (cancelled && token) unregisterDevice(token);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user]);
 
   useEffect(() => {
     if (authLoading) return;

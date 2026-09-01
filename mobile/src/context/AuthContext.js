@@ -17,6 +17,7 @@ import {
   signOut,
 } from "firebase/auth";
 import { auth } from "../config/firebase";
+import { unregisterCurrentDevice } from "../services/pushNotifications";
 import { API_ORIGIN } from "../services/api";
 import { completeSignup } from "../services/api/authApi";
 
@@ -119,7 +120,18 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = (email, password) => signInWithEmailAndPassword(auth, email, password);
-  const logout = () => signOut(auth);
+  // Detach this device's push token BEFORE signing out: unregistering is an
+  // authenticated call, so doing it afterwards silently no-ops and leaves
+  // the token attached to the account that just left — the next person to
+  // use the phone would get their notifications. Never blocks sign-out.
+  const logout = async () => {
+    try {
+      await unregisterCurrentDevice();
+    } catch (_) {
+      /* sign out regardless */
+    }
+    return signOut(auth);
+  };
 
   /**
    * Create an account, then write name/username/consent to the profile row.

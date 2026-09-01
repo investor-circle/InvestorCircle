@@ -40,3 +40,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Firebase Cloud Messaging config for Android device push. Not secret (it
+# holds public project identifiers), but whether to commit it is the repo
+# owner's call — app.config.js wires it up only when present, so the build
+# works either way. See README.md, "Enabling device push".
+google-services.json
