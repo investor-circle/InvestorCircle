@@ -10,6 +10,7 @@ import { iciMapFromStats } from "../src/utils/ici";
 import TrackButton from "../src/components/TrackButton";
 import IciBadge from "../src/components/IciBadge";
 import { initialsOf } from "../src/utils/format";
+import Avatar from "../src/components/Avatar";
 import { debugLog } from "../src/utils/logger";
 import { colors, fonts, GRADIENT } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -108,9 +109,7 @@ function SuggestedPeopleScreen() {
               onPress={() => item.username && router.push(`/investor/${encodeURIComponent(item.username)}`)}
               disabled={!item.username}
             >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{initialsOf(item.name || item.full_name)}</Text>
-              </View>
+              <Avatar profile={item} name={item.name || item.full_name} size={42} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.name} numberOfLines={1}>
                   {item.name || item.full_name || item.username || "Investor"}

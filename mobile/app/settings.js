@@ -16,7 +16,9 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../src/context/AuthContext";
 import { getFeedConfigAndPrefs, setFeedPref } from "../src/services/api/feedApi";
-import { saveProfileEdit } from "../src/services/api/profileApi";
+import { saveProfileEdit, uploadAvatar } from "../src/services/api/profileApi";
+import { pickAndCompressAvatar } from "../src/services/avatarImage";
+import Avatar from "../src/components/Avatar";
 import {
   profileToForm,
   buildProfilePayload,
@@ -44,6 +46,8 @@ function SettingsScreen() {
   const [form, setForm] = useState(() => profileToForm(profile));
   const [savingName, setSavingName] = useState(false);
   const [nameMsg, setNameMsg] = useState("");
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarMsg, setAvatarMsg] = useState("");
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
   // Re-seed once the profile arrives (it can be null on first render).
@@ -92,6 +96,32 @@ function SettingsScreen() {
     }
   }, [form, patchProfile]);
 
+  // Picture upload is its own action, not part of the profile save: it writes
+  // a different column through a different endpoint, and making someone press
+  // Save afterwards to keep a picture they just chose would be surprising.
+  const changePhoto = useCallback(async () => {
+    setAvatarMsg("");
+    const picked = await pickAndCompressAvatar();
+    if (picked.cancelled) return;
+    if (picked.error) {
+      setAvatarMsg(picked.error);
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      const url = await uploadAvatar(picked.dataUrl);
+      if (!mounted.current) return;
+      // Reflect it into context immediately so every avatar in the app —
+      // and the web, on its next load — shows the new picture.
+      patchProfile({ avatar_url: url });
+      setAvatarMsg("Photo updated");
+    } catch (e) {
+      if (mounted.current) setAvatarMsg(e?.message || "Could not upload image");
+    } finally {
+      if (mounted.current) setAvatarBusy(false);
+    }
+  }, [patchProfile]);
+
   const togglePref = useCallback(async (key, next) => {
     setBusyKey(key);
     setPrefs((p) => ({ ...p, [key]: next })); // optimistic
@@ -115,6 +145,32 @@ function SettingsScreen() {
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           <Text style={styles.sectionTitle}>Your profile</Text>
           <View style={styles.card}>
+            <View style={styles.photoRow}>
+              <Avatar profile={profile} size={64} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Pressable onPress={changePhoto} disabled={avatarBusy}>
+                  {avatarBusy ? (
+                    <ActivityIndicator color={colors.accent} style={{ alignSelf: "flex-start" }} />
+                  ) : (
+                    <Text style={styles.photoLink}>
+                      {profile?.avatar_url ? "Change photo" : "Add a photo"}
+                    </Text>
+                  )}
+                </Pressable>
+                <Text style={styles.photoHint}>Square, up to 8MB. It's resized before upload.</Text>
+                {avatarMsg ? (
+                  <Text
+                    style={[
+                      styles.photoMsg,
+                      avatarMsg === "Photo updated" ? { color: colors.gain } : { color: colors.loss },
+                    ]}
+                  >
+                    {avatarMsg}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+
             <View style={styles.row}>
               <TextInput
                 style={[styles.input, { flex: 1 }]}
@@ -268,6 +324,10 @@ function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  photoRow: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 16 },
+  photoLink: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 14 },
+  photoHint: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, marginTop: 3, lineHeight: 15 },
+  photoMsg: { fontFamily: fonts.semibold, fontSize: 12, marginTop: 5 },
   fieldLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 12, marginTop: 14, marginBottom: 6 },
   multiline: { minHeight: 78, textAlignVertical: "top", paddingTop: 10 },
   counter: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, textAlign: "right", marginTop: 4 },

@@ -13,6 +13,7 @@ import {
 import { getMyTrackingList, getMyTrackers, getTrackingCounts } from "../src/services/api/trackingApi";
 import TrackButton from "../src/components/TrackButton";
 import { initialsOf } from "../src/utils/format";
+import Avatar from "../src/components/Avatar";
 import { colors, fonts, GRADIENT } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
@@ -148,9 +149,7 @@ function NetworkScreen() {
         onPress={() => item.username && router.push(`/investor/${encodeURIComponent(item.username)}`)}
         disabled={!item.username}
       >
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initialsOf(name)}</Text>
-        </View>
+        <Avatar profile={item} name={name} size={42} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.name} numberOfLines={1}>
             {name}

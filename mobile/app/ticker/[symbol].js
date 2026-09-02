@@ -7,6 +7,7 @@ import { getTickerRecos, getDailyPrices } from "../../src/services/api/consensus
 import { computeConsensus, computeTrend, consensusColor } from "../../src/utils/consensus";
 import Sparkline from "../../src/components/Sparkline";
 import { fmt, fmtDate, initialsOf } from "../../src/utils/format";
+import Avatar from "../../src/components/Avatar";
 import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
@@ -139,9 +140,7 @@ function TickerConsensusScreen() {
                   style={styles.ideaRow}
                   onPress={() => router.push(`/reco/${r.id}`)}
                 >
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{initialsOf(r.full_name)}</Text>
-                  </View>
+                  <Avatar profile={r} name={r.full_name} size={34} />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.ideaName} numberOfLines={1}>
                       {r.full_name || r.username || "Investor"}

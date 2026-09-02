@@ -29,3 +29,22 @@ export async function getRegOptions() {
   const api = await callApi("/data?resource=lookups&action=reg-options");
   return api.ok ? api.data : { options: [], verifyMessage: "" };
 }
+
+/**
+ * Upload a profile picture.
+ *
+ * Same endpoint the web uses, writing the same user_profiles.avatar_url
+ * column — so a picture set on either client is the picture on both, with no
+ * sync step and no second copy that could drift.
+ *
+ * The server re-validates size and format; the client checks first only so
+ * the user gets a useful message instead of a 400.
+ */
+export async function uploadAvatar(dataUrl) {
+  const api = await callApi("/data?resource=lookups", {
+    method: "POST",
+    body: { action: "avatar-upload", dataUrl },
+  });
+  if (api.ok) return api.data.avatarUrl;
+  throw new Error(api.data?.error || "Could not upload image");
+}

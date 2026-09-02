@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
-import { initialsOf } from "../../src/utils/format";
+import Avatar from "../../src/components/Avatar";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 
 function ProfileScreen() {
@@ -16,9 +16,7 @@ function ProfileScreen() {
     <SafeAreaView style={styles.flex} edges={["top"]}>
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
         <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initialsOf(profile?.full_name)}</Text>
-          </View>
+          <Avatar profile={profile} size={78} style={styles.heroAvatar} />
           <Text style={styles.name}>{profile?.full_name || "—"}</Text>
           {profile?.username ? <Text style={styles.username}>@{profile.username}</Text> : null}
           {userIsAdmin ? (
@@ -85,6 +83,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
+  heroAvatar: { borderWidth: 2, borderColor: "rgba(255,255,255,0.55)", marginBottom: 10 },
   avatar: {
     width: 88,
     height: 88,

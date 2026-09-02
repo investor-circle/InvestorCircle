@@ -10,7 +10,7 @@ import { iciFromStatsRow } from "../../src/utils/ici";
 import TrackButton from "../../src/components/TrackButton";
 import IciBadge, { IciBreakdown } from "../../src/components/IciBadge";
 import { useAuth } from "../../src/context/AuthContext";
-import { initialsOf } from "../../src/utils/format";
+import Avatar from "../../src/components/Avatar";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 
@@ -80,9 +80,7 @@ function InvestorProfileScreen() {
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
           <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initialsOf(profile.full_name)}</Text>
-            </View>
+            <Avatar profile={profile} size={78} style={styles.heroAvatar} />
             <Text style={styles.name}>{profile.full_name || "Investor"}</Text>
             {profile.username ? <Text style={styles.username}>@{profile.username}</Text> : null}
             {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
@@ -202,6 +200,7 @@ const styles = StyleSheet.create({
   },
   topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17 },
   hero: { alignItems: "center", paddingTop: 28, paddingBottom: 26, paddingHorizontal: 24 },
+  heroAvatar: { borderWidth: 2, borderColor: "rgba(255,255,255,0.55)", marginBottom: 10 },
   avatar: {
     width: 78,
     height: 78,
