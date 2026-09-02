@@ -1791,10 +1791,8 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
           dbNotifyPublicContacts(newRecoId, contacts.map(c => c.id), meta)
             .catch(e => console.warn('notify-public-contacts:', e?.message || e));
           contacts.forEach(c => sendPush(c.id, {
-            title: '💡 New idea in your circle',
-            body:  `${me.name || 'Someone'} posted a new idea`,
-            url:   recoUrl,
-            tag:   'contact_recommendation',
+            type: 'contact_recommendation',
+            deepLink: newRecoId && me.username ? `/investor/${me.username}/reco/${newRecoId}` : undefined,
           }));
           // Emails
           contacts.forEach(c => {

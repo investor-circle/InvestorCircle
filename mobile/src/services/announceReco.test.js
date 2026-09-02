@@ -37,16 +37,21 @@ describe("announcePublicReco", () => {
 
   it("links to the idea's own public page", () => {
     announcePublicReco({ reco, recoId: "r9", me, contacts });
-    const url = sendPush.mock.calls[0][1].url;
-    expect(url).toBe("https://myinvestorcircle.com/#/investor/asha/reco/r9");
-    expect(sendEmail.mock.calls[0][1].reco_url).toBe(url);
+    // Push carries only an in-app PATH — the origin is fixed server-side so a
+    // notification cannot be pointed at another site.
+    expect(sendPush.mock.calls[0][1].deepLink).toBe("/investor/asha/reco/r9");
+    expect(sendEmail.mock.calls[0][1].reco_url).toBe("https://myinvestorcircle.com/#/investor/asha/reco/r9");
   });
 
-  it("keeps prices out of the push body — it can show on a lock screen", () => {
+  it("sends no message text at all — the server composes it", () => {
+    // This is what makes the PII rule (no prices on a lock screen) structural
+    // rather than a convention each caller has to remember.
     announcePublicReco({ reco, recoId: "r9", me, contacts });
     for (const [, payload] of sendPush.mock.calls) {
-      expect(payload.body).not.toMatch(/1450|₹|\d{3,}/);
-      expect(payload.title).not.toMatch(/1450|₹/);
+      expect(payload.title).toBeUndefined();
+      expect(payload.body).toBeUndefined();
+      expect(payload.type).toBe("contact_recommendation");
+      expect(JSON.stringify(payload)).not.toMatch(/1450|₹/);
     }
   });
 
@@ -87,9 +92,9 @@ describe("announcePublicReco", () => {
     expect(() => announcePublicReco({ reco, recoId: "r9", me, contacts })).not.toThrow();
   });
 
-  it("still works for an author with no username set", () => {
+  it("still notifies when the author has no username, just without a deep link", () => {
     announcePublicReco({ reco, recoId: "r9", me: { full_name: "Asha" }, contacts });
-    expect(sendPush).toHaveBeenCalled();
-    expect(sendPush.mock.calls[0][1].body).toContain("Asha");
+    expect(sendPush).toHaveBeenCalledTimes(2);
+    expect(sendPush.mock.calls[0][1].deepLink).toBeNull();
   });
 });

@@ -18,7 +18,8 @@ import { getMyConnections } from "../src/services/api/connectionsApi";
 import { announcePublicReco } from "../src/services/announceReco";
 import { useAuth } from "../src/context/AuthContext";
 import { getMyGroups } from "../src/services/api/groupsApi";
-import { initialsOf, HORIZONS, CONVICTIONS } from "../src/utils/format";
+import { initialsOf, HORIZONS, CONVICTIONS, FALLBACK_SECTORS } from "../src/utils/format";
+import { getSectors } from "../src/services/api/lookupsApi";
 import { buildRecoPayload, validateRecoDraft } from "../src/utils/recoDraft";
 import { colors, fonts } from "../src/theme/colors";
 import InstrumentSearch from "../src/components/InstrumentSearch";
@@ -43,6 +44,11 @@ function NewRecoScreen() {
   // same way a web-created one is — previously mobile sent neither.
   const [assetClass, setAssetClass] = useState(null);
   const [sector, setSector] = useState(null);
+  // Sector normally arrives with the picked instrument. When it doesn't (an
+  // instrument with no sector on file, or a hand-typed ticker) the field used
+  // to be simply unavailable on mobile, while the web offers a picker from
+  // sector_master. Server list first, local constants only as a fallback.
+  const [sectorOptions, setSectorOptions] = useState(FALLBACK_SECTORS);
   const [exchange, setExchange] = useState(null);
   const [recType, setRecType] = useState("Buy");
   const [priceAt, setPriceAt] = useState("");
@@ -73,6 +79,18 @@ function NewRecoScreen() {
     return () => {
       mounted.current = false;
     };
+  }, []);
+
+  useEffect(() => {
+    getSectors()
+      .then((rows) => {
+        // The endpoint returns plain strings (lookups.js: sectors: rows.map(r => r.sector)).
+        const names = (rows || []).filter((r) => typeof r === "string" && r);
+        if (names.length && mounted.current) setSectorOptions(names);
+      })
+      .catch(() => {
+        /* keep the fallback list */
+      });
   }, []);
 
   const toggle = (setter) => (id) => setter((m) => ({ ...m, [id]: !m[id] }));
@@ -215,6 +233,20 @@ function NewRecoScreen() {
                   onPress={() => setHorizon((cur) => (cur === h ? "" : h))}
                 >
                   <Text style={[styles.chipText, horizon === h && styles.chipTextOn]}>{h}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </Field>
+
+          <Field label="Sector (optional)">
+            <View style={styles.chipRow}>
+              {sectorOptions.map((sec) => (
+                <Pressable
+                  key={sec}
+                  style={[styles.chip, sector === sec && styles.chipOn]}
+                  onPress={() => setSector((cur) => (cur === sec ? null : sec))}
+                >
+                  <Text style={[styles.chipText, sector === sec && styles.chipTextOn]}>{sec}</Text>
                 </Pressable>
               ))}
             </View>

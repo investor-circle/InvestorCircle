@@ -16,7 +16,13 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../src/context/AuthContext";
 import { getFeedConfigAndPrefs, setFeedPref } from "../src/services/api/feedApi";
-import { saveProfileEdit, uploadAvatar, checkUsername, saveUsername } from "../src/services/api/profileApi";
+import {
+  saveProfileEdit,
+  uploadAvatar,
+  checkUsername,
+  saveUsername,
+  getRegOptions,
+} from "../src/services/api/profileApi";
 import { pickAndCompressAvatar } from "../src/services/avatarImage";
 import Avatar from "../src/components/Avatar";
 import { setCachedAvatar } from "../src/services/avatarCache";
@@ -92,6 +98,29 @@ function SettingsScreen() {
     setUnStatus("idle");
     setUnMsg("Username updated");
   }, [username, unStatus, patchProfile]);
+
+  // Registration statuses come from the server (registration_status_options),
+  // as they do on the web. They were hardcoded here, which worked but meant a
+  // status added or relabelled server-side would never appear on the phone.
+  // The local constants stay as the offline fallback and as the source of the
+  // SEBI/self-directed distinction the form branches on.
+  const [regOptions, setRegOptions] = useState(null);
+  const [sebiMsg, setSebiMsg] = useState("");
+
+  useEffect(() => {
+    getRegOptions()
+      .then(({ options: opts, verifyMessage }) => {
+        if (!mounted.current) return;
+        if (opts?.length) setRegOptions(opts);
+        if (verifyMessage) setSebiMsg(verifyMessage);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Server list when we have one, local constants when we don't.
+  const regChoices = regOptions
+    ? regOptions.map((o) => ({ code: o.code, label: o.label }))
+    : REG_STATUSES.map((code) => ({ code, label: REG_LABELS[code] }));
 
   const [options, setOptions] = useState(null);
   const [prefs, setPrefs] = useState({});
@@ -290,19 +319,22 @@ function SettingsScreen() {
 
             <Text style={styles.fieldLabel}>You are</Text>
             <View style={styles.chips}>
-              {REG_STATUSES.map((st) => {
-                const on = form.registrationStatus === st;
+              {regChoices.map(({ code, label }) => {
+                const on = form.registrationStatus === code;
                 return (
                   <Pressable
-                    key={st}
+                    key={code}
                     style={[styles.chip, on && styles.chipOn]}
-                    onPress={() => set("registrationStatus")(st)}
+                    onPress={() => set("registrationStatus")(code)}
                   >
-                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{REG_LABELS[st]}</Text>
+                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{label}</Text>
                   </Pressable>
                 );
               })}
             </View>
+            {sebiMsg && isSebiStatus(form.registrationStatus) ? (
+              <Text style={styles.unHint}>{sebiMsg}</Text>
+            ) : null}
 
             {/* SEBI details only apply to a registered status. Changing to one
                 puts the account back into review server-side, so say that

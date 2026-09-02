@@ -527,14 +527,7 @@ export function ContactsSection({ connections, setConnections, groups,
       sendEmail('connection_accepted', { to_email:reqInfo.email, their_name:me?.name||'', their_username:me?.username||'' });
     }
     // Push notification to the person whose request was accepted
-    sendPush(c.user_id, {
-      title: '🤝 Connection accepted',
-      body:  `${me?.name || 'Someone'} accepted your connection request`,
-      url:   me?.username
-        ? `https://myinvestorcircle.com/#/investor/${me.username}`
-        : 'https://myinvestorcircle.com',
-      tag:   'connection_accepted',
-    });
+    sendPush(c.user_id, { type: 'connection_accepted' });
     setConnections(await getMyConnections(myId));
     setBusy(b=>({...b,[c.connection_id]:false}));
   };

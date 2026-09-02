@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { getPublicProfile } from "../../src/services/api/peopleApi";
 import { getInvestorIciBatch } from "../../src/services/api/trackingApi";
+import { getOwnerCircles } from "../../src/services/api/groupsApi";
 import { iciFromStatsRow } from "../../src/utils/ici";
 import TrackButton from "../../src/components/TrackButton";
 import IciBadge, { IciBreakdown } from "../../src/components/IciBadge";
@@ -29,6 +30,11 @@ function InvestorProfileScreen() {
   const { user } = useAuth();
   const [data, setData] = useState(undefined); // undefined=loading, null=not found
   const [ici, setIci] = useState(null);
+  // Circles this person owns, as the web shows on a public profile. `private`
+  // only ever contains Circles the VIEWER is already in, so this cannot be
+  // used to enumerate someone's private Circles — that filtering is the
+  // server's (groups.js owner-circles), not this screen's.
+  const [circles, setCircles] = useState({ public: [], private: [] });
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -43,10 +49,16 @@ function InvestorProfileScreen() {
       // renders as soon as it arrives.
       const uid = res?.profile?.id;
       if (!uid) return;
-      const stats = await getInvestorIciBatch([uid]);
+      // Both are keyed by the uid the profile response just gave us and are
+      // independent of each other, so they go together rather than in series.
+      const [stats, owned] = await Promise.all([
+        getInvestorIciBatch([uid]),
+        getOwnerCircles(uid).catch(() => ({ public: [], private: [] })),
+      ]);
       if (!mounted.current) return;
       const row = (stats || []).find((r) => String(r.uid) === String(uid));
       setIci(iciFromStatsRow(row));
+      setCircles(owned);
     })();
     return () => {
       mounted.current = false;
@@ -132,6 +144,31 @@ function InvestorProfileScreen() {
             </Section>
           ) : null}
 
+          {circles.public.length || circles.private.length ? (
+            <Section title="Circles">
+              {[...circles.public, ...circles.private].map((c) => (
+                <Pressable
+                  key={String(c.id)}
+                  style={styles.circleRow}
+                  onPress={() => c.slug && router.push(`/circle/s/${encodeURIComponent(c.slug)}`)}
+                  disabled={!c.slug}
+                >
+                  <View style={[styles.circleDot, c.color ? { backgroundColor: c.color } : null]} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.circleName} numberOfLines={1}>
+                      {c.name}
+                    </Text>
+                    <Text style={styles.circleMeta} numberOfLines={1}>
+                      {c.member_count} member{c.member_count === 1 ? "" : "s"}
+                      {c.description ? ` · ${c.description}` : ""}
+                    </Text>
+                  </View>
+                  {c.slug ? <Ionicons name="chevron-forward" size={17} color={colors.muted} /> : null}
+                </Pressable>
+              ))}
+            </Section>
+          ) : null}
+
           {realized ? (
             <Section title="Closed ideas">
               <Row label="Closed" value={String(realized.count)} />
@@ -174,6 +211,10 @@ function Row({ label, value, valueColor }) {
 }
 
 const styles = StyleSheet.create({
+  circleRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9 },
+  circleDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent },
+  circleName: { color: colors.ink, fontFamily: fonts.semibold, fontSize: 14 },
+  circleMeta: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
   iciCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,

@@ -113,3 +113,17 @@ export const isExpired = (r) => {
   const td = getTargetDate(r);
   return td ? td < today() : false;
 };
+
+/**
+ * Sectors offered when the instrument master does not supply one.
+ *
+ * Mirrors FALLBACK_SECTORS in the web's src/constants/app.js, and is exactly
+ * that — a FALLBACK. The live list comes from the server's sector_master
+ * (action=sectors); this is what the picker shows when that call fails or
+ * the table is missing, so the field is never simply unavailable.
+ */
+export const FALLBACK_SECTORS = [
+  "Banking & Finance", "Technology", "Pharmaceuticals", "Energy", "FMCG", "Automobiles",
+  "Defence", "Capital Goods", "Real Estate", "Chemicals", "Telecom", "Metals & Mining",
+  "PSU", "Healthcare", "Infrastructure", "Media", "Retail", "Others",
+];

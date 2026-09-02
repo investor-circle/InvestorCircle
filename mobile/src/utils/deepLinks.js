@@ -65,8 +65,12 @@ export function parseDeepLink(url) {
     return { path: `/ticker/${encodeURIComponent(parts[1].toUpperCase())}` };
   }
 
+  // /circle/:slug — an invite link. These always carry a SLUG (the web's
+  // gotoCircle hands out `#/circle/:slug`), whereas the app's own Circle
+  // route takes a group id, so following one used to open a screen that
+  // looked up a Circle whose "id" was really a slug and found nothing.
   if (parts[0] === "circle" && parts[1] && parts[1] !== "new" && parts[1] !== "manage") {
-    return { path: `/circle/${encodeURIComponent(parts[1])}` };
+    return { path: `/circle/s/${encodeURIComponent(parts[1])}` };
   }
   if (["notifications", "network", "circles", "portfolio", "people", "settings"].includes(parts[0])) {
     return { path: `/${parts[0]}` };

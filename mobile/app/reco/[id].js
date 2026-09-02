@@ -138,9 +138,9 @@ function RecoDetailScreen() {
       await updateDelivery(reco.deliveryId, {
         isInvested: next,
         investedPrice: next ? reco?.price ?? null : null,
-        // Sent explicitly because the server writes `reaction` on every
-        // update-delivery call — omitting it would clear a like the user
-        // had already left on this idea.
+        // The server no longer clobbers an unmentioned reaction, but this
+        // app updates slowly (store builds are infrequent), so it keeps
+        // sending its current value: correct against either server version.
         reaction: eng?.myReaction ?? null,
       });
       setReco((r) => (r ? { ...r, invested: next } : r));
@@ -167,8 +167,7 @@ function RecoDetailScreen() {
     setHidden(next);
     const saved = await updateDelivery(reco.deliveryId, {
       isHidden: next,
-      // See toggleInvested: the server writes `reaction` on every
-      // update-delivery call, so it has to be sent or it is cleared.
+      // See toggleInvested — sent for the same defensive reason.
       reaction: eng?.myReaction ?? null,
     });
     if (!mounted.current) return;

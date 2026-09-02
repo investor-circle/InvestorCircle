@@ -27,6 +27,9 @@ export function announcePublicReco({ reco, recoId, me, contacts }) {
   if (!id || !list.length) return;
 
   const username = me?.username || "";
+  const deepLink = username ? `/investor/${username}/reco/${id}` : null;
+  // The email still carries a full URL of its own; only push has its
+  // destination resolved server-side.
   const recoUrl = username
     ? `https://myinvestorcircle.com/#/investor/${username}/reco/${id}`
     : `https://myinvestorcircle.com/#/investor/${username}`;
@@ -44,14 +47,11 @@ export function announcePublicReco({ reco, recoId, me, contacts }) {
   ).catch(() => {});
 
   for (const c of list) {
-    // No price or amount in the body — this can show on a lock screen.
+    // Content is composed server-side from the type (see notify.js): the
+    // caller cannot put a price or an amount into a lock-screen body even
+    // by accident.
     try {
-      sendPush(c.user_id, {
-        title: "💡 New idea in your circle",
-        body: `${me?.full_name || "Someone"} posted a new idea`,
-        url: recoUrl,
-        tag: "contact_recommendation",
-      });
+      sendPush(c.user_id, { type: "contact_recommendation", deepLink });
     } catch (_) {
       /* one unreachable contact must not stop the rest */
     }

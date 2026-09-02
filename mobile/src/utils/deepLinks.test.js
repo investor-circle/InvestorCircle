@@ -34,10 +34,21 @@ describe("parseDeepLink — custom scheme and bare paths", () => {
     expect(parseDeepLink("https://myinvestorcircle.com/investor/carol")).toEqual({ path: "/investor/carol" });
   });
 
-  it("routes a Circle link, but not the create/manage sub-routes", () => {
-    expect(parseDeepLink("https://myinvestorcircle.com/#/circle/77")).toEqual({ path: "/circle/77" });
-    // "new"/"manage" are app-internal screens, not shareable circle ids —
-    // treating them as ids would open a Circle called "new".
+  it("routes a Circle invite link to the by-SLUG screen", () => {
+    // A shared circle link carries the slug the web hands out, never a group
+    // id. Routing it to /circle/:id (the app's own id-based screen) made the
+    // screen look up a Circle whose id was really a slug, and find nothing.
+    expect(parseDeepLink("https://myinvestorcircle.com/#/circle/value-investors")).toEqual({
+      path: "/circle/s/value-investors",
+    });
+    expect(parseDeepLink("myinvestorcircle://circle/value-investors")).toEqual({
+      path: "/circle/s/value-investors",
+    });
+  });
+
+  it("does not treat the create/manage sub-routes as circle links", () => {
+    // "new"/"manage" are app-internal screens, not shareable circle slugs —
+    // treating them as slugs would open a Circle called "new".
     expect(parseDeepLink("https://myinvestorcircle.com/#/circle/new")).toBeNull();
     expect(parseDeepLink("https://myinvestorcircle.com/#/circle/manage")).toBeNull();
   });

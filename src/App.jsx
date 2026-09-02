@@ -764,14 +764,7 @@ export default function App() {
             from_name:     ME?.name || user.displayName || 'Someone',
             from_username: ME?.username || '',
           });
-          sendPush(targetId, {
-            title: '🤝 New connection request',
-            body:  `${ME?.name || 'Someone'} wants to connect with you`,
-            url:   ME?.username
-              ? `https://myinvestorcircle.com/#/investor/${ME.username}`
-              : 'https://myinvestorcircle.com',
-            tag:   'connection_request',
-          });
+          sendPush(targetId, { type: 'connection_request' });
         }).catch(() => {});
       const conns = await getMyConnections(user.uid);
       setConnections(conns);
@@ -1464,14 +1457,7 @@ export default function App() {
                       sendEmail('connection_accepted', { to_email:reqInfo.email, their_name:ME.name, their_username:ME.username });
                     }
                     // Push notification to the person whose request was just accepted
-                    sendPush(n.from_user_id, {
-                      title: '🤝 Connection accepted',
-                      body:  `${ME?.name || 'Someone'} accepted your connection request`,
-                      url:   ME?.username
-                        ? `https://myinvestorcircle.com/#/investor/${ME.username}`
-                        : 'https://myinvestorcircle.com',
-                      tag:   'connection_accepted',
-                    });
+                    sendPush(n.from_user_id, { type: 'connection_accepted' });
                     await markNotifRead(n.id, ME.id);
                     const [conns, notifs] = await Promise.all([getMyConnections(ME.id), getMyNotifications(ME.id)]);
                     setConnections(conns); setNotifications(notifs);

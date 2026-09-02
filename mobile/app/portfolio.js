@@ -10,7 +10,8 @@ import {
 } from "../src/services/api/portfolioApi";
 import AddHoldingModal from "../src/components/AddHoldingModal";
 import { deleteAllPortfolioHoldings } from "../src/services/api/portfolioApi";
-import { getDailyPrices } from "../src/services/api/consensusApi";
+import { getDailyPrices, getConsensusRecosAll } from "../src/services/api/consensusApi";
+import { consensusByTicker, consensusColor } from "../src/utils/consensus";
 import { portfolioTotals } from "../src/utils/portfolio";
 import { fmt, fmtPct } from "../src/utils/format";
 import { colors, fonts } from "../src/theme/colors";
@@ -32,6 +33,11 @@ function PortfolioScreen() {
   // the holdings themselves to be rewritten. Failure is not an error — it
   // degrades to the stored price, same as the web.
   const [livePrices, setLivePrices] = useState({});
+  // What the circle thinks about each holding — the web's Portfolio
+  // Intelligence view (consensus-all + computeConsensus). Off the critical
+  // path: holdings render first and the verdicts fill in behind them, so a
+  // slow or failed consensus call never delays the portfolio itself.
+  const [consensus, setConsensus] = useState({});
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
@@ -50,6 +56,21 @@ function PortfolioScreen() {
       if (p?.ticker && p.close != null) map[String(p.ticker).toUpperCase()] = p;
     }
     setLivePrices(map);
+  }, []);
+
+  // Independent of the holdings fetch (it returns every idea, not just the
+  // ones held), so it runs alongside rather than after it.
+  useEffect(() => {
+    getConsensusRecosAll()
+      .then((rows) => {
+        if (!mounted.current) return;
+        const map = {};
+        for (const entry of consensusByTicker(rows || [])) map[entry.ticker] = entry.consensus;
+        setConsensus(map);
+      })
+      .catch(() => {
+        /* a missing verdict just means no badge */
+      });
   }, []);
 
   useEffect(() => {
@@ -193,6 +214,7 @@ function PortfolioScreen() {
             const cost = sh * (Number(item.cost) || 0);
             const pct = cost > 0 ? (value - cost) / cost : 0;
             const up = pct >= 0;
+            const cons = consensus[String(item.sym || "").toUpperCase()];
             return (
               <Pressable
                 style={styles.card}
@@ -211,6 +233,17 @@ function PortfolioScreen() {
                   <Text style={styles.qty}>
                     {sh} × {fmt(item.cost)}
                   </Text>
+                  {cons && cons.total > 0 ? (
+                    <View style={styles.consRow}>
+                      <View style={[styles.consDot, { backgroundColor: consensusColor(cons, colors) }]} />
+                      <Text style={[styles.consText, { color: consensusColor(cons, colors) }]}>
+                        {cons.label}
+                      </Text>
+                      <Text style={styles.consCount}>
+                        · {cons.total} idea{cons.total === 1 ? "" : "s"}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={styles.value}>{fmt(value)}</Text>
@@ -255,6 +288,10 @@ function PortfolioScreen() {
 }
 
 const styles = StyleSheet.create({
+  consRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4 },
+  consDot: { width: 7, height: 7, borderRadius: 4 },
+  consText: { fontFamily: fonts.bold, fontSize: 11 },
+  consCount: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11 },
   flex: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   topbar: {

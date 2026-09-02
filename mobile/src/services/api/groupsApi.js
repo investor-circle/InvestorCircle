@@ -120,3 +120,27 @@ export async function requestJoinCircle(groupId, inviteCode) {
   if (api.ok) return api.data;
   return { error: api.data?.error || "not_authorized" };
 }
+
+/**
+ * A Circle by its shareable slug — the target of an invite link.
+ *
+ * The server decides what a given viewer may see: a private Circle 404s for
+ * anyone who is not a member, and the invite code is only returned to
+ * members. Mirrors getCircleBySlug() in the web app.
+ */
+export async function getCircleBySlug(slug) {
+  const api = await callApi(`/data?resource=groups&action=by-slug&slug=${encodeURIComponent(slug)}`);
+  return api.ok ? api.data.circle : null;
+}
+
+/**
+ * Circles a given person owns, for their public profile.
+ *
+ * Returns { public, private } — private only contains Circles the CALLER is
+ * already a member of, so this cannot be used to enumerate someone's private
+ * Circles. Mirrors getOwnerCircles() in the web app.
+ */
+export async function getOwnerCircles(ownerId) {
+  const api = await callApi(`/data?resource=groups&action=owner-circles&ownerId=${encodeURIComponent(ownerId)}`);
+  return api.ok ? { public: api.data.public || [], private: api.data.private || [] } : { public: [], private: [] };
+}

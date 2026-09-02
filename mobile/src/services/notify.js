@@ -1,4 +1,5 @@
 import { API_ORIGIN } from "./api";
+import { auth } from "../config/firebase";
 
 /**
  * Fan-out notifications, mirroring the web's src/services/notify.js.
@@ -9,12 +10,9 @@ import { API_ORIGIN } from "./api";
  * connections got no in-app notification, no push and no email, so an idea
  * shared from the phone effectively disappeared.
  *
- * /api/push now delivers to BOTH transports for a user — W3C/VAPID browser
+ * /api/push delivers to BOTH transports for a user — W3C/VAPID browser
  * subscriptions and Expo device tokens (see api/push.js) — so one call from
- * either client reaches whichever the recipient has. Note the web gates
- * sendPush on VITE_VAPID_PUBLIC_KEY, but that key is only needed to
- * SUBSCRIBE a browser, never to trigger a send; there is nothing to gate on
- * here.
+ * either client reaches whichever the recipient has.
  *
  * Both are fire-and-forget and neither ever throws: a notification that
  * fails must not make the user think their idea failed to post.
@@ -35,14 +33,30 @@ export function sendEmail(type, payload) {
 /**
  * Fire-and-forget push. Never throws.
  *
- * PII rule, copied from the web deliberately: `body` must never contain
- * prices, amounts or account-specific data — it can appear on a lock screen.
+ * The message CONTENT is composed server-side from `type` (see
+ * api/_lib/pushTemplates.js), not sent from here: /api/push previously took
+ * arbitrary title/body/url from an unauthenticated request, which let anyone
+ * push any text to any user's lock screen under this app's name. The sender
+ * is now the verified token's uid, the display name is read from the
+ * database, and a push is only accepted for someone the sender is connected
+ * to. That also means the PII rule (no prices or amounts in a body) is
+ * enforced by construction rather than by convention.
+ *
+ * @param userId   recipient
+ * @param type     'connection_request' | 'connection_accepted' | 'contact_recommendation'
+ * @param deepLink optional in-app path, e.g. `/investor/asha/reco/12`
  */
-export function sendPush(userId, { title, body, url = "https://myinvestorcircle.com", tag = "mic" }) {
-  if (!userId) return;
-  fetch(PUSH_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId, title, body, url, tag }),
-  }).catch(() => {});
+export async function sendPush(userId, { type, deepLink } = {}) {
+  if (!userId || !type) return;
+  if (!auth.currentUser) return; // unauthenticated callers are rejected anyway
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    await fetch(PUSH_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ userId, type, deepLink }),
+    });
+  } catch (_) {
+    /* never surface a failed notification as a failed action */
+  }
 }
