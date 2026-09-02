@@ -71,3 +71,16 @@ describe("parseDeepLink — things it must NOT route", () => {
     });
   });
 });
+
+describe("parseDeepLink — market consensus", () => {
+  it("routes a ticker link and upper-cases the symbol", () => {
+    // The screen and the API both key on an upper-case ticker; a lower-case
+    // link would otherwise fetch nothing and look like an empty security.
+    expect(parseDeepLink("https://myinvestorcircle.com/#/ticker/infy")).toEqual({ path: "/ticker/INFY" });
+    expect(parseDeepLink("myinvestorcircle://ticker/TCS")).toEqual({ path: "/ticker/TCS" });
+  });
+
+  it("does not route a bare /ticker with no symbol", () => {
+    expect(parseDeepLink("https://myinvestorcircle.com/#/ticker")).toBeNull();
+  });
+});

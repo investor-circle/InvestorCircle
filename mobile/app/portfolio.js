@@ -9,6 +9,8 @@ import {
   deletePortfolioHolding,
 } from "../src/services/api/portfolioApi";
 import AddHoldingModal from "../src/components/AddHoldingModal";
+import { deleteAllPortfolioHoldings } from "../src/services/api/portfolioApi";
+import { getDailyPrices } from "../src/services/api/consensusApi";
 import { portfolioTotals } from "../src/utils/portfolio";
 import { fmt, fmtPct } from "../src/utils/format";
 import { colors, fonts } from "../src/theme/colors";
@@ -25,11 +27,29 @@ function PortfolioScreen() {
   const [holdings, setHoldings] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [adding, setAdding] = useState(false);
+  // Latest close per ticker, keyed upper-case. Overlays the stored price so
+  // the portfolio reflects the most recent nightly run without waiting for
+  // the holdings themselves to be rewritten. Failure is not an error — it
+  // degrades to the stored price, same as the web.
+  const [livePrices, setLivePrices] = useState({});
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
     const rows = await getPortfolioHoldings();
-    if (mounted.current) setHoldings(rows);
+    if (!mounted.current) return;
+    setHoldings(rows);
+
+    // Dependent on the holdings (we need their tickers), so it follows —
+    // but it must not delay showing them, hence a separate render.
+    const syms = [...new Set((rows || []).map((h) => h?.sym).filter(Boolean))];
+    if (!syms.length) return;
+    const prices = await getDailyPrices(syms);
+    if (!mounted.current) return;
+    const map = {};
+    for (const p of prices || []) {
+      if (p?.ticker && p.close != null) map[String(p.ticker).toUpperCase()] = p;
+    }
+    setLivePrices(map);
   }, []);
 
   useEffect(() => {
@@ -46,7 +66,42 @@ function PortfolioScreen() {
     setRefreshing(false);
   };
 
-  const totals = useMemo(() => portfolioTotals(holdings), [holdings]);
+  // Holdings with the live close applied where we have one, so the summary
+  // and the rows agree rather than one being fresher than the other.
+  const priced = useMemo(
+    () =>
+      (holdings || []).map((h) => {
+        const live = livePrices[String(h?.sym || "").toUpperCase()];
+        return live?.close != null ? { ...h, price: live.close, _changePct: live.changePct } : h;
+      }),
+    [holdings, livePrices]
+  );
+
+  const totals = useMemo(() => portfolioTotals(priced), [priced]);
+
+  const confirmDeleteAll = useCallback(() => {
+    Alert.alert(
+      "Remove all holdings?",
+      "This deletes every holding in your portfolio. It cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete all",
+          style: "destructive",
+          onPress: async () => {
+            const ok = await deleteAllPortfolioHoldings();
+            if (!mounted.current) return;
+            if (ok) {
+              setHoldings([]);
+              setLivePrices({});
+            } else {
+              Alert.alert("Couldn't delete", "Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  }, []);
 
   // Optimistic add: show the row immediately, then reconcile with the server
   // so a server-side normalization (holdingFields) wins over what we guessed.
@@ -108,7 +163,7 @@ function PortfolioScreen() {
         </View>
       ) : (
         <FlatList
-          data={holdings}
+          data={priced}
           keyExtractor={(h) => String(h.id)}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           contentContainerStyle={holdings.length === 0 ? styles.emptyWrap : { padding: 16 }}
@@ -141,6 +196,7 @@ function PortfolioScreen() {
             return (
               <Pressable
                 style={styles.card}
+                onPress={() => item.sym && router.push(`/ticker/${encodeURIComponent(String(item.sym).toUpperCase())}`)}
                 onLongPress={() => confirmDelete(item)}
                 delayLongPress={350}
                 android_ripple={{ color: colors.line }}
@@ -185,7 +241,12 @@ function PortfolioScreen() {
       )}
 
       {holdings && holdings.length > 0 ? (
-        <Text style={styles.hintBar}>Long-press a holding to remove it.</Text>
+        <View style={styles.footerBar}>
+          <Text style={styles.hintBar}>Tap a holding for market consensus · long-press to remove it.</Text>
+          <Pressable onPress={confirmDeleteAll} hitSlop={8}>
+            <Text style={styles.deleteAll}>Remove all holdings</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       <AddHoldingModal visible={adding} onClose={() => setAdding(false)} onAdded={addHolding} />
@@ -252,6 +313,8 @@ const styles = StyleSheet.create({
   emptyBtnText: { color: "#fff", fontFamily: fonts.bold, fontSize: 14 },
   emptyLink: { paddingVertical: 12 },
   emptyLinkText: { color: colors.accentInk, fontFamily: fonts.semibold, fontSize: 13 },
+  footerBar: { alignItems: "center", paddingBottom: 6 },
+  deleteAll: { color: colors.loss, fontFamily: fonts.semibold, fontSize: 12, paddingVertical: 8 },
   hintBar: {
     color: colors.muted,
     fontFamily: fonts.regular,

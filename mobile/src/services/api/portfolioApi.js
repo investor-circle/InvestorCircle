@@ -23,3 +23,15 @@ export async function deletePortfolioHolding(id) {
   });
   return api.ok;
 }
+
+/**
+ * Delete every holding. Destructive and irreversible, so the caller is
+ * responsible for confirming first — see app/portfolio.js.
+ */
+export async function deleteAllPortfolioHoldings() {
+  const api = await callApi("/data?resource=lookups", {
+    method: "POST",
+    body: { action: "portfolio-delete-all" },
+  });
+  return api.ok;
+}

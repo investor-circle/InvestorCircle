@@ -256,6 +256,22 @@ function RecoDetailScreen() {
             </Pressable>
           </View>
 
+          {/* Market consensus for this security — the "what does everyone
+              else think" view. Offered for any idea with a ticker, since it
+              is about the security rather than this particular idea. */}
+          {reco?.ticker ? (
+            <Pressable
+              style={styles.consensusBtn}
+              onPress={() => router.push(`/ticker/${encodeURIComponent(String(reco.ticker).toUpperCase())}`)}
+            >
+              <Ionicons name="stats-chart-outline" size={17} color={colors.accentInk} />
+              <Text style={styles.consensusText}>
+                What others think about {String(reco.ticker).toUpperCase()}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+            </Pressable>
+          ) : null}
+
           {/* Not yours, but delivered to you: you can remove your own copy.
               Only offered when there IS a delivery row — a public idea you
               found via Pulse was never delivered to you, so there is nothing
@@ -379,6 +395,20 @@ const styles = StyleSheet.create({
   actionOnGain: { backgroundColor: colors.gainSoft, borderColor: colors.gainSoft },
   actionText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13 },
 
+  consensusBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    marginHorizontal: 16,
+    marginTop: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.surface,
+  },
+  consensusText: { flex: 1, color: colors.accentInk, fontFamily: fonts.semibold, fontSize: 14 },
   dismissBtn: {
     flexDirection: "row",
     alignItems: "center",

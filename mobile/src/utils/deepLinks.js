@@ -60,6 +60,11 @@ export function parseDeepLink(url) {
 
   // /circle/:id and a few top-level screens, so links from notifications or
   // other clients land somewhere sensible rather than nowhere.
+  // /ticker/:symbol — market consensus for one security.
+  if (parts[0] === "ticker" && parts[1]) {
+    return { path: `/ticker/${encodeURIComponent(parts[1].toUpperCase())}` };
+  }
+
   if (parts[0] === "circle" && parts[1] && parts[1] !== "new" && parts[1] !== "manage") {
     return { path: `/circle/${encodeURIComponent(parts[1])}` };
   }

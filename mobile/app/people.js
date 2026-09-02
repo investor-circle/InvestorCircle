@@ -98,7 +98,9 @@ function PeopleScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.ink} />
         </Pressable>
         <Text style={styles.topTitle}>Find investors</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => router.push("/suggested")} hitSlop={10} style={{ width: 40, alignItems: "flex-end" }}>
+          <Ionicons name="sparkles-outline" size={21} color={colors.accent} />
+        </Pressable>
       </View>
 
       <View style={styles.searchWrap}>

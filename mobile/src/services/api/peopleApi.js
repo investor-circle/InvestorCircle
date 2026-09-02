@@ -29,3 +29,21 @@ export async function getPublicProfile(username) {
   } catch (_) {}
   return null;
 }
+
+/**
+ * Suggested people for the first-run flow — excludes anyone already tracked
+ * or connected, so the list is always actionable.
+ */
+export async function getSuggestedPeople() {
+  const api = await callApi("/data?resource=lookups&action=discover-people");
+  return api.ok ? api.data.people || [] : [];
+}
+
+/** Mark a one-time onboarding step done so it never shows again. */
+export async function markOnboardingStep(step) {
+  const api = await callApi("/data?resource=lookups", {
+    method: "POST",
+    body: { action: "onboarding-complete", step },
+  });
+  return api.ok;
+}

@@ -9,10 +9,17 @@ export async function getMyGroups() {
 /**
  * Ideas shared with one Circle, newest-activity-first. The server enforces
  * that the caller is an active member/owner — never trust the client here.
+ *
+ * Returns null — not [] — when the server refuses because the caller is not a
+ * member. The two are genuinely different states: an empty Circle should show
+ * "no ideas yet", while one you cannot see should offer a way to ask to join
+ * (see app/circle/[id].js). Collapsing both into [] made a Circle you had
+ * merely found look like a Circle that was empty.
  */
 export async function getCircleIdeas(groupId) {
   const api = await callApi(`/data?resource=recommendations&scope=circle&groupId=${encodeURIComponent(groupId)}`);
-  return api.ok ? api.data.ideas || [] : [];
+  if (api.ok) return api.data.ideas || [];
+  return api.denied ? null : [];
 }
 
 /**
@@ -98,4 +105,18 @@ export async function regenerateCircleInviteLink(groupId) {
     body: { action: "regenerate-invite-link", groupId },
   });
   return api.ok ? api.data : null;
+}
+
+/**
+ * Ask to join a Circle you found rather than were invited to. The owner then
+ * approves or rejects it (see app/circle/manage.js). An inviteCode, when
+ * present, is what lets a link-holder join a Circle that isn't open.
+ */
+export async function requestJoinCircle(groupId, inviteCode) {
+  const api = await callApi("/data?resource=groups", {
+    method: "POST",
+    body: { action: "request-join", groupId, inviteCode },
+  });
+  if (api.ok) return api.data;
+  return { error: api.data?.error || "not_authorized" };
 }
