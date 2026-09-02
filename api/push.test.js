@@ -335,3 +335,17 @@ describe("the caller cannot choose what the notification says", () => {
     expect(JSON.parse(sendNotification.mock.calls[0][1]).body).toBe("Someone posted a new idea");
   });
 });
+
+describe("server-only notification types are not client-reachable", () => {
+  // contact_like and contact_comment are raised by the server when it records
+  // a like or a comment (handlers/engagement.js), from the row it just wrote.
+  // If a client could ask for one, anyone could tell a user their idea had
+  // been liked. engagement.js reaches the delivery code directly instead of
+  // coming back through this endpoint, so it loses nothing by their absence.
+  it.each(["contact_like", "contact_comment"])("refuses %s from a client", async (type) => {
+    webRows = [WEB_SUB];
+    const res = await call({ userId: "u1", type });
+    expect(res.statusCode).toBe(400);
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+});

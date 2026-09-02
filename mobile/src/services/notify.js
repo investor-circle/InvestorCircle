@@ -21,13 +21,26 @@ import { auth } from "../config/firebase";
 const EMAIL_API = `${API_ORIGIN}/api/email`;
 const PUSH_API = `${API_ORIGIN}/api/push`;
 
-/** Fire-and-forget email. Never throws. */
-export function sendEmail(type, payload) {
-  fetch(EMAIL_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ type, ...payload }),
-  }).catch(() => {});
+/**
+ * Fire-and-forget email. Never throws.
+ *
+ * Carries a verified token: /api/email used to accept any of its branded
+ * templates, to any address, from anyone. The server also overwrites the
+ * sender-identity fields with the token's own name, so an email can never
+ * claim to come from somebody else, whatever this payload says.
+ */
+export async function sendEmail(type, payload) {
+  if (!auth.currentUser) return; // unauthenticated callers are rejected anyway
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    await fetch(EMAIL_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ type, ...payload }),
+    });
+  } catch (_) {
+    /* never surface a failed notification as a failed action */
+  }
 }
 
 /**

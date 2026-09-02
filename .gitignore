@@ -33,3 +33,7 @@ pnpm-debug.log*
 *.ntvs*
 *.njsproj
 *.sln
+
+# Python bytecode from local runs of the api/ functions and their tests
+__pycache__/
+*.pyc

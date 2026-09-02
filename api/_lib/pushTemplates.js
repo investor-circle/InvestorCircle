@@ -17,7 +17,15 @@
  * financial data — it can appear on a lock screen.
  */
 
-/** The only notifications any client may trigger. */
+/**
+ * The only notifications a CLIENT may trigger.
+ *
+ * contact_like and contact_comment are deliberately absent: those are raised
+ * by the server itself when it records a like or a comment (see
+ * handlers/engagement.js), and it knows the owner and the idea from the row
+ * it just wrote. Letting a client ask for them would let anyone claim their
+ * idea had been liked.
+ */
 export const PUSH_TYPES = ['connection_request', 'connection_accepted', 'contact_recommendation'];
 
 const TEMPLATES = {
@@ -36,6 +44,18 @@ const TEMPLATES = {
     body: `${name} posted a new idea`,
     tag: 'contact_recommendation',
   }),
+  // Server-raised only (see PUSH_TYPES above). `ticker` is a public symbol,
+  // not a price or a position size, so it stays within the lock-screen rule.
+  contact_like: (name, ticker) => ({
+    title: '👍 Someone liked your idea',
+    body: `${name} liked your idea${ticker ? ' · ' + ticker : ''}`,
+    tag: 'contact_like',
+  }),
+  contact_comment: (name, ticker) => ({
+    title: '💬 New comment on your idea',
+    body: `${name} commented on your idea${ticker ? ' · ' + ticker : ''}`,
+    tag: 'contact_comment',
+  }),
 };
 
 /**
@@ -48,11 +68,11 @@ const TEMPLATES = {
  *                 the path is used; the origin is fixed here so a request
  *                 cannot point a notification at another site.
  */
-export function buildPushPayload(type, sender, deepLink) {
+export function buildPushPayload(type, sender, deepLink, extra) {
   const make = TEMPLATES[type];
   if (!make) return null;
   const name = (sender?.full_name || '').trim() || 'Someone';
-  const { title, body, tag } = make(name);
+  const { title, body, tag } = make(name, extra);
   return { title, body, tag, url: appUrl(deepLink, sender?.username) };
 }
 

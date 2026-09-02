@@ -45,7 +45,7 @@
 
 import webpush from 'web-push';
 import { neon }  from '@neondatabase/serverless';
-import { sendExpoPush } from './_lib/expoPush.js';
+import { deliverPush } from './_lib/deliverPush.js';
 import { requireUid, sendAuthError } from './_lib/auth.js';
 import { PUSH_TYPES, buildPushPayload } from './_lib/pushTemplates.js';
 
@@ -112,98 +112,27 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Load Web Push subscriptions (browsers) and Expo tokens (mobile app).
-  // Independently, and neither failure is allowed to suppress the other:
-  // before this, a DB error here returned 500 and sent nothing, which was
-  // correct when there was only one transport.
-  let subs = [];
-  let webLookupFailed = false;
-  try {
-    subs = await sql`
-      SELECT endpoint, p256dh, auth_key FROM push_subscriptions
-      WHERE user_id = ${userId}
-    `;
-  } catch (e) {
-    console.error('[push] DB lookup failed:', e?.message);
-    webLookupFailed = true;
-  }
-
-  // A missing expo_push_tokens table is an expected state (this code may be
-  // deployed before phase10_expo_push_tokens.sql has been run), not an
-  // error — degrade to "no device tokens" and let Web Push proceed exactly
-  // as it did before.
-  let expoTokens = [];
-  try {
-    const rows = await sql`
-      SELECT token FROM expo_push_tokens WHERE user_id = ${userId}
-    `;
-    expoTokens = rows.map(r => r.token).filter(Boolean);
-  } catch (e) {
-    console.warn('[push] expo token lookup skipped:', e?.message);
-  }
-
-  if (!subs.length && !expoTokens.length) {
-    // Preserve the original failure signal: if the browser-subscription
-    // lookup genuinely errored, that is still a 500, not "nothing to send".
-    if (webLookupFailed) {
-      res.status(500).json({ error: 'DB error' });
-      return;
-    }
-    res.status(200).json({ sent: 0, reason: 'no_subscriptions' });
-    return;
-  }
-
   // Composed here from a fixed template — see api/_lib/pushTemplates.js.
   // Generic by construction: no prices, amounts, or account-specific data,
   // because the caller has no way to put any there.
   const message = buildPushPayload(type, sender, deepLink);
-  const payload = JSON.stringify(message);
 
-  // Send to all browser subscriptions in parallel — unchanged.
-  const results = await Promise.allSettled(
-    subs.map(async sub => {
-      const pushSub = {
-        endpoint: sub.endpoint,
-        keys:     { p256dh: sub.p256dh, auth: sub.auth_key },
-      };
-      try {
-        await webpush.sendNotification(pushSub, payload);
-      } catch (err) {
-        // 410 Gone = subscription expired/unsubscribed — remove it
-        if (err.statusCode === 410 || err.statusCode === 404) {
-          await sql`DELETE FROM push_subscriptions WHERE endpoint = ${sub.endpoint}`.catch(() => {});
-          console.log('[push] removed stale subscription:', sub.endpoint.slice(0, 40));
-        }
-        throw err;
-      }
-    })
-  );
+  // Delivery itself is shared with the server-side notification path (see
+  // api/_lib/deliverPush.js) so both go out identically.
+  const out = await deliverPush(sql, userId, message);
 
-  const sent   = results.filter(r => r.status === 'fulfilled').length;
-  const failed = results.length - sent;
-
-  // Mobile devices. sendExpoPush never throws, so a problem reaching Expo
-  // cannot turn a delivered browser notification into a failed request.
-  let expo = { sent: 0, failed: 0, unregistered: [] };
-  if (expoTokens.length) {
-    expo = await sendExpoPush(expoTokens, message);
-
-    // DeviceNotRegistered is the mobile equivalent of Web Push's 410 Gone:
-    // the app was uninstalled or the token rotated. Clean up, same as above.
-    for (const dead of expo.unregistered) {
-      await sql`DELETE FROM expo_push_tokens WHERE token = ${dead}`.catch(() => {});
-      console.log('[push] removed stale expo token:', String(dead).slice(0, 30));
-    }
+  if (!out.web.total && !out.expo.total) {
+    // Preserve the original failure signal: if the browser-subscription
+    // lookup genuinely errored, that is still a 500, not "nothing to send".
+    if (out.webLookupFailed) { res.status(500).json({ error: 'DB error' }); return; }
+    res.status(200).json({ sent: 0, reason: 'no_subscriptions' });
+    return;
   }
 
-  console.log(
-    `[push] userId=${userId} web=${sent}/${subs.length} failed=${failed} ` +
-    `expo=${expo.sent}/${expoTokens.length} failed=${expo.failed}`
-  );
   res.status(200).json({
-    sent: sent + expo.sent,
-    total: subs.length + expoTokens.length,
-    web: { sent, total: subs.length },
-    expo: { sent: expo.sent, total: expoTokens.length },
+    sent: out.web.sent + out.expo.sent,
+    total: out.web.total + out.expo.total,
+    web: out.web,
+    expo: out.expo,
   });
 }
