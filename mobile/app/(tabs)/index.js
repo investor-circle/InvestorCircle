@@ -191,6 +191,11 @@ function FeedScreen() {
     [router]
   );
 
+  const openProfile = useCallback(
+    (username) => router.push(`/investor/${encodeURIComponent(username)}`),
+    [router]
+  );
+
   const hero = (
     <GradientHero
       eyebrow="Your Feed"
@@ -222,7 +227,7 @@ function FeedScreen() {
       <FlatList
         data={recos}
         keyExtractor={(item) => String(item.deliveryId ?? item.id)}
-        renderItem={({ item }) => <RecoCard reco={item} onPress={openReco} />}
+        renderItem={({ item }) => <RecoCard reco={item} onPress={openReco} onOpenProfile={openProfile} />}
         ListHeaderComponent={hero}
         contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}

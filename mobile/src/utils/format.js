@@ -67,3 +67,49 @@ export const returnPct = (r) => {
   const raw = (current - entry) / entry;
   return r.recType === "Sell" ? -raw : raw;
 };
+
+/**
+ * Horizons the app understands. These exact four strings are what
+ * calcTargetDate below recognises, so the create form must offer these and
+ * not free text — mobile previously took a typed horizon, and anything
+ * outside this set (its own placeholder said "12M", not "12m") produced no
+ * target date at all, leaving the idea with no expiry.
+ * Web: HORIZONS in src/constants/app.js.
+ */
+export const HORIZONS = ["<3m", "6m", "12m", ">2Y"];
+
+/** Conviction levels the web's create form offers. */
+export const CONVICTIONS = ["Low", "Medium", "High"];
+
+/** Today as YYYY-MM-DD, matching the web's TODAY constant. */
+export const today = () => new Date().toISOString().slice(0, 10);
+
+// ── Verbatim port of calcTargetDate/getTargetDate/isExpired from the web's
+// src/utils/format.js. An idea's expiry drives its Active/Expired status, so
+// mobile must compute the identical date from the same inputs.
+export const calcTargetDate = (date, horizon) => {
+  if (!date || !horizon) return null;
+  // `date` is a bare "YYYY-MM-DD" from most sources (e.g. mapReceivedRow),
+  // but some (public-feed/network-engagement rows select created_at AS
+  // date directly — see api/_lib/handlers/lookups.js) hand over a full ISO
+  // timestamp instead. Concatenating "T00:00:00" onto a timestamp produces
+  // a malformed string ("...Z T00:00:00"), which parses to an Invalid
+  // Date — and toISOString() on an Invalid Date THROWS ("Invalid time
+  // value"), not returns null. Slicing to the date portion first makes
+  // this robust to either input shape.
+  const d = new Date(String(date).slice(0, 10) + "T00:00:00");
+  if (isNaN(d)) return null;
+  if (horizon==="<3m") d.setMonth(d.getMonth()+3);
+  else if (horizon==="6m")  d.setMonth(d.getMonth()+6);
+  else if (horizon==="12m") d.setMonth(d.getMonth()+12);
+  else if (horizon===">2Y") d.setFullYear(d.getFullYear()+2);
+  else return null;
+  return d.toISOString().slice(0,10);
+};
+
+export const getTargetDate = (r) => r.targetDate || calcTargetDate(r.date, r.horizon) || null;
+
+export const isExpired = (r) => {
+  const td = getTargetDate(r);
+  return td ? td < today() : false;
+};

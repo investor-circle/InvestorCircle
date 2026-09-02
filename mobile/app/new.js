@@ -15,8 +15,11 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { createRecommendation } from "../src/services/api/recommendationsApi";
 import { getMyConnections } from "../src/services/api/connectionsApi";
+import { announcePublicReco } from "../src/services/announceReco";
+import { useAuth } from "../src/context/AuthContext";
 import { getMyGroups } from "../src/services/api/groupsApi";
-import { initialsOf } from "../src/utils/format";
+import { initialsOf, HORIZONS, CONVICTIONS } from "../src/utils/format";
+import { buildRecoPayload, validateRecoDraft } from "../src/utils/recoDraft";
 import { colors, fonts } from "../src/theme/colors";
 import InstrumentSearch from "../src/components/InstrumentSearch";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -31,6 +34,7 @@ const TYPES = ["Buy", "Sell"];
 
 function NewRecoScreen() {
   const router = useRouter();
+  const { profile } = useAuth();
   const [assetName, setAssetName] = useState("");
   const [ticker, setTicker] = useState("");
   // Populated only when a listed instrument is picked. The nightly pricing
@@ -44,6 +48,8 @@ function NewRecoScreen() {
   const [priceAt, setPriceAt] = useState("");
   const [targetPrice, setTargetPrice] = useState("");
   const [horizon, setHorizon] = useState("");
+  const [stopLoss, setStopLoss] = useState("");
+  const [conviction, setConviction] = useState("");
   const [thesis, setThesis] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -78,14 +84,9 @@ function NewRecoScreen() {
       setError("Asset name and ticker are required.");
       return;
     }
-    const priceNum = priceAt ? Number(priceAt) : null;
-    const targetNum = targetPrice ? Number(targetPrice) : null;
-    if ((priceAt && !Number.isFinite(priceNum)) || (targetPrice && !Number.isFinite(targetNum))) {
-      setError("Prices must be numbers.");
-      return;
-    }
-    if (!isPublic && recipientCount === 0) {
-      setError("Choose at least one recipient, or make the idea public.");
+    const invalid = validateRecoDraft({ assetName, ticker, priceAt, targetPrice, stopLoss, isPublic, recipientCount });
+    if (invalid) {
+      setError(invalid);
       return;
     }
     setError("");
@@ -100,27 +101,37 @@ function NewRecoScreen() {
         .map((id) => ({ type: "group", id })),
     ];
 
-    const res = await createRecommendation(
-      {
-        assetName: assetName.trim(),
-        ticker: ticker.trim().toUpperCase(),
-        assetClass,
-        sector,
-        // The server defaults exchange to NSE when this is absent; only send
-        // one we actually got from the instrument master.
-        ...(exchange ? { exchange } : {}),
-        recType,
-        priceAt: priceNum,
-        price: priceNum, // current == entry at creation time
-        targetPrice: targetNum,
-        horizon: horizon.trim() || null,
-        thesis: thesis.trim() || null,
-        isPublic,
-      },
-      recipients
-    );
+    const recoPayload = buildRecoPayload({
+      assetName,
+      ticker,
+      assetClass,
+      sector,
+      exchange,
+      recType,
+      priceAt,
+      targetPrice,
+      stopLoss,
+      horizon,
+      conviction,
+      thesis,
+      isPublic,
+    });
+    const res = await createRecommendation(recoPayload, recipients);
     setSaving(false);
     if (res.ok) {
+      // A PUBLIC idea creates no delivery rows, so nothing notifies anyone
+      // server-side — the author's connections only hear about it if the
+      // client asks. The web does this in its create flow; mobile did not,
+      // so an idea posted from the phone reached nobody. Fire-and-forget:
+      // the post already succeeded.
+      if (isPublic) {
+        announcePublicReco({
+          reco: recoPayload,
+          recoId: res.recommendation?.id,
+          me: profile,
+          contacts: connections.filter((c) => c.status === "active"),
+        });
+      }
       router.back();
     } else {
       setError(res.error === "not_authorized" ? "You're not allowed to post this." : "Couldn't post. Try again.");
@@ -187,8 +198,40 @@ function NewRecoScreen() {
             </Field>
           </View>
 
-          <Field label="Horizon">
-            <TextInput style={styles.input} placeholder="12M" placeholderTextColor={colors.muted} value={horizon} onChangeText={setHorizon} />
+          <Field label="Stop loss (optional)">
+            <TextInput style={styles.input} placeholder="3900" placeholderTextColor={colors.muted} keyboardType="numeric" value={stopLoss} onChangeText={setStopLoss} />
+          </Field>
+
+          {/* Chips, not free text. calcTargetDate only understands these four
+              strings, so a typed horizon (the old field even suggested "12M",
+              which is not "12m") silently produced no target date and left the
+              idea with no expiry. */}
+          <Field label="Horizon (optional)">
+            <View style={styles.chipRow}>
+              {HORIZONS.map((h) => (
+                <Pressable
+                  key={h}
+                  style={[styles.chip, horizon === h && styles.chipOn]}
+                  onPress={() => setHorizon((cur) => (cur === h ? "" : h))}
+                >
+                  <Text style={[styles.chipText, horizon === h && styles.chipTextOn]}>{h}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </Field>
+
+          <Field label="Conviction (optional)">
+            <View style={styles.chipRow}>
+              {CONVICTIONS.map((c) => (
+                <Pressable
+                  key={c}
+                  style={[styles.chip, conviction === c && styles.chipOn]}
+                  onPress={() => setConviction((cur) => (cur === c ? "" : c))}
+                >
+                  <Text style={[styles.chipText, conviction === c && styles.chipTextOn]}>{c}</Text>
+                </Pressable>
+              ))}
+            </View>
           </Field>
 
           <Field label="Thesis">
@@ -287,6 +330,18 @@ function Field({ label, children, style }) {
 }
 
 const styles = StyleSheet.create({
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+  },
+  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13 },
+  chipTextOn: { color: "#fff" },
   flex: { flex: 1, backgroundColor: colors.bg },
   topbar: {
     flexDirection: "row",

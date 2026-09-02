@@ -1,7 +1,8 @@
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Avatar from "./Avatar";
+import { fetchProfileNavInfo } from "../services/profileNav";
 import { colors, fonts } from "../theme/colors";
 import { fmt, fmtDate, fmtPct, returnPct } from "../utils/format";
 
@@ -12,7 +13,7 @@ import { fmt, fmtDate, fmtPct, returnPct } from "../utils/format";
 // + invested state. Tappable (onPress) to open the detail screen.
 const SOURCE_LABELS = { public: "Public", network_engagement: "From your network" };
 
-function RecoCard({ reco, onPress }) {
+function RecoCard({ reco, onPress, onOpenProfile }) {
   const pct = returnPct(reco);
   const positive = pct >= 0;
   const isBuy = (reco.recType || "Buy") !== "Sell";
@@ -27,16 +28,36 @@ function RecoCard({ reco, onPress }) {
 
   const status = reco.exitSignal ? "Exited" : "Active";
 
+  // Feed rows carry the author's name but not their username, and profile
+  // routes are by username — so opening a profile needs a lookup first. The
+  // web does the same (openProfile via fetchPublicProfileInfo); on mobile the
+  // author was not tappable at all.
+  const canOpenAuthor = !!onOpenProfile && !!(reco.from_username || reco.from);
+  const openAuthor = useCallback(async () => {
+    if (!onOpenProfile) return;
+    if (reco.from_username) {
+      onOpenProfile(reco.from_username);
+      return;
+    }
+    const info = await fetchProfileNavInfo(reco.from);
+    if (info?.username) onOpenProfile(info.username);
+  }, [onOpenProfile, reco.from_username, reco.from]);
+
   const CardBody = (
     <View style={styles.card}>
       {/* WHO */}
       <View style={styles.header}>
         {/* uid, not a picture: the card paints initials on the gradient right
             away and swaps in the author's photo once the avatar batch lands. */}
-        <Avatar uid={reco.from} name={reco.byName} size={40} gradient />
+        <Pressable onPress={openAuthor} disabled={!canOpenAuthor} hitSlop={6}>
+          <Avatar uid={reco.from} name={reco.byName} size={40} gradient />
+        </Pressable>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.byName} numberOfLines={1}>
-            {reco.byName || "Someone"} <Text style={styles.recommended}>recommended</Text>
+            <Text onPress={canOpenAuthor ? openAuthor : undefined} style={canOpenAuthor ? styles.byNameLink : null}>
+              {reco.byName || "Someone"}
+            </Text>{" "}
+            <Text style={styles.recommended}>recommended</Text>
           </Text>
           <Text style={styles.subtitle} numberOfLines={1}>
             {subtitle ? `${subtitle} · ` : ""}
@@ -159,6 +180,7 @@ const styles = StyleSheet.create({
   },
   header: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
   byName: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
+  byNameLink: { color: colors.accentInk, textDecorationLine: "underline" },
   recommended: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13 },
   subtitle: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
   typePill: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },

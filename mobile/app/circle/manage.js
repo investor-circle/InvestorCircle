@@ -8,6 +8,7 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Share,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -24,6 +25,7 @@ import {
   updateCircleSettings,
   deleteGroup,
   exitGroup,
+  regenerateCircleInviteLink,
 } from "../../src/services/api/groupsApi";
 import { useAuth } from "../../src/context/AuthContext";
 import Avatar from "../../src/components/Avatar";
@@ -49,6 +51,38 @@ function ManageCircleScreen() {
   const mounted = useRef(true);
 
   const isOwner = !!group && !!user?.uid && group.created_by === user.uid;
+  // Public Circles are joinable from a shareable link. The web offers copy +
+  // regenerate to the owner (Groups.jsx doRegenerateInvite); mobile had the
+  // API wrapper but no way to reach it, so a leaked link could not be killed
+  // from the phone.
+  const isPublicCircle = (group?.circle_type || group?.type) === "public";
+  const inviteLink = group?.slug ? `https://myinvestorcircle.com/#/circle/${group.slug}` : null;
+
+  const shareInvite = useCallback(async () => {
+    if (!inviteLink) return;
+    try {
+      await Share.share({ message: inviteLink, url: inviteLink });
+    } catch (_) {
+      /* user dismissed the sheet */
+    }
+  }, [inviteLink]);
+
+  // Not memoised: it closes over `run`, which is redefined every render, so a
+  // useCallback here would capture a stale copy for no benefit.
+  const regenerateInvite = () => {
+    Alert.alert(
+      "Get a new invite link?",
+      "The current link stops working immediately. Anyone who already joined stays a member.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Regenerate",
+          style: "destructive",
+          onPress: () => run("invite", () => regenerateCircleInviteLink(id), "New link created"),
+        },
+      ]
+    );
+  };
 
   const load = useCallback(async () => {
     const groups = await getMyGroups();
@@ -154,6 +188,32 @@ function ManageCircleScreen() {
                     )}
                   </View>
                 ))}
+              </View>
+            </>
+          ) : null}
+
+          {/* Invite link — public Circles only */}
+          {isPublicCircle && inviteLink ? (
+            <>
+              <Text style={styles.sectionTitle}>Invite link</Text>
+              <View style={styles.card}>
+                <Text style={styles.inviteLink} numberOfLines={2}>
+                  {inviteLink}
+                </Text>
+                <View style={styles.inviteActions}>
+                  <Pressable style={styles.approveBtn} onPress={shareInvite}>
+                    <Text style={styles.approveText}>Share link</Text>
+                  </Pressable>
+                  {isOwner ? (
+                    busy === "invite" ? (
+                      <ActivityIndicator color={colors.accent} />
+                    ) : (
+                      <Pressable style={styles.iconBtn} onPress={regenerateInvite}>
+                        <Ionicons name="refresh-outline" size={18} color={colors.muted} />
+                      </Pressable>
+                    )
+                  ) : null}
+                </View>
               </View>
             </>
           ) : null}
@@ -307,6 +367,8 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11 },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.line },
+  inviteLink: { color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 13, marginBottom: 10 },
+  inviteActions: { flexDirection: "row", alignItems: "center", gap: 10 },
   rowName: { flex: 1, color: colors.ink, fontFamily: fonts.semibold, fontSize: 14 },
   rowMeta: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
   actions: { flexDirection: "row", alignItems: "center", gap: 8 },

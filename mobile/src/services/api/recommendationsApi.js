@@ -95,6 +95,21 @@ export async function cancelExitSignal(recommendationId) {
 // the endpoint. If a post-publish correction window is ever introduced it
 // will be a deliberate feature with its own time limit and rules.
 
+/**
+ * Fan out in-app notifications for a newly posted PUBLIC idea.
+ *
+ * A public idea creates no delivery rows, so nobody is notified server-side
+ * when it is posted — the author's connections only find out if the client
+ * asks. Mirrors notifyPublicContacts() in the web app.
+ */
+export async function notifyPublicContacts(recommendationId, contactIds, metadata) {
+  const api = await callApi("/data?resource=recommendations", {
+    method: "POST",
+    body: { action: "notify-public-contacts", recommendationId, contactIds, metadata },
+  });
+  return api.ok;
+}
+
 /** Update a delivery row (mark invested, react, hide). */
 export async function updateDelivery(deliveryId, patch) {
   const api = await callApi("/data?resource=recommendations", {

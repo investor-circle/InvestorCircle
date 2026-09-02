@@ -32,6 +32,7 @@ import {
   setExitSignal,
   cancelExitSignal,
   dismissDelivery,
+  updateDelivery,
 } from "../../src/services/api/recommendationsApi";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts } from "../../src/theme/colors";
@@ -54,6 +55,7 @@ function RecoDetailScreen() {
   const [exited, setExited] = useState(!!reco?.exitSignal);
   const [ownerBusy, setOwnerBusy] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [hidden, setHidden] = useState(!!reco?.hidden);
   const mounted = useRef(true);
 
   // Owner-only controls. The server independently enforces that only the
@@ -119,8 +121,32 @@ function RecoDetailScreen() {
     if (!eng) return;
     const next = !isInvested;
     setEng((e) => ({ ...e, tracking: { ...(e.tracking || {}), isInvested: next } }));
+
+    // TWO places record "I acted on this", and they are not interchangeable:
+    //
+    //  - recommendation_deliveries.is_invested — what the feed card's
+    //    "Invested" badge reads, and what feeds the author's reco_acted
+    //    count (how many people acted on their idea).
+    //  - recommendation_tracking.is_invested — the Track tab's own list.
+    //
+    // Mobile used to write only the second, so marking an idea invested here
+    // never lit up the badge on the card and never counted for the author.
+    // The web writes the delivery row (Recommendations.jsx doInvest), so do
+    // the same whenever this is a received idea, and keep the tracking write
+    // for the Track tab.
+    if (reco?.deliveryId) {
+      await updateDelivery(reco.deliveryId, {
+        isInvested: next,
+        investedPrice: next ? reco?.price ?? null : null,
+        // Sent explicitly because the server writes `reaction` on every
+        // update-delivery call — omitting it would clear a like the user
+        // had already left on this idea.
+        reaction: eng?.myReaction ?? null,
+      });
+      setReco((r) => (r ? { ...r, invested: next } : r));
+    }
     await trackReco(id, next, next ? reco?.price ?? undefined : undefined);
-  }, [eng, isInvested, id, reco?.price]);
+  }, [eng, isInvested, id, reco?.price, reco?.deliveryId]);
 
   const toggleExit = useCallback(async () => {
     setOwnerBusy(true);
@@ -132,6 +158,23 @@ function RecoDetailScreen() {
       setOwnerBusy(false);
     }
   }, [exited, id]);
+
+  // Reversible: keeps your copy, just takes it out of the feed. The web has
+  // this alongside remove (toggleHide in Recommendations.jsx); mobile offered
+  // only the permanent one.
+  const toggleHidden = useCallback(async () => {
+    const next = !hidden;
+    setHidden(next);
+    const saved = await updateDelivery(reco.deliveryId, {
+      isHidden: next,
+      // See toggleInvested: the server writes `reaction` on every
+      // update-delivery call, so it has to be sent or it is cleared.
+      reaction: eng?.myReaction ?? null,
+    });
+    if (!mounted.current) return;
+    if (!saved) setHidden(!next); // put the switch back if it didn't save
+    else setReco((r) => (r ? { ...r, hidden: next } : r));
+  }, [hidden, reco?.deliveryId, eng?.myReaction]);
 
   // Removes only YOUR copy of a shared idea; the idea itself and everyone
   // else's copy are untouched. Different action, different endpoint, and a
@@ -262,10 +305,20 @@ function RecoDetailScreen() {
               found via Pulse was never delivered to you, so there is nothing
               to dismiss and the button would fail. */}
           {!isOwner && reco?.deliveryId ? (
-            <Pressable style={styles.dismissBtn} onPress={confirmDismiss}>
-              <Ionicons name="eye-off-outline" size={17} color={colors.muted} />
-              <Text style={styles.dismissText}>Remove from my feed</Text>
-            </Pressable>
+            <View style={styles.dismissRow}>
+              {/* Two different things, as on the web: hide is reversible and
+                  keeps the idea in your list (just out of the feed); remove
+                  drops your copy for good. Mobile only had the destructive
+                  one, so "not now" and "never" were the same button. */}
+              <Pressable style={styles.dismissBtn} onPress={toggleHidden}>
+                <Ionicons name={hidden ? "eye-outline" : "eye-off-outline"} size={17} color={colors.muted} />
+                <Text style={styles.dismissText}>{hidden ? "Unhide" : "Hide from feed"}</Text>
+              </Pressable>
+              <Pressable style={styles.dismissBtn} onPress={confirmDismiss}>
+                <Ionicons name="trash-outline" size={17} color={colors.muted} />
+                <Text style={styles.dismissText}>Remove</Text>
+              </Pressable>
+            </View>
           ) : null}
 
           {/* Owner-only: signal an exit.
@@ -398,12 +451,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   consensusText: { flex: 1, color: colors.accentInk, fontFamily: fonts.semibold, fontSize: 14 },
+  dismissRow: { flexDirection: "row", gap: 10, paddingHorizontal: 16 },
   dismissBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 7,
-    marginHorizontal: 16,
     marginTop: 10,
     paddingVertical: 12,
     borderRadius: 12,

@@ -101,6 +101,11 @@ function PulseScreen() {
     [router]
   );
 
+  const openProfile = useCallback(
+    (username) => router.push(`/investor/${encodeURIComponent(username)}`),
+    [router]
+  );
+
   const hero = (
     <GradientHero eyebrow="Pulse" title="Your daily investment dose" subtitle="What's moving across your circle & the platform" />
   );
@@ -148,7 +153,7 @@ function PulseScreen() {
             sub="Ideas from your circle that moved recently"
           >
             {missed.map((m) => (
-              <RankedCard key={String(m.idea?.id ?? m.id)} item={m} onPress={openReco} />
+              <RankedCard key={String(m.idea?.id ?? m.id)} item={m} onPress={openReco} onOpenProfile={openProfile} />
             ))}
           </Section>
         ) : null}
@@ -156,7 +161,7 @@ function PulseScreen() {
         {trending.length > 0 ? (
           <Section icon="trending-up-outline" title="Trending on MIC" sub="Gaining attention across the platform">
             {trending.map((t) => (
-              <RankedCard key={String(t.idea?.id ?? t.id)} item={t} onPress={openReco} />
+              <RankedCard key={String(t.idea?.id ?? t.id)} item={t} onPress={openReco} onOpenProfile={openProfile} />
             ))}
           </Section>
         ) : null}
@@ -167,7 +172,7 @@ function PulseScreen() {
         {rest.length > 0 ? (
           <Section icon="globe-outline" title="Latest public ideas" sub="Newest across the platform">
             {rest.slice(0, 20).map((r) => (
-              <RecoCard key={String(r.id)} reco={r} onPress={openReco} />
+              <RecoCard key={String(r.id)} reco={r} onPress={openReco} onOpenProfile={openProfile} />
             ))}
           </Section>
         ) : null}
@@ -191,7 +196,7 @@ function reasonOf(reason) {
   return null;
 }
 
-function RankedCard({ item, onPress }) {
+function RankedCard({ item, onPress, onOpenProfile }) {
   const reco = item?.idea || item;
   if (!reco) return null;
   const reason = reasonOf(item?.reason);
@@ -209,7 +214,7 @@ function RankedCard({ item, onPress }) {
           </Text>
         </View>
       ) : null}
-      <RecoCard reco={reco} onPress={onPress} />
+      <RecoCard reco={reco} onPress={onPress} onOpenProfile={onOpenProfile} />
     </View>
   );
 }

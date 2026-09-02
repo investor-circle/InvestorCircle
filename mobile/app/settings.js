@@ -16,7 +16,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../src/context/AuthContext";
 import { getFeedConfigAndPrefs, setFeedPref } from "../src/services/api/feedApi";
-import { saveProfileEdit, uploadAvatar } from "../src/services/api/profileApi";
+import { saveProfileEdit, uploadAvatar, checkUsername, saveUsername } from "../src/services/api/profileApi";
 import { pickAndCompressAvatar } from "../src/services/avatarImage";
 import Avatar from "../src/components/Avatar";
 import { setCachedAvatar } from "../src/services/avatarCache";
@@ -49,12 +49,49 @@ function SettingsScreen() {
   const [nameMsg, setNameMsg] = useState("");
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState("");
+  // Username is edited on its own, not as part of the profile record: it goes
+  // through a different endpoint with its own availability check, exactly as
+  // on the web (Profile.jsx saves it separately from dbSaveProfileEdit).
+  const [username, setUsername] = useState(profile?.username || "");
+  const [unStatus, setUnStatus] = useState("idle"); // idle|invalid|checking|available|taken
+  const [unMsg, setUnMsg] = useState("");
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
   // Re-seed once the profile arrives (it can be null on first render).
   useEffect(() => {
     if (profile) setForm(profileToForm(profile));
   }, [profile]);
+
+  useEffect(() => {
+    if (profile?.username) setUsername(profile.username);
+  }, [profile?.username]);
+
+  // Debounced availability check, mirroring the web's. The caller's own id is
+  // excluded so their CURRENT username reads as available to them rather than
+  // as taken by themselves.
+  useEffect(() => {
+    const u = username.trim().toLowerCase();
+    if (!u || u === (profile?.username || "")) { setUnStatus("idle"); return; }
+    if (!USERNAME_RE.test(u)) { setUnStatus("invalid"); return; }
+    setUnStatus("checking");
+    const t = setTimeout(async () => {
+      const ok = await checkUsername(u, profile?.id);
+      if (mounted.current) setUnStatus(ok ? "available" : "taken");
+    }, 500);
+    return () => clearTimeout(t);
+  }, [username, profile?.username, profile?.id]);
+
+  const submitUsername = useCallback(async () => {
+    const u = username.trim().toLowerCase();
+    if (unStatus !== "available") return;
+    setUnMsg("");
+    const err = await saveUsername(u);
+    if (!mounted.current) return;
+    if (err) { setUnMsg(err); return; }
+    patchProfile({ username: u });
+    setUnStatus("idle");
+    setUnMsg("Username updated");
+  }, [username, unStatus, patchProfile]);
 
   const [options, setOptions] = useState(null);
   const [prefs, setPrefs] = useState({});
@@ -193,7 +230,31 @@ function SettingsScreen() {
                 onChangeText={set("lastName")}
               />
             </View>
-            {profile?.username ? <Text style={styles.readonly}>@{profile.username}</Text> : null}
+            <Text style={styles.fieldLabel}>Username</Text>
+            <View style={styles.unRow}>
+              <Text style={styles.unAt}>@</Text>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="yourname"
+                placeholderTextColor={colors.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={username}
+                onChangeText={(v) => setUsername(v.toLowerCase())}
+              />
+            </View>
+            {unStatus === "invalid" ? (
+              <Text style={styles.unBad}>5–20 lowercase letters, numbers or underscores.</Text>
+            ) : unStatus === "taken" ? (
+              <Text style={styles.unBad}>That username is taken.</Text>
+            ) : unStatus === "checking" ? (
+              <Text style={styles.unHint}>Checking…</Text>
+            ) : unStatus === "available" ? (
+              <Pressable style={styles.unSave} onPress={submitUsername}>
+                <Text style={styles.unSaveText}>Save @{username.trim().toLowerCase()}</Text>
+              </Pressable>
+            ) : null}
+            {unMsg ? <Text style={styles.unHint}>{unMsg}</Text> : null}
 
             <Text style={styles.fieldLabel}>Bio</Text>
             <TextInput
@@ -329,7 +390,24 @@ function SettingsScreen() {
   );
 }
 
+// Same rule the server enforces (USERNAME_RE in api/_lib/handlers/lookups.js);
+// mirrored here so the form can say what's wrong before a round-trip.
+const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
+
 const styles = StyleSheet.create({
+  unRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  unAt: { color: colors.muted, fontFamily: fonts.bold, fontSize: 16 },
+  unBad: { color: colors.loss, fontFamily: fonts.regular, fontSize: 12, marginTop: 6 },
+  unHint: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 6 },
+  unSave: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    backgroundColor: colors.accent,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  unSaveText: { color: "#fff", fontFamily: fonts.bold, fontSize: 13 },
   photoRow: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 16 },
   photoLink: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 14 },
   photoHint: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, marginTop: 3, lineHeight: 15 },

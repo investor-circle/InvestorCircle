@@ -48,3 +48,36 @@ export async function uploadAvatar(dataUrl) {
   if (api.ok) return api.data.avatarUrl;
   throw new Error(api.data?.error || "Could not upload image");
 }
+
+/**
+ * Username availability. Mirrors checkUsername() in the web app.
+ *
+ * `excludeId` is the caller's own id so their CURRENT username reads as
+ * available to them — without it, editing anything else on the form and
+ * leaving the username alone would report it taken.
+ */
+export async function checkUsername(username, excludeId) {
+  const q = `/data?resource=lookups&action=username-available&username=${encodeURIComponent(username)}` +
+    (excludeId ? `&excludeId=${encodeURIComponent(excludeId)}` : "");
+  const api = await callApi(q);
+  return api.ok ? !!api.data.available : false;
+}
+
+/**
+ * Change the signed-in user's username. Server re-validates the format and
+ * re-checks availability against the verified uid, so this cannot take a name
+ * that is already someone else's. Mirrors saveUsername() in the web app.
+ *
+ * Returns null on success, or an error string to show.
+ */
+export async function saveUsername(username) {
+  const api = await callApi("/data?resource=lookups", {
+    method: "POST",
+    body: { action: "username-save", username: String(username || "").trim().toLowerCase() },
+  });
+  if (api.ok) return null;
+  const err = api.data?.error;
+  if (err === "taken") return "That username is already taken.";
+  if (err === "invalid_username") return "Use 5–20 lowercase letters, numbers or underscores.";
+  return "Could not save your username.";
+}
