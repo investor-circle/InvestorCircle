@@ -19,6 +19,8 @@ import { getReco } from "../../src/utils/recoStore";
 import { getPublicFeed } from "../../src/services/api/recommendationsApi";
 import { mapPublicReco } from "../../src/utils/feed";
 import { fmtDate } from "../../src/utils/format";
+import Avatar from "../../src/components/Avatar";
+import { primeAvatars } from "../../src/services/avatarCache";
 import {
   getEngagement,
   reactToReco,
@@ -63,7 +65,9 @@ function RecoDetailScreen() {
     mounted.current = true;
     (async () => {
       const data = await getEngagement(id);
-      if (mounted.current) setEng(data);
+      if (!mounted.current) return;
+      setEng(data);
+      primeAvatars((data?.comments || []).map((c) => c.userId ?? c.user_id));
     })();
     return () => {
       mounted.current = false;
@@ -318,7 +322,10 @@ function RecoDetailScreen() {
           ) : (
             eng.comments.map((c) => (
               <View key={String(c.id)} style={styles.comment}>
-                <Text style={styles.commentAuthor}>{c.userName || c.user_name || "User"}</Text>
+                <View style={styles.commentHead}>
+                  <Avatar uid={c.userId ?? c.user_id} name={c.userName || c.user_name} size={26} />
+                  <Text style={styles.commentAuthor}>{c.userName || c.user_name || "User"}</Text>
+                </View>
                 <Text style={styles.commentBody}>{c.comment}</Text>
                 <Text style={styles.commentDate}>{fmtDate(c.createdAt || c.created_at)}</Text>
               </View>
@@ -450,7 +457,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 8,
   },
-  commentAuthor: { color: colors.ink, fontFamily: fonts.bold, fontSize: 13, marginBottom: 3 },
+  commentHead: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 5 },
+  commentAuthor: { color: colors.ink, fontFamily: fonts.bold, fontSize: 13 },
   commentBody: { color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 14, lineHeight: 19 },
   commentDate: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, marginTop: 5 },
 

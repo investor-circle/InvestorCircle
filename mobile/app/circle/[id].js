@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import RecoCard from "../../src/components/RecoCard";
+import { primeAvatars } from "../../src/services/avatarCache";
 import { getCircleIdeas, requestJoinCircle } from "../../src/services/api/groupsApi";
 import { mapCircleReco } from "../../src/utils/feed";
 import { putReco } from "../../src/utils/recoStore";
@@ -30,7 +31,9 @@ function CircleDetailScreen() {
       return;
     }
     setDenied(false);
-    setIdeas(rows.map(mapCircleReco));
+    const mapped = rows.map(mapCircleReco);
+    setIdeas(mapped);
+    primeAvatars(mapped.map((r) => r.from));
   }, [id]);
 
   const requestJoin = useCallback(async () => {

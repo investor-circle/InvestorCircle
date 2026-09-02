@@ -39,5 +39,15 @@ module.exports = {
     "no-empty": ["warn", { allowEmptyCatch: true }],
     "no-constant-condition": ["warn", { checkLoops: false }],
   },
+  overrides: [
+    {
+      // The mobile app's tests run on Jest, whose describe/it/expect are
+      // globals (the web's Vitest tests import theirs, so they need nothing
+      // here). Without this, linting mobile/ reports every assertion as
+      // no-undef and buries the real findings.
+      files: ["mobile/**/*.test.js"],
+      env: { jest: true },
+    },
+  ],
   ignorePatterns: ["dist", "node_modules", "*.config.js", "*.config.cjs"],
 };

@@ -9,8 +9,8 @@ import { getInvestorIciBatch } from "../src/services/api/trackingApi";
 import { iciMapFromStats } from "../src/utils/ici";
 import TrackButton from "../src/components/TrackButton";
 import IciBadge from "../src/components/IciBadge";
-import { initialsOf } from "../src/utils/format";
 import Avatar from "../src/components/Avatar";
+import { primeAvatars } from "../src/services/avatarCache";
 import { debugLog } from "../src/utils/logger";
 import { colors, fonts, GRADIENT } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -43,6 +43,7 @@ function SuggestedPeopleScreen() {
     // Dependent: the batch is keyed by uid, which only the list can supply.
     const uids = (rows || []).map((p) => p.id).filter(Boolean);
     if (!uids.length) return;
+    primeAvatars(uids);
     const stats = await getInvestorIciBatch(uids);
     if (!mounted.current) return;
     setIci(iciMapFromStats(stats));
@@ -109,7 +110,7 @@ function SuggestedPeopleScreen() {
               onPress={() => item.username && router.push(`/investor/${encodeURIComponent(item.username)}`)}
               disabled={!item.username}
             >
-              <Avatar profile={item} name={item.name || item.full_name} size={42} />
+              <Avatar profile={item} uid={item.id} name={item.name || item.full_name} size={42} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.name} numberOfLines={1}>
                   {item.name || item.full_name || item.username || "Investor"}

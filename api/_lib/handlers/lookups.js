@@ -28,6 +28,7 @@
  *     user-lookup:        { by: 'id'|'username'|'email', value }         (auth: user)
  *     user-lookup-batch:  { by: 'id', values: [...] }                    (auth: user)
  *     avatar-upload:      { dataUrl }                                    (auth: user)
+ *     avatars-batch:      { values: [id, ...] }  -> [{ id, avatar_url }]    (auth: user)
  *     expo-push-register:   { token, platform? }                          (auth: user)
  *     expo-push-unregister: { token }                                     (auth: user)
  *     onboarding-complete:{ step: 'discover' }                           (auth: user)
@@ -56,6 +57,12 @@ const ALLOWED_REG_STATUS_LOOKUPS = ['self_directed', 'sebi_ra', 'sebi_ria'];
 // Neon DB space.
 const MAX_AVATAR_DATA_URL_LENGTH = 130000;
 const AVATAR_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+// Avatars are data: URIs (up to MAX_AVATAR_DATA_URL_LENGTH each), so a batch
+// is genuinely heavy — 60 of them would be a multi-megabyte response. Capped
+// well below the 200 used for the text-only user-lookup-batch; clients that
+// need more page through several calls. Mirrored as BATCH_LIMIT in
+// mobile/src/services/avatarCache.js.
+const MAX_AVATAR_BATCH = 25;
 // 'cv' was the old skippable "Build your Investor CV" checklist step
 // (pre-Phase-5.5-revision) — username/consent is now mandatory and folded
 // directly into signup / username-save (see action=username-save above), so
@@ -773,6 +780,32 @@ export default async function handleLookups(req, res) {
         SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE id = ANY(${values})
       `;
       res.status(200).json({ users: rows });
+      return;
+    }
+
+    // Avatars for a set of users, by id.
+    //
+    // Deliberately SEPARATE from the feed/list endpoints rather than joined
+    // into them. Avatars are stored as data: URIs on user_profiles.avatar_url
+    // (there is no blob storage), so folding them into a feed row would put
+    // an image inside every item of a list that is already on the critical
+    // path. Fetched here instead: once per distinct author, after the list
+    // has painted, and cached client-side.
+    //
+    // Returns only id + avatar_url — no names, no emails, and nothing else
+    // from user_profiles. Rows with no picture are omitted rather than
+    // returned as null, which keeps the response small; the client treats a
+    // requested id that does not come back as "has no picture".
+    if (action === 'avatars-batch') {
+      try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+      const values = Array.isArray(body.values) ? body.values.map(String).slice(0, MAX_AVATAR_BATCH) : [];
+      if (!values.length) { res.status(200).json({ avatars: [] }); return; }
+      const rows = await sql`
+        SELECT id, avatar_url
+        FROM user_profiles
+        WHERE id = ANY(${values}) AND avatar_url IS NOT NULL
+      `;
+      res.status(200).json({ avatars: rows });
       return;
     }
 

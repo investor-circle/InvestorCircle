@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import RecoCard from "./RecoCard";
 import { putReco } from "../utils/recoStore";
+import { primeAvatars } from "../services/avatarCache";
 import { colors, fonts } from "../theme/colors";
 
 /**
@@ -36,6 +37,8 @@ export default function RecoListScreen({ hero, loader, subHeader, emptyTitle, em
       if (!mounted.current) return;
       setRecos(data);
       setError(false);
+      // After the list is set, never before — the pictures arrive behind it.
+      primeAvatars((data || []).map((r) => r.from));
     } catch (e) {
       if (!mounted.current) return;
       setError(true);

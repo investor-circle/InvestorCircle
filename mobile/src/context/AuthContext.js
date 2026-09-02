@@ -18,6 +18,8 @@ import {
 } from "firebase/auth";
 import { auth } from "../config/firebase";
 import { unregisterCurrentDevice } from "../services/pushNotifications";
+import { clearAvatarCache } from "../services/avatarCache";
+import { clearFeedCache } from "../services/feedCache";
 import { API_ORIGIN } from "../services/api";
 import { completeSignup } from "../services/api/authApi";
 
@@ -130,6 +132,10 @@ export function AuthProvider({ children }) {
     } catch (_) {
       /* sign out regardless */
     }
+    // Cached feed rows and other people's profile pictures were fetched with
+    // this account's token. On a shared phone the next person to sign in must
+    // not inherit either. Failures here never block sign-out.
+    await Promise.allSettled([clearAvatarCache(), clearFeedCache(user?.uid)]);
     return signOut(auth);
   };
 

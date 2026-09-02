@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Refresh
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import {
   getMyConnections,
   acceptConnection,
@@ -12,9 +11,9 @@ import {
 } from "../src/services/api/connectionsApi";
 import { getMyTrackingList, getMyTrackers, getTrackingCounts } from "../src/services/api/trackingApi";
 import TrackButton from "../src/components/TrackButton";
-import { initialsOf } from "../src/utils/format";
 import Avatar from "../src/components/Avatar";
-import { colors, fonts, GRADIENT } from "../src/theme/colors";
+import { primeAvatars } from "../src/services/avatarCache";
+import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
 // Connections are mutual and need acceptance; tracking is one-way and does
@@ -54,6 +53,12 @@ function NetworkScreen() {
     setTracking(tr.people);
     setTrackers(trs.people);
     setCounts(cnt);
+    // After the rows are on screen, not before: pictures fill in behind them.
+    primeAvatars([
+      ...(conns || []).map((c) => c.user_id),
+      ...(tr.people || []).map((p) => p.id ?? p.user_id),
+      ...(trs.people || []).map((p) => p.id ?? p.user_id),
+    ]);
   }, []);
 
   useEffect(() => {
@@ -99,9 +104,7 @@ function NetworkScreen() {
     const isOutgoing = item.status === "pending" && item.direction === "sent";
     return (
       <View style={styles.row}>
-        <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.avatar}>
-          <Text style={styles.avatarText}>{initialsOf(item.name)}</Text>
-        </LinearGradient>
+        <Avatar uid={item.user_id} name={item.name} size={44} gradient />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.name} numberOfLines={1}>
             {item.name || "Investor"}
@@ -149,7 +152,7 @@ function NetworkScreen() {
         onPress={() => item.username && router.push(`/investor/${encodeURIComponent(item.username)}`)}
         disabled={!item.username}
       >
-        <Avatar profile={item} name={name} size={42} />
+        <Avatar profile={item} uid={uid} name={name} size={42} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.name} numberOfLines={1}>
             {name}
@@ -282,8 +285,6 @@ const styles = StyleSheet.create({
   tabText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 14 },
   tabTextActive: { color: "#fff" },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
-  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 15 },
   name: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15 },
   username: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, marginTop: 1 },
   actionsRow: { flexDirection: "row", alignItems: "center", gap: 8 },

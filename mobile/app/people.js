@@ -3,11 +3,11 @@ import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicat
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { searchPeople, getDiscoverMore } from "../src/services/api/peopleApi";
 import { sendConnectionRequest } from "../src/services/api/connectionsApi";
-import { initialsOf } from "../src/utils/format";
-import { colors, fonts, GRADIENT } from "../src/theme/colors";
+import Avatar from "../src/components/Avatar";
+import { primeAvatars } from "../src/services/avatarCache";
+import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
 // Find investors — search by name/username, or browse the server's
@@ -24,7 +24,10 @@ function PeopleScreen() {
     mounted.current = true;
     (async () => {
       const people = await getDiscoverMore();
-      if (mounted.current) setSuggested(people);
+      if (mounted.current) {
+        setSuggested(people);
+        primeAvatars((people || []).map((p) => p.id));
+      }
     })();
     return () => {
       mounted.current = false;
@@ -40,7 +43,10 @@ function PeopleScreen() {
     }
     const t = setTimeout(async () => {
       const people = await searchPeople(term, 30);
-      if (mounted.current) setResults(people);
+      if (mounted.current) {
+        setResults(people);
+        primeAvatars((people || []).map((p) => p.id));
+      }
     }, 350);
     return () => clearTimeout(t);
   }, [q]);
@@ -62,9 +68,7 @@ function PeopleScreen() {
           style={styles.rowMain}
           onPress={() => item.username && router.push(`/investor/${item.username}`)}
         >
-          <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.avatar}>
-            <Text style={styles.avatarText}>{initialsOf(item.full_name)}</Text>
-          </LinearGradient>
+          <Avatar uid={item.id} name={item.full_name} size={44} gradient />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.name} numberOfLines={1}>
               {item.full_name || "Investor"}
@@ -185,8 +189,6 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 9 },
   rowMain: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1, minWidth: 0 },
-  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 15 },
   name: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15 },
   username: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, marginTop: 1 },
   connectBtn: {

@@ -27,11 +27,14 @@ function TrackScreen() {
     if (tab === "made") {
       const rows = await getMyMadeRecos();
       const myName = profile?.full_name || "You";
-      return rows.map((r) => ({ ...r, byName: r.byName || myName }));
+      // Stamp the caller's uid too, for the same reason as the name: these
+      // rows have no author fields (they ARE the caller's), so without it
+      // the card could not look up their own profile picture.
+      return rows.map((r) => ({ ...r, byName: r.byName || myName, from: r.from || profile?.id }));
     }
     const rows = await getMyTrackedRecos();
     return rows.map(mapTrackedReco);
-  }, [tab, profile?.full_name]);
+  }, [tab, profile?.full_name, profile?.id]);
 
   const subHeader = (
     <View style={styles.tabs}>

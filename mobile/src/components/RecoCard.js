@@ -1,9 +1,9 @@
 import { memo } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, fonts, GRADIENT } from "../theme/colors";
-import { fmt, fmtDate, fmtPct, initialsOf, returnPct } from "../utils/format";
+import Avatar from "./Avatar";
+import { colors, fonts } from "../theme/colors";
+import { fmt, fmtDate, fmtPct, returnPct } from "../utils/format";
 
 // Rich reco card — matches the web app's feed card (src/features/discovery):
 // gradient avatar, "<name> recommended · via/shared-by · date", Buy/Sell pill,
@@ -31,9 +31,9 @@ function RecoCard({ reco, onPress }) {
     <View style={styles.card}>
       {/* WHO */}
       <View style={styles.header}>
-        <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.avatar}>
-          <Text style={styles.avatarText}>{initialsOf(reco.byName)}</Text>
-        </LinearGradient>
+        {/* uid, not a picture: the card paints initials on the gradient right
+            away and swaps in the author's photo once the avatar batch lands. */}
+        <Avatar uid={reco.from} name={reco.byName} size={40} gradient />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.byName} numberOfLines={1}>
             {reco.byName || "Someone"} <Text style={styles.recommended}>recommended</Text>
@@ -158,8 +158,6 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   header: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
-  avatar: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 14 },
   byName: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
   recommended: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13 },
   subtitle: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },

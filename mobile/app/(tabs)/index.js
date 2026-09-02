@@ -19,6 +19,9 @@ import {
   mapNetworkReco,
 } from "../../src/utils/feed";
 import { putReco } from "../../src/utils/recoStore";
+import { primeAvatars } from "../../src/services/avatarCache";
+import { readFeedCache, writeFeedCache } from "../../src/services/feedCache";
+import { useAuth } from "../../src/context/AuthContext";
 import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
@@ -98,11 +101,19 @@ async function loadFeedProgressive(onPartial) {
 
 function FeedScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const uid = user?.uid;
   const [recos, setRecos] = useState(null); // null = initial loading
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const [unread, setUnread] = useState(0);
   const mounted = useRef(true);
+  // Held in a ref rather than read from a dependency: the tab can mount for a
+  // frame before the auth redirect settles, and putting uid in load()'s deps
+  // would make that frame cost a SECOND full feed load. The cache write only
+  // needs the uid at the moment it happens.
+  const uidRef = useRef(uid);
+  uidRef.current = uid;
 
   useEffect(() => {
     mounted.current = true;
@@ -123,12 +134,20 @@ function FeedScreen() {
   const load = useCallback(async () => {
     try {
       const final = await loadFeedProgressive((partial) => {
-        if (mounted.current) setRecos(partial);
+        if (!mounted.current) return;
+        setRecos(partial);
+        // Prime from the first paint too, not just the merge: on a slow
+        // connection the merge is seconds away and these rows are already
+        // on screen. primeAvatars de-duplicates, so the later call is free.
+        primeAvatars(partial.map((r) => r.from));
       });
       if (mounted.current) {
         setRecos(final);
         setError(false);
       }
+      // Both off the critical path — the list is already on screen by now.
+      writeFeedCache(uidRef.current, final);
+      primeAvatars(final.map((r) => r.from));
     } catch (e) {
       if (mounted.current) {
         setError(true);
@@ -140,6 +159,23 @@ function FeedScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Cold start: draw last launch's feed from disk while the real load runs.
+  // Guarded on `recos === null` inside the setter so it can never overwrite
+  // data that has already arrived — on a fast connection the network wins and
+  // this is a no-op, which is the correct outcome.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cached = await readFeedCache(uid);
+      if (cancelled || !cached?.length || !mounted.current) return;
+      setRecos((prev) => (prev === null ? cached : prev));
+      primeAvatars(cached.map((r) => r.from));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [uid]);
 
   const onRefresh = async () => {
     setRefreshing(true);

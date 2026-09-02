@@ -6,8 +6,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { getTickerRecos, getDailyPrices } from "../../src/services/api/consensusApi";
 import { computeConsensus, computeTrend, consensusColor } from "../../src/utils/consensus";
 import Sparkline from "../../src/components/Sparkline";
-import { fmt, fmtDate, initialsOf } from "../../src/utils/format";
+import { fmt, fmtDate } from "../../src/utils/format";
 import Avatar from "../../src/components/Avatar";
+import { primeAvatars } from "../../src/services/avatarCache";
 import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
@@ -36,6 +37,7 @@ function TickerConsensusScreen() {
     if (!mounted.current) return;
     setRecos(rows);
     setPrice((prices || []).find((p) => String(p.ticker).toUpperCase() === ticker) || null);
+    primeAvatars((rows || []).map((r) => r.from));
     debugLog(`consensus ${ticker}: ideas=${rows?.length ?? 0} price=${prices?.length ? "yes" : "no"}`);
   }, [ticker]);
 
@@ -140,7 +142,7 @@ function TickerConsensusScreen() {
                   style={styles.ideaRow}
                   onPress={() => router.push(`/reco/${r.id}`)}
                 >
-                  <Avatar profile={r} name={r.full_name} size={34} />
+                  <Avatar profile={r} uid={r.from} name={r.full_name} size={34} />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.ideaName} numberOfLines={1}>
                       {r.full_name || r.username || "Investor"}
@@ -219,15 +221,6 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.surface2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { color: colors.inkSoft, fontFamily: fonts.bold, fontSize: 12 },
   ideaName: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
   ideaMeta: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, marginTop: 1 },
   tag: {

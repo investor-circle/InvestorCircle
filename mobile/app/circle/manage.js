@@ -26,7 +26,8 @@ import {
   exitGroup,
 } from "../../src/services/api/groupsApi";
 import { useAuth } from "../../src/context/AuthContext";
-import { initialsOf } from "../../src/utils/format";
+import Avatar from "../../src/components/Avatar";
+import { primeAvatars } from "../../src/services/avatarCache";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 
@@ -63,6 +64,11 @@ function ManageCircleScreen() {
     if (!mounted.current) return;
     setEligible(elig || []);
     setRequests(reqs || []);
+    primeAvatars([
+      ...(g?.members || []).map((m) => m.user_id),
+      ...(elig || []).map((p) => p.id),
+      ...(reqs || []).map((r) => r.user_id ?? r.id),
+    ]);
   }, [id]);
 
   useEffect(() => {
@@ -124,9 +130,7 @@ function ManageCircleScreen() {
               <View style={styles.card}>
                 {requests.map((r, i) => (
                   <View key={String(r.id)} style={[styles.row, i < requests.length - 1 && styles.rowBorder]}>
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>{initialsOf(r.full_name || r.name)}</Text>
-                    </View>
+                    <Avatar uid={r.user_id ?? r.id} name={r.full_name || r.name} size={34} />
                     <Text style={styles.rowName} numberOfLines={1}>
                       {r.full_name || r.name || r.username || "Investor"}
                     </Text>
@@ -162,9 +166,7 @@ function ManageCircleScreen() {
             ) : (
               members.map((m, i) => (
                 <View key={String(m.user_id)} style={[styles.row, i < members.length - 1 && styles.rowBorder]}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{initialsOf(m.name)}</Text>
-                  </View>
+                  <Avatar uid={m.user_id} name={m.name} size={34} />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.rowName} numberOfLines={1}>
                       {m.name || "Investor"}
@@ -198,9 +200,7 @@ function ManageCircleScreen() {
                 ) : (
                   eligible.map((p, i) => (
                     <View key={String(p.id)} style={[styles.row, i < eligible.length - 1 && styles.rowBorder]}>
-                      <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>{initialsOf(p.full_name)}</Text>
-                      </View>
+                      <Avatar uid={p.id} name={p.full_name} size={34} />
                       <Text style={styles.rowName} numberOfLines={1}>
                         {p.full_name || p.username || "Investor"}
                       </Text>
@@ -307,15 +307,6 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11 },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.line },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.surface2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { color: colors.inkSoft, fontFamily: fonts.bold, fontSize: 12 },
   rowName: { flex: 1, color: colors.ink, fontFamily: fonts.semibold, fontSize: 14 },
   rowMeta: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
   actions: { flexDirection: "row", alignItems: "center", gap: 8 },

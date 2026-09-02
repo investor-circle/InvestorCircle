@@ -19,6 +19,7 @@ import { getFeedConfigAndPrefs, setFeedPref } from "../src/services/api/feedApi"
 import { saveProfileEdit, uploadAvatar } from "../src/services/api/profileApi";
 import { pickAndCompressAvatar } from "../src/services/avatarImage";
 import Avatar from "../src/components/Avatar";
+import { setCachedAvatar } from "../src/services/avatarCache";
 import {
   profileToForm,
   buildProfilePayload,
@@ -114,13 +115,18 @@ function SettingsScreen() {
       // Reflect it into context immediately so every avatar in the app —
       // and the web, on its next load — shows the new picture.
       patchProfile({ avatar_url: url });
+      // Seed the shared cache too: everywhere else in the app renders this
+      // user by uid (feed cards, member lists), so without this their own
+      // new picture would not appear on their own ideas until the cache
+      // next refreshed.
+      setCachedAvatar(profile?.id, url);
       setAvatarMsg("Photo updated");
     } catch (e) {
       if (mounted.current) setAvatarMsg(e?.message || "Could not upload image");
     } finally {
       if (mounted.current) setAvatarBusy(false);
     }
-  }, [patchProfile]);
+  }, [patchProfile, profile?.id]);
 
   const togglePref = useCallback(async (key, next) => {
     setBusyKey(key);
