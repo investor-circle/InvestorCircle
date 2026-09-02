@@ -31,7 +31,6 @@ import {
 import {
   setExitSignal,
   cancelExitSignal,
-  deleteRecommendation,
   dismissDelivery,
 } from "../../src/services/api/recommendationsApi";
 import { useAuth } from "../../src/context/AuthContext";
@@ -58,7 +57,7 @@ function RecoDetailScreen() {
   const mounted = useRef(true);
 
   // Owner-only controls. The server independently enforces that only the
-  // recommender may exit or delete — this just decides what to render.
+  // recommender may signal an exit — this just decides what to render.
   const isOwner = !!user?.uid && (reco?.from === user.uid || reco?.recommender_id === user.uid);
 
   useEffect(() => {
@@ -155,24 +154,6 @@ function RecoDetailScreen() {
       ]
     );
   }, [reco, router]);
-
-  const confirmDelete = useCallback(() => {
-    Alert.alert("Delete this idea?", "This removes it for everyone it was shared with. This can't be undone.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          setOwnerBusy(true);
-          const ok = await deleteRecommendation(id);
-          if (!mounted.current) return;
-          setOwnerBusy(false);
-          if (ok) router.back();
-          else Alert.alert("Couldn't delete", "Please try again.");
-        },
-      },
-    ]);
-  }, [id, router]);
 
   const submitComment = useCallback(async () => {
     const text = comment.trim();
@@ -287,28 +268,29 @@ function RecoDetailScreen() {
             </Pressable>
           ) : null}
 
-          {/* Owner-only: exit signal + delete */}
+          {/* Owner-only: signal an exit.
+              NOT delete. A posted idea is permanent by product decision — the
+              track record only means something if it cannot be edited after
+              the fact, so signalling an exit is how an author closes a
+              position, and the original idea stays visible. The web app
+              exposes no delete either. (A short post-publish correction
+              window may come later; that would be a deliberate feature with
+              its own rules, not this button.) */}
           {isOwner ? (
             <View style={styles.ownerBar}>
               {ownerBusy ? (
                 <ActivityIndicator color={colors.accent} />
               ) : (
-                <>
-                  <Pressable style={[styles.ownerBtn, exited && styles.ownerBtnOn]} onPress={toggleExit}>
-                    <Ionicons
-                      name={exited ? "flag" : "flag-outline"}
-                      size={17}
-                      color={exited ? colors.accentInk : colors.inkSoft}
-                    />
-                    <Text style={[styles.ownerText, exited && { color: colors.accentInk }]}>
-                      {exited ? "Exited — undo" : "Signal exit"}
-                    </Text>
-                  </Pressable>
-                  <Pressable style={[styles.ownerBtn, styles.ownerBtnDanger]} onPress={confirmDelete}>
-                    <Ionicons name="trash-outline" size={17} color={colors.loss} />
-                    <Text style={[styles.ownerText, { color: colors.loss }]}>Delete</Text>
-                  </Pressable>
-                </>
+                <Pressable style={[styles.ownerBtn, exited && styles.ownerBtnOn]} onPress={toggleExit}>
+                  <Ionicons
+                    name={exited ? "flag" : "flag-outline"}
+                    size={17}
+                    color={exited ? colors.accentInk : colors.inkSoft}
+                  />
+                  <Text style={[styles.ownerText, exited && { color: colors.accentInk }]}>
+                    {exited ? "Exited — undo" : "Signal exit"}
+                  </Text>
+                </Pressable>
               )}
             </View>
           ) : null}
@@ -444,7 +426,6 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   ownerBtnOn: { backgroundColor: colors.accentSoft, borderColor: colors.accentLine },
-  ownerBtnDanger: { borderColor: colors.lossSoft, backgroundColor: colors.lossSoft },
   ownerText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13 },
   sectionTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16, paddingHorizontal: 16, marginTop: 16, marginBottom: 8 },
   noComments: { color: colors.muted, fontFamily: fonts.regular, fontSize: 14, paddingHorizontal: 16 },

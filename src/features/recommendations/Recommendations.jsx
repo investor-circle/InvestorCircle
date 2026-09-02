@@ -56,7 +56,6 @@ import {
   cancelExitSignal as dbCancelExit,
   createRecommendation as dbCreateReco,
   deleteDelivery as dbDeleteDelivery,
-  deleteRecommendation as dbDeleteReco,
   forwardRecommendation as dbForwardReco,
   getRecommenderUsername as dbGetRecommenderUsername,
   notifyPublicContacts as dbNotifyPublicContacts,
@@ -1114,11 +1113,17 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
   const [shareAnchor, setShareAnchor] = useState(null);
   const [exitingId,  setExitingId]  = useState(null);
 
-  const del=async(r)=>{
-    if(!confirm("Delete this idea? This will remove it from all recipients' lists too.")) return;
-    setRecs(rs=>rs.filter(x=>x.id!==r.id));
-    await dbDeleteReco(r.id, me?.id);
-  };
+  // No delete handler here, deliberately. An idea is permanent once posted:
+  // the track record only means something if nobody can erase the calls that
+  // went wrong, so an author closes a position with toggleExit() below, which
+  // records the outcome rather than hiding it. (The Trash button in
+  // ReceivedSection is a different action — it removes the RECIPIENT's own
+  // copy via deleteDelivery and leaves the idea itself alone.)
+  //
+  // A `del` handler calling deleteRecommendation() used to sit here, unwired
+  // to any button; it has been removed so it cannot be hooked up by mistake.
+  // If a short post-publish correction window is introduced later, it will be
+  // a deliberate feature with its own time limit and rules.
 
   const toggleExit=async(r)=>{
     if (r.exit) {

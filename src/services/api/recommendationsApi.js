@@ -18,7 +18,7 @@ export {
   cancelExitSignal,
   notifyPublicContacts,
   forwardRecommendation,
-  deleteRecommendation,
+  // deleteRecommendation is deliberately NOT re-exported — see the note below.
   deleteDelivery,
   computeIci,
   getConsensusRecosAll,
@@ -29,3 +29,18 @@ export {
   getRecommenderUsername,
   getCircleIdeas
 } from "../../db";
+
+// NOT EXPOSED: deleteRecommendation.
+//
+// The server action (delete-reco) and the db.js wrapper both still exist, but
+// no client may reach them: by product decision an idea is permanent once
+// posted. That is what makes a track record mean anything — nobody can
+// quietly erase the calls that went wrong. An author closes a position with
+// setExitSignal(), which records the outcome rather than hiding it.
+//
+// deleteDelivery above is a different action: it removes a RECIPIENT's own
+// copy of an idea and leaves the idea, and everyone else's copy, untouched.
+//
+// Do not re-export deleteRecommendation to "restore parity" with the
+// endpoint. If a short post-publish correction window is introduced later it
+// will be a deliberate feature with its own time limit and rules.

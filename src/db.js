@@ -461,6 +461,14 @@ export async function markAllNotifRead(userId) {
  * Hard-delete a recommendation the current user made.
  * CASCADE removes all delivery rows and notifications automatically.
  * Only the recommender can delete their own recommendation.
+ *
+ * NOT REACHABLE FROM THE UI, ON PURPOSE. This mirrors the server's delete-reco
+ * action so db.js stays an accurate map of the API, but it is not re-exported
+ * from services/api/recommendationsApi.js and no screen calls it: by product
+ * decision an idea is permanent once posted, because a track record only
+ * means something if nobody can erase the calls that went wrong. Authors
+ * close a position with setExitSignal() instead. Do not wire this to a button
+ * without an explicit product decision to allow deletion.
  */
 export async function deleteRecommendation(recommendationId, userId) {
   const api = await callApi("/data?resource=recommendations", { method: "POST", body: { action: "delete-reco", recommendationId } });

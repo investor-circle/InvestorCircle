@@ -82,14 +82,18 @@ export async function cancelExitSignal(recommendationId) {
   return api.ok ? api.data.recommendation : null;
 }
 
-/** Delete one of the caller's own recommendations (server checks ownership). */
-export async function deleteRecommendation(recommendationId) {
-  const api = await callApi("/data?resource=recommendations", {
-    method: "POST",
-    body: { action: "delete-reco", recommendationId },
-  });
-  return api.ok;
-}
+// NOT EXPOSED: deleting a recommendation.
+//
+// The server has a delete-reco action (api/_lib/handlers/recommendations.js)
+// and the web app has an unwired handler for it, but neither client offers a
+// way to reach it: by product decision an idea is permanent once posted.
+// That is what makes a track record mean anything — nobody can quietly erase
+// the calls that went wrong. An author closes a position with setExitSignal()
+// instead, which records the outcome rather than hiding it.
+//
+// Do not add a deleteRecommendation() wrapper here to "restore parity" with
+// the endpoint. If a post-publish correction window is ever introduced it
+// will be a deliberate feature with its own time limit and rules.
 
 /** Update a delivery row (mark invested, react, hide). */
 export async function updateDelivery(deliveryId, patch) {
@@ -104,9 +108,10 @@ export async function updateDelivery(deliveryId, patch) {
 /**
  * Remove a received idea from your own feed.
  *
- * Distinct from deleteRecommendation(): that deletes the IDEA for everyone
- * and is only available to its author. This deletes only the DELIVERY — your
- * copy — leaving the idea itself and everyone else's copy untouched. Mirrors
+ * This deletes only the DELIVERY — your copy — leaving the idea itself and
+ * everyone else's copy untouched. It is NOT a way to delete an idea (see the
+ * note above): an author cannot remove what they posted, and a recipient
+ * hiding their own copy changes nothing for anyone else. Mirrors
  * deleteDelivery() in the web app.
  */
 export async function dismissDelivery(deliveryId) {
