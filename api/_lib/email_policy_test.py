@@ -116,7 +116,9 @@ print("\nrecipient control")
 
 def _self_addressed_ignores_the_request():
     # Otherwise a signed-in user could send a welcome/claim email to anyone.
-    for t in ("welcome_referred", "claim_submitted"):
+    selfies = [t for t, r in POLICY.items() if r["to"] == "self"]
+    assert selfies, "expected at least one self-addressed template"
+    for t in selfies:
         to, _ = call(t, body={"to_email": "victim@example.com"})
         assert to == USER["email"], "%s -> %s" % (t, to)
 
@@ -151,10 +153,12 @@ print("\ncaller class")
 
 
 def _internal_only_template_refuses_a_client():
-    # reco_comment, and now both connection notifications: the server raises
-    # these from the row it just wrote, so a client asking for one would be
-    # claiming a connection or a comment that may not exist.
-    for t in ("reco_comment", "connection_request", "connection_accepted", "signup_welcome"):
+    # reco_comment, both connection notifications, and both halves of a
+    # referral: the server raises these from the row it just wrote, so a
+    # client asking for one would be claiming a connection, a comment or a
+    # referral that may not exist.
+    for t in ("reco_comment", "connection_request", "connection_accepted", "signup_welcome",
+              "welcome_referred", "referral_converted"):
         to, err = call(t, body={"to_email": "bob@example.com"})
         assert to is None and "server" in err, "%s: %s" % (t, err)
         to, _ = call(t, kind="internal", token=None, body={"to_email": "bob@example.com"})

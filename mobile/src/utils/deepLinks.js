@@ -72,9 +72,43 @@ export function parseDeepLink(url) {
   if (parts[0] === "circle" && parts[1] && parts[1] !== "new" && parts[1] !== "manage") {
     return { path: `/circle/s/${encodeURIComponent(parts[1])}` };
   }
-  if (["notifications", "network", "circles", "portfolio", "people", "settings"].includes(parts[0])) {
+  if (
+    ["notifications", "network", "circles", "portfolio", "people", "settings", "about", "contact"].includes(parts[0])
+  ) {
     return { path: `/${parts[0]}` };
   }
 
   return null;
+}
+
+/**
+ * The referral code from an invite link, or null.
+ *
+ * An invite is `https://myinvestorcircle.com/?ref=alice` — a QUERY parameter
+ * on the site root, not a route, which is why parseDeepLink (which strips the
+ * query and needs a path) cannot see it and why following one on a phone used
+ * to open the app with the invitation silently discarded. The referrer got no
+ * credit and the new member never became connected to the person who invited
+ * them.
+ *
+ * Same normalisation the web does in App.jsx (lower-cased, trimmed), and the
+ * same shape the server matches on: a username, so anything that cannot be one
+ * is rejected here rather than stored and sent.
+ */
+const USERNAME_RE = /^[a-z0-9_]{3,30}$/;
+
+export function parseReferral(url) {
+  if (!url || typeof url !== "string") return null;
+  // Take the LAST ?ref= — a link can carry a query before the fragment and
+  // another inside it, and the fragment is the more specific one.
+  const matches = [...url.matchAll(/[?&]ref=([^&#\s]*)/g)];
+  if (!matches.length) return null;
+  let code;
+  try {
+    code = decodeURIComponent(matches[matches.length - 1][1]);
+  } catch (_) {
+    return null; // a malformed escape — not a username either way
+  }
+  code = code.trim().toLowerCase();
+  return USERNAME_RE.test(code) ? code : null;
 }

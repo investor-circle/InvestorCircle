@@ -44,14 +44,18 @@ POLICY = {
     # Sent by /api/profile/signup on a genuine first signup, so both clients
     # get it — the browser used to send this itself and mobile never did.
     "signup_welcome":         {"caller": "internal", "to": "any",   "identity": {}},
-    "welcome_referred":       {"caller": "user",     "to": "self",  "identity": {}},
+    # Both halves of a referral are raised by the server when it records the
+    # attribution (handlers/lookups.js process-referral), for the same reason
+    # as the connection pair: the browser used to send them, so a signup that
+    # came through the mobile app was silently never credited to anyone.
+    "welcome_referred":       {"caller": "internal", "to": "any",   "identity": {}},
     # Self-addressed, so there is nobody to deceive: the body's own name is
     # fine, and forcing it would show a fallback (an email local part) to the
     # very person whose name it is.
     "claim_submitted":        {"caller": "user",     "to": "self",  "identity": {}},
     "claim_admin_notify":     {"caller": "user",     "to": "admin",
                                "identity": {"creator_name": "name", "claimer_email": "email"}},
-    "referral_converted":     {"caller": "user",     "to": "any",   "identity": {"new_user_name": "name"}},
+    "referral_converted":     {"caller": "internal", "to": "any",   "identity": {}},
     # Raised by the server when it records the connection (handlers/
     # connections.js), so that both clients get them — the browser used to
     # send these itself and the mobile app never learned to.

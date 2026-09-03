@@ -81,3 +81,21 @@ export async function saveUsername(username) {
   if (err === "invalid_username") return "Use 5–20 lowercase letters, numbers or underscores.";
   return "Could not save your username.";
 }
+
+/**
+ * Redeem a referral code for the signed-in user (lookups
+ * action=process-referral) — the same call the web makes after a signup that
+ * arrived through an invite link.
+ *
+ * The server records the attribution, connects the two members, and sends
+ * both referral emails itself. It answers `{ referred: false }` when the code
+ * matches nobody, which is an ordinary outcome (a mistyped or stale link),
+ * not an error.
+ */
+export async function processReferral(refUsername) {
+  const api = await callApi("/data?resource=lookups", {
+    method: "POST",
+    body: { action: "process-referral", refUsername },
+  });
+  return api.ok ? api.data : { referred: false };
+}

@@ -122,7 +122,7 @@ import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./feature
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
 import { RecoPostPage, Recommendations } from "./features/recommendations/Recommendations";
 import { useIsMobile } from "./hooks/index";
-import { VAPID_PUBLIC_KEY, sendEmail } from "./services/notify";
+import { VAPID_PUBLIC_KEY } from "./services/notify";
 import { STYLES } from "./styles/globalStyles";
 import { initialsOf } from "./utils/format";
 import { loadInstruments } from "./utils/instruments";
@@ -590,22 +590,12 @@ export default function App() {
       const result = await dbProcessReferral(refUsername);
       if (!result.referred) { localStorage.removeItem('mic_ref'); return; }
 
-      const referrer = { full_name: result.referrerName, username: result.referrerUsername, email: result.referrerEmail };
-
-      // Send referral emails (fire and forget)
-      const newUserEmail = user?.email || '';
-      const newUserName  = user?.displayName || 'New member';
-      sendEmail('welcome_referred', {
-        to_email:          newUserEmail,
-        referrer_name:     referrer.full_name,
-        referrer_username: referrer.username || '',
-      });
-      if (referrer.email) {
-        sendEmail('referral_converted', {
-          to_email:      referrer.email,
-          new_user_name: newUserName,
-        });
-      }
+      // Both referral emails — the new member's welcome and the referrer's
+      // "someone you invited joined" — are sent server-side by
+      // process-referral itself, on a genuine first attribution only. They
+      // used to be sent from here, which meant a signup that came through the
+      // mobile app credited nobody, and which was the only reason the server
+      // had to hand this browser another member's email address.
 
       // Refresh connection list so the new user immediately sees the referrer in their circle
       const conns = await getMyConnections(newUserId);

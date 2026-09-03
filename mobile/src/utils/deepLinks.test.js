@@ -1,4 +1,4 @@
-import { parseDeepLink } from "./deepLinks";
+import { parseDeepLink, parseReferral } from "./deepLinks";
 
 // The web app's shareable URLs are HashRouter URLs, so the route lives in the
 // fragment. Android intent filters only match scheme/host/path — if this
@@ -93,5 +93,46 @@ describe("parseDeepLink — market consensus", () => {
 
   it("does not route a bare /ticker with no symbol", () => {
     expect(parseDeepLink("https://myinvestorcircle.com/#/ticker")).toBeNull();
+  });
+});
+
+// An invite link puts the code in the QUERY on the site root
+// (https://myinvestorcircle.com/?ref=alice) rather than in the route, which
+// is why parseDeepLink cannot see it: it strips the query and needs a path.
+// Getting this wrong means an invite opens the app with the invitation
+// silently discarded — the referrer gets no credit and the newcomer is not
+// connected to the person who invited them.
+
+describe("parseReferral", () => {
+  it("reads the code from a plain invite link", () => {
+    expect(parseReferral("https://myinvestorcircle.com/?ref=alice")).toBe("alice");
+  });
+
+  it("reads it alongside other parameters, and from a fragment link", () => {
+    expect(parseReferral("https://myinvestorcircle.com/?utm_source=x&ref=alice")).toBe("alice");
+    expect(parseReferral("https://myinvestorcircle.com/?ref=alice#/investor/bob")).toBe("alice");
+    expect(parseReferral("myinvestorcircle://open?ref=alice")).toBe("alice");
+  });
+
+  it("normalises case and whitespace, as the web does before storing it", () => {
+    expect(parseReferral("https://myinvestorcircle.com/?ref=Alice")).toBe("alice");
+    expect(parseReferral("https://myinvestorcircle.com/?ref=%20alice%20")).toBe("alice");
+  });
+
+  it("returns null for a link that carries no invite", () => {
+    expect(parseReferral("https://myinvestorcircle.com/#/investor/alice")).toBeNull();
+    expect(parseReferral("https://myinvestorcircle.com/?referrer=alice")).toBeNull();
+    expect(parseReferral("")).toBeNull();
+    expect(parseReferral(null)).toBeNull();
+  });
+
+  it("rejects anything that is not shaped like a username", () => {
+    // Whatever comes back is sent to the server and shown on the login
+    // screen ("@x invited you"), so it is checked before either happens.
+    expect(parseReferral("https://myinvestorcircle.com/?ref=")).toBeNull();
+    expect(parseReferral("https://myinvestorcircle.com/?ref=a")).toBeNull();
+    expect(parseReferral("https://myinvestorcircle.com/?ref=" + "a".repeat(60))).toBeNull();
+    expect(parseReferral("https://myinvestorcircle.com/?ref=%3Cscript%3E")).toBeNull();
+    expect(parseReferral("https://myinvestorcircle.com/?ref=al%GGice")).toBeNull();
   });
 });

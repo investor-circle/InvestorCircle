@@ -43,6 +43,7 @@
  */
 
 import { sql, parseBody, requireUid, requireAdmin, sendAuthError } from '../auth.js';
+import { sendInternalEmail } from '../notifyMember.js';
 
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -577,21 +578,52 @@ export default async function handleLookups(req, res) {
       `;
       if (!refs[0]) { res.status(200).json({ referred: false }); return; }
       const referrer = refs[0];
-      await sql`UPDATE user_profiles SET referred_by = ${referrer.id} WHERE id = ${uid} AND referred_by IS NULL`;
+      // RETURNING tells us whether this was the FIRST time this account was
+      // attributed to a referrer (the WHERE clause makes the update a no-op
+      // otherwise). Everything below that is not idempotent — the emails
+      // especially — hangs off that, so replaying the call (a stored code the
+      // client failed to clear, a retry, a second device) cannot notify the
+      // referrer over and over about the same person joining.
+      const claimed = await sql`
+        UPDATE user_profiles SET referred_by = ${referrer.id}
+        WHERE id = ${uid} AND referred_by IS NULL
+        RETURNING id
+      `;
+      const firstTime = claimed.length > 0;
       await sql`
         INSERT INTO connections (requester_id, addressee_id, status)
         VALUES (${uid}, ${referrer.id}, 'accepted')
         ON CONFLICT DO NOTHING
       `;
-      await sql`
-        INSERT INTO notifications (user_id, type, from_user_id)
-        VALUES (${referrer.id}, 'connection_accepted', ${uid})
-      `.catch(() => {});
+      if (firstTime) {
+        await sql`
+          INSERT INTO notifications (user_id, type, from_user_id)
+          VALUES (${referrer.id}, 'connection_accepted', ${uid})
+        `.catch(() => {});
+        // The two referral emails used to be sent by the BROWSER from
+        // App.jsx's processReferral(), which is why the server had to hand
+        // back the referrer's email address to do it. Sending them here means
+        // an account created in the mobile app gets them too, and the
+        // response no longer has to disclose one member's address to another.
+        const newUser = await sql`SELECT full_name, email FROM user_profiles WHERE id = ${uid} LIMIT 1`;
+        if (newUser[0]?.email) {
+          sendInternalEmail('welcome_referred', {
+            to_email: newUser[0].email,
+            referrer_name: referrer.full_name || '',
+            referrer_username: referrer.username || '',
+          }).catch(() => {});
+        }
+        if (referrer.email) {
+          sendInternalEmail('referral_converted', {
+            to_email: referrer.email,
+            new_user_name: newUser[0]?.full_name || 'New member',
+          }).catch(() => {});
+        }
+      }
       res.status(200).json({
         referred: true,
         referrerName: referrer.full_name,
         referrerUsername: referrer.username,
-        referrerEmail: referrer.email,
       });
       return;
     }

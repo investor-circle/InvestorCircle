@@ -21,7 +21,8 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import ErrorBoundary from "../src/components/ErrorBoundary";
-import { parseDeepLink } from "../src/utils/deepLinks";
+import { parseDeepLink, parseReferral } from "../src/utils/deepLinks";
+import { rememberReferral, redeemPendingReferral } from "../src/services/referral";
 import * as Notifications from "expo-notifications";
 import { registerDevice, unregisterDevice, urlFromNotification } from "../src/services/pushNotifications";
 import { colors } from "../src/theme/colors";
@@ -47,6 +48,33 @@ function RootNavigator() {
     const sub = AppState.addEventListener("change", (s) => addLog("info", `appstate: ${s}`));
     return () => sub.remove();
   }, []);
+
+  // Invite links (?ref=alice). Deliberately NOT inside the deep-link effect
+  // below: that one waits for a signed-in user, and the whole point of an
+  // invite is that it arrives before there is an account. Capturing it here,
+  // unauthenticated, is what lets the login screen greet the newcomer and the
+  // post-sign-up effect credit whoever invited them.
+  useEffect(() => {
+    const capture = (url) => {
+      const code = parseReferral(url);
+      if (!code) return;
+      addLog("info", `referral: captured "${code}"`);
+      rememberReferral(code);
+    };
+    Linking.getInitialURL().then((url) => url && capture(url));
+    const sub = Linking.addEventListener("url", ({ url }) => capture(url));
+    return () => sub.remove();
+  }, []);
+
+  // …and redeem it once there IS an account. Mirrors the web's post-login
+  // effect (App.jsx calls processReferral there for the same reason). The
+  // server ignores a repeat, and the service clears a code that resolved.
+  useEffect(() => {
+    if (authLoading || !user) return;
+    redeemPendingReferral()
+      .then((r) => r && addLog("info", `referral: redeemed referred=${r.referred}`))
+      .catch(() => {});
+  }, [authLoading, user]);
 
   // Deep links. The web app's shareable URLs are HashRouter URLs, so the
   // route is in the fragment and expo-router's own linking would drop it —
@@ -144,6 +172,8 @@ function RootNavigator() {
       <Stack.Screen name="ticker/[symbol]" />
       <Stack.Screen name="suggested" />
       <Stack.Screen name="settings" />
+      <Stack.Screen name="about" />
+      <Stack.Screen name="contact" />
       <Stack.Screen name="debug" />
       <Stack.Screen name="new" options={{ presentation: "modal" }} />
     </Stack>

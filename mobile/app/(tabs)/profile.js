@@ -32,7 +32,15 @@ function ProfileScreen() {
           <MenuRow icon="albums-outline" label="Your Circles" onPress={() => router.push("/circles")} />
           <MenuRow icon="briefcase-outline" label="Portfolio" onPress={() => router.push("/portfolio")} />
           <MenuRow icon="notifications-outline" label="Notifications" onPress={() => router.push("/notifications")} />
-          <MenuRow icon="settings-outline" label="Settings" onPress={() => router.push("/settings")} />
+          <MenuRow icon="settings-outline" label="Settings" onPress={() => router.push("/settings")} last />
+        </View>
+
+        {/* Everything above is somewhere you go to DO something. These are
+            reference pages people look for once, so they sit in their own
+            group below rather than competing with the app's actual work. */}
+        <View style={styles.menu}>
+          <MenuRow icon="mail-outline" label="Contact us" onPress={() => router.push("/contact")} />
+          <MenuRow icon="information-circle-outline" label="About" onPress={() => router.push("/about")} />
           <MenuRow icon="bug-outline" label="Diagnostics" onPress={() => router.push("/debug")} last />
         </View>
 

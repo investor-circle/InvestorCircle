@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { fetchSignInMethodsForEmail } from "firebase/auth";
 import { auth } from "../../src/config/firebase";
 import { friendlyAuthError, googleOnlyAccountHint } from "../../src/utils/authErrors";
 import { isGoogleSignInConfigured } from "../../src/services/googleAuth";
+import { pendingReferral } from "../../src/services/referral";
 import GoogleSignInButton from "../../src/components/GoogleSignInButton";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 
@@ -34,6 +35,26 @@ export default function LoginScreen() {
   const { login, signup } = useAuth();
   const [tab, setTab] = useState("login");
 
+  // Someone who arrived through an invite link is here to JOIN, not to sign
+  // in, so open on Create account and say who invited them — the same two
+  // things the web's LoginPage does with its stored code. The lookup is
+  // async (AsyncStorage), so unlike the web this cannot be the initial state;
+  // switching tabs once it resolves would yank the form out from under
+  // someone who started typing, hence the "untouched" guard below.
+  const [referrer, setReferrer] = useState(null);
+  const touched = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    pendingReferral().then((code) => {
+      if (cancelled || !code) return;
+      setReferrer(code);
+      if (!touched.current) setTab("signup");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -46,6 +67,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   const reset = (next) => {
+    touched.current = true; // an explicit choice outranks the invite default
     setTab(next);
     setError("");
     setNotice("");
@@ -142,6 +164,16 @@ export default function LoginScreen() {
         <Text style={styles.subtitle}>
           {tab === "forgot" ? "Reset your password" : "Private investing with people you trust"}
         </Text>
+
+        {referrer && tab !== "forgot" ? (
+          <View style={styles.inviteBanner}>
+            <Text style={styles.inviteEmoji}>🎁</Text>
+            <Text style={styles.inviteText}>
+              <Text style={styles.inviteStrong}>@{referrer}</Text> invited you. Create your account and
+              you'll be connected automatically.
+            </Text>
+          </View>
+        ) : null}
 
         {tab !== "forgot" ? (
           <View style={styles.seg}>
@@ -289,6 +321,21 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 22,
   },
+  inviteBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.gainSoft,
+    borderWidth: 1,
+    borderColor: colors.gain,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  inviteEmoji: { fontSize: 18 },
+  inviteText: { flex: 1, color: colors.ink, fontFamily: fonts.regular, fontSize: 13, lineHeight: 19 },
+  inviteStrong: { fontFamily: fonts.bold, color: colors.accentInk },
   seg: { flexDirection: "row", backgroundColor: colors.surface2, borderRadius: 12, padding: 3, gap: 3, marginBottom: 18 },
   segBtn: { flex: 1, height: 40, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   segBtnActive: { backgroundColor: colors.surface },
