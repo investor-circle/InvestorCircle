@@ -975,6 +975,14 @@ export async function getRecommenderUsername(recoId) {
   return api.ok ? api.data.username : null;
 }
 
+/**
+ * One member's display identity — id, username and name.
+ *
+ * Deliberately NOT their email: the server stopped returning it, and stopped
+ * accepting `by: 'email'`, once the notification fan-outs that needed an
+ * address moved server-side. Nothing in the browser should learn another
+ * member's email address.
+ */
 export async function lookupUser(by, value) {
   const api = await callApi('/data?resource=lookups', { method: 'POST', body: { action: 'user-lookup', by, value } });
   return api.ok ? api.data.user : null;

@@ -20,6 +20,7 @@ import { auth } from "../config/firebase";
 import { unregisterCurrentDevice } from "../services/pushNotifications";
 import { clearAvatarCache } from "../services/avatarCache";
 import { clearReactions } from "../services/reactionStore";
+import { identify } from "../services/analytics";
 import { clearFeedCache } from "../services/feedCache";
 import { API_ORIGIN } from "../services/api";
 import { completeSignup } from "../services/api/authApi";
@@ -70,6 +71,12 @@ export function AuthProvider({ children }) {
         }
 
         setUser(firebaseUser);
+        // Tie events to the member, using the SAME uid the web sets — one
+        // person on both clients is one user in the reports, not two. Only
+        // the uid: user properties ride on every event and are retained by
+        // Google, so a name or address here would export member identity for
+        // no analytical gain.
+        identify(firebaseUser.uid);
         const isAdminEmail = ADMIN_EMAILS.includes(firebaseUser.email?.toLowerCase());
         const fullName = firebaseUser.displayName || firebaseUser.email.split("@")[0];
 
@@ -122,6 +129,7 @@ export function AuthProvider({ children }) {
       } else {
         setUser(null);
         setProfile(null);
+        identify(null);
       }
       setAuthLoading(false);
     });

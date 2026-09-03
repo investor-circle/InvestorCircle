@@ -23,6 +23,7 @@ import { getTodayClose, sourceName } from "../../src/services/marketData";
 import Avatar from "../../src/components/Avatar";
 import { primeAvatars } from "../../src/services/avatarCache";
 import { setLiked } from "../../src/services/reactionStore";
+import { track } from "../../src/services/analytics";
 import {
   getEngagement,
   reactToReco,
@@ -115,6 +116,7 @@ function RecoDetailScreen() {
     // row does not. The store is TOLD the outcome instead, so going back
     // shows the card in the state you just left it in.
     setLiked(id, !!next);
+    if (next) track("reco_liked");
     await reactToReco(id, next, next ? { likerName: profile?.full_name || "Someone" } : null);
   }, [eng, liked, id, profile?.full_name]);
 

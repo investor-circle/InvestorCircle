@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { createRecommendation } from "../src/services/api/recommendationsApi";
+import { track } from "../src/services/analytics";
 import { getMyConnections } from "../src/services/api/connectionsApi";
 import { announcePublicReco } from "../src/services/announceReco";
 import { useAuth } from "../src/context/AuthContext";
@@ -136,6 +137,17 @@ function NewRecoScreen() {
     });
     const res = await createRecommendation(recoPayload, recipients);
     setSaving(false);
+    if (res.ok) {
+      // The same five parameters the web sends, so the two clients' ideas
+      // can be compared in one report rather than only counted.
+      track("reco_created", {
+        rec_type: recoPayload.recType || "Buy",
+        asset_class: recoPayload.assetClass || "",
+        is_public: !!isPublic,
+        has_ticker: !!recoPayload.ticker,
+        conviction: recoPayload.conviction || "",
+      });
+    }
     if (res.ok) {
       // A PUBLIC idea creates no delivery rows, so nothing notifies anyone
       // server-side — the author's connections only hear about it if the

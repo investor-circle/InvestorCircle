@@ -9,6 +9,7 @@ import {
   rejectConnection,
   removeConnection,
 } from "../src/services/api/connectionsApi";
+import { track } from "../src/services/analytics";
 import { getMyTrackingList, getMyTrackers, getTrackingCounts } from "../src/services/api/trackingApi";
 import TrackButton from "../src/components/TrackButton";
 import Avatar from "../src/components/Avatar";
@@ -120,7 +121,12 @@ function NetworkScreen() {
           <ActivityIndicator color={colors.accent} />
         ) : isIncoming ? (
           <View style={styles.actionsRow}>
-            <Pressable style={styles.acceptBtn} onPress={withBusy(item.connection_id, () => acceptConnection(item.connection_id))}>
+            <Pressable style={styles.acceptBtn} onPress={withBusy(item.connection_id, () =>
+                acceptConnection(item.connection_id).then((r) => {
+                  track("connection_accepted");
+                  return r;
+                })
+              )}>
               <Text style={styles.acceptText}>Accept</Text>
             </Pressable>
             <Pressable style={styles.rejectBtn} onPress={withBusy(item.connection_id, () => rejectConnection(item.connection_id))}>

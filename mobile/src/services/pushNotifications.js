@@ -4,6 +4,7 @@ import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { registerExpoPushToken, unregisterExpoPushToken } from "./api/pushApi";
 import { addLog } from "../utils/logger";
+import { track } from "./analytics";
 
 /**
  * Device push notifications.
@@ -107,6 +108,10 @@ export async function registerDevice() {
   if (!token) return null;
   const ok = await registerExpoPushToken(token, Platform.OS);
   addLog(ok ? "info" : "warn", `push: token registration ${ok ? "ok" : "failed"}`);
+  // The web reports this when the browser grants permission; the equivalent
+  // moment here is a token the server accepted, since that is when this
+  // device can actually be reached.
+  if (ok && !currentToken) track("push_enabled");
   currentToken = ok ? token : null;
   return currentToken;
 }

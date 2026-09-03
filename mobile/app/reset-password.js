@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { confirmPasswordReset, verifyPasswordResetCode } from "firebase/auth";
 import { auth } from "../src/config/firebase";
 import { pwValid, pwCheck } from "../src/services/api/authApi";
+import { track } from "../src/services/analytics";
 import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
@@ -83,6 +84,7 @@ function ResetPasswordScreen() {
     setBusy(true);
     try {
       await confirmPasswordReset(auth, code, newPw);
+      track("password_reset_completed");
       if (mounted.current) setDone(true);
     } catch (e) {
       if (mounted.current) setError(linkError(e?.code));

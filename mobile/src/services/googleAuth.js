@@ -9,6 +9,7 @@ import {
 } from "firebase/auth";
 import { auth } from "../config/firebase";
 import { addLog } from "../utils/logger";
+import { track } from "./analytics";
 import { friendlyAuthError, googleErrorMessage } from "../utils/authErrors";
 
 /**
@@ -89,7 +90,10 @@ export function useGoogleSignIn() {
       }
       const credential = GoogleAuthProvider.credential(idToken);
       signInWithCredential(auth, credential)
-        .then(() => addLog("info", "google sign-in: firebase credential accepted"))
+        .then(() => {
+          addLog("info", "google sign-in: firebase credential accepted");
+          track("login", { method: "google" });
+        })
         .catch((e) => {
           if (e?.code === "auth/account-exists-with-different-credential") {
             // This email already has an email/password account. Firebase will
@@ -151,6 +155,7 @@ export function useGoogleSignIn() {
       try {
         await linkWithCredential(cred.user, pendingCredential.current);
         addLog("info", "google sign-in: linked google credential to existing account");
+        track("google_account_linked");
       } catch (linkErr) {
         // The password sign-in already succeeded, so the user IS signed in to
         // the right account — only the Google link failed. Degrade quietly

@@ -14,11 +14,15 @@
       "resizeMode": "contain",
       "backgroundColor": "#f5f5fb"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.myinvestorcircle.app",
-      "associatedDomains": ["applinks:myinvestorcircle.com"]
+      "associatedDomains": [
+        "applinks:myinvestorcircle.com"
+      ]
     },
     "android": {
       "package": "com.myinvestorcircle.app",
@@ -33,11 +37,18 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            { "scheme": "https", "host": "myinvestorcircle.com" }
+            {
+              "scheme": "https",
+              "host": "myinvestorcircle.com"
+            }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
-      ]
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -46,6 +57,7 @@
     },
     "plugins": [
       "expo-router",
+      "@react-native-firebase/app",
       "expo-secure-store",
       "./plugins/withCrashLogger"
     ],

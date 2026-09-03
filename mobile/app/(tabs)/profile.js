@@ -34,6 +34,7 @@ function ProfileScreen() {
           <MenuRow icon="search-outline" label="Find investors" onPress={() => router.push("/people")} />
           <MenuRow icon="albums-outline" label="Your Circles" onPress={() => router.push("/circles")} />
           <MenuRow icon="briefcase-outline" label="Portfolio" onPress={() => router.push("/portfolio")} />
+          <MenuRow icon="stats-chart-outline" label="Market Insights" onPress={() => router.push("/market")} />
           <MenuRow icon="notifications-outline" label="Notifications" onPress={() => router.push("/notifications")} />
           <MenuRow icon="settings-outline" label="Settings" onPress={() => router.push("/settings")} last />
         </View>

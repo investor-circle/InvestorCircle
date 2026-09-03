@@ -25,6 +25,7 @@ import ErrorBoundary from "../src/components/ErrorBoundary";
 import SetupGate, { setupIncomplete } from "../src/components/SetupGate";
 import { parseDeepLink, parseReferral, parsePasswordReset, isExternalWebLink } from "../src/utils/deepLinks";
 import { rememberReferral, redeemPendingReferral } from "../src/services/referral";
+import { trackScreen } from "../src/services/analytics";
 import * as Notifications from "expo-notifications";
 import { registerDevice, unregisterDevice, urlFromNotification } from "../src/services/pushNotifications";
 import { colors } from "../src/theme/colors";
@@ -44,6 +45,16 @@ function RootNavigator() {
   // the difference between "our code hung" and "Android froze/killed us".
   useEffect(() => {
     addLog("info", `nav: route="${segKey || "/"}" authLoading=${authLoading} signedIn=${!!user}`);
+  }, [segKey, authLoading, user]);
+
+  // Screen tracking, in ONE place rather than a call per screen. The web
+  // does the same thing at its single setPage wrapper, and reports it as
+  // `page_view` with a `page_name` — matched exactly here so a visit is one
+  // row in one report whichever client it came from. Only while signed in:
+  // the login screen is not a page anyone navigated to.
+  useEffect(() => {
+    if (authLoading || !user) return;
+    trackScreen(segKey || "home");
   }, [segKey, authLoading, user]);
 
   useEffect(() => {
@@ -215,6 +226,7 @@ function RootNavigator() {
         <Stack.Screen name="portfolio" />
         <Stack.Screen name="portfolio-import" />
         <Stack.Screen name="ticker/[symbol]" />
+        <Stack.Screen name="market" />
         <Stack.Screen name="suggested" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="reset-password" />

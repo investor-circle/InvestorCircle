@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { searchPeople, getDiscoverMore } from "../src/services/api/peopleApi";
 import { sendConnectionRequest } from "../src/services/api/connectionsApi";
+import { track } from "../src/services/analytics";
 import Avatar from "../src/components/Avatar";
 import { primeAvatars } from "../src/services/avatarCache";
 import { colors, fonts } from "../src/theme/colors";
@@ -54,6 +55,7 @@ function PeopleScreen() {
   const connect = useCallback(async (person) => {
     setSent((s) => ({ ...s, [person.id]: "pending" }));
     const res = await sendConnectionRequest(person.id);
+    if (res) track("connection_sent");
     if (!mounted.current) return;
     setSent((s) => ({ ...s, [person.id]: res?.error ? "error" : "done" }));
   }, []);

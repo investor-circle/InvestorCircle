@@ -176,10 +176,10 @@ describe("parsePasswordReset", () => {
 
 describe("isExternalWebLink", () => {
   it("is true for our own pages this build cannot draw", () => {
-    // A creator claim link, Market Insights, the privacy policy — each one
-    // used to open the app and leave the person looking at the feed.
+    // A creator claim link, the privacy policy — each one used to open the
+    // app and leave the person looking at the feed. (Market Insights was on
+    // this list until the app grew a screen for it; see below.)
     expect(isExternalWebLink("https://myinvestorcircle.com/?claim_token=xyz")).toBe(true);
-    expect(isExternalWebLink("https://myinvestorcircle.com/#/market")).toBe(true);
     expect(isExternalWebLink("https://myinvestorcircle.com/#/privacy")).toBe(true);
     // A page added to the web after this build shipped.
     expect(isExternalWebLink("https://myinvestorcircle.com/#/something-new")).toBe(true);
@@ -189,6 +189,9 @@ describe("isExternalWebLink", () => {
     // Otherwise a shared idea would open a browser instead of the app.
     expect(isExternalWebLink("https://myinvestorcircle.com/#/investor/alice/reco/9")).toBe(false);
     expect(isExternalWebLink("https://myinvestorcircle.com/#/circle/my-slug")).toBe(false);
+    // Market Insights now has a screen here, so its link stays in the app.
+    expect(isExternalWebLink("https://myinvestorcircle.com/#/market")).toBe(false);
+    expect(parseDeepLink("https://myinvestorcircle.com/#/market")).toEqual({ path: "/market" });
     expect(isExternalWebLink("https://myinvestorcircle.com/?ref=alice")).toBe(false);
     expect(isExternalWebLink("https://myinvestorcircle.com/?mode=resetPassword&oobCode=A")).toBe(false);
   });

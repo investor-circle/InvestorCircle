@@ -136,6 +136,21 @@ function PulseScreen() {
       >
         {hero}
 
+        {/* Market Insights lives on its own screen — it aggregates every
+            public idea by stock, which is a different question from Pulse's
+            "what moved recently", but the same intent, so this is where
+            people look for it. */}
+        <Pressable style={styles.insightsLink} onPress={() => router.push("/market")}>
+          <View style={styles.insightsIcon}>
+            <Ionicons name="stats-chart" size={17} color={colors.accentInk} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.insightsTitle}>Market Insights</Text>
+            <Text style={styles.insightsSub}>Consensus and conviction across every stock</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={17} color={colors.muted} />
+        </Pressable>
+
         {nothing ? (
           <View style={styles.empty}>
             <Ionicons name={error ? "cloud-offline-outline" : "pulse-outline"} size={40} color={colors.line2} />
@@ -237,6 +252,28 @@ function Section({ icon, title, sub, children }) {
 }
 
 const styles = StyleSheet.create({
+  insightsLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 14,
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
+  insightsIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  insightsTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14.5 },
+  insightsSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
   flex: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   sectionHead: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, marginBottom: 10 },

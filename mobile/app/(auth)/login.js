@@ -21,6 +21,7 @@ import { auth } from "../../src/config/firebase";
 import { friendlyAuthError, googleOnlyAccountHint } from "../../src/utils/authErrors";
 import { isGoogleSignInConfigured } from "../../src/services/googleAuth";
 import { pendingReferral } from "../../src/services/referral";
+import { track } from "../../src/services/analytics";
 import GoogleSignInButton from "../../src/components/GoogleSignInButton";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 
@@ -114,6 +115,9 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await login(email.trim(), password);
+      // Same event name and `method` value the web sends, so one funnel
+      // covers both clients rather than two that have to be unioned by hand.
+      track("login", { method: "email" });
       // Navigation happens in app/_layout.js once onAuthStateChanged fires.
     } catch (e) {
       // If this email has no password sign-in method (the account was created
@@ -157,6 +161,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const res = await signup({ email, password, firstName, lastName, username, consentTerms, consentData });
+      track("sign_up", { method: "email" });
       if (!res.ok) {
         setError(
           res.status === 409
@@ -184,6 +189,7 @@ export default function LoginScreen() {
     setError("");
     setLoading(true);
     await requestPasswordReset(email);
+    track("password_reset_requested");
     setLoading(false);
     // Always the same confirmation — the server never reveals whether the
     // address exists (anti-enumeration), so neither does this screen.

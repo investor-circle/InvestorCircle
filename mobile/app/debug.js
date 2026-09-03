@@ -7,6 +7,7 @@ import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
 import { getLogs, clearLogs, formatLogs } from "../src/utils/logger";
 import { API_ORIGIN } from "../src/services/api";
+import { isAnalyticsAvailable } from "../src/services/analytics";
 import { useAuth } from "../src/context/AuthContext";
 import { colors, fonts } from "../src/theme/colors";
 
@@ -32,6 +33,10 @@ export default function DebugScreen() {
     `api: ${API_ORIGIN}`,
     `uid: ${user?.uid ?? "(signed out)"}`,
     `profile: ${profile?.full_name ?? "—"}`,
+    // Whether this BUILD can report. Analytics degrades silently by design,
+    // so without a line here "no events in GA4" is indistinguishable from
+    // "nobody used the app".
+    `analytics: ${isAnalyticsAvailable() ? "on" : "unavailable in this build"}`,
   ].join("\n");
 
   const copyAll = async () => {

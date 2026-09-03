@@ -25,7 +25,8 @@
  *     feature-vote:       { featureKey }                        (auth: none)
  *     contact-submit:     { name?, email, subject, category?, message }  (auth: none)
  *     about-us-save:      { html }                              (auth: admin)
- *     user-lookup:        { by: 'id'|'username'|'email', value }         (auth: user)
+ *     user-lookup:        { by: 'id'|'username', value }  -> id/username/name only
+ *                          (auth: user; never returns another member's email)
  *     avatar-upload:      { dataUrl }                                    (auth: user)
  *     avatars-batch:      { values: [id, ...] }  -> [{ id, avatar_url }]    (auth: user)
  *     expo-push-register:   { token, platform? }                          (auth: user)
@@ -34,12 +35,15 @@
  * GET  ?resource=lookups&action=discover-people                         (auth: user)
  * GET  ?resource=lookups&action=discover-more                           (auth: user)
  *
- * SECURITY: this file only ever exposes id/username/full_name/email plus a
+ * SECURITY: this file only ever exposes id/username/full_name plus a
  * small set of public-profile display fields (avatar_url, avatar_color,
  * aggregate recommendation stats, connection status) from user_profiles —
  * never sebi_*, claim_token, claim_status, claimed_by_uid, consent_*,
  * referred_by, or any other sensitive column. Every write derives identity
  * from requireUid()/requireAdmin() — never from a client-supplied id.
+ * No action here returns another member's EMAIL ADDRESS: the notification
+ * paths that once needed one now send their own mail server-side
+ * (notifyMember.js, and process-referral below).
  */
 
 import { sql, parseBody, requireUid, requireAdmin, sendAuthError } from '../auth.js';
@@ -778,22 +782,30 @@ export default async function handleLookups(req, res) {
       return;
     }
 
+    // Resolve one member to their display identity.
+    //
+    // This used to return their EMAIL ADDRESS, and to allow looking someone up
+    // BY email. Both existed only to serve notification code that has since
+    // moved server-side (handlers/connections.js and lookups' own
+    // process-referral now send those emails themselves), so a client no
+    // longer has any reason to learn another member's address — and being
+    // able to probe an address for an account is member enumeration, which is
+    // worth closing whether or not anything was using it.
+    //
+    // The two remaining callers (App.jsx's pending-connect flow, and the
+    // share popover in features/recommendations) use only the id, username
+    // and name, so nothing here is a behaviour change for them.
     if (action === 'user-lookup') {
       try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
       const by = String(body.by || '');
       const value = body.value;
-      if (!['id', 'username', 'email'].includes(by) || !value) {
-        res.status(400).json({ error: 'by must be id|username|email and value is required' });
+      if (!['id', 'username'].includes(by) || !value) {
+        res.status(400).json({ error: 'by must be id|username and value is required' });
         return;
       }
-      let rows;
-      if (by === 'id') {
-        rows = await sql`SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE id = ${String(value)} LIMIT 1`;
-      } else if (by === 'username') {
-        rows = await sql`SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE username = ${String(value)} LIMIT 1`;
-      } else {
-        rows = await sql`SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE email = ${String(value)} LIMIT 1`;
-      }
+      const rows = by === 'id'
+        ? await sql`SELECT id, username, full_name, first_name, last_name FROM user_profiles WHERE id = ${String(value)} LIMIT 1`
+        : await sql`SELECT id, username, full_name, first_name, last_name FROM user_profiles WHERE username = ${String(value)} LIMIT 1`;
       res.status(200).json({ user: rows[0] || null });
       return;
     }

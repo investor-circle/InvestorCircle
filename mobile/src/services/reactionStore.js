@@ -1,4 +1,5 @@
 import { getReactionsBatch, reactToReco } from "./api/engagementApi";
+import { track } from "./analytics";
 
 /**
  * "Have I liked this?" for every idea currently on screen.
@@ -88,6 +89,8 @@ export async function toggleReaction(recoId) {
   emit();
 
   const ok = await reactToReco(id, next ? "like" : null);
+  // Only a like, never an unlike — the same asymmetry the web has.
+  if (ok && next) track("reco_liked");
   if (!ok) {
     liked.set(id, !next);
     emit();
