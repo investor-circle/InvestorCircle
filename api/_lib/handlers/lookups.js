@@ -26,7 +26,6 @@
  *     contact-submit:     { name?, email, subject, category?, message }  (auth: none)
  *     about-us-save:      { html }                              (auth: admin)
  *     user-lookup:        { by: 'id'|'username'|'email', value }         (auth: user)
- *     user-lookup-batch:  { by: 'id', values: [...] }                    (auth: user)
  *     avatar-upload:      { dataUrl }                                    (auth: user)
  *     avatars-batch:      { values: [id, ...] }  -> [{ id, avatar_url }]    (auth: user)
  *     expo-push-register:   { token, platform? }                          (auth: user)
@@ -58,10 +57,9 @@ const ALLOWED_REG_STATUS_LOOKUPS = ['self_directed', 'sebi_ra', 'sebi_ria'];
 const MAX_AVATAR_DATA_URL_LENGTH = 130000;
 const AVATAR_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 // Avatars are data: URIs (up to MAX_AVATAR_DATA_URL_LENGTH each), so a batch
-// is genuinely heavy — 60 of them would be a multi-megabyte response. Capped
-// well below the 200 used for the text-only user-lookup-batch; clients that
-// need more page through several calls. Mirrored as BATCH_LIMIT in
-// mobile/src/services/avatarCache.js.
+// is genuinely heavy — 60 of them would be a multi-megabyte response. Kept
+// small deliberately; clients that need more page through several calls.
+// Mirrored as BATCH_LIMIT in mobile/src/services/avatarCache.js.
 const MAX_AVATAR_BATCH = 25;
 // 'cv' was the old skippable "Build your Investor CV" checklist step
 // (pre-Phase-5.5-revision) — username/consent is now mandatory and folded
@@ -765,21 +763,6 @@ export default async function handleLookups(req, res) {
         rows = await sql`SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE email = ${String(value)} LIMIT 1`;
       }
       res.status(200).json({ user: rows[0] || null });
-      return;
-    }
-
-    if (action === 'user-lookup-batch') {
-      try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
-      const by = String(body.by || '');
-      const values = Array.isArray(body.values) ? body.values.map(String).slice(0, 200) : [];
-      if (by !== 'id' || !values.length) {
-        res.status(400).json({ error: 'by must be id and values must be a non-empty array' });
-        return;
-      }
-      const rows = await sql`
-        SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE id = ANY(${values})
-      `;
-      res.status(200).json({ users: rows });
       return;
     }
 
