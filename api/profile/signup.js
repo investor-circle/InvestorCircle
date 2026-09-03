@@ -41,6 +41,7 @@
 import { neon } from '@neondatabase/serverless';
 import { initializeApp, cert, getApps, getApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { sendInternalEmail } from '../_lib/notifyMember.js';
 
 const { DATABASE_URL, FIREBASE_SERVICE_ACCOUNT_JSON } = process.env;
 
@@ -155,7 +156,13 @@ export default async function handler(req, res) {
         updated_at = now()
       RETURNING id, email, full_name, first_name, last_name, username, is_admin,
                 avatar_url, avatar_color, onboarding_cv_done, onboarding_discover_done,
-                consent_terms_accepted, consent_data_accepted
+                consent_terms_accepted, consent_data_accepted,
+                -- Was this a real INSERT, or did ON CONFLICT turn it into an
+                -- UPDATE? xmax is 0 only for a freshly inserted row. Needed
+                -- because this endpoint is also how an interrupted signup is
+                -- resumed (OnboardingGate), and a welcome email should arrive
+                -- once, not every time someone finishes setting up.
+                (xmax = 0) AS is_new_signup
     `;
   } catch (e) {
     // Unique-violation on the username column
@@ -166,6 +173,18 @@ export default async function handler(req, res) {
     console.error('[profile/signup] DB query failed:', e?.message);
     res.status(500).json({ error: 'Database error' });
     return;
+  }
+
+  // Welcome email, server-side so BOTH clients send it. It used to be fired
+  // by the browser after signup, which meant an account created in the mobile
+  // app received nothing at all. Fire-and-forget: a missing welcome email must
+  // never fail a signup that otherwise succeeded.
+  if (rows[0]?.is_new_signup && rows[0]?.email) {
+    sendInternalEmail('signup_welcome', {
+      to_email:   rows[0].email,
+      first_name: rows[0].first_name || '',
+      full_name:  rows[0].full_name || '',
+    }).catch(() => {});
   }
 
   res.status(200).json({ profile: rows[0] });

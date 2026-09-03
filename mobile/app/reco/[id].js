@@ -18,7 +18,8 @@ import RecoCard from "../../src/components/RecoCard";
 import { getReco } from "../../src/utils/recoStore";
 import { getPublicFeed } from "../../src/services/api/recommendationsApi";
 import { mapPublicReco } from "../../src/utils/feed";
-import { fmtDate } from "../../src/utils/format";
+import { fmt, fmtDate } from "../../src/utils/format";
+import { getTodayClose, sourceName } from "../../src/services/marketData";
 import Avatar from "../../src/components/Avatar";
 import { primeAvatars } from "../../src/services/avatarCache";
 import {
@@ -151,13 +152,54 @@ function RecoDetailScreen() {
   const toggleExit = useCallback(async () => {
     setOwnerBusy(true);
     const next = !exited;
-    // Exit price is stamped server-side from market data; don't invent one.
-    const res = next ? await setExitSignal(id) : await cancelExitSignal(id);
+
+    if (!next) {
+      const res = await cancelExitSignal(id);
+      if (mounted.current) {
+        if (res) setExited(false);
+        setOwnerBusy(false);
+      }
+      return;
+    }
+
+    // The exit price is the idea's FINAL result — what the track record and
+    // the ICI score are computed from. The server stores what it is given and
+    // does NOT look one up (an earlier comment here claimed it did), so an
+    // exit sent without a price recorded NULL, and the displayed return then
+    // fell back to the current price: a closed idea whose result kept moving
+    // with the market. The web fetches the close and sends it; so do we.
+    //
+    // A price we cannot get is not a reason to block the exit — the web says
+    // as much in its confirmation and lets it through unstamped.
+    const quote = await getTodayClose(reco?.ticker, reco?.exchange || "NSE");
+    if (!mounted.current) return;
+
+    const confirmExit = () =>
+      new Promise((resolve) => {
+        Alert.alert(
+          `Exit ${reco?.ticker || "this idea"}?`,
+          quote
+            ? `Exit price: ${fmt(quote.price)} (${sourceName(quote.source)} · ${quote.date})\n\n` +
+              "This records your exit and closes the idea."
+            : "Price unavailable — it will not be stamped.\n\nThis still records your exit and closes the idea.",
+          [
+            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+            { text: "Exit", style: "destructive", onPress: () => resolve(true) },
+          ]
+        );
+      });
+
+    if (!(await confirmExit())) {
+      if (mounted.current) setOwnerBusy(false);
+      return;
+    }
+
+    const res = await setExitSignal(id, quote?.price ?? null, quote?.source ?? null);
     if (mounted.current) {
-      if (res) setExited(next);
+      if (res) setExited(true);
       setOwnerBusy(false);
     }
-  }, [exited, id]);
+  }, [exited, id, reco?.ticker, reco?.exchange]);
 
   // Reversible: keeps your copy, just takes it out of the feed. The web has
   // this alongside remove (toggleHide in Recommendations.jsx); mobile offered

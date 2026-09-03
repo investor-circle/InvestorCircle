@@ -41,7 +41,9 @@ verification, which needs the Firebase Admin SDK, stays in api/email.py.
 INTERNAL_SECRET_HEADER = "x-internal-secret"
 
 POLICY = {
-    "signup_welcome":         {"caller": "user",     "to": "self",  "identity": {}},
+    # Sent by /api/profile/signup on a genuine first signup, so both clients
+    # get it — the browser used to send this itself and mobile never did.
+    "signup_welcome":         {"caller": "internal", "to": "any",   "identity": {}},
     "welcome_referred":       {"caller": "user",     "to": "self",  "identity": {}},
     # Self-addressed, so there is nobody to deceive: the body's own name is
     # fine, and forcing it would show a fallback (an email local part) to the
@@ -50,8 +52,11 @@ POLICY = {
     "claim_admin_notify":     {"caller": "user",     "to": "admin",
                                "identity": {"creator_name": "name", "claimer_email": "email"}},
     "referral_converted":     {"caller": "user",     "to": "any",   "identity": {"new_user_name": "name"}},
-    "connection_request":     {"caller": "user",     "to": "any",   "identity": {"from_name": "name"}},
-    "connection_accepted":    {"caller": "user",     "to": "any",   "identity": {"their_name": "name"}},
+    # Raised by the server when it records the connection (handlers/
+    # connections.js), so that both clients get them — the browser used to
+    # send these itself and the mobile app never learned to.
+    "connection_request":     {"caller": "internal", "to": "any",   "identity": {}},
+    "connection_accepted":    {"caller": "internal", "to": "any",   "identity": {}},
     "contact_recommendation": {"caller": "user",     "to": "any",   "identity": {"from_name": "name"}},
     "invite":                 {"caller": "user",     "to": "any",   "identity": {"from_name": "name"}},
     # Raised by the server when it records a comment; a client asking for one

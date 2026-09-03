@@ -81,7 +81,7 @@ print("\nimpersonation")
 
 
 def _forces_sender_name():
-    to, body = call("connection_request", body={"to_email": "bob@example.com", "from_name": "Support Team"})
+    to, body = call("contact_recommendation", body={"to_email": "bob@example.com", "from_name": "Support Team"})
     assert to == "bob@example.com", to
     assert body["from_name"] == "Asha Rao", body
 
@@ -116,7 +116,7 @@ print("\nrecipient control")
 
 def _self_addressed_ignores_the_request():
     # Otherwise a signed-in user could send a welcome/claim email to anyone.
-    for t in ("signup_welcome", "welcome_referred", "claim_submitted"):
+    for t in ("welcome_referred", "claim_submitted"):
         to, _ = call(t, body={"to_email": "victim@example.com"})
         assert to == USER["email"], "%s -> %s" % (t, to)
 
@@ -130,14 +130,14 @@ def _admin_notify_goes_to_the_team_inbox():
 
 
 def _member_to_member_still_allowed():
-    # These genuinely notify another member; refusing them would break the
+    # This genuinely notifies another member; refusing it would break the
     # product. The sender's name is forced instead (see above).
-    to, _ = call("connection_accepted", body={"to_email": "bob@example.com"})
+    to, _ = call("contact_recommendation", body={"to_email": "bob@example.com"})
     assert to == "bob@example.com", to
 
 
 def _missing_recipient_is_refused():
-    to, err = call("connection_request", body={})
+    to, err = call("contact_recommendation", body={})
     assert to is None and "to_email" in err, err
 
 
@@ -151,10 +151,14 @@ print("\ncaller class")
 
 
 def _internal_only_template_refuses_a_client():
-    to, err = call("reco_comment", body={"to_email": "bob@example.com"})
-    assert to is None and "server" in err, err
-    to, _ = call("reco_comment", kind="internal", token=None, body={"to_email": "bob@example.com"})
-    assert to == "bob@example.com", to
+    # reco_comment, and now both connection notifications: the server raises
+    # these from the row it just wrote, so a client asking for one would be
+    # claiming a connection or a comment that may not exist.
+    for t in ("reco_comment", "connection_request", "connection_accepted", "signup_welcome"):
+        to, err = call(t, body={"to_email": "bob@example.com"})
+        assert to is None and "server" in err, "%s: %s" % (t, err)
+        to, _ = call(t, kind="internal", token=None, body={"to_email": "bob@example.com"})
+        assert to == "bob@example.com", t
 
 
 def _admin_template_refuses_a_normal_member():
