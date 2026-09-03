@@ -66,3 +66,45 @@ describe("sendPush", () => {
     await expect(sendPush("u1", { type: "connection_request" })).resolves.toBeUndefined();
   });
 });
+
+// ── No second, unauthenticated sender ────────────────────────────────────────
+//
+// /api/email and /api/push both require a verified token now. The risk is not
+// that this file forgets one — it is that somewhere ELSE grows its own little
+// sender that doesn't. That is not hypothetical: LoginPage.jsx had exactly
+// that, a local sendEmail for the signup welcome, and securing the endpoint
+// silently 401'd it until this check was written.
+//
+// So: find every fetch to either endpoint anywhere in the client, and require
+// that the same call carries an Authorization header.
+
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+
+const clientFiles = (dir, acc = []) => {
+  for (const name of readdirSync(dir)) {
+    if (name === "node_modules" || name === "dist" || name.startsWith(".")) continue;
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) clientFiles(p, acc);
+    else if (/\.(js|jsx)$/.test(name) && !name.includes(".test.")) acc.push(p);
+  }
+  return acc;
+};
+
+describe("every client call to the notification endpoints is authenticated", () => {
+  it.each(["src", "mobile/src", "mobile/app"])("%s", (root) => {
+    const offenders = [];
+    for (const file of clientFiles(root)) {
+      const src = readFileSync(file, "utf8");
+      // A fetch whose URL argument mentions one of the endpoints, plus the
+      // rest of that call expression.
+      const re = /fetch\(\s*[^)]*?(EMAIL_API|PUSH_API|\/api\/(email|push))[\s\S]{0,400}/g;
+      for (const m of src.matchAll(re)) {
+        if (!m[0].includes("Authorization")) {
+          offenders.push(`${file}: fetch to ${m[1]} with no Authorization header`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
