@@ -70,11 +70,17 @@ export async function checkUsername(username, excludeId) {
  *
  * Returns null on success, or an error string to show.
  */
-export async function saveUsername(username) {
-  const api = await callApi("/data?resource=lookups", {
-    method: "POST",
-    body: { action: "username-save", username: String(username || "").trim().toLowerCase() },
-  });
+export async function saveUsername(username, consent) {
+  const body = { action: "username-save", username: String(username || "").trim().toLowerCase() };
+  // Sent together only when completing the mandatory setup gate; a plain
+  // username change from an already-consented account omits them, so editing
+  // your handle never rewrites what you agreed to (see the action's contract
+  // in api/_lib/handlers/lookups.js).
+  if (consent) {
+    body.consentTerms = consent.terms === true;
+    body.consentData = consent.data === true;
+  }
+  const api = await callApi("/data?resource=lookups", { method: "POST", body });
   if (api.ok) return null;
   const err = api.data?.error;
   if (err === "taken") return "That username is already taken.";

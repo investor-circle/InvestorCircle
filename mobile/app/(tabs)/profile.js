@@ -3,10 +3,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import Avatar from "../../src/components/Avatar";
 import { withBoundary } from "../../src/components/ErrorBoundary";
+
+const PRIVACY_URL = "https://myinvestorcircle.com/#/privacy";
 
 function ProfileScreen() {
   const { profile, logout, userIsAdmin } = useAuth();
@@ -41,6 +44,14 @@ function ProfileScreen() {
         <View style={styles.menu}>
           <MenuRow icon="mail-outline" label="Contact us" onPress={() => router.push("/contact")} />
           <MenuRow icon="information-circle-outline" label="About" onPress={() => router.push("/about")} />
+          {/* Opened in a browser tab, not ported: it is a legal document that
+              must match the web's word for word, and a copy inside the app
+              would be a copy that drifts out of date. */}
+          <MenuRow
+            icon="shield-checkmark-outline"
+            label="Privacy policy"
+            onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {})}
+          />
           <MenuRow icon="bug-outline" label="Diagnostics" onPress={() => router.push("/debug")} last />
         </View>
 

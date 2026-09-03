@@ -24,8 +24,11 @@ export const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
  * Write the new user's name/username/consent to their profile row straight
  * after the Firebase account is created. Mirrors the web signup step —
  * identity comes from the verified ID token, never a client-supplied uid.
+ *
+ * Callers must pass the consent values the person actually gave; the login
+ * screen refuses to create the account until both are ticked.
  */
-export async function completeSignup(idToken, { firstName, lastName, username }) {
+export async function completeSignup(idToken, { firstName, lastName, username, consentTerms, consentData }) {
   try {
     const res = await fetch(SIGNUP_API, {
       method: "POST",
@@ -34,8 +37,12 @@ export async function completeSignup(idToken, { firstName, lastName, username })
         firstName: (firstName || "").trim(),
         lastName: (lastName || "").trim(),
         username: (username || "").trim(),
-        consentTerms: true,
-        consentData: true,
+        // Passed through from the ticked boxes, never assumed. These used to
+        // be hardcoded `true` while the signup form asked for neither, so
+        // every account created in the app recorded an agreement its owner
+        // was never shown. The server writes what it is given.
+        consentTerms: consentTerms === true,
+        consentData: consentData === true,
       }),
     });
     if (res.ok) return { ok: true };

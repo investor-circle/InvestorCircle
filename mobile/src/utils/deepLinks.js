@@ -112,3 +112,56 @@ export function parseReferral(url) {
   code = code.trim().toLowerCase();
   return USERNAME_RE.test(code) ? code : null;
 }
+
+/**
+ * The Firebase oobCode from a password-reset link, or null.
+ *
+ * WHY THIS MATTERS MORE THAN IT LOOKS: the Android intent filter claims
+ * https://myinvestorcircle.com with autoVerify and NO path restriction (see
+ * app.json), so the app intercepts every link to the site — including the
+ * reset link api/reset.py emails out, which is
+ * `https://myinvestorcircle.com/?mode=resetPassword&oobCode=…`.
+ *
+ * parseDeepLink() cannot see it (a query on the root, no route), so tapping
+ * that link on a phone with the app installed opened the app and dropped the
+ * code: the person could not reset their password from their phone at all,
+ * even if they only ever use the web app. Handling it here is what makes the
+ * app a working destination for the link it has taken over.
+ */
+export function parsePasswordReset(url) {
+  if (!url || typeof url !== "string") return null;
+  if (!/[?&]mode=resetPassword(?:[&#]|$)/.test(url)) return null;
+  const m = url.match(/[?&]oobCode=([^&#\s]+)/);
+  if (!m) return null;
+  let code;
+  try {
+    code = decodeURIComponent(m[1]);
+  } catch (_) {
+    code = m[1]; // a code we can't decode is still worth letting Firebase judge
+  }
+  return code.trim() || null;
+}
+
+/**
+ * True when this is one of our own web links that the app has taken over but
+ * cannot render itself — a creator claim link, Market Insights, the privacy
+ * policy, or any page added to the web app after this build shipped.
+ *
+ * The same over-broad intent filter that broke password reset silently
+ * swallows all of these too: the app opens, nothing happens, and the link
+ * appears broken. Sending them to a browser tab instead means an unhandled
+ * link always goes SOMEWHERE — and that a page added to the web later keeps
+ * working on phones without needing a new app build.
+ *
+ * Deliberately excludes the bare site root: tapping a plain link to the site
+ * should open the app, not bounce straight back out to a browser.
+ */
+export function isExternalWebLink(url) {
+  if (!url || typeof url !== "string") return false;
+  if (!/^https?:\/\//i.test(url)) return false; // our own scheme is never external
+  if (parseDeepLink(url) || parseReferral(url) || parsePasswordReset(url)) return false;
+
+  const afterHost = url.replace(/^https?:\/\/[^/?#]*/i, "");
+  // "", "/", "/#", "/#/" — the site root in its various spellings.
+  return !/^\/?(#\/?)?$/.test(afterHost);
+}

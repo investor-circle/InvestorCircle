@@ -1,4 +1,4 @@
-import { parseDeepLink, parseReferral } from "./deepLinks";
+import { parseDeepLink, parseReferral, parsePasswordReset, isExternalWebLink } from "./deepLinks";
 
 // The web app's shareable URLs are HashRouter URLs, so the route lives in the
 // fragment. Android intent filters only match scheme/host/path — if this
@@ -134,5 +134,81 @@ describe("parseReferral", () => {
     expect(parseReferral("https://myinvestorcircle.com/?ref=" + "a".repeat(60))).toBeNull();
     expect(parseReferral("https://myinvestorcircle.com/?ref=%3Cscript%3E")).toBeNull();
     expect(parseReferral("https://myinvestorcircle.com/?ref=al%GGice")).toBeNull();
+  });
+});
+
+// The Android intent filter claims https://myinvestorcircle.com with
+// autoVerify and NO path restriction (app.json), so this app intercepts EVERY
+// link to the site. Two consequences these lock down: the reset link the app
+// stole must actually work here, and a link this build cannot draw must go
+// somewhere rather than silently doing nothing.
+
+describe("parsePasswordReset", () => {
+  const LINK = "https://myinvestorcircle.com/?mode=resetPassword&oobCode=ABC123";
+
+  it("reads the code from the link api/reset.py sends", () => {
+    expect(parsePasswordReset(LINK)).toBe("ABC123");
+  });
+
+  it("reads it whatever order the parameters come in", () => {
+    expect(parsePasswordReset("https://x.com/?oobCode=ABC123&mode=resetPassword")).toBe("ABC123");
+    expect(parsePasswordReset("https://x.com/?mode=resetPassword&lang=en&oobCode=ABC123")).toBe("ABC123");
+  });
+
+  it("percent-decodes the code", () => {
+    expect(parsePasswordReset("https://x.com/?mode=resetPassword&oobCode=a%2Fb")).toBe("a/b");
+  });
+
+  it("ignores links that are not a password reset", () => {
+    // Firebase uses the same shape for other actions; acting on one of those
+    // would send someone to a password form for an email-verification link.
+    expect(parsePasswordReset("https://x.com/?mode=verifyEmail&oobCode=ABC")).toBeNull();
+    expect(parsePasswordReset("https://x.com/?mode=recoverEmail&oobCode=ABC")).toBeNull();
+    expect(parsePasswordReset("https://myinvestorcircle.com/#/investor/alice")).toBeNull();
+    expect(parsePasswordReset("")).toBeNull();
+    expect(parsePasswordReset(null)).toBeNull();
+  });
+
+  it("returns null when the mode is right but the code is missing", () => {
+    expect(parsePasswordReset("https://x.com/?mode=resetPassword")).toBeNull();
+  });
+});
+
+describe("isExternalWebLink", () => {
+  it("is true for our own pages this build cannot draw", () => {
+    // A creator claim link, Market Insights, the privacy policy — each one
+    // used to open the app and leave the person looking at the feed.
+    expect(isExternalWebLink("https://myinvestorcircle.com/?claim_token=xyz")).toBe(true);
+    expect(isExternalWebLink("https://myinvestorcircle.com/#/market")).toBe(true);
+    expect(isExternalWebLink("https://myinvestorcircle.com/#/privacy")).toBe(true);
+    // A page added to the web after this build shipped.
+    expect(isExternalWebLink("https://myinvestorcircle.com/#/something-new")).toBe(true);
+  });
+
+  it("is false for anything the app handles itself", () => {
+    // Otherwise a shared idea would open a browser instead of the app.
+    expect(isExternalWebLink("https://myinvestorcircle.com/#/investor/alice/reco/9")).toBe(false);
+    expect(isExternalWebLink("https://myinvestorcircle.com/#/circle/my-slug")).toBe(false);
+    expect(isExternalWebLink("https://myinvestorcircle.com/?ref=alice")).toBe(false);
+    expect(isExternalWebLink("https://myinvestorcircle.com/?mode=resetPassword&oobCode=A")).toBe(false);
+  });
+
+  it("is false for the bare site root, in every spelling", () => {
+    // Tapping a plain link to the site should open the app, not bounce
+    // straight back out to a browser.
+    for (const u of [
+      "https://myinvestorcircle.com",
+      "https://myinvestorcircle.com/",
+      "https://myinvestorcircle.com/#",
+      "https://myinvestorcircle.com/#/",
+    ]) {
+      expect(isExternalWebLink(u)).toBe(false);
+    }
+  });
+
+  it("is false for the app's own scheme, which no browser can open", () => {
+    expect(isExternalWebLink("myinvestorcircle://whatever")).toBe(false);
+    expect(isExternalWebLink("")).toBe(false);
+    expect(isExternalWebLink(null)).toBe(false);
   });
 });

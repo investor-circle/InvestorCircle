@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import RecoCard from "./RecoCard";
 import { putReco } from "../utils/recoStore";
 import { primeAvatars } from "../services/avatarCache";
+import { primeReactions } from "../services/reactionStore";
 import { colors, fonts } from "../theme/colors";
 
 /**
@@ -39,6 +40,9 @@ export default function RecoListScreen({ hero, loader, subHeader, emptyTitle, em
       setError(false);
       // After the list is set, never before — the pictures arrive behind it.
       primeAvatars((data || []).map((r) => r.from));
+      // Which of these the caller has already liked — same hydration the web
+      // does after every feed load (App.jsx -> getReactionsBatch).
+      primeReactions((data || []).map((r) => r.id));
     } catch (e) {
       if (!mounted.current) return;
       setError(true);

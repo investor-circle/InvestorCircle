@@ -9,8 +9,9 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { AppState } from "react-native";
+import { AppState, StyleSheet, View } from "react-native";
 import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -21,14 +22,15 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import ErrorBoundary from "../src/components/ErrorBoundary";
-import { parseDeepLink, parseReferral } from "../src/utils/deepLinks";
+import SetupGate, { setupIncomplete } from "../src/components/SetupGate";
+import { parseDeepLink, parseReferral, parsePasswordReset, isExternalWebLink } from "../src/utils/deepLinks";
 import { rememberReferral, redeemPendingReferral } from "../src/services/referral";
 import * as Notifications from "expo-notifications";
 import { registerDevice, unregisterDevice, urlFromNotification } from "../src/services/pushNotifications";
 import { colors } from "../src/theme/colors";
 
 function RootNavigator() {
-  const { user, authLoading } = useAuth();
+  const { user, authLoading, profile, patchProfile } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   // useSegments() returns a NEW array every render, so depending on it
@@ -49,22 +51,48 @@ function RootNavigator() {
     return () => sub.remove();
   }, []);
 
-  // Invite links (?ref=alice). Deliberately NOT inside the deep-link effect
-  // below: that one waits for a signed-in user, and the whole point of an
-  // invite is that it arrives before there is an account. Capturing it here,
-  // unauthenticated, is what lets the login screen greet the newcomer and the
-  // post-sign-up effect credit whoever invited them.
+  // Links that must work while SIGNED OUT, and the catch-all for links this
+  // build cannot render. Deliberately NOT inside the deep-link effect below:
+  // that one waits for a signed-in user, and every case here happens before
+  // there is an account, or when there is no way to sign in to one.
+  //
+  // The context for all three: the Android intent filter claims
+  // https://myinvestorcircle.com with autoVerify and NO path restriction
+  // (app.json), so this app intercepts EVERY link to the site. Anything it
+  // doesn't understand is a link the user watched do nothing.
   useEffect(() => {
-    const capture = (url) => {
+    const handle = (url) => {
+      // An invite (?ref=alice) arrives before there is an account to attach it
+      // to — that is the point of an invite — so it is stored now and
+      // redeemed by the effect below once there is one.
       const code = parseReferral(url);
-      if (!code) return;
-      addLog("info", `referral: captured "${code}"`);
-      rememberReferral(code);
+      if (code) {
+        addLog("info", `referral: captured "${code}"`);
+        rememberReferral(code);
+        return;
+      }
+      // A password reset is the one flow whose whole premise is being unable
+      // to sign in.
+      const oobCode = parsePasswordReset(url);
+      if (oobCode) {
+        addLog("info", "deeplink: password reset");
+        router.replace(`/reset-password?oobCode=${encodeURIComponent(oobCode)}`);
+        return;
+      }
+      // Our own web pages this app has taken over but cannot draw — a creator
+      // claim link, Market Insights, the privacy policy, anything added to
+      // the web after this build. A browser tab is a working destination;
+      // silently doing nothing is not. Deliberately a Custom Tab rather than
+      // Linking.openURL, which Android would route straight back to this app.
+      if (isExternalWebLink(url)) {
+        addLog("info", `deeplink: opening in browser ${url}`);
+        WebBrowser.openBrowserAsync(url).catch(() => {});
+      }
     };
-    Linking.getInitialURL().then((url) => url && capture(url));
-    const sub = Linking.addEventListener("url", ({ url }) => capture(url));
+    Linking.getInitialURL().then((url) => url && handle(url));
+    const sub = Linking.addEventListener("url", ({ url }) => handle(url));
     return () => sub.remove();
-  }, []);
+  }, [router]);
 
   // …and redeem it once there IS an account. Mirrors the web's post-login
   // effect (App.jsx calls processReferral there for the same reason). The
@@ -146,7 +174,12 @@ function RootNavigator() {
   useEffect(() => {
     if (authLoading) return;
     const inAuthGroup = segments[0] === "(auth)";
-    if (!user && !inAuthGroup) {
+    // Choosing a new password is what you do when you CANNOT sign in, so this
+    // one screen has to stay reachable while signed out — otherwise the
+    // redirect below would bounce someone straight off the reset link they
+    // just tapped and back to the login form they are locked out of.
+    const isPublicRoute = segments[0] === "reset-password";
+    if (!user && !inAuthGroup && !isPublicRoute) {
       router.replace("/(auth)/login");
     } else if (user && inAuthGroup) {
       router.replace("/(tabs)");
@@ -154,29 +187,53 @@ function RootNavigator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, segKey]);
 
+  // Username + consent are required before the account can be used, exactly
+  // as on the web. Google sign-in has no signup form, so those accounts arrive
+  // with neither; without this they landed straight in the feed with no public
+  // identity and no consent on record.
+  //
+  // Drawn as a full-screen cover OVER the navigator rather than in place of
+  // it: the redirect and deep-link effects above still run while it is up, and
+  // returning something other than <Stack> would leave them calling
+  // router.replace with no navigator mounted.
+  const gateOpen = !!user && setupIncomplete(profile);
+
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="reco/[id]" />
-      <Stack.Screen name="investor/[username]" />
-      <Stack.Screen name="circle/[id]" />
-      <Stack.Screen name="circle/new" options={{ presentation: "modal" }} />
-      <Stack.Screen name="circle/manage" />
-      <Stack.Screen name="notifications" />
-      <Stack.Screen name="network" />
-      <Stack.Screen name="circles" />
-      <Stack.Screen name="people" />
-      <Stack.Screen name="portfolio" />
-      <Stack.Screen name="portfolio-import" />
-      <Stack.Screen name="ticker/[symbol]" />
-      <Stack.Screen name="suggested" />
-      <Stack.Screen name="settings" />
-      <Stack.Screen name="about" />
-      <Stack.Screen name="contact" />
-      <Stack.Screen name="debug" />
-      <Stack.Screen name="new" options={{ presentation: "modal" }} />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="reco/[id]" />
+        <Stack.Screen name="investor/[username]" />
+        <Stack.Screen name="circle/[id]" />
+        <Stack.Screen name="circle/new" options={{ presentation: "modal" }} />
+        <Stack.Screen name="circle/manage" />
+        <Stack.Screen name="notifications" />
+        <Stack.Screen name="network" />
+        <Stack.Screen name="circles" />
+        <Stack.Screen name="people" />
+        <Stack.Screen name="portfolio" />
+        <Stack.Screen name="portfolio-import" />
+        <Stack.Screen name="ticker/[symbol]" />
+        <Stack.Screen name="suggested" />
+        <Stack.Screen name="settings" />
+        <Stack.Screen name="reset-password" />
+        <Stack.Screen name="about" />
+        <Stack.Screen name="contact" />
+        <Stack.Screen name="debug" />
+        <Stack.Screen name="new" options={{ presentation: "modal" }} />
+      </Stack>
+      {/* Last child, so it covers the navigator rather than sitting behind
+          it. absoluteFill + the default pointerEvents means nothing
+          underneath is reachable while setup is outstanding. */}
+      {gateOpen ? (
+        <View style={StyleSheet.absoluteFill}>
+          <ErrorBoundary label="setup">
+            <SetupGate profile={profile} patchProfile={patchProfile} />
+          </ErrorBoundary>
+        </View>
+      ) : null}
+    </View>
   );
 }
 

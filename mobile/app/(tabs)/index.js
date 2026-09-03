@@ -20,6 +20,7 @@ import {
 } from "../../src/utils/feed";
 import { putReco } from "../../src/utils/recoStore";
 import { primeAvatars } from "../../src/services/avatarCache";
+import { primeReactions } from "../../src/services/reactionStore";
 import { readFeedCache, writeFeedCache } from "../../src/services/feedCache";
 import { useAuth } from "../../src/context/AuthContext";
 import { debugLog } from "../../src/utils/logger";
@@ -148,6 +149,11 @@ function FeedScreen() {
       // Both off the critical path — the list is already on screen by now.
       writeFeedCache(uidRef.current, final);
       primeAvatars(final.map((r) => r.from));
+      // Which of these the caller has already liked — the same hydration the
+      // web does after every feed load (App.jsx -> getReactionsBatch). Fired
+      // once on the FINAL list rather than on the partial one: it is not on
+      // the critical path, and the partial pass would only be re-asked.
+      primeReactions(final.map((r) => r.id));
     } catch (e) {
       if (mounted.current) {
         setError(true);

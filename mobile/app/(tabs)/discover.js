@@ -13,6 +13,7 @@ import { rankTrending } from "../../src/utils/trending";
 import { rankWhatYouMissed } from "../../src/utils/whatYouMissed";
 import { putReco } from "../../src/utils/recoStore";
 import { primeAvatars } from "../../src/services/avatarCache";
+import { primeReactions } from "../../src/services/reactionStore";
 import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
@@ -71,6 +72,7 @@ function PulseScreen() {
         setError(false);
       }
       primeAvatars([...d.trending, ...d.missed].map((r) => r.from));
+      primeReactions([...d.trending, ...d.missed].map((r) => r.id));
     } catch (e) {
       if (mounted.current) {
         setError(true);

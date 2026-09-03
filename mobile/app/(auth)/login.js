@@ -12,6 +12,8 @@ import {
   Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import * as WebBrowser from "expo-web-browser";
 import { useAuth } from "../../src/context/AuthContext";
 import { pwValid, pwCheck, USERNAME_RE, requestPasswordReset } from "../../src/services/api/authApi";
 import { fetchSignInMethodsForEmail } from "firebase/auth";
@@ -30,6 +32,32 @@ const TABS = [
   ["login", "Sign in"],
   ["signup", "Create account"],
 ];
+
+// The privacy policy is a legal document that must match the web's word for
+// word, so it is READ from the web rather than copied into the app, where a
+// second copy would quietly drift out of date. A Custom Tab, not
+// Linking.openURL: Android would route our own https link straight back into
+// this app (see the intent filter in app.json).
+const PRIVACY_URL = "https://myinvestorcircle.com/#/privacy";
+const openPrivacy = () => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {});
+
+function Consent({ checked, onToggle, children }) {
+  return (
+    <Pressable
+      style={styles.consentRow}
+      onPress={onToggle}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+    >
+      <View style={[styles.checkbox, checked && styles.checkboxOn]}>
+        {checked ? <Ionicons name="checkmark" size={13} color="#fff" /> : null}
+      </View>
+      <Text style={styles.consentText}>
+        {children} <Text style={styles.consentStar}>*</Text>
+      </Text>
+    </Pressable>
+  );
+}
 
 export default function LoginScreen() {
   const { login, signup } = useAuth();
@@ -61,6 +89,13 @@ export default function LoginScreen() {
   const [lastName, setLastName] = useState("");
   const [username, setUsername] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  // Consent is COLLECTED, not assumed. completeSignup() used to post
+  // consentTerms/consentData as hardcoded `true` while the form never asked
+  // for either — the account recorded an agreement its owner was never shown.
+  // The web asks for both (LoginPage.jsx step 2) and does not create the
+  // Firebase account until they are ticked; so does this now.
+  const [consentTerms, setConsentTerms] = useState(false);
+  const [consentData, setConsentData] = useState(false);
 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -116,11 +151,12 @@ export default function LoginScreen() {
     if (!email.trim()) return setError("Email address is required.");
     if (!pwValid(password)) return setError("Password must be 6–25 characters with a letter and a number.");
     if (password !== confirmPassword) return setError("Passwords do not match.");
+    if (!consentTerms || !consentData) return setError("Please accept both statements to continue.");
 
     setError("");
     setLoading(true);
     try {
-      const res = await signup({ email, password, firstName, lastName, username });
+      const res = await signup({ email, password, firstName, lastName, username, consentTerms, consentData });
       if (!res.ok) {
         setError(
           res.status === 409
@@ -258,6 +294,19 @@ export default function LoginScreen() {
                   {pw.hasNumber ? "✓" : "○"} a number
                 </Text>
               ) : null}
+
+              {/* Same two statements, in the same words, as the web's step 2.
+                  Nothing is pre-ticked and the account is not created until
+                  both are. */}
+              <Consent checked={consentTerms} onToggle={() => setConsentTerms((v) => !v)}>
+                I agree to the Terms of Service and{" "}
+                <Text style={styles.consentLink} onPress={openPrivacy}>
+                  Privacy Policy
+                </Text>
+              </Consent>
+              <Consent checked={consentData} onToggle={() => setConsentData((v) => !v)}>
+                I consent to myInvestorCircle storing and publicly displaying my investment ideas
+              </Consent>
             </>
           ) : null}
 
@@ -321,6 +370,21 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 22,
   },
+  consentRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: 4 },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.line2,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  checkboxOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  consentText: { flex: 1, color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 19 },
+  consentLink: { color: colors.accentInk, fontFamily: fonts.bold, textDecorationLine: "underline" },
+  consentStar: { color: colors.loss, fontFamily: fonts.bold },
   inviteBanner: {
     flexDirection: "row",
     alignItems: "center",

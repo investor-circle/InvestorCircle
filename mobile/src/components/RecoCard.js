@@ -1,10 +1,11 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useState, useSyncExternalStore } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Avatar from "./Avatar";
 import { fetchProfileNavInfo } from "../services/profileNav";
 import { colors, fonts } from "../theme/colors";
 import { fmt, fmtDate, fmtPct, returnPct } from "../utils/format";
+import { isLiked, subscribeReactions, toggleReaction } from "../services/reactionStore";
 
 // Rich reco card — matches the web app's feed card (src/features/discovery):
 // gradient avatar, "<name> recommended · via/shared-by · date", Buy/Sell pill,
@@ -134,6 +135,7 @@ function RecoCard({ reco, onPress, onOpenProfile }) {
           </View>
         ) : null}
         <View style={{ flex: 1 }} />
+        <LikeButton reco={reco} />
         {reco.commentCount > 0 ? (
           <View style={styles.footerStat}>
             <Ionicons name="chatbubble-outline" size={15} color={colors.muted} />
@@ -158,6 +160,57 @@ function RecoCard({ reco, onPress, onOpenProfile }) {
     );
   }
   return CardBody;
+}
+
+/**
+ * Like, with its count — the web has had both on every row
+ * (features/recommendations/Recommendations.jsx); the card here showed
+ * neither, so an idea already liked on the web looked untouched on the phone
+ * and there was no way to like one from a list at all.
+ *
+ * Subscribes to the shared store on its own, so a like re-renders this one
+ * card rather than the whole list, and the same idea shown in Feed, Discover
+ * and Track stays in agreement.
+ */
+function LikeButton({ reco }) {
+  const liked = useSyncExternalStore(
+    subscribeReactions,
+    () => isLiked(reco.id),
+    () => undefined // server snapshot: unknown, never "not liked"
+  );
+  // The count comes from the list payload and is a moment old, so the tap
+  // adjusts it locally rather than claiming to know the true total.
+  const [delta, setDelta] = useState(0);
+  const base = Number(reco.likes || 0);
+  const count = Math.max(0, base + delta);
+
+  const onPress = useCallback(async () => {
+    const before = isLiked(reco.id) === true;
+    setDelta((d) => d + (before ? -1 : 1));
+    const after = await toggleReaction(reco.id);
+    // Reverted by the store (the write failed) — put the count back too.
+    if (after === before) setDelta((d) => d + (before ? 1 : -1));
+  }, [reco.id]);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      style={styles.footerStat}
+      accessibilityRole="button"
+      accessibilityLabel={liked ? "Unlike this idea" : "Like this idea"}
+      accessibilityState={{ selected: !!liked }}
+    >
+      <Ionicons
+        name={liked ? "thumbs-up" : "thumbs-up-outline"}
+        size={15}
+        color={liked ? colors.accentInk : colors.muted}
+      />
+      {count > 0 ? (
+        <Text style={[styles.footerStatText, liked && { color: colors.accentInk }]}>{count}</Text>
+      ) : null}
+    </Pressable>
+  );
 }
 
 // Memoized so scrolling / parent state changes don't re-render every card.

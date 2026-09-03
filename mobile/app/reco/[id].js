@@ -22,6 +22,7 @@ import { fmt, fmtDate } from "../../src/utils/format";
 import { getTodayClose, sourceName } from "../../src/services/marketData";
 import Avatar from "../../src/components/Avatar";
 import { primeAvatars } from "../../src/services/avatarCache";
+import { setLiked } from "../../src/services/reactionStore";
 import {
   getEngagement,
   reactToReco,
@@ -69,6 +70,10 @@ function RecoDetailScreen() {
       const data = await getEngagement(id);
       if (!mounted.current) return;
       setEng(data);
+      // This is the authoritative answer for one idea, so let the shared
+      // store learn from it too — the card behind this screen then agrees
+      // without a second round-trip.
+      setLiked(id, data?.myReaction === "like");
       primeAvatars((data?.comments || []).map((c) => c.userId ?? c.user_id));
     })();
     return () => {
@@ -104,6 +109,12 @@ function RecoDetailScreen() {
     if (!eng) return;
     const next = liked ? null : "like";
     setEng((e) => ({ ...e, myReaction: next, likes: Math.max(0, (e.likes || 0) + (next ? 1 : -1)) }));
+    // Kept deliberately separate from reactionStore.toggleReaction: a like
+    // from here notifies the author (likerName), and one from a feed card
+    // does not — same as the web, where the post view notifies and the list
+    // row does not. The store is TOLD the outcome instead, so going back
+    // shows the card in the state you just left it in.
+    setLiked(id, !!next);
     await reactToReco(id, next, next ? { likerName: profile?.full_name || "Someone" } : null);
   }, [eng, liked, id, profile?.full_name]);
 

@@ -19,6 +19,7 @@ import {
 import { auth } from "../config/firebase";
 import { unregisterCurrentDevice } from "../services/pushNotifications";
 import { clearAvatarCache } from "../services/avatarCache";
+import { clearReactions } from "../services/reactionStore";
 import { clearFeedCache } from "../services/feedCache";
 import { API_ORIGIN } from "../services/api";
 import { completeSignup } from "../services/api/authApi";
@@ -98,6 +99,12 @@ export function AuthProvider({ children }) {
 
           if (!syncedViaApi) {
             setProfile({
+              // Not a profile the server confirmed — a shape assembled locally
+              // so the app still works when the profile API is unreachable.
+              // The consent flags below are placeholders, NOT a record of
+              // anything the user agreed to, which is why the setup gate
+              // refuses to make decisions from this shape (see SetupGate.js).
+              __local: true,
               id: firebaseUser.uid,
               email: firebaseUser.email,
               full_name: fullName,
@@ -135,6 +142,7 @@ export function AuthProvider({ children }) {
     // Cached feed rows and other people's profile pictures were fetched with
     // this account's token. On a shared phone the next person to sign in must
     // not inherit either. Failures here never block sign-out.
+    clearReactions();
     await Promise.allSettled([clearAvatarCache(), clearFeedCache(user?.uid)]);
     return signOut(auth);
   };
@@ -145,7 +153,7 @@ export function AuthProvider({ children }) {
    * onAuthStateChanged's own sync would fall back to email.split("@")[0] as
    * the display name.
    */
-  const signup = async ({ email, password, firstName, lastName, username }) => {
+  const signup = async ({ email, password, firstName, lastName, username, consentTerms, consentData }) => {
     const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
     const fullName = `${firstName.trim()} ${(lastName || "").trim()}`.trim();
     try {
@@ -154,7 +162,7 @@ export function AuthProvider({ children }) {
       /* display name is cosmetic — the profile row below is the source of truth */
     }
     const idToken = await cred.user.getIdToken();
-    const res = await completeSignup(idToken, { firstName, lastName, username });
+    const res = await completeSignup(idToken, { firstName, lastName, username, consentTerms, consentData });
     if (res.ok) {
       setProfile((p) => ({
         ...(p || {}),

@@ -19,6 +19,23 @@ export async function getEngagement(recoId) {
   return api.ok ? api.data : { likes: 0, commentsCount: 0, myReaction: null, tracking: null, comments: [] };
 }
 
+/**
+ * Which of these ideas has the caller already liked?
+ *
+ * @returns { [recoId]: 'like' } — ONLY the ids that were liked, so an id
+ * asked for and absent from the answer is a confirmed "not liked". The
+ * server caps the list at 200 ids per request; callers split longer lists
+ * (see reactionStore.js) rather than letting the tail be silently dropped.
+ */
+export async function getReactionsBatch(recoIds) {
+  const ids = (recoIds || []).map(String).filter(Boolean);
+  if (!ids.length) return {};
+  const api = await callApi(
+    `/data?resource=engagement&action=reactions-batch&recoIds=${encodeURIComponent(ids.join(","))}`
+  );
+  return api.ok ? api.data.reactions || {} : {};
+}
+
 /** Like / unlike a reco. reaction = 'like' to like, null to clear. */
 export async function reactToReco(recoId, reaction, notifyOpts) {
   const api = await callApi("/data?resource=engagement", {
