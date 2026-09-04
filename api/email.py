@@ -17,7 +17,10 @@ Check delivery at: resend.com → Emails (and Logs for errors).
 import os
 import sys
 import json
+import hmac
 import resend
+import firebase_admin
+from firebase_admin import auth as fb_auth, credentials
 from http.server import BaseHTTPRequestHandler
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "")
@@ -25,6 +28,32 @@ FROM_EMAIL     = os.environ.get("FROM_EMAIL", "hello@myinvestorcircle.com")
 REPLY_TO       = FROM_EMAIL   # replies land back in the hello@ inbox
 APP_URL        = "https://myinvestorcircle.com"
 BRAND_COLOR    = "#6d5df5"
+
+# Where claim notifications for the team go. Fixed here rather than taken from
+# the request — see the policy table below.
+ADMIN_INBOX    = "hello@myinvestorcircle.com"
+
+
+# ── Firebase Admin: initialise once per cold start ────────────────────────────
+# Same pattern as api/reset.py, which already verifies tokens this way.
+
+_fb_app = None
+
+def _get_fb_app():
+    global _fb_app
+    if _fb_app:
+        return _fb_app
+    try:
+        _fb_app = firebase_admin.get_app()
+        return _fb_app
+    except ValueError:
+        pass  # no app yet — initialise below
+
+    sa_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+    if not sa_json:
+        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON env var is not set in Vercel")
+    _fb_app = firebase_admin.initialize_app(credentials.Certificate(json.loads(sa_json)))
+    return _fb_app
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -364,6 +393,57 @@ TEMPLATES = {
 }
 
 
+
+# ── Who may send what, and to whom ─────────────────────────────────────────────
+# The rules themselves live in api/_lib/email_policy.py — dependency-free, so
+# they can be unit tested without resend or the Firebase SDK installed. What
+# stays here is the part that genuinely needs those: verifying the credential.
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_lib"))
+from email_policy import INTERNAL_SECRET_HEADER, POLICY, authorize  # noqa: E402
+
+
+def _internal_secret():
+    """The configured backend secret, or None. Mirrors api/_lib/internalAuth.js."""
+    return (os.environ.get("INTERNAL_API_SECRET", "") or "").strip() or None
+
+
+def _admin_emails():
+    """
+    Lower-cased admin addresses from ADMIN_EMAILS (comma-separated), or None
+    when unset. None means "cannot tell" — see email_policy.authorize.
+    """
+    raw = (os.environ.get("ADMIN_EMAILS", "") or "").strip()
+    if not raw:
+        return None
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def _verify_caller(headers):
+    """
+    Identify the caller.
+
+    @returns ("internal", None) | ("user", decoded_token) | (None, reason)
+    """
+    presented = headers.get(INTERNAL_SECRET_HEADER, "")
+    if presented:
+        secret = _internal_secret()
+        # compare_digest, not ==, so a wrong secret cannot be recovered by
+        # timing the response.
+        if secret and hmac.compare_digest(presented, secret):
+            return "internal", None
+        return None, "bad internal secret"
+
+    auth_header = headers.get("Authorization", "") or headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None, "missing token"
+    try:
+        return "user", fb_auth.verify_id_token(auth_header[7:], app=_get_fb_app())
+    except Exception as e:
+        print(f"[email] token verification failed: {e}", file=sys.stderr)
+        return None, "invalid token"
+
+
 # ── Vercel serverless handler ──────────────────────────────────────────────────
 
 class handler(BaseHTTPRequestHandler):
@@ -375,12 +455,27 @@ class handler(BaseHTTPRequestHandler):
             length     = int(self.headers.get("Content-Length", 0))
             body       = json.loads(self.rfile.read(length)) if length else {}
             email_type = body.get("type", "")
-            to_email   = body.get("to_email", "")
 
-            if not to_email:
-                return self._respond(400, {"error": "to_email is required"})
+            # Who is calling? A signed-in member, or our own backend.
+            kind, token_or_reason = _verify_caller(self.headers)
+            if not kind:
+                print(f"[email] refused type={email_type} reason={token_or_reason}", file=sys.stderr)
+                return self._respond(401, {"error": "Authentication required"})
+            token = token_or_reason if kind == "user" else None
+
             if email_type not in TEMPLATES:
                 return self._respond(400, {"error": f"Unknown email type: '{email_type}'"})
+
+            # What may this caller send, to whom, and under whose name?
+            to_email, body = authorize(
+                email_type, kind, token, body,
+                admin_emails=_admin_emails(),
+                admin_inbox=ADMIN_INBOX,
+                on_warning=lambda m: print(f"[email] {m}", file=sys.stderr),
+            )
+            if not to_email:
+                return self._respond(403, {"error": body})
+
             if not resend.api_key:
                 print("[email] ERROR: RESEND_API_KEY env var is not set in Vercel", file=sys.stderr)
                 return self._respond(500, {"error": "RESEND_API_KEY not configured"})
@@ -407,7 +502,7 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin",  "*")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
         self.wfile.write(body)
 
@@ -415,7 +510,7 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin",  "*")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
 
     def log_message(self, *args):

@@ -56,14 +56,13 @@ import {
   cancelExitSignal as dbCancelExit,
   createRecommendation as dbCreateReco,
   deleteDelivery as dbDeleteDelivery,
-  deleteRecommendation as dbDeleteReco,
   forwardRecommendation as dbForwardReco,
   getRecommenderUsername as dbGetRecommenderUsername,
   notifyPublicContacts as dbNotifyPublicContacts,
   setExitSignal as dbSetExit,
   updateDelivery
 } from "../../services/api/recommendationsApi";
-import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, InstrumentSearch, Money, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, InstrumentSearch, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
 import { CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, SECTOR_EMOJI, THESIS_EMOJIS, THESIS_MAX_CHARS, THESIS_MAX_IMAGES, THESIS_MAX_MB, TODAY } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
@@ -1114,11 +1113,17 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
   const [shareAnchor, setShareAnchor] = useState(null);
   const [exitingId,  setExitingId]  = useState(null);
 
-  const del=async(r)=>{
-    if(!confirm("Delete this idea? This will remove it from all recipients' lists too.")) return;
-    setRecs(rs=>rs.filter(x=>x.id!==r.id));
-    await dbDeleteReco(r.id, me?.id);
-  };
+  // No delete handler here, deliberately. An idea is permanent once posted:
+  // the track record only means something if nobody can erase the calls that
+  // went wrong, so an author closes a position with toggleExit() below, which
+  // records the outcome rather than hiding it. (The Trash button in
+  // ReceivedSection is a different action — it removes the RECIPIENT's own
+  // copy via deleteDelivery and leaves the idea itself alone.)
+  //
+  // A `del` handler calling deleteRecommendation() used to sit here, unwired
+  // to any button; it has been removed so it cannot be hooked up by mistake.
+  // If a short post-publish correction window is introduced later, it will be
+  // a deliberate feature with its own time limit and rules.
 
   const toggleExit=async(r)=>{
     if (r.exit) {
@@ -1786,10 +1791,8 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
           dbNotifyPublicContacts(newRecoId, contacts.map(c => c.id), meta)
             .catch(e => console.warn('notify-public-contacts:', e?.message || e));
           contacts.forEach(c => sendPush(c.id, {
-            title: '💡 New idea in your circle',
-            body:  `${me.name || 'Someone'} posted a new idea`,
-            url:   recoUrl,
-            tag:   'contact_recommendation',
+            type: 'contact_recommendation',
+            deepLink: newRecoId && me.username ? `/investor/${me.username}/reco/${newRecoId}` : undefined,
           }));
           // Emails
           contacts.forEach(c => {
@@ -2460,6 +2463,11 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, contacts=[], gr
       </div>
 
       <div style={{maxWidth:640, margin:'0 auto', padding: isMobile ? '16px 12px' : '24px 16px'}}>
+
+        {/* This page is where a link shared from the app lands when the OS
+            didn't hand it to the app — most often because it was opened
+            inside another app's built-in browser. */}
+        <OpenInAppBanner/>
 
         {/* Loading */}
         {loading && (

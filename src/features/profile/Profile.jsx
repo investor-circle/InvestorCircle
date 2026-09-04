@@ -56,7 +56,7 @@ import {
   forwardRecommendation as dbForwardReco
 } from "../../services/api/recommendationsApi";
 import { IdeaSharePopover, ThesisRenderer } from "../recommendations/Recommendations";
-import { ClosedInfoLine, ConvBadge, IciDonut, RetBadge, ScoreBox, SmallAnchoredPopover, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClosedInfoLine, ConvBadge, IciDonut, OpenInAppBanner, RetBadge, ScoreBox, SmallAnchoredPopover, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
 import { SECTOR_EMOJI } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
@@ -471,6 +471,10 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
 
     return (
       <>
+        {/* A profile link shared from the app lands here when the OS didn't
+            hand it to the app — usually an in-app browser. */}
+        <OpenInAppBanner/>
+
         {/* ── Claim invitation banner — for creator visiting via claim link ── */}
         {isUnclaimed && viewerForClaim && (
           <div style={{

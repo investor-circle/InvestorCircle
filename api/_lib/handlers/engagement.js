@@ -46,27 +46,49 @@
  */
 
 import { sql, parseBody } from '../auth.js';
+import { deliverPush } from '../deliverPush.js';
+import { buildPushPayload } from '../pushTemplates.js';
+import { INTERNAL_SECRET_HEADER, internalSecret } from '../internalAuth.js';
 
 const EMAIL_API = 'https://investor-circle.vercel.app/api/email';
-const PUSH_API  = 'https://investor-circle.vercel.app/api/push';
 
-/** Fire-and-forget email, mirrors src/App.jsx's sendEmail(). Never throws. */
+/**
+ * Fire-and-forget email. Never throws.
+ *
+ * /api/email is a Python function, so it cannot be called in-process the way
+ * push now is — this stays an HTTP hop. It carries a shared secret because
+ * the endpoint requires either a user's Firebase token (browser and app) or
+ * proof that the caller is our own backend; this path has no user token to
+ * present. If INTERNAL_API_SECRET is not configured the header is absent and
+ * the email is refused, which is the safe direction: a missed notification,
+ * not an open relay.
+ */
 function sendEmail(type, payload) {
+  const headers = { 'Content-Type': 'application/json' };
+  const secret = internalSecret();
+  if (secret) headers[INTERNAL_SECRET_HEADER] = secret;
   fetch(EMAIL_API, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ type, ...payload }),
   }).catch(() => {});
 }
 
-/** Fire-and-forget push, mirrors src/App.jsx's sendPush(). Never throws. */
-function sendPush(userId, { title, body, url = 'https://myinvestorcircle.com', tag = 'mic' }) {
+/**
+ * Fire-and-forget push. Never throws.
+ *
+ * Calls the delivery code directly rather than POSTing to /api/push. That
+ * endpoint now requires a caller's Firebase token and checks the sender may
+ * notify the recipient — neither of which this path can satisfy, because the
+ * "sender" here is the server acting on a like or a comment it just recorded.
+ * It has already authenticated the actor and worked out the owner from the
+ * row, so it composes the message from the same templates and delivers it.
+ */
+function sendPush(userId, type, sender, deepLink, extra) {
   if (!userId) return;
-  fetch(PUSH_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, title, body, url, tag }),
-  }).catch(() => {});
+  const message = buildPushPayload(type, sender, deepLink, extra);
+  if (!message) return;
+  deliverPush(sql, userId, message).catch(() => {});
 }
 
 function mapComment(c) {
@@ -145,12 +167,13 @@ async function notifyLike({ recoId, userId, likerName }) {
       recommenderUsername: ownerUsername || '', recommenderName: ownerName || '',
     });
     await sql`INSERT INTO notifications (user_id, type, from_user_id, metadata) VALUES (${ownerId}, 'contact_like', ${userId}, ${meta})`;
-    sendPush(ownerId, {
-      title: '👍 Someone liked your idea',
-      body:  `${likerName} liked your idea${ticker ? ' · ' + ticker : ''}`,
-      url:   ownerUsername && recoId ? `https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${recoId}` : 'https://myinvestorcircle.com',
-      tag:   'contact_like',
-    });
+    sendPush(
+      ownerId,
+      'contact_like',
+      { full_name: likerName, username: ownerUsername },
+      ownerUsername && recoId ? `/investor/${ownerUsername}/reco/${recoId}` : null,
+      ticker
+    );
   }
 
   // Network fan-out — notify liker's connections
@@ -183,12 +206,13 @@ async function notifyComment({ recoId, userId, commenterName, commentText }) {
   const meta = JSON.stringify({ ticker, assetName, recoId, recommenderUsername: ownerUsername || '' });
   sql`INSERT INTO notifications (user_id, type, from_user_id, metadata)
       VALUES (${ownerId}, 'contact_comment', ${userId}, ${meta})`
-    .then(() => sendPush(ownerId, {
-      title: '💬 New comment on your idea',
-      body:  `${commenterName} commented on your idea${ticker ? ' · ' + ticker : ''}`,
-      url:   ownerUsername && recoId ? `https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${recoId}` : 'https://myinvestorcircle.com',
-      tag:   'contact_comment',
-    }))
+    .then(() => sendPush(
+      ownerId,
+      'contact_comment',
+      { full_name: commenterName, username: ownerUsername },
+      ownerUsername && recoId ? `/investor/${ownerUsername}/reco/${recoId}` : null,
+      ticker
+    ))
     .catch(() => {});
 
   if (ownerEmail) {

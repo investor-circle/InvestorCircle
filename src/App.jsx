@@ -122,7 +122,7 @@ import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./feature
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
 import { RecoPostPage, Recommendations } from "./features/recommendations/Recommendations";
 import { useIsMobile } from "./hooks/index";
-import { VAPID_PUBLIC_KEY, sendEmail, sendPush } from "./services/notify";
+import { VAPID_PUBLIC_KEY } from "./services/notify";
 import { STYLES } from "./styles/globalStyles";
 import { initialsOf } from "./utils/format";
 import { loadInstruments } from "./utils/instruments";
@@ -590,22 +590,12 @@ export default function App() {
       const result = await dbProcessReferral(refUsername);
       if (!result.referred) { localStorage.removeItem('mic_ref'); return; }
 
-      const referrer = { full_name: result.referrerName, username: result.referrerUsername, email: result.referrerEmail };
-
-      // Send referral emails (fire and forget)
-      const newUserEmail = user?.email || '';
-      const newUserName  = user?.displayName || 'New member';
-      sendEmail('welcome_referred', {
-        to_email:          newUserEmail,
-        referrer_name:     referrer.full_name,
-        referrer_username: referrer.username || '',
-      });
-      if (referrer.email) {
-        sendEmail('referral_converted', {
-          to_email:      referrer.email,
-          new_user_name: newUserName,
-        });
-      }
+      // Both referral emails — the new member's welcome and the referrer's
+      // "someone you invited joined" — are sent server-side by
+      // process-referral itself, on a genuine first attribution only. They
+      // used to be sent from here, which meant a signup that came through the
+      // mobile app credited nobody, and which was the only reason the server
+      // had to hand this browser another member's email address.
 
       // Refresh connection list so the new user immediately sees the referrer in their circle
       const conns = await getMyConnections(newUserId);
@@ -755,24 +745,14 @@ export default function App() {
   const handlePeopleConnect = async (targetId) => {
     if (!user) return;
     try {
+      // The email + push now go out server-side, alongside the in-app
+      // notification the request already created (handlers/connections.js).
+      // Doing it here meant the mobile app — which cannot run this code —
+      // sent connection requests that reached the bell icon and nowhere
+      // else. It also meant the browser had to look up the recipient's
+      // EMAIL address purely to notify them, which it no longer needs.
       await sendConnectionRequest(user.uid, targetId);
       track('connection_sent');
-      dbLookupUser('id', targetId)
-        .then(row => {
-          if (row?.email) sendEmail('connection_request', {
-            to_email:      row.email,
-            from_name:     ME?.name || user.displayName || 'Someone',
-            from_username: ME?.username || '',
-          });
-          sendPush(targetId, {
-            title: '🤝 New connection request',
-            body:  `${ME?.name || 'Someone'} wants to connect with you`,
-            url:   ME?.username
-              ? `https://myinvestorcircle.com/#/investor/${ME.username}`
-              : 'https://myinvestorcircle.com',
-            tag:   'connection_request',
-          });
-        }).catch(() => {});
       const conns = await getMyConnections(user.uid);
       setConnections(conns);
     } catch(e) { console.warn('handlePeopleConnect:', e?.message||e); }
@@ -1098,15 +1078,8 @@ export default function App() {
                 window.location.hash = '';
                 return;
               }
+              // Notification fan-out is server-side now — see handlePeopleConnect.
               await sendConnectionRequest(user.uid, targetId);
-              dbLookupUser('username', pubUsername.toLowerCase())
-                .then(row => {
-                  if (row?.email) sendEmail('connection_request', {
-                    to_email:      row.email,
-                    from_name:     ME?.name || user.displayName || 'Someone',
-                    from_username: ME?.username || '',
-                  });
-                }).catch(() => {});
               const c = await getMyConnections(user.uid);
               setConnections(c);
             }}
@@ -1455,23 +1428,10 @@ export default function App() {
                   notifications={notifications}
                   myId={ME.id}
                   onAccept={async (n) => {
-                    const [, reqInfo] = await Promise.all([
-                      acceptConnection(n.reference_id, ME.id),
-                      dbLookupUser('id', n.from_user_id).catch(() => null),
-                    ]);
+                    // Email + push go out server-side now, with the in-app
+                    // notification — see handlePeopleConnect above.
+                    await acceptConnection(n.reference_id, ME.id);
                     track('connection_accepted');
-                    if (reqInfo?.email) {
-                      sendEmail('connection_accepted', { to_email:reqInfo.email, their_name:ME.name, their_username:ME.username });
-                    }
-                    // Push notification to the person whose request was just accepted
-                    sendPush(n.from_user_id, {
-                      title: '🤝 Connection accepted',
-                      body:  `${ME?.name || 'Someone'} accepted your connection request`,
-                      url:   ME?.username
-                        ? `https://myinvestorcircle.com/#/investor/${ME.username}`
-                        : 'https://myinvestorcircle.com',
-                      tag:   'connection_accepted',
-                    });
                     await markNotifRead(n.id, ME.id);
                     const [conns, notifs] = await Promise.all([getMyConnections(ME.id), getMyNotifications(ME.id)]);
                     setConnections(conns); setNotifications(notifs);

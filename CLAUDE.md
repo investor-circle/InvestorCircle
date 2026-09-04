@@ -165,6 +165,18 @@ modules. These are now durable conventions, not a one-time cleanup:
 - Treat business calculations (ICI score, return/P&L calculations,
   recommendation status transitions) as sensitive — do not change their
   behavior without explicit instruction.
+- **A posted idea is permanent — do not add a way to delete or edit one.**
+  The credibility score only means anything if nobody can erase the calls
+  that went wrong, so an author closes a position with `setExitSignal()`,
+  which records the outcome rather than hiding it. The server's `delete-reco`
+  action still exists and `src/db.js` still wraps it, but neither client
+  re-exports or calls it, and a test in
+  `mobile/src/services/api/recommendationsApi.test.js` fails if one starts
+  to. **The existence of the endpoint is not permission to wire it up** —
+  this bit an earlier session, which built a mobile Delete button from the
+  API surface without checking that no web UI exposed it. Treat the same way
+  any capability that exists server-side but is unreachable from the web UI:
+  confirm it is intended before mirroring it onto mobile.
 - Reuse existing helpers (e.g. `sendEmail`, `sendPush`, `track`) rather than
   writing new equivalents.
 

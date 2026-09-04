@@ -380,7 +380,14 @@ export default async function handleRecommendations(req, res, userId) {
       const patch = body.patch || {};
       if (!deliveryId) { res.status(400).json({ error: 'deliveryId is required' }); return; }
       const allowedReactions = ['like', 'dislike', null];
-      const reaction = patch.reaction === undefined ? null : patch.reaction;
+      // `null` is a MEANINGFUL reaction value (it clears a like), so absent
+      // and null cannot be collapsed the way the other fields collapse via
+      // COALESCE. They used to be: `reaction` was written on every call, so
+      // any update that did not mention it — marking an idea invested, or
+      // hiding it — silently wiped the user's like. Hence the explicit
+      // "was it supplied at all" flag.
+      const hasReaction = patch.reaction !== undefined;
+      const reaction = hasReaction ? patch.reaction : null;
       if (reaction !== null && !allowedReactions.includes(reaction)) {
         res.status(400).json({ error: 'invalid reaction' });
         return;
@@ -391,14 +398,14 @@ export default async function handleRecommendations(req, res, userId) {
           invested_price= COALESCE(${patch.investedPrice ?? null}, invested_price),
           invested_at   = CASE WHEN ${patch.isInvested ?? null} = true AND NOT is_invested
                               THEN now() ELSE invested_at END,
-          reaction      = ${reaction},
+          reaction      = CASE WHEN ${hasReaction} THEN ${reaction} ELSE reaction END,
           is_hidden     = COALESCE(${patch.isHidden ?? null}, is_hidden),
           updated_at    = now()
         WHERE id = ${deliveryId} AND delivered_to_user_id = ${userId}
         RETURNING id, recommendation_id, is_invested, invested_price, invested_at, reaction, is_hidden
       `;
       if (!row[0]) { res.status(404).json({ error: 'not_found' }); return; }
-      if (patch.reaction !== undefined) {
+      if (hasReaction) {
         const recoId = row[0].recommendation_id;
         if (patch.reaction === 'like') {
           sql`INSERT INTO recommendation_reactions(reco_id,user_id,reaction)

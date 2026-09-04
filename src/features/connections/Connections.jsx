@@ -24,7 +24,6 @@ import {
   sendConnectionRequest
 } from "../../services/api/connectionsApi";
 import {
-  lookupUser as dbLookupUser,
   getInvestorIciBatch as dbGetInvestorIciBatch
 } from "../../services/api/profileApi";
 import { computeIci } from "../../services/api/recommendationsApi";
@@ -40,7 +39,6 @@ import { Avatar, SmallAnchoredPopover, SortTh } from "../../components/common";
 import { CONTACT_COLORS } from "../../constants/app";
 import { GroupsSection } from "../groups/Groups";
 import { useIsMobile } from "../../hooks/index";
-import { sendEmail, sendPush } from "../../services/notify";
 import { fmtDate, fmtSigned, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile } from "../../utils/navigation";
 
@@ -519,22 +517,10 @@ export function ContactsSection({ connections, setConnections, groups,
 
   const doAccept = async (c) => {
     setBusy(b=>({...b,[c.connection_id]:true}));
-    const [, reqInfo] = await Promise.all([
-      acceptConnection(c.connection_id, myId),
-      dbLookupUser('id', c.user_id).catch(() => null),
-    ]);
-    if (reqInfo?.email) {
-      sendEmail('connection_accepted', { to_email:reqInfo.email, their_name:me?.name||'', their_username:me?.username||'' });
-    }
-    // Push notification to the person whose request was accepted
-    sendPush(c.user_id, {
-      title: '🤝 Connection accepted',
-      body:  `${me?.name || 'Someone'} accepted your connection request`,
-      url:   me?.username
-        ? `https://myinvestorcircle.com/#/investor/${me.username}`
-        : 'https://myinvestorcircle.com',
-      tag:   'connection_accepted',
-    });
+    // The email + push are sent server-side alongside the in-app
+    // notification (handlers/connections.js), so both clients notify
+    // identically and neither needs the other member's email address.
+    await acceptConnection(c.connection_id, myId);
     setConnections(await getMyConnections(myId));
     setBusy(b=>({...b,[c.connection_id]:false}));
   };

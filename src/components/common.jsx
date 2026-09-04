@@ -13,6 +13,7 @@ import {
 import { SOCIAL_BRAND, SOCIAL_PATHS, TYPE_COLORS } from "../constants/app";
 import { classColor, consensusStrengthColor, fmt, fmtDate, initialsOf } from "../utils/format";
 import { loadInstruments } from "../utils/instruments";
+import { useIsMobile } from "../hooks/index";
 
 export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;
 
@@ -464,3 +465,73 @@ export function SparkLine({data=[], color='var(--gain)', height=50}) {
 }
 
 /* ── computeTrend — monthly bullish% from recommendation dates ──── */
+
+/* ── OpenInAppBanner ─────────────────────────────────────────────────────────
+   Shown on the pages people reach from a SHARED LINK (a public idea, a public
+   profile), on a phone browser only.
+
+   Why it exists: a link shared out of the mobile app is an ordinary
+   https://myinvestorcircle.com URL, and three different people follow it.
+
+     • App installed, link opened from the OS → Android App Links hands it
+       straight to the app and this page never renders. Nothing to do.
+     • App installed, but opened inside another app's built-in browser
+       (WhatsApp, Instagram, LinkedIn) → those webviews routinely do NOT
+       honour App Links, so the person lands here even though they have the
+       app. "Open in the app" rescues that, via the custom scheme, which a
+       webview will hand to the OS.
+     • App not installed → the store link, for anyone who wants it. Everyone
+       else simply reads the page, which works signed-out.
+
+   Deliberately renders NOTHING until a store URL is configured
+   (VITE_ANDROID_STORE_URL). Before the app is published there is nowhere to
+   send anyone, and a banner advertising an app that cannot be installed is
+   worse than no banner. One env var turns it on.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+const STORE_URL = import.meta.env.VITE_ANDROID_STORE_URL || "";
+const APP_SCHEME = "myinvestorcircle";
+
+/**
+ * Translate the page's own hash route into the app's custom-scheme URL.
+ * The app's parser accepts exactly these shapes (mobile/src/utils/deepLinks.js),
+ * so whatever a person is looking at is what opens.
+ */
+export function appSchemeUrl(hash = window.location.hash) {
+  const route = String(hash || "").replace(/^#/, "");
+  return route.startsWith("/") ? `${APP_SCHEME}:/${route}` : null;
+}
+
+export function OpenInAppBanner() {
+  const isMobile = useIsMobile();
+  const [tried, setTried] = React.useState(false);
+
+  if (!STORE_URL || !isMobile) return null;
+  const target = appSchemeUrl();
+  if (!target) return null;
+
+  // Opening the scheme is a no-op when the app isn't installed — nothing
+  // happens and no error fires, which is why the store link is revealed
+  // afterwards rather than making the person guess which button they need.
+  const openApp = () => {
+    setTried(true);
+    window.location.href = target;
+  };
+
+  return (
+    <div style={{
+      display:'flex', alignItems:'center', gap:10, margin:'0 0 14px',
+      padding:'10px 12px', borderRadius:12,
+      background:'var(--accent-soft)', border:'1px solid var(--accent-line)',
+    }}>
+      <img src="/mic-logo.png" alt="" style={{width:26, height:26, flexShrink:0, borderRadius:6}}/>
+      <div style={{flex:1, minWidth:0, fontSize:12.5, lineHeight:1.4, color:'var(--ink)'}}>
+        {tried ? "Didn't open? You may not have the app yet." : "Get the full experience in the app."}
+      </div>
+      {tried
+        ? <a href={STORE_URL} target="_blank" rel="noopener noreferrer"
+             className="btn btn-pri btn-sm" style={{flexShrink:0, textDecoration:'none'}}>Install</a>
+        : <button className="btn btn-pri btn-sm" style={{flexShrink:0}} onClick={openApp}>Open in app</button>}
+    </div>
+  );
+}

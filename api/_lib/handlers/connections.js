@@ -22,6 +22,7 @@
  */
 
 import { sql, parseBody } from '../auth.js';
+import { notifyMember } from '../notifyMember.js';
 
 export default async function handleConnections(req, res, myId) {
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -85,6 +86,11 @@ export default async function handleConnections(req, res, myId) {
         INSERT INTO notifications (user_id, type, from_user_id, reference_id)
         VALUES (${addresseeId}, 'connection_request', ${myId}, ${conn[0].id})
       `;
+      // Email + push alongside the in-app row. This used to be the browser's
+      // job, done after the response came back, which meant a request sent
+      // from the mobile app was never followed by either — it reached the
+      // recipient's bell icon and nowhere else.
+      notifyMember({ recipientId: addresseeId, senderId: myId, type: 'connection_request' });
       res.status(200).json({ connection: conn[0] });
       return;
     }
@@ -105,6 +111,8 @@ export default async function handleConnections(req, res, myId) {
           INSERT INTO notifications (user_id, type, from_user_id, reference_id)
           VALUES (${rows[0].requester_id}, 'connection_accepted', ${myId}, ${connectionId})
         `;
+        // As above — both clients get this now, rather than only the browser.
+        notifyMember({ recipientId: rows[0].requester_id, senderId: myId, type: 'connection_accepted' });
       }
       res.status(200).json({ connection: rows[0] });
       return;

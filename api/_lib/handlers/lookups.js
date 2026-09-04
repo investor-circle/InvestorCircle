@@ -25,22 +25,29 @@
  *     feature-vote:       { featureKey }                        (auth: none)
  *     contact-submit:     { name?, email, subject, category?, message }  (auth: none)
  *     about-us-save:      { html }                              (auth: admin)
- *     user-lookup:        { by: 'id'|'username'|'email', value }         (auth: user)
- *     user-lookup-batch:  { by: 'id', values: [...] }                    (auth: user)
+ *     user-lookup:        { by: 'id'|'username', value }  -> id/username/name only
+ *                          (auth: user; never returns another member's email)
  *     avatar-upload:      { dataUrl }                                    (auth: user)
+ *     avatars-batch:      { values: [id, ...] }  -> [{ id, avatar_url }]    (auth: user)
+ *     expo-push-register:   { token, platform? }                          (auth: user)
+ *     expo-push-unregister: { token }                                     (auth: user)
  *     onboarding-complete:{ step: 'discover' }                           (auth: user)
  * GET  ?resource=lookups&action=discover-people                         (auth: user)
  * GET  ?resource=lookups&action=discover-more                           (auth: user)
  *
- * SECURITY: this file only ever exposes id/username/full_name/email plus a
+ * SECURITY: this file only ever exposes id/username/full_name plus a
  * small set of public-profile display fields (avatar_url, avatar_color,
  * aggregate recommendation stats, connection status) from user_profiles —
  * never sebi_*, claim_token, claim_status, claimed_by_uid, consent_*,
  * referred_by, or any other sensitive column. Every write derives identity
  * from requireUid()/requireAdmin() — never from a client-supplied id.
+ * No action here returns another member's EMAIL ADDRESS: the notification
+ * paths that once needed one now send their own mail server-side
+ * (notifyMember.js, and process-referral below).
  */
 
 import { sql, parseBody, requireUid, requireAdmin, sendAuthError } from '../auth.js';
+import { sendInternalEmail } from '../notifyMember.js';
 
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -54,12 +61,20 @@ const ALLOWED_REG_STATUS_LOOKUPS = ['self_directed', 'sebi_ra', 'sebi_ria'];
 // Neon DB space.
 const MAX_AVATAR_DATA_URL_LENGTH = 130000;
 const AVATAR_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+// Avatars are data: URIs (up to MAX_AVATAR_DATA_URL_LENGTH each), so a batch
+// is genuinely heavy — 60 of them would be a multi-megabyte response. Kept
+// small deliberately; clients that need more page through several calls.
+// Mirrored as BATCH_LIMIT in mobile/src/services/avatarCache.js.
+const MAX_AVATAR_BATCH = 25;
 // 'cv' was the old skippable "Build your Investor CV" checklist step
 // (pre-Phase-5.5-revision) — username/consent is now mandatory and folded
 // directly into signup / username-save (see action=username-save above), so
 // onboarding_cv_done is set there and this action only ever needs to mark
 // the one-time Discover modal as dismissed/completed.
 const ONBOARDING_STEPS = ['discover'];
+// Expo push tokens are "ExponentPushToken[...]" (older clients: ExpoPushToken).
+// Validated so a malformed value can't be stored and then fail every send.
+const EXPO_PUSH_TOKEN_RE = /^Expo(nent)?PushToken\[[^\]\s]+\]$/;
 
 async function isUsernameAvailable(username, excludeId) {
   const rows = excludeId
@@ -567,21 +582,52 @@ export default async function handleLookups(req, res) {
       `;
       if (!refs[0]) { res.status(200).json({ referred: false }); return; }
       const referrer = refs[0];
-      await sql`UPDATE user_profiles SET referred_by = ${referrer.id} WHERE id = ${uid} AND referred_by IS NULL`;
+      // RETURNING tells us whether this was the FIRST time this account was
+      // attributed to a referrer (the WHERE clause makes the update a no-op
+      // otherwise). Everything below that is not idempotent — the emails
+      // especially — hangs off that, so replaying the call (a stored code the
+      // client failed to clear, a retry, a second device) cannot notify the
+      // referrer over and over about the same person joining.
+      const claimed = await sql`
+        UPDATE user_profiles SET referred_by = ${referrer.id}
+        WHERE id = ${uid} AND referred_by IS NULL
+        RETURNING id
+      `;
+      const firstTime = claimed.length > 0;
       await sql`
         INSERT INTO connections (requester_id, addressee_id, status)
         VALUES (${uid}, ${referrer.id}, 'accepted')
         ON CONFLICT DO NOTHING
       `;
-      await sql`
-        INSERT INTO notifications (user_id, type, from_user_id)
-        VALUES (${referrer.id}, 'connection_accepted', ${uid})
-      `.catch(() => {});
+      if (firstTime) {
+        await sql`
+          INSERT INTO notifications (user_id, type, from_user_id)
+          VALUES (${referrer.id}, 'connection_accepted', ${uid})
+        `.catch(() => {});
+        // The two referral emails used to be sent by the BROWSER from
+        // App.jsx's processReferral(), which is why the server had to hand
+        // back the referrer's email address to do it. Sending them here means
+        // an account created in the mobile app gets them too, and the
+        // response no longer has to disclose one member's address to another.
+        const newUser = await sql`SELECT full_name, email FROM user_profiles WHERE id = ${uid} LIMIT 1`;
+        if (newUser[0]?.email) {
+          sendInternalEmail('welcome_referred', {
+            to_email: newUser[0].email,
+            referrer_name: referrer.full_name || '',
+            referrer_username: referrer.username || '',
+          }).catch(() => {});
+        }
+        if (referrer.email) {
+          sendInternalEmail('referral_converted', {
+            to_email: referrer.email,
+            new_user_name: newUser[0]?.full_name || 'New member',
+          }).catch(() => {});
+        }
+      }
       res.status(200).json({
         referred: true,
         referrerName: referrer.full_name,
         referrerUsername: referrer.username,
-        referrerEmail: referrer.email,
       });
       return;
     }
@@ -663,6 +709,38 @@ export default async function handleLookups(req, res) {
       return;
     }
 
+    // Mobile device push. Separate from push-subscribe above because an Expo
+    // token has no p256dh/auth key pair — see supabase/phase10_expo_push_tokens.sql.
+    // Identity comes from the verified Firebase token, never the body.
+    if (action === 'expo-push-register') {
+      let uid;
+      try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+      const token = String(body.token || '');
+      const platform = String(body.platform || '').slice(0, 16) || null;
+      if (!EXPO_PUSH_TOKEN_RE.test(token)) { res.status(400).json({ error: 'a valid expo push token is required' }); return; }
+      await sql`
+        INSERT INTO expo_push_tokens (token, user_id, platform)
+        VALUES (${token}, ${uid}, ${platform})
+        ON CONFLICT (token) DO UPDATE
+          SET user_id = ${uid}, platform = ${platform}, updated_at = now()
+      `;
+      res.status(200).json({ success: true });
+      return;
+    }
+
+    if (action === 'expo-push-unregister') {
+      let uid;
+      try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+      const token = String(body.token || '');
+      if (!token) { res.status(400).json({ error: 'token is required' }); return; }
+      // Scoped to the caller: a signed-in user may only detach a token from
+      // their OWN account, so this cannot be used to silence someone else's
+      // notifications by guessing or replaying a token.
+      await sql`DELETE FROM expo_push_tokens WHERE token = ${token} AND user_id = ${uid}`;
+      res.status(200).json({ success: true });
+      return;
+    }
+
     if (action === 'push-unsubscribe') {
       try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
       const endpoint = String(body.endpoint || '');
@@ -704,38 +782,57 @@ export default async function handleLookups(req, res) {
       return;
     }
 
+    // Resolve one member to their display identity.
+    //
+    // This used to return their EMAIL ADDRESS, and to allow looking someone up
+    // BY email. Both existed only to serve notification code that has since
+    // moved server-side (handlers/connections.js and lookups' own
+    // process-referral now send those emails themselves), so a client no
+    // longer has any reason to learn another member's address — and being
+    // able to probe an address for an account is member enumeration, which is
+    // worth closing whether or not anything was using it.
+    //
+    // The two remaining callers (App.jsx's pending-connect flow, and the
+    // share popover in features/recommendations) use only the id, username
+    // and name, so nothing here is a behaviour change for them.
     if (action === 'user-lookup') {
       try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
       const by = String(body.by || '');
       const value = body.value;
-      if (!['id', 'username', 'email'].includes(by) || !value) {
-        res.status(400).json({ error: 'by must be id|username|email and value is required' });
+      if (!['id', 'username'].includes(by) || !value) {
+        res.status(400).json({ error: 'by must be id|username and value is required' });
         return;
       }
-      let rows;
-      if (by === 'id') {
-        rows = await sql`SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE id = ${String(value)} LIMIT 1`;
-      } else if (by === 'username') {
-        rows = await sql`SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE username = ${String(value)} LIMIT 1`;
-      } else {
-        rows = await sql`SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE email = ${String(value)} LIMIT 1`;
-      }
+      const rows = by === 'id'
+        ? await sql`SELECT id, username, full_name, first_name, last_name FROM user_profiles WHERE id = ${String(value)} LIMIT 1`
+        : await sql`SELECT id, username, full_name, first_name, last_name FROM user_profiles WHERE username = ${String(value)} LIMIT 1`;
       res.status(200).json({ user: rows[0] || null });
       return;
     }
 
-    if (action === 'user-lookup-batch') {
+    // Avatars for a set of users, by id.
+    //
+    // Deliberately SEPARATE from the feed/list endpoints rather than joined
+    // into them. Avatars are stored as data: URIs on user_profiles.avatar_url
+    // (there is no blob storage), so folding them into a feed row would put
+    // an image inside every item of a list that is already on the critical
+    // path. Fetched here instead: once per distinct author, after the list
+    // has painted, and cached client-side.
+    //
+    // Returns only id + avatar_url — no names, no emails, and nothing else
+    // from user_profiles. Rows with no picture are omitted rather than
+    // returned as null, which keeps the response small; the client treats a
+    // requested id that does not come back as "has no picture".
+    if (action === 'avatars-batch') {
       try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
-      const by = String(body.by || '');
-      const values = Array.isArray(body.values) ? body.values.map(String).slice(0, 200) : [];
-      if (by !== 'id' || !values.length) {
-        res.status(400).json({ error: 'by must be id and values must be a non-empty array' });
-        return;
-      }
+      const values = Array.isArray(body.values) ? body.values.map(String).slice(0, MAX_AVATAR_BATCH) : [];
+      if (!values.length) { res.status(200).json({ avatars: [] }); return; }
       const rows = await sql`
-        SELECT id, username, full_name, first_name, last_name, email FROM user_profiles WHERE id = ANY(${values})
+        SELECT id, avatar_url
+        FROM user_profiles
+        WHERE id = ANY(${values}) AND avatar_url IS NOT NULL
       `;
-      res.status(200).json({ users: rows });
+      res.status(200).json({ avatars: rows });
       return;
     }
 

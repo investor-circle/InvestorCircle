@@ -1,0 +1,82 @@
+{
+  "expo": {
+    "name": "myInvestorCircle",
+    "slug": "myinvestorcircle",
+    "owner": "myinvestorcircle.com",
+    "scheme": "myinvestorcircle",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f5f5fb"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.myinvestorcircle.app",
+      "associatedDomains": [
+        "applinks:myinvestorcircle.com"
+      ]
+    },
+    "android": {
+      "package": "com.myinvestorcircle.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "myinvestorcircle.com"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
+      "googleServicesFile": "./google-services.json",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "@react-native-firebase/app",
+      "expo-secure-store",
+      "./plugins/withCrashLogger"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f9625792-7d61-4490-b859-3da514a08bf9"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f9625792-7d61-4490-b859-3da514a08bf9",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    }
+  }
+}

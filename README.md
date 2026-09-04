@@ -29,11 +29,12 @@ The app runs fully on mock data without this. When you're ready to persist:
 
 1. Create a free project at [neon.tech](https://neon.tech) (no credit card, Mumbai region recommended).
 2. Open the Neon **SQL editor** and run [`supabase/schema.sql`](supabase/schema.sql) — it's plain Postgres, no changes needed.
-3. `cp .env.example .env` and paste your connection string from **Neon dashboard → Connection Details**.
-4. Restart `npm run dev` — Vite re-reads `.env` on startup.
-5. Wire queries by importing `sql` from `src/supabaseClient.js` (now renamed to Neon client) into your components.
+3. Put the connection string in the **Vercel** project as `DATABASE_URL` (server-only — never a `VITE_` variable, and never a GitHub Actions secret for the frontend build).
+4. The browser never talks to Neon. Frontend code calls the authenticated
+   endpoints in `api/` via `src/services/api/*.js` → `src/db.js`; those
+   functions hold the credential. Add new queries there, not in `src/**`.
 
-> To deploy with a real database on GitHub Pages, add `VITE_DATABASE_URL` as a **GitHub secret** (repo Settings → Secrets → Actions) and uncomment the `env:` block in `.github/workflows/deploy.yml`.
+> **Do not add a database URL to the frontend build.** Anything named `VITE_*` is compiled into the JavaScript every visitor downloads, so a connection string passed to `npm run build` is published rather than configured. `src/supabaseClient.js` and `VITE_DATABASE_URL` were removed when data access moved behind the API — see CLAUDE.md, "Prohibition on browser-side Neon access".
 
 ## What's inside
 
@@ -72,7 +73,7 @@ investorcircle/
 - **PAN linking is mocked.** A real build uses India's Account Aggregator framework. Try `ABCDE1234F` or `AAAPZ1234C`.
 - **P&L uses an assumed $1,000 notional** per acted recommendation for demo math.
 - **Regulation:** sharing recommendations + performance sits near regulated "investment advice." The closed-circle, private-by-default design mitigates this — review before any public or monetised use.
-- **Connection string security:** `VITE_DATABASE_URL` is baked into the browser bundle. Fine for a personal prototype; move queries to an API route before storing real user data.
+- **Database access:** the browser holds no database credential. Every read and write goes through the authenticated serverless functions in `api/`, which derive the caller's identity from a verified Firebase ID token rather than trusting anything the client sends.
 
 ## License
 

@@ -30,6 +30,13 @@ jobs:
       - name: Unit / component tests
         run: npm test
 
+      # The email endpoint's send policy is Python. Deliberately written with
+      # no dependencies so it runs here without installing resend or the
+      # Firebase SDK — it decides who may email whom, so it should not be the
+      # one piece of security logic nothing checks.
+      - name: Email policy tests (Python)
+        run: python3 api/_lib/email_policy_test.py
+
       - name: Build
         run: npm run build
         env:

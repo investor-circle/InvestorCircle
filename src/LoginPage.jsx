@@ -15,19 +15,11 @@ import { API_ORIGIN } from "./db";
 // Preview deployments — so a Preview build of a branch with backend changes
 // (e.g. this one) talks to its own freshly-deployed api/, not a stale
 // hardcoded production URL.
-const EMAIL_API = API_ORIGIN + '/api/email';
 const RESET_API = API_ORIGIN + '/api/reset';
 
 /* ── Phase 2e: authenticated server-side profile endpoints ─── */
 const SIGNUP_API             = API_ORIGIN + '/api/profile/signup';
 const USERNAME_AVAILABLE_API = API_ORIGIN + '/api/profile/username-available';
-const sendEmail = (type, payload) =>
-  fetch(EMAIL_API, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ type, ...payload }),
-  }).catch(() => {});
-
 /* Translate Firebase error codes into plain-English messages */
 function friendlyError(code, isSignup = false) {
   switch (code) {
@@ -225,8 +217,9 @@ export default function LoginPage() {
       await updateProfile(cred.user, { displayName: fullName });
       track('sign_up', { method: 'email' });
 
-      // Send welcome / security-confirmation email (fire-and-forget).
-      sendEmail('signup_welcome', { to_email: signupEmail.trim(), first_name: firstName.trim(), full_name: fullName });
+      // The welcome email is sent server-side by /api/profile/signup, on a
+      // genuine first signup only. It used to be sent from here, which meant
+      // an account created in the mobile app got no welcome at all.
 
       // Auth state change fires → AuthContext logs user in → App.jsx referral processing runs
     } catch (e) {
