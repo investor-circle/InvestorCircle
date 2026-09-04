@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.myinvestorcircle.app",
+      "sha256_cert_fingerprints": [
+        "1E:92:E4:E8:41:FF:A4:04:13:40:11:97:AB:E7:F8:70:7D:DD:0E:8E:63:39:E2:33:05:AC:9C:65:A7:FC:AE:A4"
+      ]
+    }
+  }
+]
