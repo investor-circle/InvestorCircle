@@ -10,6 +10,7 @@
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../config/firebase";
 import { addLog } from "../utils/logger";
+import { recordRequest, SLOW_REQUEST_MS, STALL_WARN_MS } from "../utils/perf";
 
 /**
  * Resolves once Firebase has finished restoring the persisted session.
@@ -48,6 +49,24 @@ export const API_BASE = API_ORIGIN + "/api";
 // Native's fetch has no default timeout, so impose one explicitly.
 const REQUEST_TIMEOUT_MS = 15000;
 
+/**
+ * Requests that have not come back yet.
+ *
+ * A screen stuck on a spinner is almost always one of these, and until now
+ * that was invisible: the log recorded a request only once it finished, so a
+ * request still in flight left no trace at all. Each entry announces itself
+ * once if it is still outstanding after STALL_WARN_MS, which turns "the app
+ * hangs on this screen" into a line naming the call it is waiting for.
+ */
+let inFlightSeq = 0;
+const inFlight = new Map();
+
+/** What the app is currently waiting for — shown on the Diagnostics screen. */
+export function pendingRequests() {
+  const now = Date.now();
+  return [...inFlight.values()].map((r) => ({ label: r.label, waitingMs: now - r.startedAt }));
+}
+
 export async function callApi(path, { method = "GET", body } = {}) {
   // Wait for the persisted session to be restored before concluding the
   // caller is signed out — see authReady() above.
@@ -73,6 +92,24 @@ export async function callApi(path, { method = "GET", body } = {}) {
       clearTimeout(timer);
     }
   };
+  const label = `${method} ${path}`;
+  const startedAt = Date.now();
+  const seq = ++inFlightSeq;
+  inFlight.set(seq, { label, startedAt });
+  const stallTimer = setTimeout(() => {
+    if (inFlight.has(seq)) addLog("warn", `api ${label} still waiting after ${STALL_WARN_MS}ms`);
+  }, STALL_WARN_MS);
+  const settle = (ok) => {
+    clearTimeout(stallTimer);
+    inFlight.delete(seq);
+    const ms = Date.now() - startedAt;
+    recordRequest(path, ms, ok);
+    // Only slow calls get their own line; logging every request's duration
+    // would bury the entries that matter under routine ones.
+    if (ms >= SLOW_REQUEST_MS) addLog("warn", `api ${label} slow: ${ms}ms`);
+    return ms;
+  };
+
   try {
     let res = await doFetch(await auth.currentUser.getIdToken());
     // Same stale-token retry as the web app's callApi() — see src/db.js.
@@ -81,20 +118,24 @@ export async function callApi(path, { method = "GET", body } = {}) {
     }
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
+      settle(true);
       return { ok: true, data };
     }
     if (res.status === 401 || res.status === 403) {
       const data = await res.json().catch(() => ({}));
-      addLog("error", `api ${method} ${path} denied (${res.status})`);
+      settle(false);
+      addLog("error", `api ${label} denied (${res.status})`);
       return { ok: false, denied: true, status: res.status, data };
     }
-    addLog("error", `api ${method} ${path} failed (HTTP ${res.status})`);
+    settle(false);
+    addLog("error", `api ${label} failed (HTTP ${res.status})`);
     return { ok: false, infra: true, status: res.status };
   } catch (e) {
+    const ms = settle(false);
     const aborted = e?.name === "AbortError";
     addLog(
       "error",
-      `api ${method} ${path} ${aborted ? `timed out after ${REQUEST_TIMEOUT_MS}ms` : `threw: ${e?.message || e}`}`
+      `api ${label} ${aborted ? `timed out after ${REQUEST_TIMEOUT_MS}ms` : `threw: ${e?.message || e}`} (${ms}ms)`
     );
     return { ok: false, infra: true, timeout: aborted, error: e };
   }

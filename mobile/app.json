@@ -7,7 +7,6 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -48,7 +47,10 @@
           ]
         }
       ],
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -68,6 +70,13 @@
       "eas": {
         "projectId": "f9625792-7d61-4490-b859-3da514a08bf9"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f9625792-7d61-4490-b859-3da514a08bf9",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
     }
   }
 }

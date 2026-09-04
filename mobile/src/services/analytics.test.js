@@ -18,17 +18,19 @@ const mockLogScreenView = jest.fn(async () => {});
 const mockSetUserId = jest.fn(async () => {});
 let mockModuleThrows = false;
 
-jest.mock(
-  "@react-native-firebase/analytics",
-  () => ({
-    __esModule: true,
-    default: () => {
-      if (mockModuleThrows) throw new Error("native module not linked");
-      return { logEvent: mockLogEvent, logScreenView: mockLogScreenView, setUserId: mockSetUserId };
-    },
-  }),
-  { virtual: true }
-);
+// NOT { virtual: true }: that flag declares the module does not exist, and
+// @react-native-firebase/analytics IS installed. With both true, resolution
+// was non-deterministic — roughly one full-suite run in three loaded the real
+// package instead of this mock, whose default() then returned something
+// without logEvent, failing every test in this file that needs the module.
+// Isolated runs always passed, which is what made it look like a phantom.
+jest.mock("@react-native-firebase/analytics", () => ({
+  __esModule: true,
+  default: () => {
+    if (mockModuleThrows) throw new Error("native module not linked");
+    return { logEvent: mockLogEvent, logScreenView: mockLogScreenView, setUserId: mockSetUserId };
+  },
+}));
 
 beforeEach(() => {
   jest.clearAllMocks();

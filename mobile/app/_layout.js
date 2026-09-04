@@ -1,8 +1,13 @@
 // Diagnostics first: installing the logger before anything else runs means
 // errors thrown during the rest of module init are still captured.
 import { installLogger, loadPersistedLogs, addLog } from "../src/utils/logger";
+import { mark } from "../src/utils/perf";
 installLogger();
 loadPersistedLogs();
+// First entry on the startup timeline. Everything after this is measured
+// from here, so a launch that never reaches the feed says which phase it
+// stopped at instead of just never arriving.
+mark("js-bundle-executed");
 
 import { useEffect, useRef } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
@@ -47,6 +52,23 @@ function RootNavigator() {
   useEffect(() => {
     addLog("info", `nav: route="${segKey || "/"}" authLoading=${authLoading} signedIn=${!!user}`);
   }, [segKey, authLoading, user]);
+
+  // The two moments that separate "still starting" from "started": when
+  // Firebase finishes restoring the session, and when a real screen (not the
+  // splash) is on screen. A launch that hangs before either one is a
+  // different bug from one that hangs after, and the timeline says which.
+  const markedAuth = useRef(false);
+  const markedFirstScreen = useRef(false);
+  useEffect(() => {
+    if (!authLoading && !markedAuth.current) {
+      markedAuth.current = true;
+      mark("auth-resolved");
+    }
+    if (!authLoading && segKey && !markedFirstScreen.current) {
+      markedFirstScreen.current = true;
+      mark(`first-screen:${segKey}`);
+    }
+  }, [authLoading, segKey]);
 
   // Screen tracking, in ONE place rather than a call per screen. The web
   // does the same thing at its single setPage wrapper, and reports it as
@@ -282,6 +304,7 @@ export default function RootLayout() {
   // Diagnostics can confirm whether fonts ever resolve.
   useEffect(() => {
     addLog("info", `fonts: loaded=${!!fontsLoaded} error=${fontError ? fontError.message || fontError : "none"}`);
+    if (fontsLoaded || fontError) mark("fonts-settled");
   }, [fontsLoaded, fontError]);
 
   useEffect(() => {

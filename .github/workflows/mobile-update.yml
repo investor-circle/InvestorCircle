@@ -1,0 +1,84 @@
+name: Mobile — Publish OTA update
+
+# Ships a JavaScript-only change to phones that already have the app,
+# WITHOUT consuming an EAS build. This is the cheap path: a build is only
+# needed when native code changes (a new native dependency, a permission, an
+# app.json plugin). Everything else — a screen fix, a layout change, wording,
+# most crashes — goes out through here.
+#
+# Trigger it the same way as the build workflow: "Run workflow" in the
+# Actions tab, which works from a phone browser or the GitHub mobile app.
+#
+# The installed app only accepts an update whose runtimeVersion matches its
+# own. app.json sets `runtimeVersion: { policy: "fingerprint" }`, which
+# derives that value from the native dependency set — so if this update DOES
+# need native changes, phones simply never receive it rather than downloading
+# something that would crash on launch. The job prints the fingerprint so a
+# mismatch is visible here rather than mysterious on the device.
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Which installed builds to update (must match the build's channel)"
+        type: choice
+        options: [preview, production]
+        default: preview
+      message:
+        description: "What changed (shown in the EAS dashboard)"
+        type: string
+        default: "JS update"
+
+jobs:
+  publish-update:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      # Same install as the build workflow, and for the same reason: this
+      # dependency tree has real peer-dependency conflicts at the pinned
+      # Expo SDK 57 versions, and --legacy-peer-deps is the path that was
+      # actually validated. Matching the build workflow matters more than
+      # usual here, since an update is bundled from these same modules.
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      # An update whose bundle does not build is worse than no update: it
+      # would be published and then fail on real phones. Bundle first.
+      - name: Verify the bundle builds
+        run: npx expo export --platform android
+
+      - name: Show runtime fingerprint
+        run: |
+          echo "Phones only accept an update whose runtimeVersion matches theirs."
+          npx expo config --type public --json > /tmp/cfg.json 2>/dev/null || true
+          node -e "try{const c=require('/tmp/cfg.json');console.log('runtimeVersion policy:',JSON.stringify(c.runtimeVersion));}catch(e){console.log('(could not read config)')}"
+        continue-on-error: true
+
+      - name: Publish update
+        run: |
+          eas update --branch "${{ inputs.channel }}" \
+            --message "${{ inputs.message }}" \
+            --platform android --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: What happens next
+        if: success()
+        run: |
+          echo "Published to branch/channel: ${{ inputs.channel }}"
+          echo "Installed apps pick this up on their NEXT launch (the app does not"
+          echo "block startup waiting for it — EXPO_UPDATES_LAUNCH_WAIT_MS is 0)."
+          echo "To pull it immediately on a device: Profile > Diagnostics >"
+          echo "Check for update."
