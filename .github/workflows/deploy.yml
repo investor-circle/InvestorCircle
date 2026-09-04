@@ -27,8 +27,11 @@ jobs:
 
       - name: Build
         run: npm run build
-        # If you later add a real VITE_DATABASE_URL, add it as a GitHub secret
-        # (repo Settings → Secrets → Actions) and expose it here:
+        # Only PUBLIC values belong here. Anything named VITE_* is compiled
+        # into the JavaScript every visitor downloads, so a database URL or an
+        # API secret passed in at this step is published, not configured.
+        # Server-only credentials live in the Vercel dashboard, where the
+        # api/ functions read them (see CLAUDE.md, "Environment variables").
         env:
           VITE_FIREBASE_API_KEY:            ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN:        ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -36,7 +39,6 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET:     ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID:             ${{ secrets.VITE_FIREBASE_APP_ID }}
-          VITE_DATABASE_URL:                ${{ secrets.VITE_DATABASE_URL }}
           VITE_PRICE_API_URL:                ${{ secrets.VITE_PRICE_API_URL }}
           VITE_CAS_API_URL:                  ${{ secrets.VITE_CAS_API_URL }}
           VITE_VAPID_PUBLIC_KEY:             ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
