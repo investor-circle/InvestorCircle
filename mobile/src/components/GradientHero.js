@@ -7,7 +7,21 @@ import { colors, fonts, GRADIENT } from "../theme/colors";
 // gradient block with an uppercase eyebrow, a serif-ish bold title and a
 // muted subtitle. Used at the top of the main list screens so the native app
 // opens with the same branded header the web feed does.
-export default function GradientHero({ eyebrow, title, subtitle, icon, onIconPress, badge }) {
+export default function GradientHero({
+  eyebrow,
+  title,
+  subtitle,
+  icon,
+  onIconPress,
+  badge,
+  // A second action, drawn to the LEFT of the primary one. Search lives here
+  // on the feed: the web puts it in the header of every page, and the app had
+  // it buried behind Profile → Find investors with no way to look up a stock
+  // at all.
+  secondaryIcon,
+  onSecondaryPress,
+  secondaryLabel,
+}) {
   return (
     <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
       <View style={styles.row}>
@@ -16,6 +30,17 @@ export default function GradientHero({ eyebrow, title, subtitle, icon, onIconPre
           <Text style={styles.title}>{title}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
+        {secondaryIcon ? (
+          <Pressable
+            style={styles.iconBtn}
+            onPress={onSecondaryPress}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={secondaryLabel}
+          >
+            <Ionicons name={secondaryIcon} size={20} color="#fff" />
+          </Pressable>
+        ) : null}
         {icon ? (
           <Pressable style={styles.iconBtn} onPress={onIconPress} hitSlop={8}>
             <Ionicons name={icon} size={20} color="#fff" />

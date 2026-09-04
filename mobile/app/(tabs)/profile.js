@@ -33,8 +33,10 @@ function ProfileScreen() {
     <SafeAreaView style={styles.flex} edges={["top"]}>
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
         <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
-          <Avatar profile={profile} size={78} style={styles.heroAvatar} />
-          <Text style={styles.name}>{profile?.full_name || "—"}</Text>
+          <Pressable onPress={() => router.push("/track-record")} style={{ alignItems: "center" }}>
+            <Avatar profile={profile} size={78} style={styles.heroAvatar} />
+            <Text style={styles.name}>{profile?.full_name || "—"}</Text>
+          </Pressable>
           {profile?.username ? (
             <Pressable onPress={shareMine} hitSlop={8} style={styles.shareMine}>
               <Text style={styles.username}>@{profile.username}</Text>
@@ -49,6 +51,7 @@ function ProfileScreen() {
         </LinearGradient>
 
         <View style={styles.menu}>
+          <MenuRow icon="ribbon-outline" label="Your track record" onPress={() => router.push("/track-record")} />
           <MenuRow icon="people-outline" label="Your network" onPress={() => router.push("/network")} />
           <MenuRow icon="search-outline" label="Find investors" onPress={() => router.push("/people")} />
           <MenuRow icon="albums-outline" label="Your Circles" onPress={() => router.push("/circles")} />

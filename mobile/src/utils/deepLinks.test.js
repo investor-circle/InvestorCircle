@@ -192,6 +192,9 @@ describe("isExternalWebLink", () => {
     // Market Insights now has a screen here, so its link stays in the app.
     expect(isExternalWebLink("https://myinvestorcircle.com/#/market")).toBe(false);
     expect(parseDeepLink("https://myinvestorcircle.com/#/market")).toEqual({ path: "/market" });
+    // …and so does your own track record.
+    expect(parseDeepLink("https://myinvestorcircle.com/#/track-record")).toEqual({ path: "/track-record" });
+    expect(isExternalWebLink("https://myinvestorcircle.com/#/track-record")).toBe(false);
     expect(isExternalWebLink("https://myinvestorcircle.com/?ref=alice")).toBe(false);
     expect(isExternalWebLink("https://myinvestorcircle.com/?mode=resetPassword&oobCode=A")).toBe(false);
   });

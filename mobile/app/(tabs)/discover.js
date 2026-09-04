@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -14,6 +14,15 @@ import { rankWhatYouMissed } from "../../src/utils/whatYouMissed";
 import { putReco } from "../../src/utils/recoStore";
 import { primeAvatars } from "../../src/services/avatarCache";
 import { primeReactions } from "../../src/services/reactionStore";
+import { getMyTrackedRecos } from "../../src/services/api/engagementApi";
+import { getDailyPrices } from "../../src/services/api/consensusApi";
+import {
+  byTicker,
+  mapTrackedReco,
+  summariseTracked,
+  topMovers,
+  trackedTickers,
+} from "../../src/utils/trackedSummary";
 import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
@@ -26,11 +35,18 @@ import { withBoundary } from "../../src/components/ErrorBoundary";
 const settled = (r, fallback) => (r.status === "fulfilled" ? r.value : fallback);
 
 async function loadPulse() {
-  const [pubR, recvR, connR, trackedR] = await Promise.allSettled([
+  const [pubR, recvR, connR, trackedR, myTrackedR] = await Promise.allSettled([
     getPublicFeed(),
     getMyReceivedRecos(),
     getMyConnections(),
     getMyTrackedRecoIds(),
+    // The AUTHORITATIVE tracked list, not the ids filtered against the feed
+    // pool. The web's widget makes the same call for the reason its comment
+    // gives: the in-memory pool is direct deliveries plus a slice of the
+    // public feed, so an idea tracked from a profile, a Circle, or one that
+    // has aged out of the feed window is genuinely tracked and silently
+    // missing from any count derived that way.
+    getMyTrackedRecos(),
   ]);
 
   // Drop null/id-less rows before ranking. trending.js guards against these
@@ -53,8 +69,18 @@ async function loadPulse() {
   const trending = rankTrending(publicRecos, { contactIds });
   const missed = rankWhatYouMissed(received, { tracked: trackedSet, contactIds });
 
-  debugLog(`pulse: public=${publicRecos.length} trending=${trending.length} received=${received.length} missed=${missed.length}`);
-  return { trending, missed, publicRecos };
+  // Fresh Ideas from your Circle — the newest ideas that reached you, not a
+  // ranked selection. "What's new from people I follow" is a different
+  // question from "what's moving", which is what the two widgets below answer.
+  const fresh = received
+    .filter((r) => !r.hidden)
+    .sort((a, b) => new Date(b.date || b.created_at || 0) - new Date(a.date || a.created_at || 0))
+    .slice(0, 5);
+
+  const trackedList = usable(settled(myTrackedR, [])).map(mapTrackedReco);
+
+  debugLog(`pulse: public=${publicRecos.length} trending=${trending.length} received=${received.length} missed=${missed.length} fresh=${fresh.length} tracked=${trackedList.length}`);
+  return { trending, missed, publicRecos, fresh, trackedList };
 }
 
 function PulseScreen() {
@@ -109,7 +135,13 @@ function PulseScreen() {
   );
 
   const hero = (
-    <GradientHero eyebrow="Pulse" title="Your daily investment dose" subtitle="What's moving across your circle & the platform" />
+    <GradientHero
+      eyebrow="Pulse"
+      title="Your daily investment dose"
+      subtitle="What's moving across your circle & the platform"
+      icon="search"
+      onIconPress={() => router.push("/search")}
+    />
   );
 
   if (data === null) {
@@ -123,7 +155,7 @@ function PulseScreen() {
     );
   }
 
-  const { trending, missed, publicRecos } = data;
+  const { trending, missed, publicRecos, fresh, trackedList } = data;
   const nothing = trending.length === 0 && missed.length === 0 && publicRecos.length === 0;
   const shown = new Set([...trending, ...missed].map((x) => String(x.idea?.id ?? x.id)));
   const rest = publicRecos.filter((r) => !shown.has(String(r.id)));
@@ -162,6 +194,20 @@ function PulseScreen() {
             </Text>
           </View>
         ) : null}
+
+        {fresh.length > 0 ? (
+          <Section
+            icon="sparkles-outline"
+            title="Fresh from your Circle"
+            sub="The newest ideas shared with you"
+          >
+            {fresh.map((r) => (
+              <RecoCard key={String(r.id)} reco={r} onPress={openReco} onOpenProfile={openProfile} />
+            ))}
+          </Section>
+        ) : null}
+
+        <MyTrackedWidget list={trackedList} onViewAll={() => router.push("/track")} />
 
         {missed.length > 0 ? (
           <Section
@@ -236,6 +282,134 @@ function RankedCard({ item, onPress, onOpenProfile }) {
   );
 }
 
+/**
+ * My Tracked — what happened to the ideas you're following.
+ *
+ * Two modes, and they answer deliberately different questions (see
+ * src/utils/trackedSummary.js for why "since yesterday" is NOT an in/out-of-
+ * money delta). Only the "yesterday" mode needs prices, so that request is
+ * made lazily on first switch rather than on every Pulse load — Pulse's
+ * first paint is the thing this screen is judged on.
+ */
+function MyTrackedWidget({ list, onViewAll }) {
+  const [mode, setMode] = useState("yesterday");
+  const [daily, setDaily] = useState(null);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+
+  const tickerKey = useMemo(() => trackedTickers(list).join(","), [list]);
+  useEffect(() => {
+    if (mode !== "yesterday" || !tickerKey) return;
+    let cancelled = false;
+    getDailyPrices(tickerKey.split(","))
+      .then((rows) => {
+        if (!cancelled && mounted.current) setDaily(byTicker(rows));
+      })
+      // Pricing being unavailable degrades to the neutral "no data" segment;
+      // it must never blank the widget.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, tickerKey]);
+
+  const sum = useMemo(() => summariseTracked(list, mode === "yesterday" ? daily : null), [list, daily, mode]);
+  const movers = useMemo(
+    () => (mode === "yesterday" ? topMovers(list, daily, 3) : []),
+    [list, daily, mode]
+  );
+
+  if (!list.length) {
+    return (
+      <Section icon="bookmark-outline" title="My Tracked" sub="Ideas you're following">
+        <View style={styles.trackedEmpty}>
+          <Text style={styles.trackedEmptyTitle}>Track ideas, watch them move</Text>
+          <Text style={styles.trackedEmptySub}>
+            Tap the bookmark on any idea to track it — its daily moves show up here.
+          </Text>
+        </View>
+      </Section>
+    );
+  }
+
+  const segments =
+    mode === "yesterday"
+      ? [
+          { n: sum.up, color: colors.gain, label: `${sum.up} up` },
+          { n: sum.down, color: colors.loss, label: `${sum.down} down` },
+          { n: sum.noData, color: colors.line2, label: `${sum.noData} flat` },
+        ]
+      : [
+          { n: sum.inMoney, color: colors.gain, label: `${sum.inMoney} in profit` },
+          { n: sum.outMoney, color: colors.loss, label: `${sum.outMoney} behind` },
+        ];
+
+  return (
+    <Section icon="bookmark-outline" title="My Tracked" sub="Ideas you're following">
+      <View style={styles.trackedCard}>
+        <View style={styles.modeRow}>
+          {[
+            ["yesterday", "Since yesterday"],
+            ["tracking", "Since tracking"],
+          ].map(([id, label]) => (
+            <Pressable
+              key={id}
+              style={[styles.modeBtn, mode === id && styles.modeBtnOn]}
+              onPress={() => setMode(id)}
+            >
+              <Text style={[styles.modeText, mode === id && styles.modeTextOn]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.trackedHead}>
+          <Text style={styles.trackedTotal}>{sum.total}</Text>
+          <Text style={styles.trackedTotalLabel}>
+            idea{sum.total === 1 ? "" : "s"} tracked
+          </Text>
+        </View>
+
+        <View style={styles.splitBar}>
+          {segments.map((seg, i) =>
+            seg.n > 0 ? <View key={i} style={{ flex: seg.n, backgroundColor: seg.color }} /> : null
+          )}
+        </View>
+        <View style={styles.splitLegend}>
+          {segments.map((seg, i) => (
+            <Text key={i} style={[styles.legendText, { color: seg.color }]}>
+              {seg.label}
+            </Text>
+          ))}
+        </View>
+
+        {movers.length ? (
+          <View style={styles.moversWrap}>
+            <Text style={styles.moversLabel}>Biggest moves</Text>
+            {movers.map(({ reco, changePct }) => (
+              <View key={String(reco.id)} style={styles.moverRow}>
+                <Text style={styles.moverTicker} numberOfLines={1}>
+                  {reco.ticker || reco.assetName}
+                </Text>
+                <Text
+                  style={[styles.moverPct, { color: changePct >= 0 ? colors.gain : colors.loss }]}
+                >
+                  {changePct >= 0 ? "+" : ""}
+                  {Number(changePct).toFixed(2)}%
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        <Pressable style={styles.viewAll} onPress={onViewAll}>
+          <Text style={styles.viewAllText}>View all tracked</Text>
+          <Ionicons name="chevron-forward" size={15} color={colors.accentInk} />
+        </Pressable>
+      </View>
+    </Section>
+  );
+}
+
 function Section({ icon, title, sub, children }) {
   return (
     <View style={{ marginTop: 18 }}>
@@ -252,6 +426,35 @@ function Section({ icon, title, sub, children }) {
 }
 
 const styles = StyleSheet.create({
+  trackedCard: { paddingHorizontal: 16 },
+  modeRow: { flexDirection: "row", gap: 3, backgroundColor: colors.surface2, borderRadius: 9, padding: 3 },
+  modeBtn: { flex: 1, paddingVertical: 7, borderRadius: 7, alignItems: "center" },
+  modeBtnOn: { backgroundColor: colors.surface },
+  modeText: { color: colors.muted, fontFamily: fonts.bold, fontSize: 12 },
+  modeTextOn: { color: colors.accentInk },
+  trackedHead: { flexDirection: "row", alignItems: "baseline", gap: 7, marginTop: 14 },
+  trackedTotal: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 26 },
+  trackedTotalLabel: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13 },
+  splitBar: {
+    flexDirection: "row",
+    height: 8,
+    borderRadius: 4,
+    overflow: "hidden",
+    marginTop: 10,
+    backgroundColor: colors.surface2,
+  },
+  splitLegend: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 7 },
+  legendText: { fontFamily: fonts.semibold, fontSize: 12 },
+  moversWrap: { marginTop: 14, gap: 6 },
+  moversLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.4 },
+  moverRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  moverTicker: { flex: 1, color: colors.ink, fontFamily: fonts.semibold, fontSize: 13.5 },
+  moverPct: { fontFamily: fonts.extrabold, fontSize: 13 },
+  viewAll: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingTop: 14 },
+  viewAllText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 13 },
+  trackedEmpty: { paddingHorizontal: 16, paddingBottom: 4 },
+  trackedEmptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
+  trackedEmptySub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 18, marginTop: 4 },
   insightsLink: {
     flexDirection: "row",
     alignItems: "center",

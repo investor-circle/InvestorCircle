@@ -10,9 +10,11 @@ import { getInvestorIciBatch } from "../../src/services/api/trackingApi";
 import { getOwnerCircles } from "../../src/services/api/groupsApi";
 import { iciFromStatsRow } from "../../src/utils/ici";
 import TrackButton from "../../src/components/TrackButton";
-import IciBadge, { IciBreakdown } from "../../src/components/IciBadge";
 import { useAuth } from "../../src/context/AuthContext";
 import Avatar from "../../src/components/Avatar";
+import TrackRecordView from "../../src/components/TrackRecordView";
+import { fetchProfileNavInfo } from "../../src/services/profileNav";
+import { putReco } from "../../src/utils/recoStore";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 
@@ -36,6 +38,7 @@ function InvestorProfileScreen() {
   // used to enumerate someone's private Circles — that filtering is the
   // server's (groups.js owner-circles), not this screen's.
   const [circles, setCircles] = useState({ public: [], private: [] });
+  const [sebi, setSebi] = useState(false);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -52,14 +55,19 @@ function InvestorProfileScreen() {
       if (!uid) return;
       // Both are keyed by the uid the profile response just gave us and are
       // independent of each other, so they go together rather than in series.
-      const [stats, owned] = await Promise.all([
+      const [stats, owned, nav] = await Promise.all([
         getInvestorIciBatch([uid]),
         getOwnerCircles(uid).catch(() => ({ public: [], private: [] })),
+        // Already fetched elsewhere for navigation; the badge it carries was
+        // never rendered, so a SEBI-registered investor looked unregistered
+        // everywhere in the app.
+        fetchProfileNavInfo(uid).catch(() => null),
       ]);
       if (!mounted.current) return;
       const row = (stats || []).find((r) => String(r.uid) === String(uid));
       setIci(iciFromStatsRow(row));
       setCircles(owned);
+      setSebi(!!nav?.isSebiApproved);
     })();
     return () => {
       mounted.current = false;
@@ -127,126 +135,34 @@ function InvestorProfileScreen() {
             ) : null}
           </LinearGradient>
 
-          {ici ? (
-            <View style={styles.iciCard}>
-              <View style={styles.iciHead}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.iciTitle}>Credibility</Text>
-                  <Text style={styles.iciSub}>
-                    Based on {ici.total} public idea{ici.total === 1 ? "" : "s"}
-                  </Text>
-                </View>
-                <IciBadge ici={ici} />
-              </View>
-              <IciBreakdown ici={ici} />
-            </View>
-          ) : null}
+          <TrackRecordView
+            summary={summary}
+            live={live}
+            realized={realized}
+            sectors={data?.sectors || []}
+            recos={data?.recos || []}
+            circles={circles}
+            ici={ici}
+            isSebiApproved={sebi}
+            onOpenReco={(r) => {
+              // Seed the hand-off cache so the detail screen opens from data
+              // already in memory rather than re-fetching what this list has.
+              putReco(r);
+              router.push(`/reco/${r.id}`);
+            }}
+            onOpenCircle={(slug) => router.push(`/circle/s/${encodeURIComponent(slug)}`)}
+          />
 
-          {summary ? (
-            <View style={styles.statGrid}>
-              <Stat label="Ideas" value={summary.total} />
-              <Stat label="Active" value={summary.active} />
-              <Stat label="Closed" value={summary.closed} />
-              <Stat label="Years" value={summary.years_history} />
-            </View>
-          ) : null}
-
-          {live ? (
-            <Section title="Live ideas">
-              <Row label="Active" value={String(live.count)} />
-              <Row label="In profit" value={String(live.in_profit)} valueColor={colors.gain} />
-              <Row label="In loss" value={String(live.in_loss)} valueColor={colors.loss} />
-              <Row
-                label="Avg return"
-                value={`${Number(live.avg_return).toFixed(1)}%`}
-                valueColor={live.avg_return >= 0 ? colors.gain : colors.loss}
-              />
-            </Section>
-          ) : null}
-
-          {circles.public.length || circles.private.length ? (
-            <Section title="Circles">
-              {[...circles.public, ...circles.private].map((c) => (
-                <Pressable
-                  key={String(c.id)}
-                  style={styles.circleRow}
-                  onPress={() => c.slug && router.push(`/circle/s/${encodeURIComponent(c.slug)}`)}
-                  disabled={!c.slug}
-                >
-                  <View style={[styles.circleDot, c.color ? { backgroundColor: c.color } : null]} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.circleName} numberOfLines={1}>
-                      {c.name}
-                    </Text>
-                    <Text style={styles.circleMeta} numberOfLines={1}>
-                      {c.member_count} member{c.member_count === 1 ? "" : "s"}
-                      {c.description ? ` · ${c.description}` : ""}
-                    </Text>
-                  </View>
-                  {c.slug ? <Ionicons name="chevron-forward" size={17} color={colors.muted} /> : null}
-                </Pressable>
-              ))}
-            </Section>
-          ) : null}
-
-          {realized ? (
-            <Section title="Closed ideas">
-              <Row label="Closed" value={String(realized.count)} />
-              <Row label="Wins" value={String(realized.win_count)} valueColor={colors.gain} />
-              <Row label="Losses" value={String(realized.loss_count)} valueColor={colors.loss} />
-              <Row label="Hit rate" value={`${Number(realized.hit_rate_pct).toFixed(0)}%`} />
-            </Section>
-          ) : null}
         </ScrollView>
       )}
     </SafeAreaView>
   );
 }
 
-function Stat({ label, value }) {
-  return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{value ?? "—"}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
 
-function Section({ title, children }) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionCard}>{children}</View>
-    </View>
-  );
-}
 
-function Row({ label, value, valueColor }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={[styles.rowValue, valueColor && { color: valueColor }]}>{value}</Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
-  circleRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9 },
-  circleDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent },
-  circleName: { color: colors.ink, fontFamily: fonts.semibold, fontSize: 14 },
-  circleMeta: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
-  iciCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
-    padding: 16,
-    marginHorizontal: 16,
-    marginTop: 14,
-  },
-  iciHead: { flexDirection: "row", alignItems: "center", gap: 10 },
-  iciTitle: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 15 },
-  iciSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
   flex: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   topbar: {
@@ -262,40 +178,9 @@ const styles = StyleSheet.create({
   topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17 },
   hero: { alignItems: "center", paddingTop: 28, paddingBottom: 26, paddingHorizontal: 24 },
   heroAvatar: { borderWidth: 2, borderColor: "rgba(255,255,255,0.55)", marginBottom: 10 },
-  avatar: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
-    backgroundColor: "rgba(255,255,255,0.22)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  avatarText: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 26 },
   name: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 21 },
   username: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 14, marginTop: 3 },
   bio: { color: "rgba(255,255,255,0.9)", fontFamily: fonts.regular, fontSize: 13, textAlign: "center", marginTop: 10, lineHeight: 19 },
-  statGrid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 12, paddingTop: 16 },
-  stat: {
-    width: "25%",
-    alignItems: "center",
-    paddingVertical: 10,
-  },
-  statValue: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 19 },
-  statLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", marginTop: 4 },
-  section: { paddingHorizontal: 16, paddingTop: 18 },
-  sectionTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15, marginBottom: 8 },
-  sectionCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-  },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10 },
-  rowLabel: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 13 },
-  rowValue: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15 },
   emptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16, marginTop: 12 },
 });
 

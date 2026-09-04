@@ -80,6 +80,8 @@ export function parseDeepLink(url) {
   // The web calls this route /market and the page "Market Insights"; the app
   // uses the same path so a shared link lands on the same thing.
   if (parts[0] === "market") return { path: "/market" };
+  // The web calls your own scorecard #/track-record; same name here.
+  if (parts[0] === "track-record") return { path: "/track-record" };
 
   return null;
 }

@@ -211,6 +211,9 @@ function FeedScreen() {
           ? `Fresh recommendations · ${recos.length} idea${recos.length === 1 ? "" : "s"}`
           : "Recommendations from your circle & the platform"
       }
+      secondaryIcon="search"
+      secondaryLabel="Search investors and stocks"
+      onSecondaryPress={() => router.push("/search")}
       icon="notifications-outline"
       badge={unread}
       onIconPress={() => router.push("/notifications")}
