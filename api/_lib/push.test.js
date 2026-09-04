@@ -1,3 +1,12 @@
+// Tests for api/push.js.
+//
+// LIVES UNDER _lib/ FOR A DEPLOYMENT REASON, not a tidiness one. Vercel turns
+// EVERY file under api/ into a serverless function, test files included, and
+// the Hobby plan caps a deployment at 12 of them — api/ is at exactly 12 (see
+// the header of api/data.js, which explains why the Phase 3 routes were
+// consolidated into one function to stay under it). Sitting at api/push.test.js
+// made 13 and failed the deployment outright. api/_lib/ is excluded from
+// Vercel's filesystem routing, which is why every other api test is here too.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // api/push.js is live infrastructure: every existing web notification goes
@@ -45,8 +54,8 @@ vi.mock("@neondatabase/serverless", () => ({ neon: () => sqlTag }));
 // Identity comes from a verified Firebase token. Tests set `callerUid` to
 // stand in for that verification; `null` means an unauthenticated caller.
 let callerUid = "sender";
-vi.mock("./_lib/auth.js", async () => {
-  const actual = await vi.importActual("./_lib/auth.js");
+vi.mock("./auth.js", async () => {
+  const actual = await vi.importActual("./auth.js");
   return {
     ...actual,
     requireUid: vi.fn(async () => {
@@ -61,7 +70,7 @@ process.env.VAPID_PRIVATE_KEY = "priv";
 process.env.VAPID_EMAIL = "mailto:x@y.z";
 process.env.DATABASE_URL = "postgres://test";
 
-const { default: handler } = await import("./push.js");
+const { default: handler } = await import("../push.js");
 
 const mkRes = () => {
   const res = {
