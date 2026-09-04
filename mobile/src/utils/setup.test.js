@@ -1,4 +1,4 @@
-import { setupIncomplete } from "./setup";
+import { setupIncomplete, shouldOfferDiscover } from "./setup";
 
 // The web has blocked the app on username + consent since setup stopped being
 // a skippable nudge (features/onboarding/Onboarding.jsx). The phone did not,
@@ -55,5 +55,31 @@ describe("never decides from something it cannot trust", () => {
     // on the strength of a placeholder.
     expect(setupIncomplete({ __local: true, username: null })).toBe(false);
     expect(setupIncomplete({ __local: true, ...complete })).toBe(false);
+  });
+});
+
+describe("the one-time people-to-follow step", () => {
+  // A new member follows nobody by definition, so without this they arrive at
+  // an empty feed with nothing suggesting how to fill it. The web shows the
+  // same step exactly once, off the same server-persisted flag.
+  it("is offered to a set-up account that has not seen it", () => {
+    expect(shouldOfferDiscover({ ...complete, onboarding_discover_done: false })).toBe(true);
+    expect(shouldOfferDiscover({ ...complete })).toBe(true); // flag absent = not yet done
+  });
+
+  it("is never offered twice", () => {
+    expect(shouldOfferDiscover({ ...complete, onboarding_discover_done: true })).toBe(false);
+  });
+
+  it("waits until username and consent are done", () => {
+    // Otherwise it stacks a second interruption on top of the setup gate,
+    // before the app itself has been seen at all.
+    expect(shouldOfferDiscover({ ...complete, username: null })).toBe(false);
+    expect(shouldOfferDiscover({ ...complete, consent_data_accepted: false })).toBe(false);
+  });
+
+  it("decides nothing from a profile it cannot trust", () => {
+    expect(shouldOfferDiscover(null)).toBe(false);
+    expect(shouldOfferDiscover({ __local: true, ...complete })).toBe(false);
   });
 });

@@ -134,6 +134,11 @@ function PulseScreen() {
     [router]
   );
 
+  const openTicker = useCallback(
+    (symbol) => router.push(`/ticker/${encodeURIComponent(symbol)}`),
+    [router]
+  );
+
   const hero = (
     <GradientHero
       eyebrow="Pulse"
@@ -202,7 +207,7 @@ function PulseScreen() {
             sub="The newest ideas shared with you"
           >
             {fresh.map((r) => (
-              <RecoCard key={String(r.id)} reco={r} onPress={openReco} onOpenProfile={openProfile} />
+              <RecoCard key={String(r.id)} reco={r} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
             ))}
           </Section>
         ) : null}
@@ -216,7 +221,7 @@ function PulseScreen() {
             sub="Ideas from your circle that moved recently"
           >
             {missed.map((m) => (
-              <RankedCard key={String(m.idea?.id ?? m.id)} item={m} onPress={openReco} onOpenProfile={openProfile} />
+              <RankedCard key={String(m.idea?.id ?? m.id)} item={m} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
             ))}
           </Section>
         ) : null}
@@ -224,7 +229,7 @@ function PulseScreen() {
         {trending.length > 0 ? (
           <Section icon="trending-up-outline" title="Trending on MIC" sub="Gaining attention across the platform">
             {trending.map((t) => (
-              <RankedCard key={String(t.idea?.id ?? t.id)} item={t} onPress={openReco} onOpenProfile={openProfile} />
+              <RankedCard key={String(t.idea?.id ?? t.id)} item={t} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
             ))}
           </Section>
         ) : null}
@@ -235,7 +240,7 @@ function PulseScreen() {
         {rest.length > 0 ? (
           <Section icon="globe-outline" title="Latest public ideas" sub="Newest across the platform">
             {rest.slice(0, 20).map((r) => (
-              <RecoCard key={String(r.id)} reco={r} onPress={openReco} onOpenProfile={openProfile} />
+              <RecoCard key={String(r.id)} reco={r} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
             ))}
           </Section>
         ) : null}
@@ -259,7 +264,7 @@ function reasonOf(reason) {
   return null;
 }
 
-function RankedCard({ item, onPress, onOpenProfile }) {
+function RankedCard({ item, onPress, onOpenProfile, onOpenTicker }) {
   const reco = item?.idea || item;
   if (!reco) return null;
   const reason = reasonOf(item?.reason);
@@ -277,7 +282,7 @@ function RankedCard({ item, onPress, onOpenProfile }) {
           </Text>
         </View>
       ) : null}
-      <RecoCard reco={reco} onPress={onPress} onOpenProfile={onOpenProfile} />
+      <RecoCard reco={reco} onPress={onPress} onOpenProfile={onOpenProfile} onOpenTicker={onOpenTicker} />
     </View>
   );
 }

@@ -94,3 +94,46 @@ export function notifRecoId(n) {
   ];
   return engagementTypes.includes(n.type) && n.reference_id ? String(n.reference_id) : null;
 }
+
+/**
+ * Where tapping a notification should take you — a route, or null if there
+ * is genuinely nowhere to go.
+ *
+ * Every notification the app shows is about something that exists somewhere
+ * in the app, so a row that does nothing when tapped reads as broken rather
+ * than as "no destination". Before this, only reco-linked and connection
+ * notifications went anywhere: being told six people started tracking you,
+ * or that someone wants into your Circle, was a dead tap.
+ *
+ * Circle notifications carry the group id in reference_id (see
+ * api/_lib/handlers/groups.js, which inserts them), which is what
+ * /circle/[id] and /circle/manage both address a Circle by — the slug in
+ * metadata is only set on some of them, so it is not the thing to route on.
+ */
+export function notifTarget(n) {
+  if (!n) return null;
+
+  const recoId = notifRecoId(n);
+  if (recoId) return `/reco/${recoId}`;
+
+  // "N people started tracking you" is about the Tracking me list; landing on
+  // Connections would make the reader hunt for what they were just told.
+  if (n.type === "tracking_new") return "/network?tab=trackers";
+  if (n.type?.startsWith("connection")) return "/network";
+
+  const groupId = n.reference_id ? String(n.reference_id) : null;
+  if (!groupId) return null;
+
+  // A join request is an action the owner has to take, and the only screen
+  // that can approve or decline one is manage.
+  if (n.type === "circle_join_request") return `/circle/manage?id=${encodeURIComponent(groupId)}`;
+
+  if (["group_added", "circle_join_approved", "group_member_exit"].includes(n.type)) {
+    return `/circle/${encodeURIComponent(groupId)}`;
+  }
+
+  // circle_join_rejected deliberately goes nowhere: the Circle it names is
+  // one the reader was just refused entry to, so opening it would show them
+  // a locked door.
+  return null;
+}

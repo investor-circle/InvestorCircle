@@ -72,6 +72,11 @@ function CircleDetailScreen() {
     [router]
   );
 
+  const openTicker = useCallback(
+    (symbol) => router.push(`/ticker/${encodeURIComponent(symbol)}`),
+    [router]
+  );
+
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
       <View style={styles.topbar}>
@@ -98,7 +103,7 @@ function CircleDetailScreen() {
         <FlatList
           data={ideas}
           keyExtractor={(r) => String(r.id)}
-          renderItem={({ item }) => <RecoCard reco={item} onPress={openReco} onOpenProfile={openProfile} />}
+          renderItem={({ item }) => <RecoCard reco={item} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           contentContainerStyle={ideas.length === 0 ? styles.emptyWrap : { paddingVertical: 12 }}
           initialNumToRender={6}

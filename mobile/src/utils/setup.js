@@ -26,3 +26,22 @@ export function setupIncomplete(profile) {
   if (profile.__local) return false;
   return !profile.username || !profile.consent_terms_accepted || !profile.consent_data_accepted;
 }
+
+/**
+ * Should this account be shown the one-time "people to follow" step?
+ *
+ * The web shows it exactly once, right after setup, gated on the same
+ * server-persisted flag (OnboardingGate -> DiscoverModal). The app had the
+ * screen but only behind an icon on Find investors, so a new member — who by
+ * definition follows nobody — arrived at an empty feed with nothing
+ * suggesting how to fill it. That is the moment the step exists for.
+ *
+ * Deliberately false while setup is still outstanding: username and consent
+ * come first, and stacking a second screen on top of that gate would be two
+ * interruptions before the app has been seen at all.
+ */
+export function shouldOfferDiscover(profile) {
+  if (!profile || profile.__local) return false;
+  if (setupIncomplete(profile)) return false;
+  return !profile.onboarding_discover_done;
+}

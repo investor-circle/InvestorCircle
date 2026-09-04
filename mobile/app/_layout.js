@@ -4,7 +4,7 @@ import { installLogger, loadPersistedLogs, addLog } from "../src/utils/logger";
 installLogger();
 loadPersistedLogs();
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -23,6 +23,7 @@ import {
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import ErrorBoundary from "../src/components/ErrorBoundary";
 import SetupGate, { setupIncomplete } from "../src/components/SetupGate";
+import { shouldOfferDiscover } from "../src/utils/setup";
 import { parseDeepLink, parseReferral, parsePasswordReset, isExternalWebLink } from "../src/utils/deepLinks";
 import { rememberReferral, redeemPendingReferral } from "../src/services/referral";
 import { trackScreen } from "../src/services/analytics";
@@ -208,6 +209,18 @@ function RootNavigator() {
   // returning something other than <Stack> would leave them calling
   // router.replace with no navigator mounted.
   const gateOpen = !!user && setupIncomplete(profile);
+
+  // One-time "people to follow", the way the web shows it once after setup.
+  // The ref makes it once per app run as well as once per account: the
+  // server flag is only written when the screen is finished, so without it a
+  // profile refetch mid-session would push the screen again on top of itself.
+  const offeredDiscover = useRef(false);
+  useEffect(() => {
+    if (authLoading || !user || gateOpen) return;
+    if (offeredDiscover.current || !shouldOfferDiscover(profile)) return;
+    offeredDiscover.current = true;
+    router.push("/suggested");
+  }, [authLoading, user, gateOpen, profile, router]);
 
   return (
     <View style={{ flex: 1 }}>

@@ -73,6 +73,11 @@ export default function RecoListScreen({ hero, loader, subHeader, emptyTitle, em
     [router]
   );
 
+  const openTicker = useCallback(
+    (symbol) => router.push(`/ticker/${encodeURIComponent(symbol)}`),
+    [router]
+  );
+
   if (recos === null) {
     return (
       <View style={styles.flex}>
@@ -90,7 +95,7 @@ export default function RecoListScreen({ hero, loader, subHeader, emptyTitle, em
       <FlatList
         data={recos}
         keyExtractor={(item) => String(item.deliveryId ?? item.id)}
-        renderItem={({ item }) => <RecoCard reco={item} onPress={openReco} onOpenProfile={openProfile} />}
+        renderItem={({ item }) => <RecoCard reco={item} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />}
         ListHeaderComponent={
           <>
             {hero}

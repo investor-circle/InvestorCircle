@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getMyNotifications, markNotifRead, markAllNotifRead } from "../src/services/api/notificationsApi";
-import { notifText, notifIcon, notifRecoId } from "../src/utils/notifications";
+import { notifText, notifIcon, notifTarget } from "../src/utils/notifications";
 import { fmtDate } from "../src/utils/format";
 import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -44,9 +44,8 @@ function NotificationsScreen() {
       setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
       markNotifRead(n.id);
     }
-    const recoId = notifRecoId(n);
-    if (recoId) router.push(`/reco/${recoId}`);
-    else if (n.type?.startsWith("connection")) router.push("/network");
+    const target = notifTarget(n);
+    if (target) router.push(target);
   };
 
   const unread = (items || []).filter((n) => !n.is_read).length;

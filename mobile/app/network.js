@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
   getMyConnections,
@@ -29,7 +29,13 @@ const TABS = [
 
 function NetworkScreen() {
   const router = useRouter();
-  const [tab, setTab] = useState("connections");
+  // ?tab= lets a notification land on the right list: "N people started
+  // tracking you" is about Tracking me, and opening on Connections makes the
+  // reader hunt for what they were just told about.
+  const { tab: initialTab } = useLocalSearchParams();
+  const [tab, setTab] = useState(
+    TABS.some((t) => t.id === initialTab) ? String(initialTab) : "connections"
+  );
   const [rows, setRows] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState({}); // connectionId -> true while a mutation runs

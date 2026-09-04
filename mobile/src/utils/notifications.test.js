@@ -1,4 +1,4 @@
-import { notifText, notifIcon, notifRecoId } from "./notifications";
+import { notifText, notifIcon, notifRecoId, notifTarget } from "./notifications";
 
 // These strings are a port of the web NotificationPanel's notifText(). If the
 // wording drifts, mobile and web describe the same event differently — and
@@ -79,5 +79,45 @@ describe("notifRecoId / notifIcon", () => {
     expect(notifIcon("connection_request")).toBe("person-add");
     expect(notifIcon("circle_idea")).toBe("people");
     expect(notifIcon(undefined)).toBe("notifications");
+  });
+});
+
+describe("where a notification goes when tapped", () => {
+  // Every notification is about something that exists somewhere in the app,
+  // so a row that does nothing when tapped reads as broken. Before this,
+  // only reco-linked and connection rows went anywhere.
+  it("opens the idea for anything that names one", () => {
+    expect(notifTarget({ type: "contact_like", reference_id: 7 })).toBe("/reco/7");
+    expect(notifTarget({ type: "circle_idea", reference_id: 7 })).toBe("/reco/7");
+  });
+
+  it("lands a new-tracker notice on Tracking me, not Connections", () => {
+    expect(notifTarget({ type: "tracking_new", reference_id: "u1" })).toBe("/network?tab=trackers");
+  });
+
+  it("sends connection notices to the network screen", () => {
+    expect(notifTarget({ type: "connection_request", reference_id: "c1" })).toBe("/network");
+    expect(notifTarget({ type: "connection_accepted", reference_id: "c1" })).toBe("/network");
+  });
+
+  it("sends a join request to manage — the only screen that can act on it", () => {
+    expect(notifTarget({ type: "circle_join_request", reference_id: "g9" })).toBe("/circle/manage?id=g9");
+  });
+
+  it("opens the Circle for the notices that are about being in one", () => {
+    expect(notifTarget({ type: "group_added", reference_id: "g9" })).toBe("/circle/g9");
+    expect(notifTarget({ type: "circle_join_approved", reference_id: "g9" })).toBe("/circle/g9");
+  });
+
+  it("does NOT open a Circle the reader was just refused", () => {
+    // circle_join_rejected names a Circle they cannot enter; opening it would
+    // show them a locked door.
+    expect(notifTarget({ type: "circle_join_rejected", reference_id: "g9" })).toBeNull();
+  });
+
+  it("returns null rather than a broken route when there is no reference", () => {
+    expect(notifTarget({ type: "group_added" })).toBeNull();
+    expect(notifTarget({ type: "something_new", reference_id: "x" })).toBeNull();
+    expect(notifTarget(null)).toBeNull();
   });
 });

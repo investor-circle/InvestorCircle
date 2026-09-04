@@ -14,7 +14,7 @@ import { isLiked, subscribeReactions, toggleReaction } from "../services/reactio
 // + invested state. Tappable (onPress) to open the detail screen.
 const SOURCE_LABELS = { public: "Public", network_engagement: "From your network" };
 
-function RecoCard({ reco, onPress, onOpenProfile }) {
+function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker }) {
   const pct = returnPct(reco);
   const positive = pct >= 0;
   const isBuy = (reco.recType || "Buy") !== "Sell";
@@ -43,6 +43,13 @@ function RecoCard({ reco, onPress, onOpenProfile }) {
     const info = await fetchProfileNavInfo(reco.from);
     if (info?.username) onOpenProfile(info.username);
   }, [onOpenProfile, reco.from_username, reco.from]);
+
+  // An idea without a ticker (an unlisted holding, a fund entered by name)
+  // has no stock page to open.
+  const canOpenTicker = !!onOpenTicker && !!reco.ticker;
+  const openTicker = useCallback(() => {
+    if (reco.ticker) onOpenTicker?.(reco.ticker);
+  }, [onOpenTicker, reco.ticker]);
 
   const CardBody = (
     <View style={styles.card}>
@@ -74,8 +81,17 @@ function RecoCard({ reco, onPress, onOpenProfile }) {
 
       {/* WHAT — instrument + current price + return */}
       <View style={styles.priceBox}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.ticker} numberOfLines={1}>
+        {/* The ticker opens the stock's page, the way it does on the web
+            (FeedCard's onOpenSecurity). Without this the only route to a
+            stock was searching for it by name from another screen, even
+            with the card for it on screen. */}
+        <Pressable
+          style={{ flex: 1, minWidth: 0 }}
+          disabled={!canOpenTicker}
+          onPress={openTicker}
+          hitSlop={6}
+        >
+          <Text style={[styles.ticker, canOpenTicker && styles.tickerLink]} numberOfLines={1}>
             {reco.ticker || reco.assetName}
           </Text>
           {reco.assetName && reco.ticker ? (
@@ -83,7 +99,7 @@ function RecoCard({ reco, onPress, onOpenProfile }) {
               {reco.assetName}
             </Text>
           ) : null}
-        </View>
+        </Pressable>
         <View style={{ alignItems: "flex-end" }}>
           <Text style={styles.currentPrice}>{fmt(reco.price)}</Text>
           <Text style={[styles.returnText, { color: positive ? colors.gain : colors.loss }]}>
@@ -253,6 +269,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   ticker: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 20, letterSpacing: -0.3 },
+  // Coloured rather than underlined: the ticker is the card's headline, and
+  // an underline under 20pt extrabold reads as damage.
+  tickerLink: { color: colors.accentInk },
   assetName: { color: colors.muted, fontFamily: fonts.medium, fontSize: 13, marginTop: 1 },
   currentPrice: { color: colors.ink, fontFamily: fonts.bold, fontSize: 18 },
   returnText: { fontFamily: fonts.bold, fontSize: 14, marginTop: 2 },
