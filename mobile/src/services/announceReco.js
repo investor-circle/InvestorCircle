@@ -1,4 +1,5 @@
 import { notifyPublicContacts } from "./api/recommendationsApi";
+import { recoUrl } from "../utils/links";
 import { sendEmail, sendPush } from "./notify";
 
 /**
@@ -30,9 +31,10 @@ export function announcePublicReco({ reco, recoId, me, contacts }) {
   const deepLink = username ? `/investor/${username}/reco/${id}` : null;
   // The email still carries a full URL of its own; only push has its
   // destination resolved server-side.
-  const recoUrl = username
-    ? `https://myinvestorcircle.com/#/investor/${username}/reco/${id}`
-    : `https://myinvestorcircle.com/#/investor/${username}`;
+  // One definition of what a public idea link looks like (services/api.js),
+  // rather than a second hand-built copy that can drift from the share
+  // sheet's — or from the host the site is actually served on.
+  const url = recoUrl(username, id);
 
   // One server call for every contact, rather than one per contact.
   notifyPublicContacts(
@@ -69,7 +71,7 @@ export function announcePublicReco({ reco, recoId, me, contacts }) {
         reco_type: reco.recType || "Buy",
         entry_price: reco.priceAt ? `₹${Number(reco.priceAt).toLocaleString("en-IN")}` : "",
         conviction: reco.conviction || "",
-        reco_url: recoUrl,
+        reco_url: url,
       });
     } catch (_) {
       /* as above */

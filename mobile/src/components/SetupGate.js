@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
 import { checkUsername, saveUsername } from "../services/api/profileApi";
 import { colors, fonts } from "../theme/colors";
+import { WEB_ORIGIN } from "../utils/links";
 
 export { setupIncomplete } from "../utils/setup";
 
@@ -33,7 +34,7 @@ export { setupIncomplete } from "../utils/setup";
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 // Read from the web rather than copied into the app: it is a legal document
 // that has to match word for word, and a second copy would drift.
-const PRIVACY_URL = "https://myinvestorcircle.com/#/privacy";
+const PRIVACY_URL = `${WEB_ORIGIN}/#/privacy`;
 
 export default function SetupGate({ profile, patchProfile }) {
   const [username, setUsername] = useState(profile?.username || "");

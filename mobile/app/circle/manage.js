@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { circleUrl } from "../../src/utils/links";
 import {
   View,
   Text,
@@ -56,7 +57,7 @@ function ManageCircleScreen() {
   // API wrapper but no way to reach it, so a leaked link could not be killed
   // from the phone.
   const isPublicCircle = (group?.circle_type || group?.type) === "public";
-  const inviteLink = group?.slug ? `https://myinvestorcircle.com/#/circle/${group.slug}` : null;
+  const inviteLink = group?.slug ? circleUrl(group.slug) : null;
 
   const shareInvite = useCallback(async () => {
     if (!inviteLink) return;

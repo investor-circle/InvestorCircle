@@ -8,8 +8,9 @@ import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import Avatar from "../../src/components/Avatar";
 import { withBoundary } from "../../src/components/ErrorBoundary";
+import { WEB_ORIGIN } from "../../src/utils/links";
 
-const PRIVACY_URL = "https://myinvestorcircle.com/#/privacy";
+const PRIVACY_URL = `${WEB_ORIGIN}/#/privacy`;
 
 function ProfileScreen() {
   const { profile, logout, userIsAdmin } = useAuth();

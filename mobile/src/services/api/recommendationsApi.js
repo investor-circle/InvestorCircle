@@ -136,3 +136,20 @@ export async function dismissDelivery(deliveryId) {
   });
   return api.ok;
 }
+
+/**
+ * The author's username for one idea, for building its public link.
+ *
+ * The feed payloads only carry `recommender_username` on the public-feed
+ * shape, so an idea reached any other way (a received delivery, a tracked
+ * idea, a deep link) has no username to build a URL from — and the share
+ * sheet then fell back to the site root, handing someone a link to the
+ * homepage instead of the idea. The web has always looked it up for exactly
+ * this reason (getRecommenderUsername, used by its share popover).
+ */
+export async function getRecommenderUsername(recoId) {
+  const api = await callApi(
+    `/data?resource=lookups&action=reco-recommender-username&recoId=${encodeURIComponent(recoId)}`
+  );
+  return api.ok ? api.data.username || null : null;
+}

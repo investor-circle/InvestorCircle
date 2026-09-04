@@ -4,7 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { forwardRecommendation } from "../services/api/recommendationsApi";
 import { getMyConnections } from "../services/api/connectionsApi";
 import { getMyGroups } from "../services/api/groupsApi";
-import { API_ORIGIN } from "../services/api";
+import { recoUrl } from "../utils/links";
+import { getRecommenderUsername } from "../services/api/recommendationsApi";
 import { initialsOf } from "../utils/format";
 import { colors, fonts } from "../theme/colors";
 
@@ -65,10 +66,24 @@ export default function ShareRecoSheet({ visible, reco, onClose }) {
   };
 
   const shareLink = async () => {
-    // Only public ideas have a meaningful shareable page; for anything else
-    // the link would 404 for the recipient, so don't offer a broken URL.
-    const uname = reco?.from_username;
-    const url = uname ? `${API_ORIGIN}/#/investor/${uname}/reco/${reco.id}` : API_ORIGIN;
+    // Built from WEB_ORIGIN, not API_ORIGIN. Those are two different
+    // deployments — the site on the custom domain, the functions on Vercel —
+    // and this used to point at the API host, so every link shared from the
+    // app was a well-formed URL to the wrong place.
+    //
+    // Only the public-feed payload carries the author's username, so for an
+    // idea reached any other way it is looked up rather than falling back to
+    // the site root, which handed people the homepage instead of the idea.
+    // The web looks it up for the same reason.
+    let uname = reco?.from_username;
+    if (!uname) {
+      try {
+        uname = await getRecommenderUsername(reco.id);
+      } catch (_) {
+        /* fall through to the id-only form below, which still resolves */
+      }
+    }
+    const url = recoUrl(uname, reco.id);
     try {
       await Share.share({
         message: `${reco?.ticker || reco?.assetName || "An idea"} on myInvestorCircle — ${url}`,

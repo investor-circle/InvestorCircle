@@ -1,0 +1,64 @@
+import { recoUrl, profileUrl, circleUrl, WEB_ORIGIN } from "./links";
+import { API_ORIGIN } from "../services/api";
+
+jest.mock("../services/api", () => ({ API_ORIGIN: "https://investor-circle.vercel.app" }));
+
+// The site and the API are two different deployments — the frontend on the
+// custom domain, the functions on Vercel. The share sheet built its links from
+// API_ORIGIN, which produced a perfectly well-formed URL that simply did not
+// open the idea. Nothing failed, nothing logged; the recipient just got a page
+// that wasn't there.
+//
+// That is exactly the kind of mistake a test catches and a reviewer doesn't,
+// so the host is asserted explicitly rather than by rebuilding the string.
+
+describe("recoUrl", () => {
+  it("points at the website, never the API host", () => {
+    const url = recoUrl("asha", "123");
+    expect(url.startsWith("https://myinvestorcircle.com/")).toBe(true);
+    expect(url).not.toContain(API_ORIGIN);
+  });
+
+  it("builds the same shareable URL the web hands out", () => {
+    expect(recoUrl("asha", "123")).toBe("https://myinvestorcircle.com/#/investor/asha/reco/123");
+  });
+
+  it("still resolves the idea when the author's username is unknown", () => {
+    // The old fallback was the bare site root, which handed people the
+    // homepage instead of the thing that was shared. /reco/:id is a route the
+    // app and the web both understand.
+    for (const missing of [null, undefined, ""]) {
+      expect(recoUrl(missing, "123")).toBe("https://myinvestorcircle.com/#/reco/123");
+    }
+  });
+
+  it("escapes values rather than interpolating them raw", () => {
+    expect(recoUrl("a b", "1/2")).toBe("https://myinvestorcircle.com/#/investor/a%20b/reco/1%2F2");
+  });
+});
+
+describe("profileUrl", () => {
+  it("points at the website and matches the web's profile route", () => {
+    expect(profileUrl("asha")).toBe("https://myinvestorcircle.com/#/investor/asha");
+  });
+});
+
+describe("circleUrl", () => {
+  it("builds the invite link by SLUG, as the web's gotoCircle does", () => {
+    // Not the group id: the app's own Circle route takes an id, the shared
+    // link takes a slug, and following one built from an id finds nothing.
+    expect(circleUrl("value-investors")).toBe("https://myinvestorcircle.com/#/circle/value-investors");
+  });
+});
+
+describe("WEB_ORIGIN", () => {
+  it("is not the API origin", () => {
+    // The whole point of naming them separately.
+    expect(WEB_ORIGIN).not.toBe(API_ORIGIN);
+  });
+
+  it("carries no trailing slash, so the built paths have exactly one", () => {
+    expect(WEB_ORIGIN.endsWith("/")).toBe(false);
+    expect(recoUrl("asha", "1")).not.toContain("//#/");
+  });
+});

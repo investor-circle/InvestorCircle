@@ -21,6 +21,7 @@ import { auth } from "../../src/config/firebase";
 import { friendlyAuthError, googleOnlyAccountHint } from "../../src/utils/authErrors";
 import { isGoogleSignInConfigured } from "../../src/services/googleAuth";
 import { pendingReferral } from "../../src/services/referral";
+import { WEB_ORIGIN } from "../../src/utils/links";
 import { track } from "../../src/services/analytics";
 import GoogleSignInButton from "../../src/components/GoogleSignInButton";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
@@ -39,7 +40,7 @@ const TABS = [
 // second copy would quietly drift out of date. A Custom Tab, not
 // Linking.openURL: Android would route our own https link straight back into
 // this app (see the intent filter in app.json).
-const PRIVACY_URL = "https://myinvestorcircle.com/#/privacy";
+const PRIVACY_URL = `${WEB_ORIGIN}/#/privacy`;
 const openPrivacy = () => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {});
 
 function Consent({ checked, onToggle, children }) {
