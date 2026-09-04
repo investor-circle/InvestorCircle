@@ -42,6 +42,17 @@ export function circleUrl(slug) {
   return `${WEB_ORIGIN}/#/circle/${encodeURIComponent(slug)}`;
 }
 
+/**
+ * Your personal invite link, or null without a username.
+ *
+ * `?ref=` on the site ROOT, not a route — that is the shape App.jsx captures
+ * and process-referral matches on, and the same shape parseReferral() reads
+ * back when the link is followed on a phone.
+ */
+export function inviteUrl(username) {
+  return username ? `${WEB_ORIGIN}/?ref=${encodeURIComponent(username)}` : null;
+}
+
 /** The canonical public URL for one member's profile. */
 export function profileUrl(username) {
   return `${WEB_ORIGIN}/#/investor/${encodeURIComponent(username)}`;

@@ -127,3 +127,27 @@ export const FALLBACK_SECTORS = [
   "Defence", "Capital Goods", "Real Estate", "Chemicals", "Telecom", "Metals & Mining",
   "PSU", "Healthcare", "Infrastructure", "Media", "Retail", "Others",
 ];
+
+/**
+ * A thesis is stored either as plain text or, once it carries images, as a
+ * JSON envelope: {"__v":"1","text":"…","images":[…]}. Ported verbatim from
+ * the web's src/utils/format.js.
+ *
+ * The app was rendering the raw column, so an idea whose author attached an
+ * image showed the JSON envelope as its thesis text. Images themselves are
+ * not displayed here yet — the text is what the card and the AI summary read.
+ */
+export function parseThesis(raw) {
+  if (!raw || raw === "—") return null;
+  try {
+    const p = JSON.parse(raw);
+    if (p.__v === "1") return p;
+  } catch (_) {
+    /* not the envelope shape — treat as plain text below */
+  }
+  return { __v: "0", text: String(raw), images: [] };
+}
+
+export function getThesisText(raw) {
+  return parseThesis(raw)?.text || "";
+}

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getTickerRecos, getDailyPrices } from "../../src/services/api/consensusApi";
 import { computeConsensus, computeTrend, consensusColor } from "../../src/utils/consensus";
+import { tickerStats, buildAiSummary } from "../../src/utils/stockInsights";
 import Sparkline from "../../src/components/Sparkline";
 import { fmt, fmtDate } from "../../src/utils/format";
 import Avatar from "../../src/components/Avatar";
@@ -50,6 +51,12 @@ function TickerConsensusScreen() {
   }, [load]);
 
   const cons = computeConsensus(recos || []);
+  const stats = useMemo(() => tickerStats(recos), [recos]);
+  // No model, no network call — a deterministic reading of what people
+  // actually wrote (see stockInsights.js). Computed with the rest rather than
+  // behind a button: on a phone, a tap to reveal a paragraph is friction, and
+  // the web's 800ms fake "analysing" delay is theatre this does not need.
+  const ai = useMemo(() => buildAiSummary(recos), [recos]);
   const trend = computeTrend(recos || []);
   const tint = consensusColor(cons, colors);
   const assetName = (recos || []).find((r) => r.asset_name)?.asset_name;
@@ -166,6 +173,124 @@ function TickerConsensusScreen() {
                   </Text>
                 </Pressable>
               ))}
+
+              {/* ── Statistics ─────────────────────────────────────────── */}
+              {stats ? (
+                <>
+                  <Text style={styles.sectionTitle}>Statistics</Text>
+                  <View style={styles.statGrid}>
+                    <StatTile label="Total ideas" value={stats.total} />
+                    <StatTile label="Currently active" value={stats.active} tint={colors.gain} />
+                    <StatTile label="Investors" value={stats.uniqueInvestors} />
+                    <StatTile
+                      label="Months covered"
+                      value={stats.months.length}
+                    />
+                  </View>
+
+                  {stats.months.length > 1 ? (
+                    <View style={styles.card}>
+                      <Text style={styles.cardLabel}>Ideas by month</Text>
+                      <Text style={styles.basis}>Buys above, sells below</Text>
+                      <View style={styles.monthRow}>
+                        {stats.months.slice(-8).map((m) => {
+                          const max = Math.max(
+                            ...stats.months.map((x) => x.buy + x.sell),
+                            1
+                          );
+                          const total = m.buy + m.sell;
+                          return (
+                            <View key={m.mo} style={styles.monthCol}>
+                              <Text style={styles.monthCount}>{total || ""}</Text>
+                              <View style={styles.monthBars}>
+                                {m.sell > 0 ? (
+                                  <View
+                                    style={{
+                                      height: Math.max((m.sell / max) * 54, 3),
+                                      backgroundColor: colors.loss,
+                                      borderRadius: 2,
+                                    }}
+                                  />
+                                ) : null}
+                                {m.buy > 0 ? (
+                                  <View
+                                    style={{
+                                      height: Math.max((m.buy / max) * 54, 3),
+                                      backgroundColor: colors.gain,
+                                      borderRadius: 2,
+                                    }}
+                                  />
+                                ) : null}
+                              </View>
+                              <Text style={styles.monthLabel}>{m.mo.slice(5)}</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {Object.keys(stats.convMap).length ? (
+                    <View style={styles.card}>
+                      <Text style={styles.cardLabel}>Conviction</Text>
+                      {Object.entries(stats.convMap)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([level, n]) => (
+                          <View key={level} style={styles.convRow}>
+                            <Text style={styles.convLabel}>{level}</Text>
+                            <Text style={styles.convCount}>
+                              {n} idea{n === 1 ? "" : "s"}
+                            </Text>
+                          </View>
+                        ))}
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
+
+              {/* ── Summary ────────────────────────────────────────────── */}
+              {ai ? (
+                <>
+                  <Text style={styles.sectionTitle}>Summary</Text>
+                  <View style={styles.card}>
+                    <Text style={styles.aiLead}>
+                      The community is{" "}
+                      <Text style={{ color: tint, fontFamily: fonts.extrabold }}>{ai.sentiment}</Text> on{" "}
+                      {ticker}, across {ai.uniqueInv} investor{ai.uniqueInv === 1 ? "" : "s"}
+                      {ai.highConv > 0
+                        ? `, ${ai.highConv} of them high conviction`
+                        : ""}
+                      .
+                    </Text>
+
+                    {ai.bullThemes.length ? (
+                      <View style={styles.aiBlock}>
+                        <Text style={[styles.aiHead, { color: colors.gain }]}>The bull case</Text>
+                        {ai.bullThemes.map((t, i) => (
+                          <Text key={i} style={styles.aiPoint}>
+                            • {t}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+
+                    <View style={styles.aiBlock}>
+                      <Text style={[styles.aiHead, { color: colors.loss }]}>The bear case</Text>
+                      {ai.bearThemes.map((t, i) => (
+                        <Text key={i} style={styles.aiPoint}>
+                          • {t}
+                        </Text>
+                      ))}
+                    </View>
+
+                    {/* Said plainly, because the heading could imply otherwise. */}
+                    <Text style={styles.aiNote}>
+                      Assembled from the ideas above — the quotes are their authors' own words, not
+                      generated commentary. Not investment advice.
+                    </Text>
+                  </View>
+                </>
+              ) : null}
             </>
           )}
         </ScrollView>
@@ -174,7 +299,51 @@ function TickerConsensusScreen() {
   );
 }
 
+function StatTile({ label, value, tint }) {
+  return (
+    <View style={styles.statTile}>
+      <Text style={[styles.statValue, tint && { color: tint }]}>{value ?? "—"}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  statGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 4 },
+  statTile: {
+    flexGrow: 1,
+    flexBasis: "45%",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  statValue: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 20 },
+  statLabel: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11.5, marginTop: 3 },
+  monthRow: { flexDirection: "row", alignItems: "flex-end", gap: 6, marginTop: 14 },
+  monthCol: { flex: 1, alignItems: "center", gap: 3 },
+  monthCount: { color: colors.ink, fontFamily: fonts.bold, fontSize: 10, height: 13 },
+  monthBars: { width: "100%", gap: 2, justifyContent: "flex-end" },
+  monthLabel: { color: colors.muted, fontFamily: fonts.regular, fontSize: 9.5 },
+  convRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8 },
+  convLabel: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13.5 },
+  convCount: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12.5 },
+  aiLead: { color: colors.ink, fontFamily: fonts.regular, fontSize: 14.5, lineHeight: 22 },
+  aiBlock: { marginTop: 14, gap: 5 },
+  aiHead: { fontFamily: fonts.bold, fontSize: 11.5, letterSpacing: 0.5, textTransform: "uppercase" },
+  aiPoint: { color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 13.5, lineHeight: 20 },
+  aiNote: {
+    color: colors.muted,
+    fontFamily: fonts.regular,
+    fontSize: 11.5,
+    lineHeight: 17,
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
   flex: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   topbar: {

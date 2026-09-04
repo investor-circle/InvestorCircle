@@ -1,5 +1,6 @@
-import { recoUrl, profileUrl, circleUrl, WEB_ORIGIN } from "./links";
+import { recoUrl, profileUrl, circleUrl, inviteUrl, WEB_ORIGIN } from "./links";
 import { API_ORIGIN } from "../services/api";
+import { parseReferral } from "./deepLinks";
 
 jest.mock("../services/api", () => ({ API_ORIGIN: "https://investor-circle.vercel.app" }));
 
@@ -50,6 +51,24 @@ describe("circleUrl", () => {
     // Not the group id: the app's own Circle route takes an id, the shared
     // link takes a slug, and following one built from an id finds nothing.
     expect(circleUrl("value-investors")).toBe("https://myinvestorcircle.com/#/circle/value-investors");
+  });
+});
+
+describe("inviteUrl", () => {
+  it("puts the code in a query on the ROOT, which is what the app reads back", () => {
+    // parseReferral() looks for ?ref= and the server matches a username; a
+    // route-shaped link would be captured by neither.
+    expect(inviteUrl("asha")).toBe("https://myinvestorcircle.com/?ref=asha");
+  });
+
+  it("round-trips through the app's own referral parser", () => {
+    expect(parseReferral(inviteUrl("asha"))).toBe("asha");
+  });
+
+  it("is nothing without a username, because the link IS the username", () => {
+    for (const missing of [null, undefined, ""]) {
+      expect(inviteUrl(missing)).toBeNull();
+    }
   });
 });
 

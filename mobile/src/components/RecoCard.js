@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import Avatar from "./Avatar";
 import { fetchProfileNavInfo } from "../services/profileNav";
 import { colors, fonts } from "../theme/colors";
-import { fmt, fmtDate, fmtPct, returnPct } from "../utils/format";
+import { fmt, fmtDate, fmtPct, getThesisText, returnPct } from "../utils/format";
 import { isLiked, subscribeReactions, toggleReaction } from "../services/reactionStore";
 
 // Rich reco card — matches the web app's feed card (src/features/discovery):
@@ -116,9 +116,11 @@ function RecoCard({ reco, onPress, onOpenProfile }) {
         ) : null}
       </View>
 
-      {reco.thesis && reco.thesis !== "—" ? (
+      {/* getThesisText, not the raw column: a thesis with images is stored as
+          a JSON envelope, which used to render as visible JSON. */}
+      {getThesisText(reco.thesis) ? (
         <Text style={styles.thesis} numberOfLines={3}>
-          {reco.thesis}
+          {getThesisText(reco.thesis)}
         </Text>
       ) : null}
 

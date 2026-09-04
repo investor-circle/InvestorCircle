@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView, Share } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -7,6 +8,7 @@ import * as WebBrowser from "expo-web-browser";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import Avatar from "../../src/components/Avatar";
+import InviteSheet from "../../src/components/InviteSheet";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 import { WEB_ORIGIN, profileUrl } from "../../src/utils/links";
 
@@ -15,6 +17,7 @@ const PRIVACY_URL = `${WEB_ORIGIN}/#/privacy`;
 function ProfileScreen() {
   const { profile, logout, userIsAdmin } = useAuth();
   const router = useRouter();
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   // The web offers "Share this profile" on a profile page; the app offered no
   // way to hand anyone your own public track record, which is the one link a
@@ -54,6 +57,7 @@ function ProfileScreen() {
           <MenuRow icon="ribbon-outline" label="Your track record" onPress={() => router.push("/track-record")} />
           <MenuRow icon="people-outline" label="Your network" onPress={() => router.push("/network")} />
           <MenuRow icon="search-outline" label="Find investors" onPress={() => router.push("/people")} />
+          <MenuRow icon="gift-outline" label="Invite friends" onPress={() => setInviteOpen(true)} />
           <MenuRow icon="albums-outline" label="Your Circles" onPress={() => router.push("/circles")} />
           <MenuRow icon="briefcase-outline" label="Portfolio" onPress={() => router.push("/portfolio")} />
           <MenuRow icon="stats-chart-outline" label="Market Insights" onPress={() => router.push("/market")} />
@@ -90,6 +94,12 @@ function ProfileScreen() {
           <Text style={styles.signOutText}>Sign out</Text>
         </Pressable>
       </ScrollView>
+
+      <InviteSheet
+        visible={inviteOpen}
+        username={profile?.username}
+        onClose={() => setInviteOpen(false)}
+      />
     </SafeAreaView>
   );
 }

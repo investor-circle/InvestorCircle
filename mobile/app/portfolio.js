@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Pressable,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
+  ScrollView,
+  TextInput,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,6 +23,16 @@ import AddHoldingModal from "../src/components/AddHoldingModal";
 import { deleteAllPortfolioHoldings } from "../src/services/api/portfolioApi";
 import { getDailyPrices, getConsensusRecosAll } from "../src/services/api/consensusApi";
 import { consensusByTicker, consensusColor } from "../src/utils/consensus";
+import { getMyConnections } from "../src/services/api/connectionsApi";
+import { byTicker } from "../src/utils/trackedSummary";
+import {
+  buildHoldingsData,
+  opportunitySignals,
+  assetClassOptions,
+  filterHoldings,
+  holdingPriceIdentifier,
+  SIGNAL_LABEL,
+} from "../src/utils/portfolioSignals";
 import { portfolioTotals } from "../src/utils/portfolio";
 import { fmt, fmtPct } from "../src/utils/format";
 import { colors, fonts } from "../src/theme/colors";
@@ -38,6 +59,17 @@ function PortfolioScreen() {
   // path: holdings render first and the verdicts fill in behind them, so a
   // slow or failed consensus call never delays the portfolio itself.
   const [consensus, setConsensus] = useState({});
+  // The raw ideas behind each ticker, not just the computed verdict: the
+  // signal cards need them (recency for "emerging", the circle subset for
+  // "diverging"), which a consensus summary has already thrown away.
+  const [recosByTicker, setRecosByTicker] = useState({});
+  const [circleIds, setCircleIds] = useState([]);
+  // Filters — signal tab, asset class, free text. Deliberately NOT persisted:
+  // a filter you set last week and forgot is how a portfolio appears to have
+  // lost holdings.
+  const [signal, setSignal] = useState("all");
+  const [assetClass, setAssetClass] = useState("all");
+  const [search, setSearch] = useState("");
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
@@ -47,7 +79,9 @@ function PortfolioScreen() {
 
     // Dependent on the holdings (we need their tickers), so it follows —
     // but it must not delay showing them, hence a separate render.
-    const syms = [...new Set((rows || []).map((h) => h?.sym).filter(Boolean))];
+    // A mutual fund is priced by ISIN rather than by symbol, so asking for
+    // symbols alone would return nothing for every fund in the portfolio.
+    const syms = [...new Set((rows || []).map(holdingPriceIdentifier).filter(Boolean))];
     if (!syms.length) return;
     const prices = await getDailyPrices(syms);
     if (!mounted.current) return;
@@ -61,16 +95,24 @@ function PortfolioScreen() {
   // Independent of the holdings fetch (it returns every idea, not just the
   // ones held), so it runs alongside rather than after it.
   useEffect(() => {
-    getConsensusRecosAll()
-      .then((rows) => {
-        if (!mounted.current) return;
-        const map = {};
-        for (const entry of consensusByTicker(rows || [])) map[entry.ticker] = entry.consensus;
-        setConsensus(map);
-      })
-      .catch(() => {
-        /* a missing verdict just means no badge */
-      });
+    // Independent of each other and of the holdings fetch, so all three run
+    // together rather than in series.
+    Promise.allSettled([getConsensusRecosAll(), getMyConnections()]).then(([ideasR, connR]) => {
+      if (!mounted.current) return;
+      if (ideasR.status === "fulfilled") {
+        const verdicts = {};
+        const rows = {};
+        for (const entry of consensusByTicker(ideasR.value || [])) {
+          verdicts[entry.ticker] = entry.consensus;
+          rows[entry.ticker] = entry.recos;
+        }
+        setConsensus(verdicts);
+        setRecosByTicker(rows);
+      }
+      if (connR.status === "fulfilled") {
+        setCircleIds((connR.value || []).map((c) => c.user_id).filter(Boolean));
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -92,13 +134,31 @@ function PortfolioScreen() {
   const priced = useMemo(
     () =>
       (holdings || []).map((h) => {
-        const live = livePrices[String(h?.sym || "").toUpperCase()];
+        const live = livePrices[holdingPriceIdentifier(h)];
         return live?.close != null ? { ...h, price: live.close, _changePct: live.changePct } : h;
       }),
     [holdings, livePrices]
   );
 
   const totals = useMemo(() => portfolioTotals(priced), [priced]);
+
+  // The daily snapshot the signal cards read, keyed the way buildHoldingsData
+  // expects (ticker + asset class, not ticker alone — see trackedSummary.js).
+  const dailyPrices = useMemo(
+    () => byTicker(Object.values(livePrices)),
+    [livePrices]
+  );
+  const holdingsData = useMemo(
+    () => buildHoldingsData(holdings || [], recosByTicker, circleIds, dailyPrices),
+    [holdings, recosByTicker, circleIds, dailyPrices]
+  );
+  const signals = useMemo(() => opportunitySignals(holdingsData), [holdingsData]);
+  const classes = useMemo(() => assetClassOptions(holdingsData), [holdingsData]);
+  const visible = useMemo(
+    () => filterHoldings(holdingsData, { signal, assetClass, search }),
+    [holdingsData, signal, assetClass, search]
+  );
+  const filtering = signal !== "all" || assetClass !== "all" || !!search.trim();
 
   const confirmDeleteAll = useCallback(() => {
     Alert.alert(
@@ -184,12 +244,13 @@ function PortfolioScreen() {
         </View>
       ) : (
         <FlatList
-          data={priced}
+          data={visible}
           keyExtractor={(h) => String(h.id)}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           contentContainerStyle={holdings.length === 0 ? styles.emptyWrap : { padding: 16 }}
           ListHeaderComponent={
             holdings.length > 0 ? (
+              <>
               <View style={styles.summary}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Current value</Text>
@@ -206,6 +267,119 @@ function PortfolioScreen() {
                   </Text>
                 </View>
               </View>
+
+              {/* Opportunity Signals — at most four, one per category, never
+                  the same holding twice (see portfolioSignals.js). */}
+              {signals.length ? (
+                <>
+                  <Text style={styles.sectionLabel}>Opportunity signals</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.signalRail}
+                  >
+                    {signals.map(({ kind, holding }) => {
+                      const tint =
+                        kind === "diverging"
+                          ? "#92400e"
+                          : kind === "mover" && holding.dailyChangePct < 0
+                          ? colors.loss
+                          : kind === "mover"
+                          ? colors.gain
+                          : colors.accentInk;
+                      return (
+                        <Pressable
+                          key={kind}
+                          style={styles.signalCard}
+                          onPress={() =>
+                            router.push(`/ticker/${encodeURIComponent(String(holding.sym).toUpperCase())}`)
+                          }
+                        >
+                          <Text style={[styles.signalKind, { color: tint }]}>
+                            {SIGNAL_LABEL[kind].toUpperCase()}
+                          </Text>
+                          <Text style={styles.signalSym} numberOfLines={1}>
+                            {holding.sym}
+                          </Text>
+                          <Text style={[styles.signalStat, { color: tint }]}>
+                            {kind === "mover"
+                              ? `${holding.dailyChangePct >= 0 ? "+" : ""}${Number(
+                                  holding.dailyChangePct
+                                ).toFixed(2)}% today`
+                              : kind === "diverging"
+                              ? `Circle ${holding.circle.bullPct}% vs ${holding.community.bullPct}%`
+                              : `${holding.community.bullPct}% ${holding.community.label}`}
+                          </Text>
+                          <Text style={styles.signalMeta} numberOfLines={1}>
+                            {holding.community.total} idea
+                            {holding.community.total === 1 ? "" : "s"}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </>
+              ) : null}
+
+              {/* Filters. The asset-class row only appears when the portfolio
+                  actually holds more than one class — a single-class filter
+                  is a control that can only ever do nothing. */}
+              <View style={styles.searchRow}>
+                <Ionicons name="search" size={15} color={colors.muted} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Filter holdings"
+                  placeholderTextColor={colors.muted}
+                  value={search}
+                  onChangeText={setSearch}
+                  autoCorrect={false}
+                />
+                {search ? (
+                  <Pressable onPress={() => setSearch("")} hitSlop={8}>
+                    <Ionicons name="close-circle" size={16} color={colors.muted} />
+                  </Pressable>
+                ) : null}
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                {[
+                  ["all", "All"],
+                  ["bullish", "Bullish"],
+                  ["bearish", "Bearish"],
+                  ["neutral", "Neutral"],
+                ].map(([v, l]) => (
+                  <Pressable
+                    key={v}
+                    style={[styles.chip, signal === v && styles.chipOn]}
+                    onPress={() => setSignal(v)}
+                  >
+                    <Text style={[styles.chipText, signal === v && styles.chipTextOn]}>{l}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              {classes.length > 1 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                  {["all", ...classes].map((c) => (
+                    <Pressable
+                      key={c}
+                      style={[styles.chip, assetClass === c && styles.chipOn]}
+                      onPress={() => setAssetClass(c)}
+                    >
+                      <Text style={[styles.chipText, assetClass === c && styles.chipTextOn]}>
+                        {c === "all" ? "All types" : c}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+
+              {filtering ? (
+                <Text style={styles.countLine}>
+                  Showing {visible.length} of {holdingsData.length}
+                </Text>
+              ) : null}
+              </>
             ) : null
           }
           renderItem={({ item }) => {
@@ -255,6 +429,24 @@ function PortfolioScreen() {
             );
           }}
           ListEmptyComponent={
+            // Two different empties: a portfolio with nothing in it, and one
+            // whose holdings are all filtered out. Showing "add a holding" to
+            // someone who has twenty but typed a bad filter would be wrong.
+            filtering && holdingsData.length > 0 ? (
+              <View style={styles.noMatch}>
+                <Ionicons name="funnel-outline" size={34} color={colors.line2} />
+                <Text style={styles.noMatchTitle}>No holdings match these filters</Text>
+                <Pressable
+                  onPress={() => {
+                    setSignal("all");
+                    setAssetClass("all");
+                    setSearch("");
+                  }}
+                >
+                  <Text style={styles.clearLink}>Clear filters</Text>
+                </Pressable>
+              </View>
+            ) : (
             <View style={styles.empty}>
               <Ionicons name="briefcase-outline" size={40} color={colors.line2} />
               <Text style={styles.emptyTitle}>No holdings yet</Text>
@@ -269,6 +461,7 @@ function PortfolioScreen() {
                 <Text style={styles.emptyLinkText}>Import a CAS statement</Text>
               </Pressable>
             </View>
+            )
           }
         />
       )}
@@ -288,6 +481,56 @@ function PortfolioScreen() {
 }
 
 const styles = StyleSheet.create({
+  sectionLabel: {
+    color: colors.muted,
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  signalRail: { gap: 10, paddingRight: 4, paddingBottom: 4 },
+  signalCard: {
+    width: 152,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 13,
+    padding: 12,
+  },
+  signalKind: { fontFamily: fonts.bold, fontSize: 9, letterSpacing: 0.5 },
+  signalSym: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 16, marginTop: 5 },
+  signalStat: { fontFamily: fonts.bold, fontSize: 12, marginTop: 3 },
+  signalMeta: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, marginTop: 4 },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.surface,
+    borderRadius: 11,
+    paddingHorizontal: 12,
+  },
+  searchInput: { flex: 1, paddingVertical: 9, color: colors.ink, fontFamily: fonts.regular, fontSize: 14 },
+  chips: { gap: 7, paddingTop: 10, paddingRight: 4 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.surface,
+  },
+  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 12 },
+  chipTextOn: { color: "#fff" },
+  countLine: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 12 },
+  noMatch: { alignItems: "center", paddingVertical: 34, gap: 8 },
+  noMatchTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14.5 },
+  clearLink: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 13.5, paddingTop: 4 },
   consRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4 },
   consDot: { width: 7, height: 7, borderRadius: 4 },
   consText: { fontFamily: fonts.bold, fontSize: 11 },
