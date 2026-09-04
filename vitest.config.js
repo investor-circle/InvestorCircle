@@ -19,6 +19,10 @@ export default defineConfig({
     // api/** included so the server-side push delivery rules are covered by
     // the same `npm test` the rest of the web app uses. These are pure
     // modules (no Neon, no network) for exactly that reason.
-    include: ["src/**/*.test.{js,jsx}", "api/**/*.test.js"],
+    //
+    // scripts/** likewise: the build step that publishes assetlinks.json
+    // decides whether a link shared from the mobile app opens the app at all,
+    // and it fails silently when it is wrong.
+    include: ["src/**/*.test.{js,jsx}", "api/**/*.test.js", "scripts/**/*.test.js"],
   },
 });

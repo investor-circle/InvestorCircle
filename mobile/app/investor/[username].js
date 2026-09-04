@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Share } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { profileUrl } from "../../src/utils/links";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { getPublicProfile } from "../../src/services/api/peopleApi";
@@ -70,6 +71,20 @@ function InvestorProfileScreen() {
   const realized = data?.realized;
   const summary = data?.summary;
 
+  const shareProfile = useCallback(async () => {
+    const uname = data?.profile?.username || (typeof username === "string" ? username : "");
+    const url = profileUrl(uname);
+    if (!uname) return;
+    try {
+      await Share.share({
+        message: `${data?.profile?.full_name || "@" + uname}'s track record on myInvestorCircle — ${url}`,
+        url,
+      });
+    } catch (_) {
+      /* user dismissed the OS sheet */
+    }
+  }, [data?.profile?.username, data?.profile?.full_name, username]);
+
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
       <View style={styles.topbar}>
@@ -77,7 +92,12 @@ function InvestorProfileScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.ink} />
         </Pressable>
         <Text style={styles.topTitle}>Investor</Text>
-        <View style={{ width: 40 }} />
+        {/* The web has "Share this profile" (copy link / WhatsApp) on every
+            public profile; the app had no way to share one at all. Same URL
+            the web hands out, through the OS share sheet. */}
+        <Pressable onPress={shareProfile} hitSlop={10} style={{ width: 40, alignItems: "flex-end" }}>
+          <Ionicons name="share-social-outline" size={21} color={colors.accentInk} />
+        </Pressable>
       </View>
 
       {data === undefined ? (

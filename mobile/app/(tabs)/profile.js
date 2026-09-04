@@ -1,4 +1,4 @@
-import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Share } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,7 +8,7 @@ import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import Avatar from "../../src/components/Avatar";
 import { withBoundary } from "../../src/components/ErrorBoundary";
-import { WEB_ORIGIN } from "../../src/utils/links";
+import { WEB_ORIGIN, profileUrl } from "../../src/utils/links";
 
 const PRIVACY_URL = `${WEB_ORIGIN}/#/privacy`;
 
@@ -16,13 +16,31 @@ function ProfileScreen() {
   const { profile, logout, userIsAdmin } = useAuth();
   const router = useRouter();
 
+  // The web offers "Share this profile" on a profile page; the app offered no
+  // way to hand anyone your own public track record, which is the one link a
+  // member is most likely to want to send.
+  const shareMine = async () => {
+    const url = profileUrl(profile?.username);
+    if (!profile?.username) return;
+    try {
+      await Share.share({ message: `My investment track record on myInvestorCircle — ${url}`, url });
+    } catch (_) {
+      /* user dismissed the OS sheet */
+    }
+  };
+
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
         <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
           <Avatar profile={profile} size={78} style={styles.heroAvatar} />
           <Text style={styles.name}>{profile?.full_name || "—"}</Text>
-          {profile?.username ? <Text style={styles.username}>@{profile.username}</Text> : null}
+          {profile?.username ? (
+            <Pressable onPress={shareMine} hitSlop={8} style={styles.shareMine}>
+              <Text style={styles.username}>@{profile.username}</Text>
+              <Ionicons name="share-social-outline" size={15} color="rgba(255,255,255,0.85)" />
+            </Pressable>
+          ) : null}
           {userIsAdmin ? (
             <View style={styles.adminBadge}>
               <Text style={styles.adminBadgeText}>Admin</Text>
@@ -116,7 +134,8 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 30 },
   name: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 22 },
-  username: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 14, marginTop: 3 },
+  shareMine: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },
+  username: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 14 },
   adminBadge: {
     marginTop: 10,
     backgroundColor: "rgba(255,255,255,0.22)",

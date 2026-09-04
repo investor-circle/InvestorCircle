@@ -62,7 +62,7 @@ import {
   setExitSignal as dbSetExit,
   updateDelivery
 } from "../../services/api/recommendationsApi";
-import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, InstrumentSearch, Money, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, InstrumentSearch, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
 import { CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, SECTOR_EMOJI, THESIS_EMOJIS, THESIS_MAX_CHARS, THESIS_MAX_IMAGES, THESIS_MAX_MB, TODAY } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
@@ -2463,6 +2463,11 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, contacts=[], gr
       </div>
 
       <div style={{maxWidth:640, margin:'0 auto', padding: isMobile ? '16px 12px' : '24px 16px'}}>
+
+        {/* This page is where a link shared from the app lands when the OS
+            didn't hand it to the app — most often because it was opened
+            inside another app's built-in browser. */}
+        <OpenInAppBanner/>
 
         {/* Loading */}
         {loading && (

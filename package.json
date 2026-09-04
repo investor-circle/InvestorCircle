@@ -3,10 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A private, closed-circle social investing prototype — multi-account aggregation, granular sharing, and recommendation tracking.",
+  "description": "A private, closed-circle social investing prototype \u2014 multi-account aggregation, granular sharing, and recommendation tracking.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/write-assetlinks.mjs",
     "preview": "vite preview",
     "lint": "eslint src --ext .js,.jsx",
     "test": "vitest run --config vitest.config.js",

@@ -1,5 +1,5 @@
 import { notifyPublicContacts } from "./api/recommendationsApi";
-import { recoUrl } from "../utils/links";
+import { recoUrl, WEB_ORIGIN } from "../utils/links";
 import { sendEmail, sendPush } from "./notify";
 
 /**
@@ -34,7 +34,10 @@ export function announcePublicReco({ reco, recoId, me, contacts }) {
   // One definition of what a public idea link looks like (services/api.js),
   // rather than a second hand-built copy that can drift from the share
   // sheet's — or from the host the site is actually served on.
-  const url = recoUrl(username, id);
+  // The author is the sender, and the setup gate guarantees they have a
+  // username, so this resolves in practice. The site root is the fallback
+  // rather than a malformed profile path, which is what this used to build.
+  const url = recoUrl(username, id) || WEB_ORIGIN;
 
   // One server call for every contact, rather than one per contact.
   notifyPublicContacts(

@@ -19,11 +19,22 @@
  */
 export const WEB_ORIGIN = process.env.EXPO_PUBLIC_WEB_ORIGIN || "https://myinvestorcircle.com";
 
-/** The canonical public URL for one idea, matching the web's share links. */
+/**
+ * The canonical public URL for one idea, or null when there isn't one.
+ *
+ * An idea's public page hangs off its AUTHOR'S username — the web app only
+ * routes `#/investor/:username/reco/:id`, and has no id-only form. So a
+ * username-less link is not a shorter link, it is a broken one: it would open
+ * correctly in the app (whose parser accepts `/reco/:id`) and land a
+ * recipient without the app on the home feed. Since almost everyone a link is
+ * sent to does not have the app, that is the wrong half to get right.
+ *
+ * Hence null rather than a best-effort URL — the caller says the idea has no
+ * public page rather than handing someone a link that quietly goes nowhere.
+ */
 export function recoUrl(username, recoId) {
-  return username
-    ? `${WEB_ORIGIN}/#/investor/${encodeURIComponent(username)}/reco/${encodeURIComponent(recoId)}`
-    : `${WEB_ORIGIN}/#/reco/${encodeURIComponent(recoId)}`;
+  if (!username || !recoId) return null;
+  return `${WEB_ORIGIN}/#/investor/${encodeURIComponent(username)}/reco/${encodeURIComponent(recoId)}`;
 }
 
 /** The invite URL for one Circle, by slug — the link the web hands out. */

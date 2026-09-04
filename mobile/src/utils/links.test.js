@@ -23,13 +23,15 @@ describe("recoUrl", () => {
     expect(recoUrl("asha", "123")).toBe("https://myinvestorcircle.com/#/investor/asha/reco/123");
   });
 
-  it("still resolves the idea when the author's username is unknown", () => {
-    // The old fallback was the bare site root, which handed people the
-    // homepage instead of the thing that was shared. /reco/:id is a route the
-    // app and the web both understand.
+  it("returns nothing when the author's username is unknown", () => {
+    // An idea's public page hangs off the author's username; the web has no
+    // id-only route. A "shorter" link would open in the app and land everyone
+    // WITHOUT the app on the home feed — and almost everyone a link is sent
+    // to does not have the app. The caller says so instead of sending one.
     for (const missing of [null, undefined, ""]) {
-      expect(recoUrl(missing, "123")).toBe("https://myinvestorcircle.com/#/reco/123");
+      expect(recoUrl(missing, "123")).toBeNull();
     }
+    expect(recoUrl("asha", "")).toBeNull();
   });
 
   it("escapes values rather than interpolating them raw", () => {
