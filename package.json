@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A private, closed-circle social investing prototype \u2014 multi-account aggregation, granular sharing, and recommendation tracking.",
+  "description": "A private, closed-circle social investing prototype — multi-account aggregation, granular sharing, and recommendation tracking.",
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/write-assetlinks.mjs",
@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
-    "expo-image-picker": "^57.0.14",
     "firebase": "^11.0.0",
     "firebase-admin": "^12.7.0",
     "lucide-react": "^0.383.0",
