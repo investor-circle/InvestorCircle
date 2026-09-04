@@ -41,6 +41,7 @@ import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 import ShareRecoSheet from "../../src/components/ShareRecoSheet";
+import InvestPriceModal from "../../src/components/InvestPriceModal";
 
 function RecoDetailScreen() {
   const { id, username } = useLocalSearchParams();
@@ -131,9 +132,10 @@ function RecoDetailScreen() {
     }
   }, [eng, isTracked, id]);
 
-  const toggleInvested = useCallback(async () => {
+  // Marking invested asks for the price actually paid (the web's
+  // InvestPriceModal); unmarking is immediate, since there is nothing to ask.
+  const setInvested = useCallback(async (next, atPrice) => {
     if (!eng) return;
-    const next = !isInvested;
     setEng((e) => ({ ...e, tracking: { ...(e.tracking || {}), isInvested: next } }));
 
     // TWO places record "I acted on this", and they are not interchangeable:
@@ -151,7 +153,7 @@ function RecoDetailScreen() {
     if (reco?.deliveryId) {
       await updateDelivery(reco.deliveryId, {
         isInvested: next,
-        investedPrice: next ? reco?.price ?? null : null,
+        investedPrice: next ? atPrice ?? null : null,
         // The server no longer clobbers an unmentioned reaction, but this
         // app updates slowly (store builds are infrequent), so it keeps
         // sending its current value: correct against either server version.
@@ -159,8 +161,14 @@ function RecoDetailScreen() {
       });
       setReco((r) => (r ? { ...r, invested: next } : r));
     }
-    await trackReco(id, next, next ? reco?.price ?? undefined : undefined);
-  }, [eng, isInvested, id, reco?.price, reco?.deliveryId]);
+    await trackReco(id, next, next ? atPrice ?? undefined : undefined);
+  }, [eng, id, reco?.deliveryId]);
+
+  const [investOpen, setInvestOpen] = useState(false);
+  const onInvestedPress = useCallback(() => {
+    if (isInvested) setInvested(false);
+    else setInvestOpen(true);
+  }, [isInvested, setInvested]);
 
   const toggleExit = useCallback(async () => {
     setOwnerBusy(true);
@@ -326,7 +334,7 @@ function RecoDetailScreen() {
                 {isTracked ? "Tracking" : "Track"}
               </Text>
             </Pressable>
-            <Pressable style={[styles.actionBtn, isInvested && styles.actionOnGain]} onPress={toggleInvested}>
+            <Pressable style={[styles.actionBtn, isInvested && styles.actionOnGain]} onPress={onInvestedPress}>
               <Ionicons
                 name={isInvested ? "checkmark-circle" : "checkmark-circle-outline"}
                 size={18}
@@ -443,6 +451,15 @@ function RecoDetailScreen() {
       </KeyboardAvoidingView>
 
       <ShareRecoSheet visible={shareOpen} reco={reco} onClose={() => setShareOpen(false)} />
+      <InvestPriceModal
+        visible={investOpen}
+        reco={reco}
+        onClose={() => setInvestOpen(false)}
+        onConfirm={(price) => {
+          setInvestOpen(false);
+          setInvested(true, price);
+        }}
+      />
     </SafeAreaView>
   );
 }

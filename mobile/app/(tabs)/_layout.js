@@ -14,7 +14,13 @@ export default function TabsLayout() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* Pulse first, and the tab the app opens on — the same default the web
+          has, where Home is a two-tab page with Pulse selected and the raw
+          idea feed behind it. Pulse is the daily read; the feed is where you
+          go when you want everything. Landing on the feed instead meant the
+          two clients answered "what's new?" with different screens. */}
       <Tabs
+        initialRouteName="discover"
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: colors.accent,
@@ -30,17 +36,19 @@ export default function TabsLayout() {
         }}
       >
         <Tabs.Screen
-          name="index"
-          options={{
-            title: "Home",
-            tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} />,
-          }}
-        />
-        <Tabs.Screen
           name="discover"
           options={{
             title: "Pulse",
             tabBarIcon: ({ color, size }) => <Ionicons name="pulse" color={color} size={size} />,
+          }}
+        />
+        {/* "Feed", not "Home": with Pulse as the landing tab, calling the
+            second one Home would name two different tabs as the start. */}
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Feed",
+            tabBarIcon: ({ color, size }) => <Ionicons name="newspaper" color={color} size={size} />,
           }}
         />
         <Tabs.Screen

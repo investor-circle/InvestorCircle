@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Pressable,
+  ActivityIndicator,
+  RefreshControl,
+  TextInput,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,6 +16,7 @@ import RecoCard from "../../src/components/RecoCard";
 import { primeAvatars } from "../../src/services/avatarCache";
 import { getCircleIdeas, requestJoinCircle } from "../../src/services/api/groupsApi";
 import { mapCircleReco } from "../../src/utils/feed";
+import { filterSortIdeas, IDEA_FILTERS, IDEA_SORTS, DEFAULT_SORT } from "../../src/utils/circleIdeas";
 import { putReco } from "../../src/utils/recoStore";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
@@ -20,6 +30,9 @@ function CircleDetailScreen() {
   const [denied, setDenied] = useState(false);
   const [joinState, setJoinState] = useState(null); // null | "sending" | "sent" | error string
   const [refreshing, setRefreshing] = useState(false);
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState("all");
+  const [sort, setSort] = useState(DEFAULT_SORT);
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
@@ -77,6 +90,12 @@ function CircleDetailScreen() {
     [router]
   );
 
+  const visible = useMemo(() => filterSortIdeas(ideas, { query, type, sort }), [ideas, query, type, sort]);
+  // Only worth showing the toolbar once there is enough to look through; on
+  // a Circle with three ideas it is more chrome than the list it filters.
+  const showTools = (ideas?.length || 0) >= 5;
+  const narrowed = !!query.trim() || type !== "all";
+
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
       <View style={styles.topbar}>
@@ -101,13 +120,48 @@ function CircleDetailScreen() {
         </View>
       ) : (
         <FlatList
-          data={ideas}
+          data={visible}
           keyExtractor={(r) => String(r.id)}
           renderItem={({ item }) => <RecoCard reco={item} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-          contentContainerStyle={ideas.length === 0 ? styles.emptyWrap : { paddingVertical: 12 }}
+          contentContainerStyle={visible.length === 0 ? styles.emptyWrap : { paddingVertical: 12 }}
           initialNumToRender={6}
           windowSize={11}
+          ListHeaderComponent={
+            showTools ? (
+              <View style={styles.tools}>
+                <View style={styles.searchBox}>
+                  <Ionicons name="search" size={15} color={colors.muted} />
+                  <TextInput
+                    style={styles.searchInput}
+                    value={query}
+                    onChangeText={setQuery}
+                    placeholder="Search ticker, name or investor"
+                    placeholderTextColor={colors.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                  />
+                  {query ? (
+                    <Pressable onPress={() => setQuery("")} hitSlop={8}>
+                      <Ionicons name="close-circle" size={16} color={colors.muted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+
+                <View style={styles.chipRow}>
+                  {IDEA_FILTERS.map((f) => (
+                    <Chip key={f.value} on={type === f.value} onPress={() => setType(f.value)} label={f.label} />
+                  ))}
+                </View>
+                <View style={styles.chipRow}>
+                  {IDEA_SORTS.map((o) => (
+                    <Chip key={o.value} on={sort === o.value} onPress={() => setSort(o.value)} label={o.label} />
+                  ))}
+                </View>
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             denied ? (
               <View style={styles.empty}>
@@ -145,6 +199,12 @@ function CircleDetailScreen() {
                   </Text>
                 ) : null}
               </View>
+            ) : narrowed ? (
+              <View style={styles.empty}>
+                <Ionicons name="search-outline" size={40} color={colors.line2} />
+                <Text style={styles.emptyTitle}>No ideas match</Text>
+                <Text style={styles.emptySub}>Try a different search, or clear the Buy/Sell filter.</Text>
+              </View>
             ) : (
               <View style={styles.empty}>
                 <Ionicons name="bulb-outline" size={40} color={colors.line2} />
@@ -159,7 +219,40 @@ function CircleDetailScreen() {
   );
 }
 
+function Chip({ on, label, onPress }) {
+  return (
+    <Pressable style={[styles.chip, on && styles.chipOn]} onPress={onPress}>
+      <Text style={[styles.chipText, on && styles.chipTextOn]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  tools: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4, gap: 8 },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 11,
+    paddingHorizontal: 12,
+    height: 42,
+  },
+  searchInput: { flex: 1, color: colors.ink, fontFamily: fonts.regular, fontSize: 14, padding: 0 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  chip: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+  },
+  chipOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+  chipText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 12 },
+  chipTextOn: { color: colors.accentInk },
   joinBtn: {
     backgroundColor: colors.accent,
     borderRadius: 999,
