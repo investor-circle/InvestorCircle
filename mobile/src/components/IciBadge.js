@@ -21,6 +21,22 @@ export default function IciBadge({ ici, size = "md", showBand = true }) {
 
   const band = BAND_STYLE[ici.band] || BAND_STYLE.Early;
   const small = size === "sm";
+  const xl = size === "xl";
+
+  if (xl) {
+    // The track record's lead figure — this is the number the whole product
+    // is organised around, so it gets a ring of its own rather than a chip
+    // sized the same as a status pill next to it.
+    return (
+      <View style={styles.ringWrap}>
+        <View style={[styles.ring, { borderColor: band.fg, backgroundColor: band.bg }]}>
+          <Text style={[styles.ringScore, { color: band.fg }]}>{ici.score}</Text>
+          <Text style={styles.ringMax}>/ 100</Text>
+        </View>
+        {showBand ? <Text style={[styles.ringBand, { color: band.fg }]}>{ici.band}</Text> : null}
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.wrap, { backgroundColor: band.bg }, small && styles.wrapSm]}>
@@ -72,7 +88,19 @@ const styles = StyleSheet.create({
   scoreSm: { fontSize: 12 },
   band: { fontFamily: fonts.semibold, fontSize: 11 },
   bandSm: { fontSize: 10 },
-  breakdown: { marginTop: 10, gap: 8 },
+  ringWrap: { alignItems: "center", gap: 8 },
+  ring: {
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    borderWidth: 7,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ringScore: { fontFamily: fonts.extrabold, fontSize: 38, lineHeight: 42 },
+  ringMax: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 11, marginTop: -2 },
+  ringBand: { fontFamily: fonts.extrabold, fontSize: 14, letterSpacing: 0.3 },
+  breakdown: { alignSelf: "stretch", marginTop: 14, gap: 8 },
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
   rowLabel: { flex: 1, color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 12 },
   track: { width: 70, height: 5, borderRadius: 3, backgroundColor: colors.line, overflow: "hidden" },

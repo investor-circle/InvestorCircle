@@ -202,11 +202,18 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Image source={require("../../assets/icon.png")} style={styles.logo} resizeMode="contain" />
-        <Text style={styles.title}>myInvestorCircle</Text>
-        <Text style={styles.subtitle}>
-          {tab === "forgot" ? "Reset your password" : "Private investing with people you trust"}
-        </Text>
+        {/* The web's login page sits on two soft purple/magenta glows in the
+            corners behind the mark — this is the same treatment, approximated
+            with two blurred circles since RN has no radial-gradient. */}
+        <View style={styles.headerWrap}>
+          <View style={[styles.glow, styles.glowTop]} pointerEvents="none" />
+          <View style={[styles.glow, styles.glowBottom]} pointerEvents="none" />
+          <Image source={require("../../assets/mic-logo.png")} style={styles.logo} resizeMode="contain" />
+          <Text style={styles.title}>myInvestorCircle</Text>
+          <Text style={styles.subtitle}>
+            {tab === "forgot" ? "Reset your password" : "Private investing with people you trust"}
+          </Text>
+        </View>
 
         {referrer && tab !== "forgot" ? (
           <View style={styles.inviteBanner}>
@@ -367,7 +374,16 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   container: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 24, paddingVertical: 40 },
-  logo: { width: 68, height: 68, alignSelf: "center", marginBottom: 14, borderRadius: 16 },
+  headerWrap: {
+    alignItems: "center",
+    overflow: "hidden",
+    paddingTop: 8,
+    marginBottom: 22,
+  },
+  glow: { position: "absolute", width: 260, height: 260, borderRadius: 130 },
+  glowTop: { top: -140, left: -70, backgroundColor: "rgba(109,93,245,0.16)" },
+  glowBottom: { top: -40, right: -110, backgroundColor: "rgba(207,82,216,0.14)" },
+  logo: { width: 76, height: 76, alignSelf: "center", marginBottom: 14 },
   title: { fontSize: 25, fontFamily: fonts.extrabold, color: colors.ink, textAlign: "center" },
   subtitle: {
     fontSize: 14,
@@ -375,7 +391,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
     textAlign: "center",
     marginTop: 6,
-    marginBottom: 22,
   },
   consentRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: 4 },
   checkbox: {

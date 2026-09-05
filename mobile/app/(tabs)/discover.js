@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Refre
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import GradientHero from "../../src/components/GradientHero";
+import AppHeader from "../../src/components/AppHeader";
 import RecoCard from "../../src/components/RecoCard";
 import { getPublicFeed, getMyReceivedRecos } from "../../src/services/api/recommendationsApi";
 import { getMyConnections } from "../../src/services/api/connectionsApi";
@@ -144,24 +144,16 @@ function PulseScreen() {
     [router]
   );
 
-  const hero = (
-    <GradientHero
-      eyebrow="Pulse"
-      title="Your daily investment dose"
-      subtitle="What's moving across your circle & the platform"
-      icon="search"
-      onIconPress={() => router.push("/search")}
-    />
-  );
+  const header = <AppHeader title="Pulse" />;
 
   if (data === null) {
     return (
-      <View style={styles.flex}>
-        {hero}
+      <SafeAreaView style={styles.flex} edges={["top"]}>
+        {header}
         <View style={styles.center}>
           <ActivityIndicator color={colors.accent} size="large" />
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -172,27 +164,11 @@ function PulseScreen() {
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
+      {header}
       <ScrollView
         contentContainerStyle={{ paddingBottom: 28 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
-        {hero}
-
-        {/* Market Insights lives on its own screen — it aggregates every
-            public idea by stock, which is a different question from Pulse's
-            "what moved recently", but the same intent, so this is where
-            people look for it. */}
-        <Pressable style={styles.insightsLink} onPress={() => router.push("/market")}>
-          <View style={styles.insightsIcon}>
-            <Ionicons name="stats-chart" size={17} color={colors.accentInk} />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.insightsTitle}>Market Insights</Text>
-            <Text style={styles.insightsSub}>Consensus and conviction across every stock</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={17} color={colors.muted} />
-        </Pressable>
-
         {nothing ? (
           <View style={styles.empty}>
             <Ionicons name={error ? "cloud-offline-outline" : "pulse-outline"} size={40} color={colors.line2} />
@@ -473,26 +449,6 @@ const styles = StyleSheet.create({
   trackedEmpty: { paddingHorizontal: 16, paddingBottom: 4 },
   trackedEmptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
   trackedEmptySub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 18, marginTop: 4 },
-  insightsLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
-    padding: 14,
-    marginHorizontal: 16,
-    marginTop: 16,
-  },
-  insightsIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: colors.accentSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   fullFeedLink: {
     flexDirection: "row",
     alignItems: "center",
@@ -507,8 +463,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft,
   },
   fullFeedText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 14 },
-  insightsTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14.5 },
-  insightsSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
   flex: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   sectionHead: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, marginBottom: 10 },

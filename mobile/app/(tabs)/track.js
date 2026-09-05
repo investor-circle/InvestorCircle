@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import RecoListScreen from "../../src/components/RecoListScreen";
-import GradientHero from "../../src/components/GradientHero";
+import AppHeader from "../../src/components/AppHeader";
 import { getMyMadeRecos, getMyReceivedRecos } from "../../src/services/api/recommendationsApi";
 import { getMyTrackedRecos } from "../../src/services/api/engagementApi";
 import { mapTrackedReco } from "../../src/utils/feed";
@@ -85,7 +85,7 @@ function TrackScreen() {
 
   return (
     <RecoListScreen
-      hero={<GradientHero eyebrow="Track" title="My Recommendations" subtitle="Ideas shared with you, posted by you, and tracked" />}
+      header={<AppHeader title="My Ideas" />}
       subHeader={subHeader}
       loader={loader}
       emptyTitle={EMPTY[tab][0]}

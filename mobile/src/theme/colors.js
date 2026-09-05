@@ -47,16 +47,6 @@ export const GRADIENT = {
   end: { x: 1, y: 1 },
 };
 
-// Same gradient, ~20% darker — used only for the page-header banner
-// (GradientHero). A native status/app bar reads as chrome, not content, and
-// the full-brightness gradient made it look like a content block instead.
-export const GRADIENT_HERO = {
-  colors: ["#574ac4", "#7b44be", "#a642ad"],
-  locations: [0, 0.55, 1],
-  start: { x: 0, y: 0 },
-  end: { x: 1, y: 1 },
-};
-
 // Font-family names registered by useFonts in app/_layout.js. Falls back to
 // the system font until the Plus Jakarta Sans faces finish loading.
 export const fonts = {

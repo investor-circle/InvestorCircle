@@ -60,15 +60,19 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="track"
           options={{
-            title: "My Recs",
+            title: "My Ideas",
             tabBarIcon: ({ color, size }) => <Ionicons name="bookmark" color={color} size={size} />,
           }}
         />
+        {/* Profile moved to the top bar's account avatar (see AppHeader) —
+            it doesn't need a bottom-nav slot of its own, and that slot is
+            better spent on Market Insights, which used to be buried inside
+            the Profile menu and Pulse's own link. */}
         <Tabs.Screen
-          name="profile"
+          name="market"
           options={{
-            title: "Profile",
-            tabBarIcon: ({ color, size }) => <Ionicons name="person-circle" color={color} size={size} />,
+            title: "Insights",
+            tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart" color={color} size={size} />,
           }}
         />
       </Tabs>

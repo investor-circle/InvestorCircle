@@ -3,7 +3,7 @@ import { View, FlatList, StyleSheet, ActivityIndicator, RefreshControl, Text, Pr
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import RecoCard from "../../src/components/RecoCard";
-import GradientHero from "../../src/components/GradientHero";
+import AppHeader from "../../src/components/AppHeader";
 import {
   getMyReceivedRecos,
   getPublicFeed,
@@ -11,7 +11,6 @@ import {
 } from "../../src/services/api/recommendationsApi";
 import { getMyConnections } from "../../src/services/api/connectionsApi";
 import { getFeedConfigAndPrefs, getMyTrackedRecoIds } from "../../src/services/api/feedApi";
-import { getMyNotifications } from "../../src/services/api/notificationsApi";
 import {
   buildFeed,
   computeEffectiveFeedConfig,
@@ -111,7 +110,6 @@ function FeedScreen() {
   const [recos, setRecos] = useState(null); // null = initial loading
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
-  const [unread, setUnread] = useState(0);
   const mounted = useRef(true);
   // Held in a ref rather than read from a dependency: the tab can mount for a
   // frame before the auth redirect settles, and putting uid in load()'s deps
@@ -125,15 +123,6 @@ function FeedScreen() {
     return () => {
       mounted.current = false;
     };
-  }, []);
-
-  // Unread notification count — fetched off the feed's critical path (own
-  // effect, not awaited by the feed load) so the badge never delays render.
-  useEffect(() => {
-    (async () => {
-      const list = await getMyNotifications();
-      if (mounted.current) setUnread(list.filter((n) => !n.is_read).length);
-    })();
   }, []);
 
   const load = useCallback(async () => {
@@ -211,42 +200,26 @@ function FeedScreen() {
     [router]
   );
 
-  const hero = (
-    <GradientHero
-      eyebrow="Your Feed"
-      title="What your circle is saying"
-      subtitle={
-        recos && recos.length > 0
-          ? `Fresh recommendations · ${recos.length} idea${recos.length === 1 ? "" : "s"}`
-          : "Recommendations from your circle & the platform"
-      }
-      secondaryIcon="search"
-      secondaryLabel="Search investors and stocks"
-      onSecondaryPress={() => router.push("/search")}
-      icon="notifications-outline"
-      badge={unread}
-      onIconPress={() => router.push("/notifications")}
-    />
-  );
+  const header = <AppHeader title="Feed" />;
 
   if (recos === null) {
     return (
-      <View style={styles.flex}>
-        {hero}
+      <SafeAreaView style={styles.flex} edges={["top"]}>
+        {header}
         <View style={styles.center}>
           <ActivityIndicator color={colors.accent} size="large" />
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
+      {header}
       <FlatList
         data={recos}
         keyExtractor={(item) => String(item.deliveryId ?? item.id)}
         renderItem={({ item }) => <RecoCard reco={item} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />}
-        ListHeaderComponent={hero}
         contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         initialNumToRender={6}
