@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, TextInput } from "react-native";
+import { View, Text, StyleSheet, Pressable, TextInput, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import IciBadge, { IciBreakdown } from "./IciBadge";
 import { fmt, fmtDate, fmtPct } from "../utils/format";
@@ -137,24 +137,57 @@ function TrackRecordView({
       {/* Sector distribution. The bar is share of ideas, not performance —
           how spread out someone's calls are is the question this answers,
           and the win column next to it says how those calls went. */}
+      {/* Sector Performance — the same two per-sector rates the web shows
+          (Profile.jsx: Active Success % = active_in_profit/active_count,
+          Closed Hit Rate % = closed_wins/closed_count), not a return figure.
+          Mobile used to show only idea counts and a closed win fraction —
+          the active-ideas success rate, the number the web leads with per
+          sector, was missing entirely. */}
       {sectors.length ? (
-        <Section title="Sectors">
+        <Section title="Sector Performance">
+          <View style={styles.sectorLegend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.gain }]} />
+              <Text style={styles.legendLabel}>Active success %</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.accent }]} />
+              <Text style={styles.legendLabel}>Closed hit rate %</Text>
+            </View>
+          </View>
           {sectors.slice(0, 8).map((s) => {
-            const share = summary?.total ? Math.round((s.total_recs / summary.total) * 100) : 0;
+            const ap = s.active_count ? Math.round((s.active_in_profit / s.active_count) * 100) : null;
+            const cp = s.closed_count ? Math.round((s.closed_wins / s.closed_count) * 100) : null;
             return (
               <View key={s.sector} style={styles.sectorRow}>
                 <View style={styles.sectorHead}>
                   <Text style={styles.sectorName} numberOfLines={1}>
                     {s.sector}
                   </Text>
-                  <Text style={styles.sectorCount}>
-                    {s.total_recs} idea{s.total_recs === 1 ? "" : "s"}
-                    {s.closed_count > 0 ? ` · ${s.closed_wins}/${s.closed_count} won` : ""}
-                  </Text>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {ap != null ? (
+                      <Text style={[styles.sectorRate, { color: colors.gain }]}>{ap}%</Text>
+                    ) : null}
+                    {cp != null ? (
+                      <Text style={[styles.sectorRate, { color: colors.accentInk }]}>{cp}%</Text>
+                    ) : null}
+                  </View>
                 </View>
-                <View style={styles.sectorTrack}>
-                  <View style={[styles.sectorFill, { width: `${Math.max(share, 2)}%` }]} />
+                <View style={styles.sectorBars}>
+                  {ap != null ? (
+                    <View style={styles.sectorTrack}>
+                      <View style={[styles.sectorFill, { width: `${Math.max(ap, 4)}%`, backgroundColor: colors.gain }]} />
+                    </View>
+                  ) : null}
+                  {cp != null ? (
+                    <View style={styles.sectorTrack}>
+                      <View style={[styles.sectorFill, { width: `${Math.max(cp, 4)}%`, backgroundColor: colors.accent }]} />
+                    </View>
+                  ) : null}
                 </View>
+                <Text style={styles.sectorCount}>
+                  {s.total_recs} idea{s.total_recs === 1 ? "" : "s"}
+                </Text>
               </View>
             );
           })}
@@ -298,12 +331,14 @@ function TrackRecordView({
 
 function IdeaRow({ reco, onPress, last }) {
   const closed = reco.status === "Closed" || reco.status === "Expired" || reco.exit_signal;
-  // A closed idea's return is frozen at its exit price; a live one moves with
-  // the market. Using current price for both would silently keep rewriting
-  // history, which is the one thing a track record must not do.
   const from = Number(reco.reco_price || 0);
-  const to = Number(reco.exit_price ?? reco.expiry_price ?? reco.current_price ?? 0);
-  const pct = from > 0 && to > 0 ? ((to - from) / from) * 100 : null;
+  // return_pct is the server's own figure (api/_lib/handlers/public-profile.js)
+  // — it already picks the right frozen/live price per status AND reverses
+  // the direction for a Sell. Recomputing it here from raw prices used to
+  // drop that Sell reversal, silently showing a Sell's return with the wrong
+  // sign (and the wrong number whenever it disagreed with the value the rest
+  // of the page, and the web, derive from the same field).
+  const pct = reco.return_pct != null ? Number(reco.return_pct) : null;
   const isBuy = (reco.recommendation_type || "Buy") !== "Sell";
 
   return (
@@ -338,6 +373,42 @@ function IdeaRow({ reco, onPress, last }) {
         <Text style={styles.ideaPrice}>{from > 0 ? fmt(from) : "—"}</Text>
       </View>
     </Pressable>
+  );
+}
+
+// Social icon row for a profile hero — the web's equivalent (SocialIconBtn,
+// src/components/common.jsx) on the public profile page. Missing on mobile
+// entirely was the actual bug behind "social icons don't render": the
+// public-profile API already returns twitter_url/linkedin_url/telegram_url/
+// instagram_url (api/_lib/handlers/public-profile.js), but neither track
+// record screen rendered them at all. Ionicons' brand glyphs stand in for
+// the web's custom brand-colour SVGs — a platform-accurate icon set already
+// in the app, not a new dependency for four icons.
+const SOCIAL_ICONS = {
+  twitter: "logo-twitter",
+  linkedin: "logo-linkedin",
+  telegram: "paper-plane",
+  instagram: "logo-instagram",
+};
+
+export function SocialLinks({ profile }) {
+  const links = ["twitter", "linkedin", "telegram", "instagram"]
+    .map((p) => ({ platform: p, url: profile?.[`${p}_url`] }))
+    .filter((l) => l.url);
+  if (!links.length) return null;
+  return (
+    <View style={styles.socialRow}>
+      {links.map(({ platform, url }) => (
+        <Pressable
+          key={platform}
+          style={styles.socialBtn}
+          onPress={() => Linking.openURL(url).catch(() => {})}
+          hitSlop={6}
+        >
+          <Ionicons name={SOCIAL_ICONS[platform]} size={16} color="#fff" />
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -384,6 +455,17 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   sebiText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 12.5 },
+  socialRow: { flexDirection: "row", gap: 8, marginTop: 12 },
+  socialBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   iciCard: {
     alignItems: "center",
     backgroundColor: colors.surface,
@@ -469,12 +551,18 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10 },
   rowLabel: { color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 14 },
   rowValue: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
+  sectorLegend: { flexDirection: "row", gap: 16, paddingBottom: 10 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 2 },
+  legendLabel: { color: colors.muted, fontFamily: fonts.regular, fontSize: 10.5 },
   sectorRow: { paddingVertical: 9 },
-  sectorHead: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 6 },
+  sectorHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6 },
   sectorName: { flex: 1, color: colors.ink, fontFamily: fonts.semibold, fontSize: 13.5 },
-  sectorCount: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11.5 },
-  sectorTrack: { height: 6, borderRadius: 3, backgroundColor: colors.surface2, overflow: "hidden" },
-  sectorFill: { height: "100%", backgroundColor: colors.accent, borderRadius: 3 },
+  sectorRate: { fontFamily: fonts.extrabold, fontSize: 12.5 },
+  sectorCount: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11.5, marginTop: 5 },
+  sectorBars: { flexDirection: "row", gap: 4 },
+  sectorTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.surface2, overflow: "hidden" },
+  sectorFill: { height: "100%", borderRadius: 3 },
   circleRow: { flexDirection: "row", alignItems: "center", gap: 11, paddingVertical: 11 },
   circleDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent },
   circleName: { color: colors.ink, fontFamily: fonts.semibold, fontSize: 14 },

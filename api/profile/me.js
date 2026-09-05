@@ -93,7 +93,10 @@ export default async function handler(req, res) {
     rows = await sql`
       SELECT id, email, full_name, first_name, last_name, username, is_admin,
              avatar_url, avatar_color, onboarding_cv_done, onboarding_discover_done,
-             consent_terms_accepted, consent_data_accepted
+             consent_terms_accepted, consent_data_accepted,
+             bio, twitter_url, linkedin_url, telegram_url, instagram_url,
+             registration_status, sebi_reg_number, sebi_reg_valid_till,
+             sebi_firm_name, sebi_approval_status
       FROM user_profiles
       WHERE id = ${uid}
       LIMIT 1

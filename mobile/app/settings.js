@@ -7,7 +7,6 @@ import {
   Pressable,
   TextInput,
   ActivityIndicator,
-  Switch,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -15,7 +14,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../src/context/AuthContext";
-import { getFeedConfigAndPrefs, setFeedPref } from "../src/services/api/feedApi";
 import {
   saveProfileEdit,
   uploadAvatar,
@@ -34,15 +32,16 @@ import {
   REG_STATUSES,
   REG_LABELS,
 } from "../src/utils/profile";
-import { computeEffectiveFeedConfig } from "../src/utils/feed";
 import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
-// Settings = profile name editing + the feed-source preferences the web app
-// exposes on its Sharing page. Options are admin-defined (feed_config_options)
-// — this renders whatever the server says is available rather than a
-// hardcoded list, and options marked always_on / admin-disabled are shown as
-// locked instead of being silently ignored.
+// Settings = profile editing — name, username, bio, links, registration
+// status. Feed-source preferences are NOT part of this screen: the web's
+// equivalent (ProfileEditModal, src/features/profile/Profile.jsx) has no
+// such section — those toggles live only on the web's separate Sharing
+// page, which mobile does not have a screen for — so a "Feed sources" block
+// here would be a mobile-only addition the web's own Edit Profile disagrees
+// with, not a parity feature.
 function SettingsScreen() {
   const router = useRouter();
   const { profile, patchProfile } = useAuth();
@@ -122,20 +121,9 @@ function SettingsScreen() {
     ? regOptions.map((o) => ({ code: o.code, label: o.label }))
     : REG_STATUSES.map((code) => ({ code, label: REG_LABELS[code] }));
 
-  const [options, setOptions] = useState(null);
-  const [prefs, setPrefs] = useState({});
-  const [busyKey, setBusyKey] = useState(null);
   const mounted = useRef(true);
-
   useEffect(() => {
     mounted.current = true;
-    (async () => {
-      const { options: opts, prefs: rows } = await getFeedConfigAndPrefs();
-      if (!mounted.current) return;
-      setOptions(opts || []);
-      const eff = computeEffectiveFeedConfig(opts, rows);
-      setPrefs(eff);
-    })();
     return () => {
       mounted.current = false;
     };
@@ -194,15 +182,6 @@ function SettingsScreen() {
     }
   }, [patchProfile, profile?.id]);
 
-  const togglePref = useCallback(async (key, next) => {
-    setBusyKey(key);
-    setPrefs((p) => ({ ...p, [key]: next })); // optimistic
-    const ok = await setFeedPref(key, next);
-    if (!mounted.current) return;
-    if (!ok) setPrefs((p) => ({ ...p, [key]: !next })); // revert on failure
-    setBusyKey(null);
-  }, []);
-
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.topbar}>
@@ -260,30 +239,45 @@ function SettingsScreen() {
               />
             </View>
             <Text style={styles.fieldLabel}>Username</Text>
-            <View style={styles.unRow}>
-              <Text style={styles.unAt}>@</Text>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="yourname"
-                placeholderTextColor={colors.muted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={username}
-                onChangeText={(v) => setUsername(v.toLowerCase())}
-              />
-            </View>
-            {unStatus === "invalid" ? (
-              <Text style={styles.unBad}>5–20 lowercase letters, numbers or underscores.</Text>
-            ) : unStatus === "taken" ? (
-              <Text style={styles.unBad}>That username is taken.</Text>
-            ) : unStatus === "checking" ? (
-              <Text style={styles.unHint}>Checking…</Text>
-            ) : unStatus === "available" ? (
-              <Pressable style={styles.unSave} onPress={submitUsername}>
-                <Text style={styles.unSaveText}>Save @{username.trim().toLowerCase()}</Text>
-              </Pressable>
-            ) : null}
-            {unMsg ? <Text style={styles.unHint}>{unMsg}</Text> : null}
+            {/* Once set, a username cannot be changed — matching the web
+                (ProfileEditModal shows a read-only "@handle" plus "cannot be
+                changed once set" once username is set, and only offers an
+                editable input for someone who has never had one). Mobile
+                previously left this editable unconditionally. */}
+            {profile?.username ? (
+              <View style={styles.unRow}>
+                <Text style={styles.unAt}>@</Text>
+                <Text style={styles.readonly}>{profile.username}</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.unRow}>
+                  <Text style={styles.unAt}>@</Text>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="yourname"
+                    placeholderTextColor={colors.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={username}
+                    onChangeText={(v) => setUsername(v.toLowerCase())}
+                  />
+                </View>
+                {unStatus === "invalid" ? (
+                  <Text style={styles.unBad}>5–20 lowercase letters, numbers or underscores.</Text>
+                ) : unStatus === "taken" ? (
+                  <Text style={styles.unBad}>That username is taken.</Text>
+                ) : unStatus === "checking" ? (
+                  <Text style={styles.unHint}>Checking…</Text>
+                ) : unStatus === "available" ? (
+                  <Pressable style={styles.unSave} onPress={submitUsername}>
+                    <Text style={styles.unSaveText}>Save @{username.trim().toLowerCase()}</Text>
+                  </Pressable>
+                ) : null}
+                {unMsg ? <Text style={styles.unHint}>{unMsg}</Text> : null}
+                <Text style={styles.unHint}>Choose carefully — your username cannot be changed once set.</Text>
+              </>
+            )}
 
             <Text style={styles.fieldLabel}>Bio</Text>
             <TextInput
@@ -378,44 +372,6 @@ function SettingsScreen() {
               </Text>
             ) : null}
           </View>
-
-          <Text style={styles.sectionTitle}>Feed sources</Text>
-          <Text style={styles.sectionSub}>Choose what appears in your Feed.</Text>
-          {options === null ? (
-            <ActivityIndicator color={colors.accent} style={{ marginTop: 16 }} />
-          ) : options.length === 0 ? (
-            <Text style={styles.empty}>Feed options aren't available right now.</Text>
-          ) : (
-            <View style={styles.card}>
-              {options.map((o, i) => {
-                const locked = !o.admin_enabled || o.always_on;
-                return (
-                  <View key={o.key} style={[styles.prefRow, i < options.length - 1 && styles.prefRowBorder]}>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.prefLabel}>{o.label || o.key}</Text>
-                      {o.description ? <Text style={styles.prefDesc}>{o.description}</Text> : null}
-                      {locked ? (
-                        <Text style={styles.prefLocked}>
-                          {!o.admin_enabled ? "Disabled by admin" : "Always on"}
-                        </Text>
-                      ) : null}
-                    </View>
-                    {busyKey === o.key ? (
-                      <ActivityIndicator color={colors.accent} />
-                    ) : (
-                      <Switch
-                        value={!!prefs[o.key]}
-                        disabled={locked}
-                        onValueChange={(v) => togglePref(o.key, v)}
-                        trackColor={{ true: colors.accent, false: colors.line2 }}
-                        thumbColor="#fff"
-                      />
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

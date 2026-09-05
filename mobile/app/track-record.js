@@ -9,11 +9,12 @@ import { getPublicProfile } from "../src/services/api/peopleApi";
 import { getInvestorIciBatch } from "../src/services/api/trackingApi";
 import { getOwnerCircles } from "../src/services/api/groupsApi";
 import { fetchProfileNavInfo } from "../src/services/profileNav";
+import { mapProfileReco } from "../src/utils/feed";
 import { iciFromStatsRow } from "../src/utils/ici";
 import { profileUrl } from "../src/utils/links";
 import { putReco } from "../src/utils/recoStore";
 import Avatar from "../src/components/Avatar";
-import TrackRecordView from "../src/components/TrackRecordView";
+import TrackRecordView, { SocialLinks } from "../src/components/TrackRecordView";
 import { colors, fonts, GRADIENT } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
@@ -124,6 +125,7 @@ function MyTrackRecordScreen() {
             <Text style={styles.name}>{profile?.full_name || me?.full_name || "—"}</Text>
             <Text style={styles.username}>@{username}</Text>
             {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+            <SocialLinks profile={profile} />
             <Pressable style={styles.editBtn} onPress={() => router.push("/settings")}>
               <Ionicons name="create-outline" size={14} color="#fff" />
               <Text style={styles.editText}>{profile?.bio ? "Edit profile" : "Add a bio"}</Text>
@@ -141,7 +143,11 @@ function MyTrackRecordScreen() {
             ici={ici}
             isSebiApproved={sebi}
             onOpenReco={(r) => {
-              putReco(r);
+              // Map to RecoCard's shape (see mapProfileReco) before handing
+              // it off — the raw row has no by_name/from_id/camelCase price
+              // fields, which is what made the detail screen show "Someone"
+              // and NaN prices for a track-record idea.
+              putReco(mapProfileReco(r, profile));
               router.push(`/reco/${r.id}`);
             }}
             onOpenCircle={(slug) => router.push(`/circle/s/${encodeURIComponent(slug)}`)}

@@ -81,6 +81,53 @@ export function mapPublicReco(r) {
   };
 }
 
+// Map one row of a public-profile / track-record response's `recos` array
+// (api/_lib/handlers/public-profile.js — snake_case, one owner, no by_name/
+// from_id columns at all since every row belongs to the profile being
+// viewed) into RecoCard's shape.
+//
+// Root cause this fixes: track-record.js and investor/[username].js used to
+// hand these rows to RecoCard/putReco unmapped. RecoCard reads camelCase
+// fields (byName, from, price, priceAt, recType, …) that simply don't exist
+// on this response shape, so a track-record idea opened in the detail
+// screen showed "Someone" instead of the creator (byName was always
+// undefined) and "₹NaN" for both prices (fmt(undefined) → NaN) — not a
+// missing value to paper over with a fallback, but rows never mapped in the
+// first place.
+//
+// The effective "current" price mirrors the server's own return_pct branch
+// (exit_signal → exit_price, expired-by-target-date → expiry_price, else
+// current_price) so returnPct() here reproduces the exact same number the
+// server already computed, rather than a second, divergent formula.
+export function mapProfileReco(r, profile) {
+  const closed = !!r.exit_signal;
+  const expired = !closed && r.target_date && new Date(r.target_date) < new Date();
+  const effectivePrice = closed
+    ? r.exit_price ?? r.current_price ?? r.reco_price
+    : expired
+    ? r.expiry_price ?? r.current_price ?? r.reco_price
+    : r.current_price ?? r.reco_price;
+  return {
+    ...r,
+    assetName: r.asset_name,
+    priceAt: r.reco_price,
+    price: effectivePrice,
+    exitPrice: closed || expired ? effectivePrice : undefined,
+    targetPrice: r.target_price,
+    stopLoss: r.stop_loss,
+    byName: profile?.full_name || (profile?.username ? `@${profile.username}` : null),
+    from: profile?.id,
+    from_username: profile?.username,
+    recType: r.recommendation_type || "Buy",
+    date: r.created_at,
+    exitSignal: closed,
+    hidden: false,
+    invested: false,
+    likes: 0,
+    commentCount: 0,
+  };
+}
+
 // Map a raw network-engagement row into the UI shape. Mirrors engMapped.
 export function mapNetworkReco(r) {
   return {

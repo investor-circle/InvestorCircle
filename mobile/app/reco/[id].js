@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import RecoCard from "../../src/components/RecoCard";
 import { getReco } from "../../src/utils/recoStore";
 import { getPublicFeed } from "../../src/services/api/recommendationsApi";
@@ -330,11 +330,9 @@ function RecoDetailScreen() {
                 as a second, inconsistent like control rather than the same
                 one carried onto the detail screen. */}
             <Pressable style={[styles.actionBtn, liked && styles.actionOnAccent]} onPress={toggleLike}>
-              <Ionicons
-                name={liked ? "thumbs-up" : "thumbs-up-outline"}
-                size={18}
-                color={liked ? colors.accentInk : colors.inkSoft}
-              />
+              {/* Feather's outline thumbs-up — matches lucide-react's ThumbsUp
+                  on the web (see RecoCard's LikeButton for the same swap). */}
+              <Feather name="thumbs-up" size={16} color={liked ? colors.accentInk : colors.inkSoft} />
               <Text style={[styles.actionText, liked && { color: colors.accentInk }]}>{likeCount || "Like"}</Text>
             </Pressable>
             <Pressable style={[styles.actionBtn, isTracked && styles.actionOnAccent]} onPress={toggleTrack}>
