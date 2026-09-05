@@ -44,6 +44,18 @@ jobs:
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
+      # Printed so it can be compared against the same line in the OTA update
+      # workflow. If these two ever differ, updates will not reach this build
+      # and the device will silently keep its embedded bundle.
+      - name: Show resolved runtimeVersion
+        run: |
+          npx expo config --type public --json > /tmp/cfg.json
+          node -e "
+            const c = require('/tmp/cfg.json');
+            const rv = c.runtimeVersion;
+            console.log('runtimeVersion: ' + (rv && rv.policy ? rv.policy + ' -> ' + c.version : rv));
+          "
+
       # First run only in practice: creates the EAS project the first time,
       # then just links to the existing one on every run after (matched by
       # app.json's slug under this account) — a robot token can't do this
