@@ -7,7 +7,7 @@ import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Updates from "expo-updates";
-import { getLogs, clearLogs, formatLogs } from "../src/utils/logger";
+import { getLogs, clearLogs, formatLogs, addLog, flushLogs } from "../src/utils/logger";
 import { getMarks, formatRequestStats, sinceStart } from "../src/utils/perf";
 import { API_ORIGIN, pendingRequests } from "../src/services/api";
 import { isAnalyticsAvailable } from "../src/services/analytics";
@@ -96,20 +96,32 @@ function DebugScreen() {
   const [updateMsg, setUpdateMsg] = useState("");
   const checkForUpdate = async () => {
     setUpdateMsg("Checking…");
+    addLog("info", "updates: checkForUpdateAsync starting");
     try {
       const res = await Updates.checkForUpdateAsync();
+      addLog("info", `updates: checkForUpdateAsync -> isAvailable=${res.isAvailable} manifest=${res.manifest?.id ?? "none"}`);
       if (!res.isAvailable) {
         setUpdateMsg("Already up to date.");
+        await flushLogs();
         return;
       }
       setUpdateMsg("Downloading…");
-      await Updates.fetchUpdateAsync();
-      // Reloading is the point: an update that is downloaded but not applied
-      // looks exactly like no update at all.
+      const fetched = await Updates.fetchUpdateAsync();
+      addLog(
+        "info",
+        `updates: fetchUpdateAsync -> isNew=${fetched.isNew} manifestId=${fetched.manifest?.id ?? "none"}`
+      );
+      setUpdateMsg("Applying — app will restart…");
+      // Flush BEFORE reloading: if the fetched bundle throws on its very
+      // first launch, this is the last chance to persist that we got this
+      // far, since reloadAsync tears down this JS context immediately.
+      await flushLogs();
       await Updates.reloadAsync();
     } catch (e) {
       // Expected, and worth saying plainly, in a build made before updates
       // were enabled or when running from a dev server.
+      addLog("error", `updates: check/fetch/reload failed: ${e?.message || e}`);
+      await flushLogs();
       setUpdateMsg(`Updates unavailable here: ${e?.message || e}`);
     }
   };

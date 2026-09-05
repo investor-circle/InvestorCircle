@@ -63,6 +63,20 @@ export function getLogs() {
   return buffer.slice();
 }
 
+/** Write the buffer immediately, bypassing the debounce. Call this right
+ * before anything that might kill or replace the JS context (e.g.
+ * Updates.reloadAsync()) — otherwise a crash in the next few hundred ms
+ * loses whatever hasn't been debounced to disk yet. */
+export async function flushLogs() {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  try {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(buffer));
+  } catch (_) {}
+}
+
 export async function clearLogs() {
   buffer = [];
   try {

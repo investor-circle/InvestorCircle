@@ -17,6 +17,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppState, StyleSheet, View } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import * as Updates from "expo-updates";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -82,6 +83,24 @@ function RootNavigator() {
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => addLog("info", `appstate: ${s}`));
+    return () => sub.remove();
+  }, []);
+
+  // expo-updates' own automatic check-on-launch (config default, since
+  // app.json's "updates" block doesn't set checkAutomatically) runs in the
+  // background on every cold start and was previously invisible — Diagnostics
+  // could show "embedded" forever with no way to tell whether that's because
+  // no update exists, the check never ran, or it ran and failed silently.
+  useEffect(() => {
+    const sub = Updates.addListener((event) => {
+      if (event.type === Updates.UpdateEventType.ERROR) {
+        addLog("error", `updates: background check error: ${event.message}`);
+      } else if (event.type === Updates.UpdateEventType.NO_UPDATE_AVAILABLE) {
+        addLog("info", "updates: background check — no update available");
+      } else if (event.type === Updates.UpdateEventType.UPDATE_AVAILABLE) {
+        addLog("info", `updates: background check — update available, manifestId=${event.manifest?.id ?? "?"}`);
+      }
+    });
     return () => sub.remove();
   }, []);
 
