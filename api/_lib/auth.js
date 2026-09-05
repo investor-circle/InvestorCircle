@@ -13,14 +13,24 @@
  *                                   VITE_DATABASE_URL)
  */
 
-import { addPhase } from './timing.js';
+import { addPhase, timePhase } from './timing.js';
 import { neon } from '@neondatabase/serverless';
 import { initializeApp, cert, getApps, getApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 
 const { DATABASE_URL, FIREBASE_SERVICE_ACCOUNT_JSON } = process.env;
 
-export const sql = DATABASE_URL ? neon(DATABASE_URL) : null;
+const rawSql = DATABASE_URL ? neon(DATABASE_URL) : null;
+
+// Every handler in api/_lib/handlers/ calls `sql` as a tagged template — this
+// wraps that tag once, here, so every query anywhere is timed under the 'db'
+// phase without having to touch each of the ~150 call sites individually.
+// Before this, only lookups.js's two queries (public-feed, feed-config)
+// timed themselves manually, which made those two look like the only
+// endpoints with real DB cost — they were just the only ones instrumented.
+export const sql = rawSql
+  ? (strings, ...values) => timePhase('db', () => rawSql(strings, ...values))
+  : null;
 
 function getFirebaseApp() {
   if (getApps().length) return getApp();
