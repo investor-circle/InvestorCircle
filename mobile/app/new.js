@@ -169,7 +169,7 @@ function NewRecoScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.flex} edges={["top"]}>
+    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.topbar}>
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <Ionicons name="close" size={26} color={colors.ink} />

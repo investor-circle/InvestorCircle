@@ -23,6 +23,7 @@ import { getTodayClose, sourceName } from "../../src/services/marketData";
 import Avatar from "../../src/components/Avatar";
 import { primeAvatars } from "../../src/services/avatarCache";
 import { setLiked } from "../../src/services/reactionStore";
+import { setTracked } from "../../src/services/trackStore";
 import { track } from "../../src/services/analytics";
 import {
   getEngagement,
@@ -130,6 +131,10 @@ function RecoDetailScreen() {
       setEng((e) => ({ ...e, tracking: { isInvested: false, investedPrice: null } }));
       await trackReco(id);
     }
+    // Same reasoning as setLiked below: this screen does its own write, so it
+    // tells the shared store the outcome rather than leaving the card behind
+    // this screen to show stale state when the user goes back.
+    setTracked(id, !isTracked);
   }, [eng, isTracked, id]);
 
   // Marking invested asks for the price actually paid (the web's
@@ -260,6 +265,11 @@ function RecoDetailScreen() {
     );
   }, [reco, router]);
 
+  const openProfile = useCallback(
+    (username) => router.push(`/investor/${encodeURIComponent(username)}`),
+    [router]
+  );
+
   const submitComment = useCallback(async () => {
     const text = comment.trim();
     if (!text || posting) return;
@@ -275,7 +285,7 @@ function RecoDetailScreen() {
   }, [comment, posting, id]);
 
   return (
-    <SafeAreaView style={styles.flex} edges={["top"]}>
+    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.topbar}>
         <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.ink} />
@@ -289,15 +299,10 @@ function RecoDetailScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
           {reco ? (
-            <>
-              <RecoCard reco={reco} />
-              {reco.from_username ? (
-                <Pressable style={styles.authorLink} onPress={() => router.push(`/investor/${reco.from_username}`)}>
-                  <Ionicons name="person-circle-outline" size={17} color={colors.accentInk} />
-                  <Text style={styles.authorLinkText}>View {reco.byName || "investor"}'s profile</Text>
-                </Pressable>
-              ) : null}
-            </>
+            // The card's own author name is the click-through to their
+            // profile (see RecoCard's openAuthor) — a second "View profile"
+            // CTA here duplicated it.
+            <RecoCard reco={reco} showActions={false} onOpenProfile={openProfile} />
           ) : (
             <View style={styles.missing}>
               {resolving ? (
@@ -320,9 +325,17 @@ function RecoDetailScreen() {
 
           {/* Action bar */}
           <View style={styles.actions}>
-            <Pressable style={[styles.actionBtn, liked && styles.actionOn]} onPress={toggleLike}>
-              <Ionicons name={liked ? "heart" : "heart-outline"} size={18} color={liked ? colors.loss : colors.inkSoft} />
-              <Text style={[styles.actionText, liked && { color: colors.loss }]}>{likeCount || "Like"}</Text>
+            {/* Same icon/colour as the card's own like button (RecoCard's
+                LikeButton) — this used to be a heart in loss-red, which read
+                as a second, inconsistent like control rather than the same
+                one carried onto the detail screen. */}
+            <Pressable style={[styles.actionBtn, liked && styles.actionOnAccent]} onPress={toggleLike}>
+              <Ionicons
+                name={liked ? "thumbs-up" : "thumbs-up-outline"}
+                size={18}
+                color={liked ? colors.accentInk : colors.inkSoft}
+              />
+              <Text style={[styles.actionText, liked && { color: colors.accentInk }]}>{likeCount || "Like"}</Text>
             </Pressable>
             <Pressable style={[styles.actionBtn, isTracked && styles.actionOnAccent]} onPress={toggleTrack}>
               <Ionicons
@@ -503,7 +516,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
   },
-  actionOn: { backgroundColor: colors.lossSoft, borderColor: colors.lossSoft },
   actionOnAccent: { backgroundColor: colors.accentSoft, borderColor: colors.accentLine },
   actionOnGain: { backgroundColor: colors.gainSoft, borderColor: colors.gainSoft },
   actionText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13 },

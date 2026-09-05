@@ -97,7 +97,7 @@ function ResetPasswordScreen() {
   const blocked = !!error && (checking || (!email && !done));
 
   return (
-    <SafeAreaView style={styles.flex} edges={["top"]}>
+    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           <View style={styles.badge}>

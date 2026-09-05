@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Refre
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import GradientHero from "../../src/components/GradientHero";
+import AppHeader from "../../src/components/AppHeader";
 import RecoCard from "../../src/components/RecoCard";
 import { getPublicFeed, getMyReceivedRecos } from "../../src/services/api/recommendationsApi";
 import { getMyConnections } from "../../src/services/api/connectionsApi";
@@ -14,6 +14,7 @@ import { rankWhatYouMissed } from "../../src/utils/whatYouMissed";
 import { putReco } from "../../src/utils/recoStore";
 import { primeAvatars } from "../../src/services/avatarCache";
 import { primeReactions } from "../../src/services/reactionStore";
+import { seedTracked } from "../../src/services/trackStore";
 import { getMyTrackedRecos } from "../../src/services/api/engagementApi";
 import { getDailyPrices } from "../../src/services/api/consensusApi";
 import {
@@ -79,6 +80,10 @@ async function loadPulse() {
 
   const trackedList = usable(settled(myTrackedR, [])).map(mapTrackedReco);
 
+  // Reuses the trackedIds call already made above for ranking — the track
+  // icon on every card here is seeded from it rather than a second request.
+  seedTracked(trackedIds, [...publicRecos, ...received].map((r) => r.id));
+
   debugLog(`pulse: public=${publicRecos.length} trending=${trending.length} received=${received.length} missed=${missed.length} fresh=${fresh.length} tracked=${trackedList.length}`);
   return { trending, missed, publicRecos, fresh, trackedList };
 }
@@ -139,24 +144,16 @@ function PulseScreen() {
     [router]
   );
 
-  const hero = (
-    <GradientHero
-      eyebrow="Pulse"
-      title="Your daily investment dose"
-      subtitle="What's moving across your circle & the platform"
-      icon="search"
-      onIconPress={() => router.push("/search")}
-    />
-  );
+  const header = <AppHeader title="Pulse" />;
 
   if (data === null) {
     return (
-      <View style={styles.flex}>
-        {hero}
+      <SafeAreaView style={styles.flex} edges={["top"]}>
+        {header}
         <View style={styles.center}>
           <ActivityIndicator color={colors.accent} size="large" />
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -167,27 +164,11 @@ function PulseScreen() {
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
+      {header}
       <ScrollView
         contentContainerStyle={{ paddingBottom: 28 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
-        {hero}
-
-        {/* Market Insights lives on its own screen — it aggregates every
-            public idea by stock, which is a different question from Pulse's
-            "what moved recently", but the same intent, so this is where
-            people look for it. */}
-        <Pressable style={styles.insightsLink} onPress={() => router.push("/market")}>
-          <View style={styles.insightsIcon}>
-            <Ionicons name="stats-chart" size={17} color={colors.accentInk} />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.insightsTitle}>Market Insights</Text>
-            <Text style={styles.insightsSub}>Consensus and conviction across every stock</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={17} color={colors.muted} />
-        </Pressable>
-
         {nothing ? (
           <View style={styles.empty}>
             <Ionicons name={error ? "cloud-offline-outline" : "pulse-outline"} size={40} color={colors.line2} />
@@ -205,6 +186,7 @@ function PulseScreen() {
             icon="sparkles-outline"
             title="Fresh from your Circle"
             sub="The newest ideas shared with you"
+            noTopDivider
           >
             {fresh.map((r) => (
               <RecoCard key={String(r.id)} reco={r} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
@@ -244,6 +226,14 @@ function PulseScreen() {
             ))}
           </Section>
         ) : null}
+
+        {/* Pulse is a curated highlight reel, not the whole feed — this is
+            the way out to everything, the same as the web's "See full feed"
+            link at the bottom of its Pulse widgets. */}
+        <Pressable style={styles.fullFeedLink} onPress={() => router.push("/")}>
+          <Text style={styles.fullFeedText}>See full feed</Text>
+          <Ionicons name="arrow-forward" size={16} color={colors.accentInk} />
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -415,11 +405,20 @@ function MyTrackedWidget({ list, onViewAll }) {
   );
 }
 
-function Section({ icon, title, sub, children }) {
+// Widgets used to run straight into one another with just 18px of margin and
+// a same-weight icon+title row, so where "My Tracked" ended and "Trending on
+// MIC" began was not obvious on a quick scroll (reported directly against
+// this screen). A full-width divider plus a colour-badged icon gives every
+// widget a clear start, the way a native settings/grouped list breaks
+// sections rather than just adding whitespace.
+function Section({ icon, title, sub, children, noTopDivider }) {
   return (
-    <View style={{ marginTop: 18 }}>
+    <View style={styles.section}>
+      {!noTopDivider ? <View style={styles.sectionDivider} /> : null}
       <View style={styles.sectionHead}>
-        <Ionicons name={icon} size={17} color={colors.accentInk} />
+        <View style={styles.sectionIconBadge}>
+          <Ionicons name={icon} size={15} color={colors.accentInk} />
+        </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.sectionTitle}>{title}</Text>
           {sub ? <Text style={styles.sectionSub}>{sub}</Text> : null}
@@ -460,32 +459,34 @@ const styles = StyleSheet.create({
   trackedEmpty: { paddingHorizontal: 16, paddingBottom: 4 },
   trackedEmptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
   trackedEmptySub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 18, marginTop: 4 },
-  insightsLink: {
+  fullFeedLink: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
-    padding: 14,
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 22,
     marginHorizontal: 16,
-    marginTop: 16,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.accentLine,
+    backgroundColor: colors.accentSoft,
   },
-  insightsIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+  fullFeedText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 14 },
+  flex: { flex: 1, backgroundColor: colors.bg },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  section: { marginTop: 28 },
+  sectionDivider: { height: 8, backgroundColor: colors.surface2, marginBottom: 20 },
+  sectionHead: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, marginBottom: 12 },
+  sectionIconBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
     backgroundColor: colors.accentSoft,
     alignItems: "center",
     justifyContent: "center",
   },
-  insightsTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14.5 },
-  insightsSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
-  flex: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  sectionHead: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, marginBottom: 10 },
-  sectionTitle: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 16 },
+  sectionTitle: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 16.5 },
   sectionSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
   reasonRow: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 20, marginBottom: 4 },
   reasonIcon: { fontSize: 11 },

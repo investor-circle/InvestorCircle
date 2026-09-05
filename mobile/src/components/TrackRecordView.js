@@ -1,9 +1,19 @@
-import { memo } from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { memo, useMemo, useState } from "react";
+import { View, Text, StyleSheet, Pressable, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import IciBadge, { IciBreakdown } from "./IciBadge";
 import { fmt, fmtDate, fmtPct } from "../utils/format";
 import { colors, fonts } from "../theme/colors";
+
+// Search / filter / sort over the ideas list — the same three controls and
+// the same fields (ticker + asset_name search, asset_class filter, date/
+// return sort) as the web's Profile.jsx track record page.
+const IDEA_SORTS = [
+  { value: "date_desc", label: "Recent" },
+  { value: "date_asc", label: "Oldest" },
+  { value: "ret_desc", label: "Return: high to low" },
+  { value: "ret_asc", label: "Return: low to high" },
+];
 
 /**
  * Everything below the hero on a track record: credibility, the live and
@@ -37,6 +47,34 @@ function TrackRecordView({
 }) {
   const ownedCircles = [...(circles.public || []), ...(circles.private || [])];
 
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [assetClass, setAssetClass] = useState("all");
+  const [sort, setSort] = useState("date_desc");
+
+  const assetClasses = useMemo(
+    () => ["all", ...new Set(recos.map((r) => r.asset_class).filter(Boolean))],
+    [recos]
+  );
+
+  const visibleRecos = useMemo(() => {
+    let rows = [...recos];
+    if (assetClass !== "all") rows = rows.filter((r) => r.asset_class === assetClass);
+    const q = query.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((r) => `${r.ticker || ""} ${r.asset_name || ""}`.toLowerCase().includes(q));
+    }
+    rows.sort((a, b) => {
+      if (sort === "date_asc") return new Date(a.created_at) - new Date(b.created_at);
+      if (sort === "ret_desc") return Number(b.return_pct || 0) - Number(a.return_pct || 0);
+      if (sort === "ret_asc") return Number(a.return_pct || 0) - Number(b.return_pct || 0);
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+    return rows;
+  }, [recos, assetClass, query, sort]);
+
   return (
     <>
       {isSebiApproved ? (
@@ -48,15 +86,14 @@ function TrackRecordView({
 
       {ici ? (
         <View style={styles.iciCard}>
-          <View style={styles.iciHead}>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.iciTitle}>Credibility</Text>
-              <Text style={styles.iciSub}>
-                Based on {ici.total} public idea{ici.total === 1 ? "" : "s"}
-              </Text>
-            </View>
-            <IciBadge ici={ici} />
-          </View>
+          <Text style={styles.iciEyebrow}>CREDIBILITY (ICI) SCORE</Text>
+          {/* The lead figure on this page — everything else here is evidence
+              for this one number, so it gets the ring treatment rather than
+              a chip the same size as a status pill. */}
+          <IciBadge ici={ici} size="xl" />
+          <Text style={styles.iciSub}>
+            Based on {ici.total} public idea{ici.total === 1 ? "" : "s"}
+          </Text>
           <IciBreakdown ici={ici} />
         </View>
       ) : null}
@@ -153,11 +190,107 @@ function TrackRecordView({
           record that shows only aggregates asks to be taken on trust, which
           is the opposite of what this product is for. */}
       {recos.length ? (
-        <Section title={`Ideas history (${recos.length})`} flush>
-          {recos.map((r, i) => (
-            <IdeaRow key={String(r.id)} reco={r} onPress={onOpenReco} last={i === recos.length - 1} />
-          ))}
-        </Section>
+        <View style={styles.section}>
+          <View style={styles.ideasHead}>
+            <Text style={styles.sectionTitle}>Ideas history ({recos.length})</Text>
+            <View style={{ flex: 1 }} />
+            <Pressable
+              style={[styles.iconBtn, searchOpen && styles.iconBtnOn]}
+              onPress={() => setSearchOpen((v) => !v)}
+              hitSlop={6}
+            >
+              <Ionicons name="search" size={15} color={searchOpen ? colors.accentInk : colors.muted} />
+            </Pressable>
+            <Pressable
+              style={[styles.iconBtn, assetClass !== "all" && styles.iconBtnOn]}
+              onPress={() => {
+                setFilterOpen((v) => !v);
+                setSortOpen(false);
+              }}
+              hitSlop={6}
+            >
+              <Ionicons
+                name="options-outline"
+                size={16}
+                color={assetClass !== "all" ? colors.accentInk : colors.muted}
+              />
+            </Pressable>
+            <Pressable
+              style={[styles.iconBtn, sort !== "date_desc" && styles.iconBtnOn]}
+              onPress={() => {
+                setSortOpen((v) => !v);
+                setFilterOpen(false);
+              }}
+              hitSlop={6}
+            >
+              <Ionicons
+                name="swap-vertical"
+                size={16}
+                color={sort !== "date_desc" ? colors.accentInk : colors.muted}
+              />
+            </Pressable>
+          </View>
+
+          {searchOpen ? (
+            <View style={styles.searchRow}>
+              <Ionicons name="search" size={14} color={colors.muted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search ticker or name…"
+                placeholderTextColor={colors.muted}
+                value={query}
+                onChangeText={setQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {query ? (
+                <Pressable onPress={() => setQuery("")} hitSlop={8}>
+                  <Ionicons name="close-circle" size={15} color={colors.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+
+          {filterOpen && assetClasses.length > 2 ? (
+            <View style={styles.chipsRow}>
+              {assetClasses.map((c) => (
+                <Pressable
+                  key={c}
+                  style={[styles.chip, assetClass === c && styles.chipOn]}
+                  onPress={() => setAssetClass(c)}
+                >
+                  <Text style={[styles.chipText, assetClass === c && styles.chipTextOn]}>
+                    {c === "all" ? "All" : c}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          {sortOpen ? (
+            <View style={styles.chipsRow}>
+              {IDEA_SORTS.map((o) => (
+                <Pressable
+                  key={o.value}
+                  style={[styles.chip, sort === o.value && styles.chipOn]}
+                  onPress={() => setSort(o.value)}
+                >
+                  <Text style={[styles.chipText, sort === o.value && styles.chipTextOn]}>{o.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={[styles.sectionCard, { paddingVertical: 0, paddingHorizontal: 0 }]}>
+            {visibleRecos.length ? (
+              visibleRecos.map((r, i) => (
+                <IdeaRow key={String(r.id)} reco={r} onPress={onOpenReco} last={i === visibleRecos.length - 1} />
+              ))
+            ) : (
+              <Text style={styles.noMatch}>No ideas match this search or filter.</Text>
+            )}
+          </View>
+        </View>
       ) : null}
     </>
   );
@@ -252,17 +385,23 @@ const styles = StyleSheet.create({
   },
   sebiText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 12.5 },
   iciCard: {
+    alignItems: "center",
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     marginHorizontal: 16,
     marginTop: 16,
   },
-  iciHead: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
-  iciTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15 },
-  iciSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
+  iciEyebrow: {
+    color: colors.muted,
+    fontFamily: fonts.extrabold,
+    fontSize: 11,
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  iciSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 10 },
   statGrid: { flexDirection: "row", gap: 9, marginHorizontal: 16, marginTop: 16 },
   stat: {
     flex: 1,
@@ -277,6 +416,47 @@ const styles = StyleSheet.create({
   statLabel: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, marginTop: 2 },
   section: { marginHorizontal: 16, marginTop: 20 },
   sectionTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15, marginBottom: 8 },
+  ideasHead: { flexDirection: "row", alignItems: "center", gap: 4 },
+  iconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface2,
+  },
+  iconBtnOn: { backgroundColor: colors.accentSoft },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    marginTop: 9,
+  },
+  searchInput: { flex: 1, paddingVertical: 9, color: colors.ink, fontFamily: fonts.regular, fontSize: 13.5 },
+  chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 9 },
+  chip: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.surface,
+  },
+  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 12 },
+  chipTextOn: { color: "#fff" },
+  noMatch: {
+    color: colors.muted,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    textAlign: "center",
+    paddingVertical: 24,
+  },
   sectionCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,

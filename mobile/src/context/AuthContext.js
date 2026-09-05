@@ -20,6 +20,7 @@ import { auth } from "../config/firebase";
 import { unregisterCurrentDevice } from "../services/pushNotifications";
 import { clearAvatarCache } from "../services/avatarCache";
 import { clearReactions } from "../services/reactionStore";
+import { clearTracked } from "../services/trackStore";
 import { identify } from "../services/analytics";
 import { clearFeedCache } from "../services/feedCache";
 import { API_ORIGIN } from "../services/api";
@@ -151,6 +152,7 @@ export function AuthProvider({ children }) {
     // this account's token. On a shared phone the next person to sign in must
     // not inherit either. Failures here never block sign-out.
     clearReactions();
+    clearTracked();
     await Promise.allSettled([clearAvatarCache(), clearFeedCache(user?.uid)]);
     return signOut(auth);
   };

@@ -12,14 +12,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { getConsensusRecosPublic } from "../src/services/api/consensusApi";
-import { getMyConnections } from "../src/services/api/connectionsApi";
-import { computeTrend, consensusColor } from "../src/utils/consensus";
-import { buildTickerList, featuredTickers, sectorOptions, lastActivityAt } from "../src/utils/marketInsights";
-import { fmtDate } from "../src/utils/format";
-import Sparkline from "../src/components/Sparkline";
-import { colors, fonts } from "../src/theme/colors";
-import { withBoundary } from "../src/components/ErrorBoundary";
+import { getConsensusRecosPublic } from "../../src/services/api/consensusApi";
+import { getMyConnections } from "../../src/services/api/connectionsApi";
+import { computeTrend, consensusColor } from "../../src/utils/consensus";
+import { buildTickerList, featuredTickers, sectorOptions, lastActivityAt } from "../../src/utils/marketInsights";
+import { fmtDate } from "../../src/utils/format";
+import Sparkline from "../../src/components/Sparkline";
+import AppHeader from "../../src/components/AppHeader";
+import { colors, fonts } from "../../src/theme/colors";
+import { withBoundary } from "../../src/components/ErrorBoundary";
 
 /**
  * Market Insights — "what does the platform generally think", by stock.
@@ -212,13 +213,7 @@ function MarketScreen() {
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
-      <View style={styles.topbar}>
-        <Pressable onPress={() => router.back()} hitSlop={10} style={{ width: 40 }}>
-          <Ionicons name="chevron-back" size={24} color={colors.ink} />
-        </Pressable>
-        <Text style={styles.topTitle}>Market Insights</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <AppHeader title="Insights" />
 
       {recos === null ? (
         <ActivityIndicator color={colors.accent} style={{ marginTop: 40 }} />
@@ -327,17 +322,6 @@ function Split({ label, pct, color }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  topbar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-    backgroundColor: colors.surface,
-  },
-  topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17 },
   pageSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, lineHeight: 19, marginBottom: 14 },
   rail: { gap: 10, paddingRight: 4, paddingBottom: 4 },
   featCard: {

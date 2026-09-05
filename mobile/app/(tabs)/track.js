@@ -1,10 +1,11 @@
 import { useCallback, useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import RecoListScreen from "../../src/components/RecoListScreen";
-import GradientHero from "../../src/components/GradientHero";
+import AppHeader from "../../src/components/AppHeader";
 import { getMyMadeRecos, getMyReceivedRecos } from "../../src/services/api/recommendationsApi";
 import { getMyTrackedRecos } from "../../src/services/api/engagementApi";
 import { mapTrackedReco } from "../../src/utils/feed";
+import { seedTracked } from "../../src/services/trackStore";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
@@ -57,7 +58,12 @@ function TrackScreen() {
       return rows.map((r) => ({ ...r, byName: r.byName || myName, from: r.from || profile?.id }));
     }
     const rows = await getMyTrackedRecos();
-    return rows.map(mapTrackedReco);
+    const mapped = rows.map(mapTrackedReco);
+    // This list IS every tracked idea, so seed the store directly rather
+    // than round-tripping through getMyTrackedRecoIds again.
+    const ids = mapped.map((r) => r.id);
+    seedTracked(ids, ids);
+    return mapped;
   }, [tab, profile?.full_name, profile?.id]);
 
   const subHeader = (
@@ -79,7 +85,7 @@ function TrackScreen() {
 
   return (
     <RecoListScreen
-      hero={<GradientHero eyebrow="Track" title="My Recommendations" subtitle="Ideas shared with you, posted by you, and tracked" />}
+      header={<AppHeader title="My Ideas" />}
       subHeader={subHeader}
       loader={loader}
       emptyTitle={EMPTY[tab][0]}

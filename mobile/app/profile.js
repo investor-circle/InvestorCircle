@@ -5,12 +5,12 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useAuth } from "../../src/context/AuthContext";
-import { colors, fonts, GRADIENT } from "../../src/theme/colors";
-import Avatar from "../../src/components/Avatar";
-import InviteSheet from "../../src/components/InviteSheet";
-import { withBoundary } from "../../src/components/ErrorBoundary";
-import { WEB_ORIGIN, profileUrl } from "../../src/utils/links";
+import { useAuth } from "../src/context/AuthContext";
+import { colors, fonts, GRADIENT } from "../src/theme/colors";
+import Avatar from "../src/components/Avatar";
+import InviteSheet from "../src/components/InviteSheet";
+import { withBoundary } from "../src/components/ErrorBoundary";
+import { WEB_ORIGIN, profileUrl } from "../src/utils/links";
 
 const PRIVACY_URL = `${WEB_ORIGIN}/#/privacy`;
 
@@ -34,6 +34,16 @@ function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
+      {/* This screen is now reached by tapping the account avatar in
+          AppHeader rather than a bottom tab, so — unlike the other root
+          screens — it needs its own back control. */}
+      <View style={styles.topbar}>
+        <Pressable onPress={() => router.back()} hitSlop={10} style={{ width: 24 }}>
+          <Ionicons name="chevron-back" size={24} color={colors.ink} />
+        </Pressable>
+        <Text style={styles.topTitle}>Profile</Text>
+        <View style={{ width: 24 }} />
+      </View>
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
         <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
           <Pressable onPress={() => router.push("/track-record")} style={{ alignItems: "center" }}>
@@ -60,7 +70,6 @@ function ProfileScreen() {
           <MenuRow icon="gift-outline" label="Invite friends" onPress={() => setInviteOpen(true)} />
           <MenuRow icon="albums-outline" label="Your Circles" onPress={() => router.push("/circles")} />
           <MenuRow icon="briefcase-outline" label="Portfolio" onPress={() => router.push("/portfolio")} />
-          <MenuRow icon="stats-chart-outline" label="Market Insights" onPress={() => router.push("/market")} />
           <MenuRow icon="notifications-outline" label="Notifications" onPress={() => router.push("/notifications")} />
           <MenuRow icon="settings-outline" label="Settings" onPress={() => router.push("/settings")} last />
         </View>
@@ -116,6 +125,17 @@ function MenuRow({ icon, label, onPress, last }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
+  topbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+    backgroundColor: colors.surface,
+  },
+  topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16 },
   menu: {
     backgroundColor: colors.surface,
     borderWidth: 1,

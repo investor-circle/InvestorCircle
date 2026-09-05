@@ -37,8 +37,8 @@ export const colors = {
   red: "#c2453d",
 };
 
-// The web's signature 135° purple→magenta gradient (--grad). Used for the
-// hero header, primary buttons, the New-idea FAB and avatars. Consumed by
+// The web's signature 135° purple→magenta gradient (--grad). Used for
+// primary buttons, the New-idea FAB and avatars. Consumed by
 // expo-linear-gradient as {colors, start, end}.
 export const GRADIENT = {
   colors: ["#6d5df5", "#9a55ee", "#cf52d8"],

@@ -68,7 +68,7 @@ function SuggestedPeopleScreen() {
   const trackedCount = Object.values(tracked).filter(Boolean).length;
 
   return (
-    <SafeAreaView style={styles.flex} edges={["top"]}>
+    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.topbar}>
         <Pressable onPress={finish} hitSlop={10} style={{ width: 40 }}>
           <Ionicons name="chevron-back" size={24} color={colors.ink} />

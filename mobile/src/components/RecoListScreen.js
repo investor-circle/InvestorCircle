@@ -9,16 +9,19 @@ import { primeReactions } from "../services/reactionStore";
 import { colors, fonts } from "../theme/colors";
 
 /**
- * Shared reco-list screen used by Discover and Track — one place for the
- * loading / empty / error / pull-to-refresh behaviour, the FlatList perf
- * props, and card→detail navigation.
+ * Shared reco-list screen used by Track — one place for the loading / empty /
+ * error / pull-to-refresh behaviour, the FlatList perf props, and
+ * card→detail navigation.
  *
- * @param hero        element rendered as the scrolling list header (GradientHero)
+ * @param header      the fixed app bar (AppHeader) — pinned above the list,
+ *                     NOT part of its scrolling content, the way a native top
+ *                     bar behaves.
  * @param loader      async () => reco[]  (already composed/sorted by caller)
- * @param subHeader   optional element rendered between hero and list (e.g. tabs)
+ * @param subHeader   optional element that DOES scroll with the list,
+ *                     between the fixed header and the first row (e.g. tabs)
  * @param emptyTitle / emptySubtitle  copy for the genuine empty state
  */
-export default function RecoListScreen({ hero, loader, subHeader, emptyTitle, emptySubtitle }) {
+export default function RecoListScreen({ header, loader, subHeader, emptyTitle, emptySubtitle }) {
   const router = useRouter();
   const [recos, setRecos] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -80,28 +83,24 @@ export default function RecoListScreen({ hero, loader, subHeader, emptyTitle, em
 
   if (recos === null) {
     return (
-      <View style={styles.flex}>
-        {hero}
+      <SafeAreaView style={styles.flex} edges={["top"]}>
+        {header}
         {subHeader}
         <View style={styles.center}>
           <ActivityIndicator color={colors.accent} size="large" />
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
+      {header}
       <FlatList
         data={recos}
         keyExtractor={(item) => String(item.deliveryId ?? item.id)}
         renderItem={({ item }) => <RecoCard reco={item} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />}
-        ListHeaderComponent={
-          <>
-            {hero}
-            {subHeader}
-          </>
-        }
+        ListHeaderComponent={subHeader}
         contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         initialNumToRender={6}

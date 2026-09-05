@@ -261,7 +261,7 @@ function RootNavigator() {
         <Stack.Screen name="portfolio" />
         <Stack.Screen name="portfolio-import" />
         <Stack.Screen name="ticker/[symbol]" />
-        <Stack.Screen name="market" />
+        <Stack.Screen name="profile" />
         <Stack.Screen name="search" />
         <Stack.Screen name="track-record" />
         <Stack.Screen name="suggested" />
