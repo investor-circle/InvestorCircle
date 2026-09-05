@@ -13,6 +13,7 @@
  *                                   VITE_DATABASE_URL)
  */
 
+import { addPhase } from './timing.js';
 import { neon } from '@neondatabase/serverless';
 import { initializeApp, cert, getApps, getApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
@@ -55,11 +56,19 @@ export async function requireUid(req) {
     console.error('[auth] Firebase Admin init failed:', e?.message);
     throw { status: 500, error: 'Server configuration error' };
   }
+  // Timed here rather than at the router because the handlers that matter
+  // most for this measurement (lookups: public-feed, feed-config) are
+  // registered as auth:'none' and call requireUid themselves — instrumenting
+  // the router would have missed exactly the endpoints under investigation.
+  // On a cold instance this includes fetching Google's signing certificates.
+  const startedAt = Date.now();
   try {
     const decoded = await getAuth(firebaseApp).verifyIdToken(match[1]);
     return decoded.uid;
   } catch (e) {
     throw { status: 401, error: 'Invalid or expired token' };
+  } finally {
+    addPhase('auth', Date.now() - startedAt);
   }
 }
 

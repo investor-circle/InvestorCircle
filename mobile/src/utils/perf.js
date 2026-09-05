@@ -70,13 +70,28 @@ export function endpointKey(path) {
   return keep ? `${base}?${keep}` : base;
 }
 
-export function recordRequest(path, ms, ok) {
+export function recordRequest(path, ms, ok, serverTiming = null) {
   const key = endpointKey(path);
-  const s = stats.get(key) || { key, calls: 0, failures: 0, totalMs: 0, maxMs: 0 };
+  const s = stats.get(key) || {
+    key, calls: 0, failures: 0, totalMs: 0, maxMs: 0,
+    // Accumulated only over the calls that actually reported a server
+    // total, and `timedWallMs` alongside them, so the network subtraction
+    // compares the same set of calls on both sides rather than mixing in
+    // requests the server never timed.
+    timedCalls: 0, timedWallMs: 0, serverMs: 0, dbMs: 0, authMs: 0, coldCalls: 0,
+  };
   s.calls += 1;
   if (!ok) s.failures += 1;
   s.totalMs += ms;
   if (ms > s.maxMs) s.maxMs = ms;
+  if (serverTiming && Number.isFinite(serverTiming.total)) {
+    s.timedCalls += 1;
+    s.timedWallMs += ms;
+    s.serverMs += serverTiming.total;
+    s.dbMs += Number.isFinite(serverTiming.db) ? serverTiming.db : 0;
+    s.authMs += Number.isFinite(serverTiming.auth) ? serverTiming.auth : 0;
+    if (serverTiming.cold) s.coldCalls += 1;
+  }
   stats.set(key, s);
   return s;
 }
@@ -92,7 +107,20 @@ export function formatRequestStats() {
   const rows = getRequestStats();
   if (!rows.length) return "(no requests yet)";
   return rows
-    .map((s) => `${s.calls}× avg ${s.avgMs}ms max ${s.maxMs}ms${s.failures ? ` — ${s.failures} failed` : ""}  ${s.key}`)
+    .map((s) => {
+      const head = `${s.calls}× avg ${s.avgMs}ms max ${s.maxMs}ms${s.failures ? ` — ${s.failures} failed` : ""}  ${s.key}`;
+      if (!s.timedCalls) return head;
+      const n = s.timedCalls;
+      const server = Math.round(s.serverMs / n);
+      // The number the whole investigation turns on: time the server never
+      // saw — network plus platform cold start.
+      const network = Math.max(0, Math.round(s.timedWallMs / n) - server);
+      return (
+        `${head}\n      server ${server}ms (auth ${Math.round(s.authMs / n)}ms, ` +
+        `db ${Math.round(s.dbMs / n)}ms) · network+platform ${network}ms` +
+        `${s.coldCalls ? ` · ${s.coldCalls} cold start(s)` : ""}`
+      );
+    })
     .join("\n");
 }
 

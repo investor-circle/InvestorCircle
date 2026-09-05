@@ -11,6 +11,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../config/firebase";
 import { addLog } from "../utils/logger";
 import { recordRequest, SLOW_REQUEST_MS, STALL_WARN_MS } from "../utils/perf";
+import { parseServerTiming, describeServerTiming } from "../utils/serverTiming";
 
 /**
  * Resolves once Firebase has finished restoring the persisted session.
@@ -99,14 +100,19 @@ export async function callApi(path, { method = "GET", body } = {}) {
   const stallTimer = setTimeout(() => {
     if (inFlight.has(seq)) addLog("warn", `api ${label} still waiting after ${STALL_WARN_MS}ms`);
   }, STALL_WARN_MS);
-  const settle = (ok) => {
+  const settle = (ok, res) => {
     clearTimeout(stallTimer);
     inFlight.delete(seq);
     const ms = Date.now() - startedAt;
-    recordRequest(path, ms, ok);
-    // Only slow calls get their own line; logging every request's duration
-    // would bury the entries that matter under routine ones.
-    if (ms >= SLOW_REQUEST_MS) addLog("warn", `api ${label} slow: ${ms}ms`);
+    // What the SERVER says it spent, so a slow call can be attributed
+    // instead of guessed at. The difference between this total and the wall
+    // time measured here is network plus platform cold start — the two
+    // things the server cannot see and the client cannot separate alone.
+    const server = parseServerTiming(res);
+    recordRequest(path, ms, ok, server);
+    if (ms >= SLOW_REQUEST_MS) {
+      addLog("warn", `api ${label} slow: ${ms}ms${server ? ` (${describeServerTiming(server, ms)})` : ""}`);
+    }
     return ms;
   };
 
@@ -118,16 +124,16 @@ export async function callApi(path, { method = "GET", body } = {}) {
     }
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
-      settle(true);
+      settle(true, res);
       return { ok: true, data };
     }
     if (res.status === 401 || res.status === 403) {
       const data = await res.json().catch(() => ({}));
-      settle(false);
+      settle(false, res);
       addLog("error", `api ${label} denied (${res.status})`);
       return { ok: false, denied: true, status: res.status, data };
     }
-    settle(false);
+    settle(false, res);
     addLog("error", `api ${label} failed (HTTP ${res.status})`);
     return { ok: false, infra: true, status: res.status };
   } catch (e) {

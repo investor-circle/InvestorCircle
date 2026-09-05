@@ -47,6 +47,7 @@
  */
 
 import { sql, parseBody, requireUid, requireAdmin, sendAuthError } from '../auth.js';
+import { timePhase } from '../timing.js';
 import { sendInternalEmail } from '../notifyMember.js';
 
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
@@ -214,11 +215,14 @@ export default async function handleLookups(req, res) {
       if (action === 'feed-config') {
         let uid;
         try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
-        const [opts, prefs] = await Promise.all([
+        // Timed as the CONTROL for the latency investigation: two trivial
+        // indexed reads of small tables. If this reports a large db figure,
+        // the cost is the database connection/wake, not the query.
+        const [opts, prefs] = await timePhase('db', () => Promise.all([
           sql`SELECT key, label, description, category, admin_enabled, always_on, default_on, sort_order
               FROM feed_config_options ORDER BY sort_order`,
           sql`SELECT config_key, enabled FROM user_feed_preferences WHERE user_id = ${uid}`,
-        ]);
+        ]));
         res.status(200).json({ options: opts, prefs });
         return;
       }
@@ -256,7 +260,11 @@ export default async function handleLookups(req, res) {
       if (action === 'public-feed') {
         let uid;
         try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
-        const rows = await sql`
+        // The heavy counterpart to feed-config's control reading: same
+        // connection, much bigger query. The gap between the two db figures
+        // is what this query actually costs; whatever they share is the
+        // per-request floor.
+        const rows = await timePhase('db', () => sql`
           SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class,
                  ir.recommendation_type, ir.reco_price, ir.current_price,
                  ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
@@ -287,7 +295,7 @@ export default async function handleLookups(req, res) {
             AND (up.claim_status IS DISTINCT FROM 'claimed')
           ORDER BY ir.created_at DESC
           LIMIT 100
-        `;
+        `);
         res.status(200).json({ recos: rows });
         return;
       }
