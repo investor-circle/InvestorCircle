@@ -186,6 +186,7 @@ function PulseScreen() {
             icon="sparkles-outline"
             title="Fresh from your Circle"
             sub="The newest ideas shared with you"
+            noTopDivider
           >
             {fresh.map((r) => (
               <RecoCard key={String(r.id)} reco={r} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
@@ -404,11 +405,20 @@ function MyTrackedWidget({ list, onViewAll }) {
   );
 }
 
-function Section({ icon, title, sub, children }) {
+// Widgets used to run straight into one another with just 18px of margin and
+// a same-weight icon+title row, so where "My Tracked" ended and "Trending on
+// MIC" began was not obvious on a quick scroll (reported directly against
+// this screen). A full-width divider plus a colour-badged icon gives every
+// widget a clear start, the way a native settings/grouped list breaks
+// sections rather than just adding whitespace.
+function Section({ icon, title, sub, children, noTopDivider }) {
   return (
-    <View style={{ marginTop: 18 }}>
+    <View style={styles.section}>
+      {!noTopDivider ? <View style={styles.sectionDivider} /> : null}
       <View style={styles.sectionHead}>
-        <Ionicons name={icon} size={17} color={colors.accentInk} />
+        <View style={styles.sectionIconBadge}>
+          <Ionicons name={icon} size={15} color={colors.accentInk} />
+        </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.sectionTitle}>{title}</Text>
           {sub ? <Text style={styles.sectionSub}>{sub}</Text> : null}
@@ -465,8 +475,18 @@ const styles = StyleSheet.create({
   fullFeedText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 14 },
   flex: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  sectionHead: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, marginBottom: 10 },
-  sectionTitle: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 16 },
+  section: { marginTop: 28 },
+  sectionDivider: { height: 8, backgroundColor: colors.surface2, marginBottom: 20 },
+  sectionHead: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, marginBottom: 12 },
+  sectionIconBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: colors.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionTitle: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 16.5 },
   sectionSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
   reasonRow: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 20, marginBottom: 4 },
   reasonIcon: { fontSize: 11 },
