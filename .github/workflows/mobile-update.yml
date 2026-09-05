@@ -59,12 +59,27 @@ jobs:
       - name: Verify the bundle builds
         run: npx expo export --platform android
 
-      - name: Show runtime fingerprint
+      # An update whose runtimeVersion does not match the installed app is
+      # silently never delivered — the device just keeps running its embedded
+      # bundle and nothing anywhere reports a problem. That happened once and
+      # cost a whole debugging cycle, so the value is printed on both sides
+      # (the build workflow prints the same line) and they must agree.
+      - name: Show resolved runtimeVersion
         run: |
-          echo "Phones only accept an update whose runtimeVersion matches theirs."
-          npx expo config --type public --json > /tmp/cfg.json 2>/dev/null || true
-          node -e "try{const c=require('/tmp/cfg.json');console.log('runtimeVersion policy:',JSON.stringify(c.runtimeVersion));}catch(e){console.log('(could not read config)')}"
-        continue-on-error: true
+          npx expo config --type public --json > /tmp/cfg.json
+          node -e "
+            const c = require('/tmp/cfg.json');
+            const rv = c.runtimeVersion;
+            if (rv && typeof rv === 'object' && rv.policy) {
+              console.error('runtimeVersion is still a POLICY (' + rv.policy + '), not a resolved value.');
+              console.error('If that policy is \'fingerprint\', delivery depends on a hash computed');
+              console.error('per environment and updates will usually NOT reach installed apps.');
+              if (rv.policy === 'fingerprint') process.exit(1);
+              console.log('runtimeVersion policy: ' + rv.policy + ' -> ' + c.version);
+            } else {
+              console.log('runtimeVersion: ' + rv);
+            }
+          "
 
       - name: Publish update
         run: |

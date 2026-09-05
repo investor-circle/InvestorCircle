@@ -229,6 +229,25 @@ modules. These are now durable conventions, not a one-time cleanup:
   caller's actual data shape, not just the one it was written against, and
   (2) every page-level render needs a boundary above it regardless.
 
+## Mobile OTA updates (EAS Update)
+
+- `mobile/app.json` sets `runtimeVersion: { policy: "appVersion" }`. **Do not
+  change this to the `fingerprint` policy.** Fingerprint derives the runtime
+  version from a hash of the native dependency set computed in whichever
+  environment runs it — and the EAS build server and the OTA update runner
+  produce different hashes. The result is an update stamped with a runtime the
+  installed app refuses, delivered to nobody, reporting no error anywhere: the
+  device just keeps running its embedded bundle. That cost a full debugging
+  cycle once; both mobile workflows now print the resolved runtimeVersion, and
+  the update workflow fails outright if the policy is `fingerprint` again.
+- The rule the policy implies: **bump `expo.version` in `mobile/app.json`
+  whenever native code changes** (a new native dependency, a permission, an
+  app.json plugin). That invalidates OTA for older binaries, which is correct —
+  they cannot run the new native code. A JS-only change must NOT bump it, or
+  the update stops reaching existing installs.
+- JS-only fixes ship via the "Mobile — Publish OTA update" workflow and cost no
+  EAS build. Only native changes need a build.
+
 ## Deployment considerations
 
 - Frontend auto-deploys to GitHub Pages on every push to `main` — treat changes
