@@ -11,9 +11,12 @@ import {
 } from "../src/services/api/connectionsApi";
 import { track } from "../src/services/analytics";
 import { getMyTrackingList, getMyTrackers, getTrackingCounts } from "../src/services/api/trackingApi";
+import { getMyReceivedRecos } from "../src/services/api/recommendationsApi";
+import { getMyTrackedRecos } from "../src/services/api/engagementApi";
 import TrackButton from "../src/components/TrackButton";
 import Avatar from "../src/components/Avatar";
 import { primeAvatars } from "../src/services/avatarCache";
+import { fmtSigned, recoStats } from "../src/utils/format";
 import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
@@ -42,24 +45,35 @@ function NetworkScreen() {
   const [tracking, setTracking] = useState(null);
   const [trackers, setTrackers] = useState(null);
   const [counts, setCounts] = useState({ trackingCount: 0, trackersCount: 0 });
+  // "My P&L" per connection (see recoStats/getClosedInfo in src/utils/format.js
+  // — a byte-for-byte port of the web's own formula) needs both the ideas
+  // this person delivered directly AND ones tracked from their public
+  // profile, exactly the union the web's ContactsSection builds.
+  const [recsReceived, setRecsReceived] = useState([]);
+  const [trackedRecos, setTrackedRecos] = useState([]);
+  const [pnlExplainerOpen, setPnlExplainerOpen] = useState(false);
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
-    // All four tabs are backed by independent endpoints, so they are fetched
-    // together rather than one-per-tab-switch: the counts are needed for the
-    // badges immediately anyway, and serialising them would make every tab
-    // switch feel slow (see CLAUDE.md on avoidable sequential round-trips).
-    const [conns, tr, trs, cnt] = await Promise.all([
+    // All independent endpoints, so they are fetched together rather than
+    // one-per-tab-switch: the counts are needed for the badges immediately
+    // anyway, and serialising them would make every tab switch feel slow
+    // (see CLAUDE.md on avoidable sequential round-trips).
+    const [conns, tr, trs, cnt, received, tracked] = await Promise.all([
       getMyConnections(),
       getMyTrackingList(50),
       getMyTrackers(50),
       getTrackingCounts(),
+      getMyReceivedRecos(),
+      getMyTrackedRecos(),
     ]);
     if (!mounted.current) return;
     setRows(conns);
     setTracking(tr.people);
     setTrackers(trs.people);
     setCounts(cnt);
+    setRecsReceived(received);
+    setTrackedRecos(tracked);
     // After the rows are on screen, not before: pictures fill in behind them.
     primeAvatars([
       ...(conns || []).map((c) => c.user_id),
@@ -83,7 +97,7 @@ function NetworkScreen() {
   };
 
   const all = rows || [];
-  const active = all.filter((c) => c.status === "active");
+  const active = all.filter((c) => c.status === "accepted");
   const incoming = all.filter((c) => c.status === "pending" && c.direction === "received");
   const outgoing = all.filter((c) => c.status === "pending" && c.direction === "sent");
   const list =
@@ -97,6 +111,31 @@ function NetworkScreen() {
 
   const isPeopleTab = tab === "tracking" || tab === "trackers";
 
+  // Same union the web builds (Connections.jsx pnlFor): the received copy of
+  // an idea wins on overlap (it carries reaction/likes), a tracked-only idea
+  // is normalised to the same shape recoStats() reads everywhere else.
+  const pnlFor = useCallback(
+    (c) => {
+      const received = recsReceived.filter((r) => r.from === c.user_id);
+      const receivedIds = new Set(received.map((r) => r.id));
+      const trackedOnly = trackedRecos
+        .filter((r) => r.recommender_id === c.user_id && !receivedIds.has(r.id))
+        .map((r) => ({
+          id: r.id,
+          invested: r.is_invested,
+          investedPrice: r.invested_price != null ? Number(r.invested_price) : null,
+          priceAt: Number(r.reco_price || 0),
+          price: Number(r.current_price || 0),
+          exitSignal: r.exit_signal,
+          exitPrice: r.exit_price != null ? Number(r.exit_price) : null,
+          targetDate: r.target_date,
+          expiryPrice: r.expiry_price != null ? Number(r.expiry_price) : null,
+        }));
+      return recoStats([...received, ...trackedOnly], () => true);
+    },
+    [recsReceived, trackedRecos]
+  );
+
   const withBusy = (id, fn) => async () => {
     setBusy((b) => ({ ...b, [id]: true }));
     await fn();
@@ -109,6 +148,8 @@ function NetworkScreen() {
   const renderItem = ({ item }) => {
     const isIncoming = item.status === "pending" && item.direction === "received";
     const isOutgoing = item.status === "pending" && item.direction === "sent";
+    const isAccepted = item.status === "accepted";
+    const pnlInfo = isAccepted ? pnlFor(item) : null;
     return (
       <View style={styles.row}>
         <Avatar uid={item.user_id} name={item.name} size={44} gradient />
@@ -122,6 +163,19 @@ function NetworkScreen() {
             </Text>
           ) : null}
         </View>
+
+        {/* My P&L — same formula and description as the web (recoStats() in
+            src/utils/format.js, ported verbatim): a directional signal from
+            a flat hypothetical stake on ideas marked "invested", not real
+            money. Shown only for an accepted connection, same as the web. */}
+        {isAccepted && pnlInfo ? (
+          <View style={styles.pnlBox}>
+            <Text style={[styles.pnlValue, { color: pnlInfo.pnl >= 0 ? colors.gain : colors.loss }]}>
+              {fmtSigned(pnlInfo.pnl)}
+            </Text>
+            <Text style={styles.pnlLabel}>My P&L{pnlInfo.pnlPending > 0 ? " *" : ""}</Text>
+          </View>
+        ) : null}
 
         {busy[item.connection_id] ? (
           <ActivityIndicator color={colors.accent} />
@@ -203,6 +257,16 @@ function NetworkScreen() {
         <View style={{ width: 40 }} />
       </View>
 
+      {/* "Grow your network" — the web's own CTA on this page (page-head's
+          primary button, Connections.jsx), placed at the very top rather
+          than a header-bar icon since mobile's header bar is already full
+          (back + title). Routes to Find investors, the same destination as
+          the web's "discover" page from here. */}
+      <Pressable style={styles.growBtn} onPress={() => router.push("/people")}>
+        <Ionicons name="person-add-outline" size={16} color="#fff" />
+        <Text style={styles.growText}>Grow my network</Text>
+      </Pressable>
+
       <View style={styles.tabs}>
         {TABS.map((t) => {
           const activeTab = tab === t.id;
@@ -218,15 +282,47 @@ function NetworkScreen() {
               ? counts.trackingCount
               : counts.trackersCount;
           return (
+            // Two lines (label, then count) rather than one "Label · N"
+            // string — matches the web's own fix for this exact tab row
+            // (Connections.jsx: "a single row of 4 short, fixed-height
+            // buttons that can neither wrap into a ragged multi-row mess nor
+            // need to scroll"). One line risked "Tracking me · 12" clipping
+            // or overflowing a narrow tab on a normal phone width.
             <Pressable key={t.id} style={[styles.tab, activeTab && styles.tabActive]} onPress={() => setTab(t.id)}>
-              <Text style={[styles.tabText, activeTab && styles.tabTextActive]}>
+              <Text style={[styles.tabText, activeTab && styles.tabTextActive]} numberOfLines={1}>
                 {t.label}
-                {count > 0 ? ` · ${count}` : ""}
               </Text>
+              {count > 0 ? (
+                <Text style={[styles.tabCount, activeTab && styles.tabTextActive]}>{count}</Text>
+              ) : null}
             </Pressable>
           );
         })}
       </View>
+
+      {/* "What is My P&L?" — same explanation text as the web, verbatim, so
+          the number means the same thing on both clients. */}
+      {tab === "connections" && active.length > 0 ? (
+        <View style={styles.pnlNote}>
+          <Ionicons name="information-circle-outline" size={16} color={colors.accentInk} />
+          <Text style={styles.pnlNoteText}>
+            <Text style={styles.pnlNoteBold}>What is My P&L? </Text>
+            A directional signal, not real money.{" "}
+            {pnlExplainerOpen ? (
+              <Text>
+                For each idea from that person you marked "invested" — whether they sent it to you directly or you
+                tracked it from their public profile — it applies a flat hypothetical ₹1,000 stake to the move from
+                your entry price to the idea's closing price (or its live price if still open), then adds those up
+                per person. It shows whether following a connection's ideas has tended to be profitable — it isn't a
+                record of what you actually put in or made.{" "}
+              </Text>
+            ) : null}
+            <Text style={styles.pnlNoteLink} onPress={() => setPnlExplainerOpen((v) => !v)}>
+              {pnlExplainerOpen ? "Show less" : "Read more"}
+            </Text>
+          </Text>
+        </View>
+      ) : null}
 
       {rows === null ? (
         <View style={styles.center}>
@@ -281,21 +377,52 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line,
     backgroundColor: colors.surface,
   },
-  topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17 },
+  topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17, textAlign: "center" },
+  growBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    marginHorizontal: 16,
+    marginTop: 14,
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  growText: { color: "#fff", fontFamily: fonts.bold, fontSize: 14 },
   tabs: { flexDirection: "row", gap: 8, padding: 16 },
   tab: {
     flex: 1,
-    height: 40,
+    minHeight: 44,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+    gap: 2,
+    paddingVertical: 6,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
   },
   tabActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  tabText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 14 },
+  tabText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 12.5, textAlign: "center" },
+  tabCount: { color: colors.muted, fontFamily: fonts.extrabold, fontSize: 13 },
   tabTextActive: { color: "#fff" },
+  pnlBox: { alignItems: "flex-end", marginRight: 2 },
+  pnlValue: { fontFamily: fonts.extrabold, fontSize: 14 },
+  pnlLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 8.5, letterSpacing: 0.3, marginTop: 1 },
+  pnlNote: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start",
+    backgroundColor: colors.accentSoft,
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+  },
+  pnlNoteText: { flex: 1, color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 12, lineHeight: 17 },
+  pnlNoteBold: { fontFamily: fonts.bold, color: colors.ink },
+  pnlNoteLink: { fontFamily: fonts.bold, color: colors.accentInk },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
   name: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15 },
   username: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, marginTop: 1 },

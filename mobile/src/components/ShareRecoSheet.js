@@ -40,7 +40,7 @@ export default function ShareRecoSheet({ visible, reco, onClose }) {
     (async () => {
       const [conns, grps] = await Promise.all([getMyConnections(), getMyGroups()]);
       if (!mounted.current) return;
-      setConnections((conns || []).filter((c) => c.status === "active"));
+      setConnections((conns || []).filter((c) => c.status === "accepted"));
       setGroups(grps || []);
     })();
   }, [visible]);

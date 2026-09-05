@@ -8,7 +8,92 @@ const CURRENCY_SYM = { INR: "₹", USD: "$" };
 
 export const fmt = (n, cur = "INR") => (CURRENCY_SYM[cur] || cur) + Math.round(n).toLocaleString("en-IN");
 
+export const fmtSigned = (n, cur = "INR") => (n >= 0 ? "+" : "-") + fmt(Math.abs(n), cur);
+
 export const fmtPct = (p) => (p >= 0 ? "+" : "") + (p * 100).toFixed(1) + "%";
+
+// Assumed notional per acted-on idea, for the "My P&L" directional signal on
+// the Network/Connections page. Mirrors src/constants/app.js NOTIONAL.
+const NOTIONAL = 1000;
+
+const numOrNull = (n) => (n == null || n === "" || Number.isNaN(Number(n)) ? null : Number(n));
+
+/**
+ * Whether/how an idea has closed, and the price to judge it by. Ported
+ * verbatim from the web's getClosedInfo (src/utils/format.js) — exit wins
+ * over expiry-by-target-date when both apply, same as the server's own
+ * status computation (api/_lib/handlers/public-profile.js). Accepts either
+ * the camelCase shape the app's own API layer already returns
+ * (exitSignal/exitDate/exitPrice/expiryPrice/targetDate — see
+ * api/_lib/handlers/recommendations.js mapReceivedRow) or the raw snake_case
+ * a caller maps by hand, since different endpoints hand back different shapes.
+ */
+export function getClosedInfo(r) {
+  const exited = !!(r.exitSignal ?? r.exit_signal ?? r.exit);
+  const priceAt = numOrNull(r.priceAt ?? r.reco_price) || null;
+
+  if (exited) {
+    const price = numOrNull(r.exitPrice ?? r.exit_price);
+    return {
+      kind: "exited",
+      date: r.exitDate ?? r.exit_date ?? null,
+      price,
+      pending: price == null,
+      retPct: priceAt && price != null ? (price - priceAt) / priceAt : null,
+    };
+  }
+
+  const targetDate = r.targetDate ?? r.target_date ?? null;
+  const today = new Date().toISOString().slice(0, 10);
+  if (targetDate && String(targetDate).slice(0, 10) < today) {
+    const price = numOrNull(r.expiryPrice ?? r.expiry_price);
+    return {
+      kind: "expired",
+      date: targetDate,
+      price,
+      pending: price == null,
+      retPct: priceAt && price != null ? (price - priceAt) / priceAt : null,
+    };
+  }
+  return null;
+}
+
+/**
+ * Per-idea stats + the "My P&L" directional signal for one contact, ported
+ * verbatim from the web's recoStats (src/utils/format.js) — same NOTIONAL
+ * flat-stake math, same two correctness rules: a closed idea prices off its
+ * exit/expiry price (not a live price that keeps drifting after the idea
+ * closed), and an acted-on idea with no priced outcome yet is excluded from
+ * the sum (pnlPending) rather than counted as a fabricated -100% loss.
+ */
+export const recoStats = (recs, pred) => {
+  const list = recs.filter(pred);
+  const acted = list.filter((r) => r.invested);
+  let pnl = 0;
+  let pnlPending = 0;
+  acted.forEach((r) => {
+    const entry = r.investedPrice || r.priceAt;
+    if (!entry) {
+      pnlPending++;
+      return;
+    }
+    const closed = getClosedInfo(r);
+    const outcome = closed ? closed.price : r.price || null;
+    if (outcome == null || outcome <= 0) {
+      pnlPending++;
+      return;
+    }
+    pnl += NOTIONAL * (outcome / entry - 1);
+  });
+  return {
+    count: list.length,
+    acted: acted.length,
+    inMoney: list.filter((r) => (r.price - r.priceAt) / r.priceAt >= 0).length,
+    outMoney: list.filter((r) => (r.price - r.priceAt) / r.priceAt < 0).length,
+    pnl,
+    pnlPending,
+  };
+};
 
 // Robust date formatter — handles Date objects, bare "YYYY-MM-DD", and full
 // ISO timestamps without throwing (see CLAUDE.md incident note on
