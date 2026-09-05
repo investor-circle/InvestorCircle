@@ -6,6 +6,7 @@ import { fetchProfileNavInfo } from "../services/profileNav";
 import { colors, fonts } from "../theme/colors";
 import { fmt, fmtDate, fmtPct, getThesisText, returnPct } from "../utils/format";
 import { isLiked, subscribeReactions, toggleReaction } from "../services/reactionStore";
+import { isTracked, subscribeTracked, toggleTracked } from "../services/trackStore";
 
 // Rich reco card — matches the web app's feed card (src/features/discovery):
 // gradient avatar, "<name> recommended · via/shared-by · date", Buy/Sell pill,
@@ -14,7 +15,7 @@ import { isLiked, subscribeReactions, toggleReaction } from "../services/reactio
 // + invested state. Tappable (onPress) to open the detail screen.
 const SOURCE_LABELS = { public: "Public", network_engagement: "From your network" };
 
-function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker }) {
+function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = true }) {
   const pct = returnPct(reco);
   const positive = pct >= 0;
   const isBuy = (reco.recType || "Buy") !== "Sell";
@@ -135,7 +136,7 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker }) {
       {/* getThesisText, not the raw column: a thesis with images is stored as
           a JSON envelope, which used to render as visible JSON. */}
       {getThesisText(reco.thesis) ? (
-        <Text style={styles.thesis} numberOfLines={3}>
+        <Text style={styles.thesis} numberOfLines={2}>
           {getThesisText(reco.thesis)}
         </Text>
       ) : null}
@@ -153,7 +154,12 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker }) {
           </View>
         ) : null}
         <View style={{ flex: 1 }} />
-        <LikeButton reco={reco} />
+        {showActions ? (
+          <>
+            <LikeButton reco={reco} />
+            <TrackButton reco={reco} />
+          </>
+        ) : null}
         {reco.commentCount > 0 ? (
           <View style={styles.footerStat}>
             <Ionicons name="chatbubble-outline" size={15} color={colors.muted} />
@@ -231,25 +237,60 @@ function LikeButton({ reco }) {
   );
 }
 
+/**
+ * Track (bookmark) straight from the card — the web lets you add an idea to
+ * your tracked list from the feed row itself; the app required opening the
+ * idea first. Same subscribe-on-its-own-store pattern as LikeButton, so a tap
+ * here, on the detail screen, or in Pulse's "My Tracked" widget all agree.
+ */
+function TrackButton({ reco }) {
+  const tracked = useSyncExternalStore(
+    subscribeTracked,
+    () => isTracked(reco.id),
+    () => undefined
+  );
+
+  const onPress = useCallback(() => {
+    toggleTracked(reco.id);
+  }, [reco.id]);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      style={styles.footerStat}
+      accessibilityRole="button"
+      accessibilityLabel={tracked ? "Untrack this idea" : "Track this idea"}
+      accessibilityState={{ selected: !!tracked }}
+    >
+      <Ionicons
+        name={tracked ? "bookmark" : "bookmark-outline"}
+        size={15}
+        color={tracked ? colors.accentInk : colors.muted}
+      />
+    </Pressable>
+  );
+}
+
 // Memoized so scrolling / parent state changes don't re-render every card.
 export default memo(RecoCard);
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.line,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 12,
+    padding: 13,
+    marginHorizontal: 14,
+    marginBottom: 10,
     shadowColor: "#141432",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 1,
   },
-  header: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
+  header: { flexDirection: "row", alignItems: "center", gap: 9, marginBottom: 9 },
   byName: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
   byNameLink: { color: colors.accentInk, textDecorationLine: "underline" },
   recommended: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13 },
@@ -263,12 +304,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.surface2,
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: 11,
+    padding: 11,
     gap: 10,
-    marginBottom: 12,
+    marginBottom: 9,
   },
-  ticker: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 20, letterSpacing: -0.3 },
+  ticker: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 18, letterSpacing: -0.3 },
   // Coloured rather than underlined: the ticker is the card's headline, and
   // an underline under 20pt extrabold reads as damage.
   tickerLink: { color: colors.accentInk },
@@ -276,14 +317,14 @@ const styles = StyleSheet.create({
   currentPrice: { color: colors.ink, fontFamily: fonts.bold, fontSize: 18 },
   returnText: { fontFamily: fonts.bold, fontSize: 14, marginTop: 2 },
 
-  grid: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12 },
-  gridCell: { width: "50%", marginBottom: 10 },
-  gridLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 10, letterSpacing: 0.5, marginBottom: 3 },
-  gridValue: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15 },
+  grid: { flexDirection: "row", flexWrap: "wrap", marginBottom: 8 },
+  gridCell: { width: "50%", marginBottom: 7 },
+  gridLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 10, letterSpacing: 0.5, marginBottom: 2 },
+  gridValue: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
 
-  thesis: { color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 13, lineHeight: 19, marginBottom: 12 },
+  thesis: { color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 17, marginBottom: 9 },
 
-  footer: { flexDirection: "row", alignItems: "center", gap: 8, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12 },
+  footer: { flexDirection: "row", alignItems: "center", gap: 8, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 9 },
   pill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   pillAccent: { backgroundColor: colors.accentSoft },
   pillMuted: { backgroundColor: colors.surface2 },

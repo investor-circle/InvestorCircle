@@ -28,11 +28,17 @@ export default function TabsLayout() {
           tabBarStyle: {
             backgroundColor: colors.surface,
             borderTopColor: colors.line,
-            height: 58 + bottomInset,
-            paddingBottom: bottomInset,
-            paddingTop: 6,
+            height: 64 + bottomInset,
+            paddingBottom: bottomInset + 4,
+            paddingTop: 8,
           },
-          tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11 },
+          // lineHeight + no-shrink label: custom fonts (Plus Jakarta Sans)
+          // render with extra vertical metrics on Android, and the default
+          // tab bar item height clipped the descenders of every label
+          // ("Pulse", "Feed", …), not just the long ones.
+          tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 10.5, lineHeight: 13 },
+          tabBarItemStyle: { paddingTop: 2, paddingBottom: 2 },
+          tabBarAllowFontScaling: false,
         }}
       >
         <Tabs.Screen
@@ -70,7 +76,7 @@ export default function TabsLayout() {
       {/* Gradient New-idea FAB — the web app's primary "New idea" action,
           always reachable above the tab bar (sits above the safe-area inset). */}
       <Pressable
-        style={[styles.fab, { bottom: 74 + bottomInset }]}
+        style={[styles.fab, { bottom: 80 + bottomInset }]}
         onPress={() => router.push("/new")}
         hitSlop={8}
       >

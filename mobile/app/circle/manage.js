@@ -134,7 +134,7 @@ function ManageCircleScreen() {
 
   if (group === null) {
     return (
-      <SafeAreaView style={styles.flex} edges={["top"]}>
+      <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
         <View style={styles.center}>
           <ActivityIndicator color={colors.accent} size="large" />
         </View>
@@ -143,7 +143,7 @@ function ManageCircleScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.flex} edges={["top"]}>
+    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.topbar}>
         <Pressable onPress={() => router.back()} hitSlop={10} style={{ width: 40 }}>
           <Ionicons name="chevron-back" size={24} color={colors.ink} />

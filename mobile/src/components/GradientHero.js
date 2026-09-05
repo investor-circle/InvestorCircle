@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, fonts, GRADIENT } from "../theme/colors";
+import { colors, fonts, GRADIENT_HERO } from "../theme/colors";
 
 // The web app's signature gradient hero (STYLES .hero-grad): purple→magenta
 // gradient block with an uppercase eyebrow, a serif-ish bold title and a
@@ -23,7 +23,7 @@ export default function GradientHero({
   secondaryLabel,
 }) {
   return (
-    <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
+    <LinearGradient colors={GRADIENT_HERO.colors} start={GRADIENT_HERO.start} end={GRADIENT_HERO.end} style={styles.hero}>
       <View style={styles.row}>
         <View style={{ flex: 1, minWidth: 0 }}>
           {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
@@ -58,12 +58,14 @@ export default function GradientHero({
 
 const styles = StyleSheet.create({
   hero: {
-    paddingTop: 22,
-    paddingBottom: 26,
+    paddingTop: 14,
+    paddingBottom: 16,
     paddingHorizontal: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    marginBottom: 8,
+    // Rectangular, not curved — a native top bar reads as chrome; the
+    // rounded-bottom "content card" look was fighting that.
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    marginBottom: 6,
   },
   row: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   eyebrow: {
@@ -72,14 +74,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.4,
     textTransform: "uppercase",
-    marginBottom: 8,
+    marginBottom: 4,
   },
-  title: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 26, letterSpacing: -0.5, lineHeight: 30 },
-  subtitle: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 13, marginTop: 8 },
+  title: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 21, letterSpacing: -0.4, lineHeight: 25 },
+  subtitle: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 12.5, marginTop: 4 },
   iconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
+    width: 36,
+    height: 36,
+    borderRadius: 11,
     backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",

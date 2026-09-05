@@ -37,11 +37,21 @@ export const colors = {
   red: "#c2453d",
 };
 
-// The web's signature 135° purple→magenta gradient (--grad). Used for the
-// hero header, primary buttons, the New-idea FAB and avatars. Consumed by
+// The web's signature 135° purple→magenta gradient (--grad). Used for
+// primary buttons, the New-idea FAB and avatars. Consumed by
 // expo-linear-gradient as {colors, start, end}.
 export const GRADIENT = {
   colors: ["#6d5df5", "#9a55ee", "#cf52d8"],
+  locations: [0, 0.55, 1],
+  start: { x: 0, y: 0 },
+  end: { x: 1, y: 1 },
+};
+
+// Same gradient, ~20% darker — used only for the page-header banner
+// (GradientHero). A native status/app bar reads as chrome, not content, and
+// the full-brightness gradient made it look like a content block instead.
+export const GRADIENT_HERO = {
+  colors: ["#574ac4", "#7b44be", "#a642ad"],
   locations: [0, 0.55, 1],
   start: { x: 0, y: 0 },
   end: { x: 1, y: 1 },

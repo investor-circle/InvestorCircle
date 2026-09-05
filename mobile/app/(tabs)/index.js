@@ -21,6 +21,7 @@ import {
 import { putReco } from "../../src/utils/recoStore";
 import { primeAvatars } from "../../src/services/avatarCache";
 import { primeReactions } from "../../src/services/reactionStore";
+import { seedTracked } from "../../src/services/trackStore";
 import { readFeedCache, writeFeedCache } from "../../src/services/feedCache";
 import { useAuth } from "../../src/context/AuthContext";
 import { debugLog } from "../../src/utils/logger";
@@ -97,6 +98,9 @@ async function loadFeedProgressive(onPartial) {
     contactIds,
   });
   debugLog(`feed: merged total=${merged.length}`);
+  // Reuses the trackedIds call already made above for ranking — the track
+  // icon on every card is seeded from it rather than a second request.
+  seedTracked(trackedIds, merged.map((r) => r.id));
   return merged;
 }
 

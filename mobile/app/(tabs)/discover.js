@@ -14,6 +14,7 @@ import { rankWhatYouMissed } from "../../src/utils/whatYouMissed";
 import { putReco } from "../../src/utils/recoStore";
 import { primeAvatars } from "../../src/services/avatarCache";
 import { primeReactions } from "../../src/services/reactionStore";
+import { seedTracked } from "../../src/services/trackStore";
 import { getMyTrackedRecos } from "../../src/services/api/engagementApi";
 import { getDailyPrices } from "../../src/services/api/consensusApi";
 import {
@@ -78,6 +79,10 @@ async function loadPulse() {
     .slice(0, 5);
 
   const trackedList = usable(settled(myTrackedR, [])).map(mapTrackedReco);
+
+  // Reuses the trackedIds call already made above for ranking — the track
+  // icon on every card here is seeded from it rather than a second request.
+  seedTracked(trackedIds, [...publicRecos, ...received].map((r) => r.id));
 
   debugLog(`pulse: public=${publicRecos.length} trending=${trending.length} received=${received.length} missed=${missed.length} fresh=${fresh.length} tracked=${trackedList.length}`);
   return { trending, missed, publicRecos, fresh, trackedList };
@@ -244,6 +249,14 @@ function PulseScreen() {
             ))}
           </Section>
         ) : null}
+
+        {/* Pulse is a curated highlight reel, not the whole feed — this is
+            the way out to everything, the same as the web's "See full feed"
+            link at the bottom of its Pulse widgets. */}
+        <Pressable style={styles.fullFeedLink} onPress={() => router.push("/")}>
+          <Text style={styles.fullFeedText}>See full feed</Text>
+          <Ionicons name="arrow-forward" size={16} color={colors.accentInk} />
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -480,6 +493,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  fullFeedLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 22,
+    marginHorizontal: 16,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.accentLine,
+    backgroundColor: colors.accentSoft,
+  },
+  fullFeedText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 14 },
   insightsTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14.5 },
   insightsSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
   flex: { flex: 1, backgroundColor: colors.bg },
