@@ -37,6 +37,7 @@
  */
 
 import { setCors, requireUid, requireAdmin, sendAuthError } from './_lib/auth.js';
+import { withTiming, serverTimingHeader } from './_lib/timing.js';
 import handleConnections from './_lib/handlers/connections.js';
 import handleGroups from './_lib/handlers/groups.js';
 import handleRecommendations from './_lib/handlers/recommendations.js';
@@ -83,19 +84,46 @@ const RESOURCES = {
 };
 
 export default async function handler(req, res) {
-  setCors(res, 'GET, POST, OPTIONS');
-  if (req.method === 'OPTIONS') { res.status(204).end(); return; }
+  // Every request runs inside a timing context so the response can report
+  // where its milliseconds went — see api/_lib/timing.js for why guessing
+  // between the four possible causes was not good enough.
+  return withTiming(async () => {
+    setCors(res, 'GET, POST, OPTIONS');
+    // Server-Timing is not a CORS-safelisted response header, so without
+    // this the browser (and the app's fetch) can see the header exists but
+    // not read it.
+    res.setHeader('Access-Control-Expose-Headers', 'Server-Timing');
+    if (req.method === 'OPTIONS') { res.status(204).end(); return; }
 
-  const resource = String(req.query?.resource || '');
-  const entry = RESOURCES[resource];
-  if (!entry) { res.status(400).json({ error: 'Unknown or missing resource' }); return; }
+    // Handlers write their own responses, so the header has to be attached
+    // on the way out rather than after the fact. Patching the two methods
+    // they use keeps that in one place instead of touching every handler.
+    for (const method of ['json', 'end']) {
+      const original = res[method].bind(res);
+      res[method] = (...args) => {
+        try {
+          if (!res.headersSent) {
+            const value = serverTimingHeader();
+            if (value) res.setHeader('Server-Timing', value);
+          }
+        } catch (_) {
+          // Diagnostics must never be the reason a response fails to send.
+        }
+        return original(...args);
+      };
+    }
 
-  let uid = null;
-  if (entry.auth === 'user') {
-    try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
-  } else if (entry.auth === 'admin') {
-    try { uid = await requireAdmin(req); } catch (e) { sendAuthError(res, e); return; }
-  }
+    const resource = String(req.query?.resource || '');
+    const entry = RESOURCES[resource];
+    if (!entry) { res.status(400).json({ error: 'Unknown or missing resource' }); return; }
 
-  await entry.handler(req, res, uid);
+    let uid = null;
+    if (entry.auth === 'user') {
+      try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+    } else if (entry.auth === 'admin') {
+      try { uid = await requireAdmin(req); } catch (e) { sendAuthError(res, e); return; }
+    }
+
+    await entry.handler(req, res, uid);
+  });
 }
