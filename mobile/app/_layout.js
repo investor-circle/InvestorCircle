@@ -271,6 +271,9 @@ function RootNavigator() {
         <Stack.Screen name="contact" />
         <Stack.Screen name="debug" />
         <Stack.Screen name="new" options={{ presentation: "modal" }} />
+        {/* Google sign-in's OAuth redirect lands here (see oauthredirect.js)
+            instead of expo-router's built-in Unmatched Route screen. */}
+        <Stack.Screen name="oauthredirect" />
       </Stack>
       {/* Last child, so it covers the navigator rather than sitting behind
           it. absoluteFill + the default pointerEvents means nothing

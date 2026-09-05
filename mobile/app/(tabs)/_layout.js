@@ -28,16 +28,28 @@ export default function TabsLayout() {
           tabBarStyle: {
             backgroundColor: colors.surface,
             borderTopColor: colors.line,
-            height: 64 + bottomInset,
-            paddingBottom: bottomInset + 4,
+            height: 72 + bottomInset,
+            paddingBottom: bottomInset + 6,
             paddingTop: 8,
           },
           // lineHeight + no-shrink label: custom fonts (Plus Jakarta Sans)
           // render with extra vertical metrics on Android, and the default
           // tab bar item height clipped the descenders of every label
-          // ("Pulse", "Feed", …), not just the long ones.
-          tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 10.5, lineHeight: 13 },
-          tabBarItemStyle: { paddingTop: 2, paddingBottom: 2 },
+          // ("Pulse", "Feed", …), not just the long ones. `includeFontPadding:
+          // false` removes Android's own extra above/below-glyph padding,
+          // which on real devices (not just the descender case above) was
+          // enough on its own to push a two-word label ("My Ideas" wrapping
+          // to two lines at some display densities) past the old, tighter
+          // bar height and get its second line cut off; the taller bar above
+          // and a touch more room per item give that second line space
+          // whether or not a given device wraps it.
+          tabBarLabelStyle: {
+            fontFamily: fonts.semibold,
+            fontSize: 10.5,
+            lineHeight: 13,
+            includeFontPadding: false,
+          },
+          tabBarItemStyle: { paddingTop: 4, paddingBottom: 4 },
           tabBarAllowFontScaling: false,
         }}
       >
