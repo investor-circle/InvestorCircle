@@ -113,6 +113,19 @@ function RootNavigator() {
   // https://myinvestorcircle.com with autoVerify and NO path restriction
   // (app.json), so this app intercepts EVERY link to the site. Anything it
   // doesn't understand is a link the user watched do nothing.
+  // Dedupe guard for the external-web-link branch below: the app.json intent
+  // filter claims ALL of https://myinvestorcircle.com with autoVerify and no
+  // path restriction, so when the Custom Tab this app opens tries to load
+  // that same URL, Android can hand that navigation straight back to this
+  // app as a fresh "url" event instead of letting the browser show it — which
+  // reopens the tab, which gets intercepted again, looping open/close as
+  // fast as the OS will cycle it (observed: repeated "opening in browser" +
+  // appstate background/active in lockstep, dozens of times per second).
+  // Ignoring a repeat of the same URL within a few seconds breaks that loop
+  // regardless of why the redelivery happens, without touching the app-link
+  // config other flows (referrals, password reset) depend on.
+  const lastExternalLinkRef = useRef({ url: null, at: 0 });
+
   useEffect(() => {
     const handle = (url) => {
       // An invite (?ref=alice) arrives before there is an account to attach it
@@ -138,6 +151,13 @@ function RootNavigator() {
       // silently doing nothing is not. Deliberately a Custom Tab rather than
       // Linking.openURL, which Android would route straight back to this app.
       if (isExternalWebLink(url)) {
+        const now = Date.now();
+        const last = lastExternalLinkRef.current;
+        if (last.url === url && now - last.at < 4000) {
+          addLog("warn", `deeplink: ignoring repeat of ${url} within 4s (app-link re-interception loop guard)`);
+          return;
+        }
+        lastExternalLinkRef.current = { url, at: now };
         addLog("info", `deeplink: opening in browser ${url}`);
         WebBrowser.openBrowserAsync(url).catch(() => {});
       }
