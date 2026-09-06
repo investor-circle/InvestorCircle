@@ -33,7 +33,11 @@ function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.flex} edges={["top"]}>
+    // "bottom" too — omitting it left the Sign out button's last few pixels
+    // (and any content near it) sitting behind Android's gesture bar / 3-
+    // button nav, since nothing reserved that inset for the ScrollView's
+    // fixed 24px paddingBottom below to sit above.
+    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       {/* This screen is now reached by tapping the account avatar in
           AppHeader rather than a bottom tab, so — unlike the other root
           screens — it needs its own back control. */}

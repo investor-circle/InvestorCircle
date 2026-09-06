@@ -235,10 +235,27 @@ function RootNavigator() {
     if (!user && !inAuthGroup && !isPublicRoute) {
       router.replace("/(auth)/login");
     } else if (user && inAuthGroup) {
-      router.replace("/(tabs)");
+      router.replace("/(tabs)/discover");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, segKey]);
+
+  // Cold start with an already-signed-in (persisted) session never runs the
+  // branch above at all — inAuthGroup is never true, since this app never
+  // rendered the (auth) group in the first place. That case relied entirely
+  // on (tabs)/_layout.js's unstable_settings.initialRouteName to land on
+  // Pulse, which — confirmed on-device — was not reliably doing so. Forcing
+  // it explicitly here, once per app session, closes that gap. Safe to fire
+  // unconditionally on the first auth resolution: the deep-link effects
+  // below resolve via an async Linking.getInitialURL().then(...), so a real
+  // deep-link target always lands after this synchronous replace and wins,
+  // the same way it already wins over the (auth)-group replace above.
+  const forcedInitialTabRef = useRef(false);
+  useEffect(() => {
+    if (authLoading || !user || forcedInitialTabRef.current) return;
+    forcedInitialTabRef.current = true;
+    router.replace("/(tabs)/discover");
+  }, [authLoading, user, router]);
 
   // Username + consent are required before the account can be used, exactly
   // as on the web. Google sign-in has no signup form, so those accounts arrive
