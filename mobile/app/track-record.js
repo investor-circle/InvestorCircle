@@ -139,6 +139,7 @@ function MyTrackRecordScreen() {
             realized={data?.realized}
             sectors={data?.sectors || []}
             recos={data?.recos || []}
+            recoProfile={profile}
             circles={circles}
             ici={ici}
             isSebiApproved={sebi}

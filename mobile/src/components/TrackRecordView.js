@@ -2,7 +2,8 @@ import { memo, useMemo, useState } from "react";
 import { View, Text, StyleSheet, Pressable, TextInput, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import IciBadge, { IciBreakdown } from "./IciBadge";
-import { fmt, fmtDate, fmtPct } from "../utils/format";
+import { fmt, fmtDate, fmtPct, returnPct } from "../utils/format";
+import { mapProfileReco } from "../utils/feed";
 import { colors, fonts } from "../theme/colors";
 
 // Search / filter / sort over the ideas list — the same three controls and
@@ -39,6 +40,7 @@ function TrackRecordView({
   realized,
   sectors = [],
   recos = [],
+  recoProfile,
   circles = { public: [], private: [] },
   ici,
   isSebiApproved = false,
@@ -317,7 +319,13 @@ function TrackRecordView({
           <View style={[styles.sectionCard, { paddingVertical: 0, paddingHorizontal: 0 }]}>
             {visibleRecos.length ? (
               visibleRecos.map((r, i) => (
-                <IdeaRow key={String(r.id)} reco={r} onPress={onOpenReco} last={i === visibleRecos.length - 1} />
+                <IdeaRow
+                  key={String(r.id)}
+                  reco={r}
+                  profile={recoProfile}
+                  onPress={onOpenReco}
+                  last={i === visibleRecos.length - 1}
+                />
               ))
             ) : (
               <Text style={styles.noMatch}>No ideas match this search or filter.</Text>
@@ -329,16 +337,18 @@ function TrackRecordView({
   );
 }
 
-function IdeaRow({ reco, onPress, last }) {
+function IdeaRow({ reco, profile, onPress, last }) {
   const closed = reco.status === "Closed" || reco.status === "Expired" || reco.exit_signal;
   const from = Number(reco.reco_price || 0);
-  // return_pct is the server's own figure (api/_lib/handlers/public-profile.js)
-  // — it already picks the right frozen/live price per status AND reverses
-  // the direction for a Sell. Recomputing it here from raw prices used to
-  // drop that Sell reversal, silently showing a Sell's return with the wrong
-  // sign (and the wrong number whenever it disagreed with the value the rest
-  // of the page, and the web, derive from the same field).
-  const pct = reco.return_pct != null ? Number(reco.return_pct) : null;
+  // Computed the SAME way the detail screen computes it (returnPct() over
+  // mapProfileReco()'s shape — see reco/[id].js via RecoCard), not
+  // recomputed from raw fields a second time and not trusted from the raw
+  // server row directly. The two used to be two separate reads of the same
+  // idea and could show different numbers for the same idea depending on
+  // which screen you were on; routing both through one function makes that
+  // structurally impossible instead of hoping the two formulas keep
+  // agreeing as either evolves.
+  const pct = returnPct(mapProfileReco(reco, profile));
   const isBuy = (reco.recommendation_type || "Buy") !== "Sell";
 
   return (
