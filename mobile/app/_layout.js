@@ -244,6 +244,17 @@ function RootNavigator() {
     };
   }, [authLoading, user]);
 
+  // Single navigation decision per resolved auth state — at most ONE
+  // router.replace() call here, ever. An earlier version of this effect was
+  // split into two separate effects (this one, plus a second one forcing
+  // /(tabs)/discover for an already-signed-in cold start), and both fired
+  // in the SAME render pass on a fresh login: two back-to-back replace()
+  // calls to react-navigation while (tabs) and its Tabs navigator were
+  // still mounting for the first time. That update group is the one EAS
+  // Update's own dashboard recorded a crash against on-device — merged
+  // back into one effect/one decision so that redundant double-navigation
+  // can't happen again, whichever case fires.
+  const forcedInitialTabRef = useRef(false);
   useEffect(() => {
     if (authLoading) return;
     const inAuthGroup = segments[0] === "(auth)";
@@ -254,28 +265,31 @@ function RootNavigator() {
     const isPublicRoute = segments[0] === "reset-password";
     if (!user && !inAuthGroup && !isPublicRoute) {
       router.replace("/(auth)/login");
-    } else if (user && inAuthGroup) {
+      return;
+    }
+    if (user && inAuthGroup) {
+      // Fresh login. Also covers the landing tab, so the cold-start branch
+      // below never redundantly re-fires for this same transition.
+      forcedInitialTabRef.current = true;
+      router.replace("/(tabs)/discover");
+      return;
+    }
+    if (user && !forcedInitialTabRef.current) {
+      // Cold start with an already-signed-in (persisted) session — this
+      // branch never ran through "(auth)" at all, so the case above never
+      // fires for it. That left it relying entirely on (tabs)/_layout.js's
+      // unstable_settings.initialRouteName to land on Pulse, which —
+      // confirmed on-device — was not reliably doing so. Forcing it here,
+      // once per app session, closes that gap. Safe to fire unconditionally:
+      // the deep-link effects below resolve via an async
+      // Linking.getInitialURL().then(...), so a real deep-link target always
+      // lands after this synchronous replace and wins, the same way it
+      // already wins over the (auth)-group replace above.
+      forcedInitialTabRef.current = true;
       router.replace("/(tabs)/discover");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, segKey]);
-
-  // Cold start with an already-signed-in (persisted) session never runs the
-  // branch above at all — inAuthGroup is never true, since this app never
-  // rendered the (auth) group in the first place. That case relied entirely
-  // on (tabs)/_layout.js's unstable_settings.initialRouteName to land on
-  // Pulse, which — confirmed on-device — was not reliably doing so. Forcing
-  // it explicitly here, once per app session, closes that gap. Safe to fire
-  // unconditionally on the first auth resolution: the deep-link effects
-  // below resolve via an async Linking.getInitialURL().then(...), so a real
-  // deep-link target always lands after this synchronous replace and wins,
-  // the same way it already wins over the (auth)-group replace above.
-  const forcedInitialTabRef = useRef(false);
-  useEffect(() => {
-    if (authLoading || !user || forcedInitialTabRef.current) return;
-    forcedInitialTabRef.current = true;
-    router.replace("/(tabs)/discover");
-  }, [authLoading, user, router]);
 
   // Username + consent are required before the account can be used, exactly
   // as on the web. Google sign-in has no signup form, so those accounts arrive
