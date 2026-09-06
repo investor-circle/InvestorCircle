@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Share, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -24,6 +24,41 @@ function DebugScreen() {
   const router = useRouter();
   const { user, profile } = useAuth();
   const [logs, setLogs] = useState([]);
+
+  // The real update lifecycle, from expo-updates' own state machine —
+  // Updates.isEmbeddedLaunch/channel/runtimeVersion (used in `env` below)
+  // only describe what's CURRENTLY running; they say nothing about why an
+  // update that exists on the server never took over. useUpdates() is the
+  // one API in this SDK that surfaces WHY (isEmergencyLaunch +
+  // emergencyLaunchReason: a downloaded update crashed and got rolled back;
+  // checkError/downloadError: the automatic startup check/download itself
+  // failed). Read-only field access on a documented hook — no calls that
+  // can be missing from this SDK version, verified against
+  // node_modules/expo-updates/build/UseUpdates.d.ts before adding this.
+  const updatesInfo = Updates.useUpdates();
+  const loggedUpdatesInfoRef = useRef("");
+  useEffect(() => {
+    const snapshot = [
+      `emergencyLaunch=${updatesInfo.currentlyRunning?.isEmergencyLaunch ?? "?"}`,
+      updatesInfo.currentlyRunning?.emergencyLaunchReason
+        ? `reason="${updatesInfo.currentlyRunning.emergencyLaunchReason}"`
+        : "",
+      `isChecking=${updatesInfo.isChecking}`,
+      `isDownloading=${updatesInfo.isDownloading}`,
+      `isUpdateAvailable=${updatesInfo.isUpdateAvailable}`,
+      `isUpdatePending=${updatesInfo.isUpdatePending}`,
+      `restartCount=${updatesInfo.restartCount}`,
+      `lastCheck=${updatesInfo.lastCheckForUpdateTimeSinceRestart?.toISOString() ?? "never"}`,
+      updatesInfo.checkError ? `checkError="${updatesInfo.checkError.message}"` : "",
+      updatesInfo.downloadError ? `downloadError="${updatesInfo.downloadError.message}"` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    if (snapshot !== loggedUpdatesInfoRef.current) {
+      loggedUpdatesInfoRef.current = snapshot;
+      addLog("info", `updates: state ${snapshot}`);
+    }
+  }, [updatesInfo]);
 
   const [marks, setMarks] = useState([]);
   const [pending, setPending] = useState([]);
@@ -71,9 +106,27 @@ function DebugScreen() {
     ? pending.map((p) => `  ${Math.round(p.waitingMs / 1000)}s  ${p.label}`).join("\n")
     : "  (nothing in flight)";
 
+  const updateState = [
+    `isEmergencyLaunch: ${updatesInfo.currentlyRunning?.isEmergencyLaunch ?? "?"}`,
+    updatesInfo.currentlyRunning?.emergencyLaunchReason
+      ? `emergencyLaunchReason: ${updatesInfo.currentlyRunning.emergencyLaunchReason}`
+      : null,
+    `isChecking: ${updatesInfo.isChecking}  isDownloading: ${updatesInfo.isDownloading}`,
+    `isUpdateAvailable: ${updatesInfo.isUpdateAvailable}  isUpdatePending: ${updatesInfo.isUpdatePending}`,
+    `restartCount: ${updatesInfo.restartCount}`,
+    `lastCheckForUpdateTimeSinceRestart: ${updatesInfo.lastCheckForUpdateTimeSinceRestart?.toISOString() ?? "never"}`,
+    updatesInfo.checkError ? `checkError: ${updatesInfo.checkError.message}` : null,
+    updatesInfo.downloadError ? `downloadError: ${updatesInfo.downloadError.message}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   // One block, so a report is a single paste rather than four.
   const report = [
     env,
+    "",
+    "UPDATE LIFECYCLE (why an OTA update did or didn't take effect)",
+    updateState,
     "",
     "STARTUP TIMELINE",
     startup,
