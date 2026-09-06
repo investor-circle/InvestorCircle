@@ -17,6 +17,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppState, StyleSheet, View } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import * as Updates from "expo-updates";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -38,6 +39,24 @@ import { colors } from "../src/theme/colors";
 
 function RootNavigator() {
   const { user, authLoading, profile, patchProfile } = useAuth();
+
+  // Root cause of every "OTA published, phone never picks it up" report
+  // this app has had: expo-updates downloads a new update in the background
+  // automatically, but does NOT apply it automatically — the documented
+  // API contract (expo-updates' own useUpdates() JSDoc example) requires
+  // the app to call reloadAsync() itself once isUpdatePending is true.
+  // Nothing did that, so downloaded updates sat applied-but-inert
+  // (Diagnostics showed isUpdatePending: true while still reporting
+  // "embedded") until whatever launch happened to also trigger a reload
+  // for an unrelated reason. This is the one-line fix the whole
+  // debugging session was missing.
+  const { isUpdatePending } = Updates.useUpdates();
+  useEffect(() => {
+    if (isUpdatePending) {
+      addLog("info", "updates: isUpdatePending — reloading to apply it");
+      Updates.reloadAsync();
+    }
+  }, [isUpdatePending]);
   const segments = useSegments();
   const router = useRouter();
   // useSegments() returns a NEW array every render, so depending on it
