@@ -120,21 +120,39 @@ function MyTrackRecordScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: 36 }}>
-          {/* Shrunk from the original hero: a full-size avatar + bio + social
-              links + edit button pushed the stat cards below (Ideas/Active/
-              Closed/Years) off the first screen entirely — the ICI card
-              already carries the credibility story, so this banner only
-              needs to identify whose record it is. */}
+          {/* Avatar beside the name/username, not stacked above it — a
+              centred vertical stack spent a whole row's height on identity
+              alone before the bio even started. The bio itself is no longer
+              line-capped: it was getting cut off mid-sentence, which read as
+              broken rather than "there's more below." */}
           <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
-            <Avatar profile={profile || me} size={56} style={styles.heroAvatar} />
-            <Text style={styles.name}>{profile?.full_name || me?.full_name || "—"}</Text>
-            <Text style={styles.username}>@{username}</Text>
-            {profile?.bio ? <Text style={styles.bio} numberOfLines={2}>{profile.bio}</Text> : null}
+            <View style={styles.heroTop}>
+              <Avatar profile={profile || me} size={50} style={styles.heroAvatar} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.name} numberOfLines={1}>
+                  {profile?.full_name || me?.full_name || "—"}
+                </Text>
+                <Text style={styles.username} numberOfLines={1}>
+                  @{username}
+                </Text>
+              </View>
+              <Pressable
+                style={styles.editIconBtn}
+                onPress={() => router.push("/settings")}
+                hitSlop={8}
+                accessibilityLabel="Edit profile"
+              >
+                <Ionicons name="create-outline" size={16} color="#fff" />
+              </Pressable>
+            </View>
+            {profile?.bio ? (
+              <Text style={styles.bio}>{profile.bio}</Text>
+            ) : (
+              <Pressable onPress={() => router.push("/settings")}>
+                <Text style={styles.addBioLink}>+ Add a bio</Text>
+              </Pressable>
+            )}
             <SocialLinks profile={profile} />
-            <Pressable style={styles.editBtn} onPress={() => router.push("/settings")}>
-              <Ionicons name="create-outline" size={13} color="#fff" />
-              <Text style={styles.editText}>{profile?.bio ? "Edit profile" : "Add a bio"}</Text>
-            </Pressable>
           </LinearGradient>
 
           {/* Exactly what a visitor sees, from the same endpoint. */}
@@ -192,35 +210,32 @@ const styles = StyleSheet.create({
   topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 8 },
   hero: {
-    alignItems: "center",
-    paddingTop: 14,
+    paddingHorizontal: 18,
+    paddingTop: 16,
     paddingBottom: 14,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },
-  heroAvatar: { borderWidth: 2, borderColor: "rgba(255,255,255,0.55)", marginBottom: 7 },
-  name: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 18 },
-  username: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 13, marginTop: 2 },
+  heroTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+  heroAvatar: { borderWidth: 2, borderColor: "rgba(255,255,255,0.55)" },
+  name: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 17 },
+  username: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 13, marginTop: 1 },
+  editIconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
   bio: {
-    color: "rgba(255,255,255,0.9)",
+    color: "rgba(255,255,255,0.92)",
     fontFamily: fonts.regular,
     fontSize: 12.5,
-    textAlign: "center",
-    marginTop: 6,
-    lineHeight: 17,
-    paddingHorizontal: 28,
+    marginTop: 10,
+    lineHeight: 18,
   },
-  editBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginTop: 9,
-    backgroundColor: "rgba(255,255,255,0.22)",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  editText: { color: "#fff", fontFamily: fonts.bold, fontSize: 12.5 },
+  addBioLink: { color: "#fff", fontFamily: fonts.bold, fontSize: 12.5, marginTop: 10 },
   emptyIdeas: { alignItems: "center", padding: 28, gap: 8 },
   emptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15, marginTop: 6 },
   emptySub: {
