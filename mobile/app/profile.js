@@ -4,15 +4,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import { useAuth } from "../src/context/AuthContext";
 import { colors, fonts, GRADIENT } from "../src/theme/colors";
 import Avatar from "../src/components/Avatar";
 import InviteSheet from "../src/components/InviteSheet";
 import { withBoundary } from "../src/components/ErrorBoundary";
-import { WEB_ORIGIN, profileUrl } from "../src/utils/links";
-
-const PRIVACY_URL = `${WEB_ORIGIN}/#/privacy`;
+import { profileUrl } from "../src/utils/links";
 
 function ProfileScreen() {
   const { profile, logout, userIsAdmin } = useAuth();
@@ -75,7 +72,7 @@ function ProfileScreen() {
           <MenuRow icon="albums-outline" label="Your Circles" onPress={() => router.push("/circles")} />
           <MenuRow icon="briefcase-outline" label="Portfolio" onPress={() => router.push("/portfolio")} />
           <MenuRow icon="notifications-outline" label="Notifications" onPress={() => router.push("/notifications")} />
-          <MenuRow icon="settings-outline" label="Settings" onPress={() => router.push("/settings")} last />
+          <MenuRow icon="options-outline" label="Feed Settings" onPress={() => router.push("/feed-settings")} last />
         </View>
 
         {/* Everything above is somewhere you go to DO something. These are
@@ -84,14 +81,14 @@ function ProfileScreen() {
         <View style={styles.menu}>
           <MenuRow icon="mail-outline" label="Contact us" onPress={() => router.push("/contact")} />
           <MenuRow icon="information-circle-outline" label="About" onPress={() => router.push("/about")} />
-          {/* Opened in a browser tab, not ported: it is a legal document that
-              must match the web's word for word, and a copy inside the app
-              would be a copy that drifts out of date. */}
-          <MenuRow
-            icon="shield-checkmark-outline"
-            label="Privacy policy"
-            onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {})}
-          />
+          {/* Privacy policy is hidden here for now — see CLAUDE.md's Mobile
+              known-issues note: Android can bounce the browser tab this
+              opens straight back into the app (App Links intercepting the
+              whole domain), so the menu entry currently leads nowhere
+              useful. Re-add once that's fixed. The login-consent and
+              SetupGate links still open it (with the same graceful
+              clipboard fallback when the bounce happens) since those can't
+              be removed without losing consent-flow parity with web. */}
           <MenuRow icon="bug-outline" label="Diagnostics" onPress={() => router.push("/debug")} last />
         </View>
 

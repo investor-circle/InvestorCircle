@@ -68,7 +68,13 @@ function PortfolioScreen() {
   // a filter you set last week and forgot is how a portfolio appears to have
   // lost holdings.
   const [signal, setSignal] = useState("all");
-  const [assetClass, setAssetClass] = useState("all");
+  // Defaults to "Stock", not "all" — matches the web (Portfolio.jsx
+  // classFilter) exactly: most portfolios are stock-heavy, and
+  // filterHoldings() already only actually applies this when the portfolio
+  // has a Stock holding at all (see portfolioSignals.js's classActive
+  // check), so a stock-free portfolio still shows everything rather than
+  // opening filtered down to nothing.
+  const [assetClass, setAssetClass] = useState("Stock");
   const [search, setSearch] = useState("");
   const mounted = useRef(true);
 
@@ -247,9 +253,18 @@ function PortfolioScreen() {
           data={visible}
           keyExtractor={(h) => String(h.id)}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-          contentContainerStyle={holdings.length === 0 ? styles.emptyWrap : { padding: 16 }}
+          contentContainerStyle={[holdings.length === 0 && styles.emptyWrap, { padding: 16 }]}
           ListHeaderComponent={
-            holdings.length > 0 ? (
+            <>
+            <View style={styles.howToAdd}>
+              <Ionicons name="information-circle-outline" size={15} color={colors.accentInk} />
+              <Text style={styles.howToAddText}>
+                Add holdings by uploading a CAS statement (tap{" "}
+                <Ionicons name="cloud-upload-outline" size={12} color={colors.accentInk} />) or entering them
+                manually (tap <Ionicons name="add-circle-outline" size={13} color={colors.accentInk} />) above.
+              </Text>
+            </View>
+            {holdings.length > 0 ? (
               <>
               <View style={styles.summary}>
                 <View style={styles.summaryRow}>
@@ -341,6 +356,9 @@ function PortfolioScreen() {
                 ) : null}
               </View>
 
+              {/* Both filter groups in one scrollable row, not two — a
+                  divider marks where "sentiment" ends and "type" begins
+                  instead of costing a whole extra row's height. */}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
                 {[
                   ["all", "All"],
@@ -356,23 +374,23 @@ function PortfolioScreen() {
                     <Text style={[styles.chipText, signal === v && styles.chipTextOn]}>{l}</Text>
                   </Pressable>
                 ))}
+                {classes.length > 1 ? (
+                  <>
+                    <View style={styles.chipDivider} />
+                    {["all", ...classes].map((c) => (
+                      <Pressable
+                        key={c}
+                        style={[styles.chip, assetClass === c && styles.chipOn]}
+                        onPress={() => setAssetClass(c)}
+                      >
+                        <Text style={[styles.chipText, assetClass === c && styles.chipTextOn]}>
+                          {c === "all" ? "All types" : c}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </>
+                ) : null}
               </ScrollView>
-
-              {classes.length > 1 ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-                  {["all", ...classes].map((c) => (
-                    <Pressable
-                      key={c}
-                      style={[styles.chip, assetClass === c && styles.chipOn]}
-                      onPress={() => setAssetClass(c)}
-                    >
-                      <Text style={[styles.chipText, assetClass === c && styles.chipTextOn]}>
-                        {c === "all" ? "All types" : c}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              ) : null}
 
               {filtering ? (
                 <Text style={styles.countLine}>
@@ -380,7 +398,8 @@ function PortfolioScreen() {
                 </Text>
               ) : null}
               </>
-            ) : null
+            ) : null}
+            </>
           }
           renderItem={({ item }) => {
             const sh = Number(item.sh) || 0;
@@ -527,6 +546,17 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   chipText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 12 },
   chipTextOn: { color: "#fff" },
+  chipDivider: { width: 1, alignSelf: "stretch", backgroundColor: colors.line, marginVertical: 4 },
+  howToAdd: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: colors.accentSoft,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  howToAddText: { flex: 1, color: colors.accentInk, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 18 },
   countLine: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 12 },
   noMatch: { alignItems: "center", paddingVertical: 34, gap: 8 },
   noMatchTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14.5 },

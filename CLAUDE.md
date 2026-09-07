@@ -248,6 +248,37 @@ modules. These are now durable conventions, not a one-time cleanup:
 - JS-only fixes ship via the "Mobile — Publish OTA update" workflow and cost no
   EAS build. Only native changes need a build.
 
+## Mobile known issues (deferred to a future native build)
+
+- **Privacy Policy / About / Market Insights links can bounce back into the
+  app on Android instead of opening a browser.** Root cause:
+  `mobile/app.json`'s Android `intentFilters` claims
+  `https://myinvestorcircle.com` with `autoVerify: true` and no path
+  restriction — required so referral (`?ref=`) and password-reset
+  (`?mode=resetPassword`) links, which arrive as a bare-root URL, open the
+  app automatically. Because the web is a `HashRouter` SPA, every route
+  (`/#/privacy` included) is indistinguishable from the bare root at the
+  Android intent-filter level (fragments aren't visible to path matching),
+  so the OS can't tell "a real deep link" apart from "a page the app can't
+  render" and sometimes hands the outgoing Custom Tab navigation straight
+  back to the app. The app already has a client-side loop guard for this
+  (`app/_layout.js`'s `handle()`) that falls back to copying the link to
+  the clipboard with an explanatory alert rather than looping forever —
+  that is the current, deliberately-JS-only mitigation.
+  - The **Privacy Policy** entry is hidden from the Profile menu for now
+    (`app/profile.js`) since it's the one link a user is likely to tap
+    expecting it to just work; the login-consent screen and `SetupGate`
+    still link to it (both with the same clipboard fallback), since those
+    can't be dropped without losing consent-flow parity with web.
+  - The real fix — narrowing the Android `intentFilters` in `mobile/app.json`
+    so it stops claiming paths it can't distinguish from real deep links —
+    requires a native rebuild (not OTA-shippable) and changes app-wide
+    deep-link behavior (referral/reset links might show Android's app-picker
+    instead of auto-opening), so it needs explicit sign-off before
+    implementing, not just a build slot. Tackle this the next time a native
+    build is already planned for other reasons; re-enable the Profile menu
+    entry once it's fixed.
+
 ## Deployment considerations
 
 - Frontend auto-deploys to GitHub Pages on every push to `main` — treat changes

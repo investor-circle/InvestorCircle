@@ -120,14 +120,19 @@ function MyTrackRecordScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: 36 }}>
+          {/* Shrunk from the original hero: a full-size avatar + bio + social
+              links + edit button pushed the stat cards below (Ideas/Active/
+              Closed/Years) off the first screen entirely — the ICI card
+              already carries the credibility story, so this banner only
+              needs to identify whose record it is. */}
           <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
-            <Avatar profile={profile || me} size={78} style={styles.heroAvatar} />
+            <Avatar profile={profile || me} size={56} style={styles.heroAvatar} />
             <Text style={styles.name}>{profile?.full_name || me?.full_name || "—"}</Text>
             <Text style={styles.username}>@{username}</Text>
-            {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+            {profile?.bio ? <Text style={styles.bio} numberOfLines={2}>{profile.bio}</Text> : null}
             <SocialLinks profile={profile} />
             <Pressable style={styles.editBtn} onPress={() => router.push("/settings")}>
-              <Ionicons name="create-outline" size={14} color="#fff" />
+              <Ionicons name="create-outline" size={13} color="#fff" />
               <Text style={styles.editText}>{profile?.bio ? "Edit profile" : "Add a bio"}</Text>
             </Pressable>
           </LinearGradient>
@@ -188,32 +193,32 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 8 },
   hero: {
     alignItems: "center",
-    paddingTop: 26,
-    paddingBottom: 26,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
-  heroAvatar: { borderWidth: 2, borderColor: "rgba(255,255,255,0.55)", marginBottom: 10 },
-  name: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 22 },
-  username: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 14, marginTop: 3 },
+  heroAvatar: { borderWidth: 2, borderColor: "rgba(255,255,255,0.55)", marginBottom: 7 },
+  name: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 18 },
+  username: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 13, marginTop: 2 },
   bio: {
     color: "rgba(255,255,255,0.9)",
     fontFamily: fonts.regular,
-    fontSize: 13,
+    fontSize: 12.5,
     textAlign: "center",
-    marginTop: 10,
-    lineHeight: 19,
+    marginTop: 6,
+    lineHeight: 17,
     paddingHorizontal: 28,
   },
   editBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginTop: 14,
+    gap: 5,
+    marginTop: 9,
     backgroundColor: "rgba(255,255,255,0.22)",
     borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   editText: { color: "#fff", fontFamily: fonts.bold, fontSize: 12.5 },
   emptyIdeas: { alignItems: "center", padding: 28, gap: 8 },

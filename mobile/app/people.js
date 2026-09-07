@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,9 +8,7 @@ import { sendConnectionRequest } from "../src/services/api/connectionsApi";
 import { track } from "../src/services/analytics";
 import { iciFromStatsRow } from "../src/utils/ici";
 import Avatar from "../src/components/Avatar";
-import IciBadge from "../src/components/IciBadge";
 import TrackButton from "../src/components/TrackButton";
-import SelectField from "../src/components/SelectField";
 import { primeAvatars } from "../src/services/avatarCache";
 import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -29,12 +27,12 @@ const SORTS = [
   { id: "ici", label: "ICI score" },
   { id: "ideas", label: "Ideas posted" },
 ];
-const SORT_LABEL = Object.fromEntries(SORTS.map((s) => [s.id, s.label]));
 
 function PeopleScreen() {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("recommended");
+  const [sortOpen, setSortOpen] = useState(false);
   const [candidates, setCandidates] = useState(null); // discover-more rows, raw
   const [searchResults, setSearchResults] = useState(null);
   const [sent, setSent] = useState({}); // userId -> 'pending' | 'done' | 'error'
@@ -129,45 +127,45 @@ function PeopleScreen() {
     return out;
   }, [candidates, sorted, showSplit, searchResults]);
 
+  // One compact row per person — avatar, name/username/ICI/ideas packed
+  // into two short lines, actions to the right. The web's own card (see
+  // the reference screenshot) spends a lot more vertical space per row;
+  // this keeps the same information (name, username, ICI score WITH its
+  // label so the number is self-explanatory, idea count, Track, Connect)
+  // in roughly half the height so more of the list is visible at once.
   const renderItem = ({ item }) => {
     if (item.type === "header") {
       return <Text style={styles.sectionLabel}>{item.label}</Text>;
     }
     const p = item.person;
     const state = sent[p.id];
+    const iciColor = p.ici?.score >= 75 ? colors.gain : p.ici?.score >= 55 ? colors.accentInk : p.ici?.score >= 35 ? "#9a5b00" : colors.muted;
     return (
       <View style={styles.row}>
         <Pressable style={styles.rowMain} onPress={() => p.username && router.push(`/investor/${p.username}`)}>
-          <Avatar uid={p.id} name={p.full_name} size={44} gradient />
+          <Avatar uid={p.id} name={p.full_name} size={38} gradient />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.name} numberOfLines={1}>
               {p.full_name || "Investor"}
             </Text>
-            <View style={styles.metaRow}>
-              <IciBadge ici={p.ici} size="sm" />
-              {p.username ? (
-                <Text style={styles.username} numberOfLines={1}>
-                  @{p.username}
-                </Text>
-              ) : null}
-              {p.total > 0 ? (
-                <Text style={styles.ideasCount} numberOfLines={1}>
-                  {p.total} idea{p.total === 1 ? "" : "s"}
-                </Text>
-              ) : null}
-            </View>
+            <Text style={styles.meta} numberOfLines={1}>
+              {p.username ? `@${p.username}` : ""}
+              {p.username ? "  ·  " : ""}
+              <Text style={{ color: iciColor, fontFamily: fonts.bold }}>{p.ici?.score ?? 0}</Text> ICI
+              {p.total > 0 ? `  ·  ${p.total} idea${p.total === 1 ? "" : "s"}` : ""}
+            </Text>
           </View>
         </Pressable>
 
         <View style={styles.actions}>
           <TrackButton targetId={p.id} initialTracking={false} compact />
           {state === "pending" ? (
-            <ActivityIndicator color={colors.accent} />
+            <ActivityIndicator color={colors.accent} style={{ width: 76 }} />
           ) : state === "done" ? (
             <Text style={styles.sentTag}>Requested</Text>
           ) : (
             <Pressable style={styles.connectBtn} onPress={() => connect(p)}>
-              <Ionicons name="person-add-outline" size={13} color="#fff" />
+              <Ionicons name="person-add-outline" size={12} color={colors.inkSoft} />
               <Text style={styles.connectText}>Connect</Text>
             </Pressable>
           )}
@@ -204,11 +202,33 @@ function PeopleScreen() {
             </Pressable>
           ) : null}
         </View>
-        <View style={styles.sortWrap}>
-          <Text style={styles.sortLabel}>Sort by</Text>
-          <SelectField value={SORT_LABEL[sort]} onChange={(label) => setSort(SORTS.find((s) => s.label === label)?.id || "recommended")} options={SORTS.map((s) => s.label)} />
-        </View>
+        {/* Icon, not a text field — the sort label was its own row before,
+            which cost as much vertical space as a whole extra list row. */}
+        <Pressable style={styles.sortBtn} onPress={() => setSortOpen(true)} hitSlop={8}>
+          <Ionicons name="swap-vertical" size={19} color={colors.accentInk} />
+        </Pressable>
       </View>
+
+      <Modal visible={sortOpen} animationType="fade" transparent onRequestClose={() => setSortOpen(false)}>
+        <Pressable style={styles.sortBackdrop} onPress={() => setSortOpen(false)}>
+          <View style={styles.sortSheet}>
+            <Text style={styles.sortSheetTitle}>Sort by</Text>
+            {SORTS.map((s) => (
+              <Pressable
+                key={s.id}
+                style={styles.sortOption}
+                onPress={() => {
+                  setSort(s.id);
+                  setSortOpen(false);
+                }}
+              >
+                <Text style={[styles.sortOptionText, sort === s.id && styles.sortOptionTextOn]}>{s.label}</Text>
+                {sort === s.id ? <Ionicons name="checkmark" size={17} color={colors.accentInk} /> : null}
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
 
       {candidates === null ? (
         <View style={styles.center}>
@@ -250,8 +270,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17 },
-  controls: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4, gap: 10 },
+  controls: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
   searchWrap: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
@@ -262,8 +283,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   search: { flex: 1, paddingVertical: 11, color: colors.ink, fontFamily: fonts.regular, fontSize: 15 },
-  sortWrap: { flexDirection: "row", alignItems: "center", gap: 10 },
-  sortLabel: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 12.5, width: 52 },
+  sortBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accentLine,
+  },
+  sortBackdrop: { flex: 1, backgroundColor: "rgba(15,15,35,0.35)", justifyContent: "center", padding: 32 },
+  sortSheet: { backgroundColor: colors.surface, borderRadius: 16, paddingVertical: 8 },
+  sortSheetTitle: {
+    color: colors.muted,
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  sortOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+  },
+  sortOptionText: { color: colors.ink, fontFamily: fonts.regular, fontSize: 15 },
+  sortOptionTextOn: { fontFamily: fonts.bold, color: colors.accentInk },
   sectionLabel: {
     color: colors.muted,
     fontFamily: fonts.bold,
@@ -274,13 +324,22 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 6,
   },
-  row: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 9 },
-  rowMain: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1, minWidth: 0 },
-  name: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15 },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" },
-  username: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12.5 },
-  ideasCount: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12.5 },
-  actions: { flexDirection: "column", alignItems: "flex-end", gap: 6 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  rowMain: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 0 },
+  name: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
+  meta: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
+  // Side by side, not stacked — keeps the row's height governed by the
+  // (taller) name/meta block instead of two buttons stacked on top of each
+  // other, which is most of the vertical-space saving versus the web card.
+  actions: { flexDirection: "row", alignItems: "center", gap: 6 },
   connectBtn: {
     flexDirection: "row",
     alignItems: "center",
