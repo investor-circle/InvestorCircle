@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -13,48 +13,55 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { createRecommendation } from "../src/services/api/recommendationsApi";
+import { createRecommendation, getMyMadeRecos } from "../src/services/api/recommendationsApi";
 import { track } from "../src/services/analytics";
 import { getMyConnections } from "../src/services/api/connectionsApi";
 import { announcePublicReco } from "../src/services/announceReco";
 import { useAuth } from "../src/context/AuthContext";
 import { getMyGroups } from "../src/services/api/groupsApi";
-import { initialsOf, HORIZONS, CONVICTIONS, FALLBACK_SECTORS } from "../src/utils/format";
+import { initialsOf, isExpired, HORIZONS, CONVICTIONS, FALLBACK_SECTORS, calcTargetDate, today } from "../src/utils/format";
 import { getSectors } from "../src/services/api/lookupsApi";
+import { getPreviousClose, sourceName } from "../src/services/marketData";
 import { buildRecoPayload, validateRecoDraft } from "../src/utils/recoDraft";
+import { putReco } from "../src/utils/recoStore";
 import { colors, fonts } from "../src/theme/colors";
 import InstrumentSearch from "../src/components/InstrumentSearch";
+import SelectField from "../src/components/SelectField";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
-// New recommendation. Fields + validation mirror the web's create form
-// (asset name + ticker required, numeric prices, Buy/Sell, optional
-// target/horizon/thesis), plus the share step: an idea can go to specific
-// connections and/or Circles, and/or be posted publicly. The server
-// re-validates every recipient (authorizedCircleRecipientIds) — this picker
-// is a convenience, never the authority.
 const TYPES = ["Buy", "Sell"];
+const CURRENCIES = ["INR", "USD", "GBP", "EUR"];
+const CURRENCY_SYMBOL = { INR: "₹", USD: "$", GBP: "£", EUR: "€" };
 
 function NewRecoScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const myId = profile?.id;
+
+  // Instrument — search-first, same order as the web's New Idea modal: pick
+  // (or type) the instrument before anything else, since everything else on
+  // this screen either derives from it (industry, currency, entry price) or
+  // is just easier to fill in once you know what you're posting about.
+  const [selectedInstr, setSelectedInstr] = useState(null); // { symbol, name, exchange, assetClass, currency, sector }
+  const [manualOpen, setManualOpen] = useState(false);
   const [assetName, setAssetName] = useState("");
   const [ticker, setTicker] = useState("");
-  // Populated only when a listed instrument is picked. The nightly pricing
-  // job identifies an instrument by (symbol, asset_class), so sending these
-  // through is what lets a mobile-created idea be priced and categorised the
-  // same way a web-created one is — previously mobile sent neither.
   const [assetClass, setAssetClass] = useState(null);
   const [sector, setSector] = useState(null);
-  // Sector normally arrives with the picked instrument. When it doesn't (an
-  // instrument with no sector on file, or a hand-typed ticker) the field used
-  // to be simply unavailable on mobile, while the web offers a picker from
-  // sector_master. Server list first, local constants only as a fallback.
-  const [sectorOptions, setSectorOptions] = useState(FALLBACK_SECTORS);
+  const [currency, setCurrency] = useState("INR");
   const [exchange, setExchange] = useState(null);
+  const [sectorOptions, setSectorOptions] = useState(FALLBACK_SECTORS);
+
   const [recType, setRecType] = useState("Buy");
-  const [priceAt, setPriceAt] = useState("");
+  // Auto-stamped entry price — never typed, same as web (getPreviousClose the
+  // moment an instrument is picked). Renamed from "Reco price": the number is
+  // the price the idea's return is measured FROM, i.e. the entry, and mobile
+  // used to invite a hand-typed value here which the web has never allowed.
+  const [priceData, setPriceData] = useState(null); // { price, source, date }
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceError, setPriceError] = useState("");
   const [targetPrice, setTargetPrice] = useState("");
-  const [horizon, setHorizon] = useState("");
+  const [horizon, setHorizon] = useState("12m");
   const [stopLoss, setStopLoss] = useState("");
   const [conviction, setConviction] = useState("");
   const [thesis, setThesis] = useState("");
@@ -65,17 +72,21 @@ function NewRecoScreen() {
   const [isPublic, setIsPublic] = useState(true);
   const [connections, setConnections] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [madeRecos, setMadeRecos] = useState([]);
   const [selUsers, setSelUsers] = useState({}); // userId -> true
   const [selGroups, setSelGroups] = useState({}); // groupId -> true
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const [peopleSearch, setPeopleSearch] = useState("");
   const mounted = useRef(true);
 
   useEffect(() => {
     mounted.current = true;
     (async () => {
-      const [conns, grps] = await Promise.all([getMyConnections(), getMyGroups()]);
+      const [conns, grps, made] = await Promise.all([getMyConnections(), getMyGroups(), getMyMadeRecos()]);
       if (!mounted.current) return;
       setConnections((conns || []).filter((c) => c.status === "accepted"));
       setGroups(grps || []);
+      setMadeRecos(made || []);
     })();
     return () => {
       mounted.current = false;
@@ -85,7 +96,6 @@ function NewRecoScreen() {
   useEffect(() => {
     getSectors()
       .then((rows) => {
-        // The endpoint returns plain strings (lookups.js: sectors: rows.map(r => r.sector)).
         const names = (rows || []).filter((r) => typeof r === "string" && r);
         if (names.length && mounted.current) setSectorOptions(names);
       })
@@ -94,16 +104,114 @@ function NewRecoScreen() {
       });
   }, []);
 
-  const toggle = (setter) => (id) => setter((m) => ({ ...m, [id]: !m[id] }));
-  const recipientCount =
-    Object.values(selUsers).filter(Boolean).length + Object.values(selGroups).filter(Boolean).length;
-
-  const submit = async () => {
-    if (!assetName.trim() || !ticker.trim()) {
-      setError("Asset name and ticker are required.");
+  // Auto-stamp the entry price the instant an instrument is picked — same
+  // call, same trigger, as the web (Recommendations.jsx MakeRecoModal).
+  useEffect(() => {
+    if (!selectedInstr) {
+      setPriceData(null);
+      setPriceError("");
+      setPriceLoading(false);
       return;
     }
-    const invalid = validateRecoDraft({ assetName, ticker, priceAt, targetPrice, stopLoss, isPublic, recipientCount });
+    let cancelled = false;
+    setPriceData(null);
+    setPriceError("");
+    setPriceLoading(true);
+    getPreviousClose(selectedInstr.symbol, selectedInstr.exchange || "NSE")
+      .then((d) => {
+        if (cancelled || !mounted.current) return;
+        if (d) setPriceData(d);
+        else setPriceError("Price unavailable — will be stamped by tonight's batch.");
+        setPriceLoading(false);
+      })
+      .catch(() => {
+        if (cancelled || !mounted.current) return;
+        setPriceError("Price unavailable — will be stamped by tonight's batch.");
+        setPriceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedInstr?.symbol, selectedInstr?.exchange]);
+
+  // Posting permission, mirrored from the web (Recommendations.jsx
+  // MakeRecoModal): a private Circle is shared among friends, so any active
+  // member may post to it; a public Circle is its owner's broadcast channel,
+  // so only its admin may post there. This just keeps the picker from
+  // offering a Circle the server would reject anyway.
+  const myGroups = useMemo(
+    () =>
+      (groups || []).filter((g) => {
+        const isMember = g.my_role === "admin" || g.members?.some((m) => m.user_id === myId && m.status === "active");
+        if (!isMember) return false;
+        if (g.circle_type === "public" && g.my_role !== "admin") return false;
+        return true;
+      }),
+    [groups, myId]
+  );
+
+  const onInstrSelect = (sel) => {
+    if (!sel) {
+      setSelectedInstr(null);
+      setSector(null);
+      return;
+    }
+    setSelectedInstr(sel);
+    setTicker(sel.symbol);
+    setAssetName(sel.name);
+    setAssetClass(sel.assetClass || null);
+    setCurrency(sel.currency || "INR");
+    setExchange(sel.exchange || null);
+    setSector(sel.sector || null); // auto-fill industry from the instrument master
+  };
+
+  // Heads-up, not a blocker: does the author already have a live idea on this
+  // ticker? Same rule as web (isExpired() + not exited).
+  const activeRecoForTicker = useMemo(() => {
+    const tickerUp = (selectedInstr?.symbol || ticker || "").toUpperCase();
+    if (!tickerUp) return null;
+    // getMyMadeRecos rows use `exit` (see api/_lib/handlers/recommendations.js
+    // getMade's reshape), not `exitSignal` — the field name recommendations
+    // carry everywhere else on mobile. Easy to mix up; got this wrong once
+    // already while writing this check.
+    return (madeRecos || []).find((r) => (r.ticker || "").toUpperCase() === tickerUp && !r.exit && !isExpired(r)) || null;
+  }, [selectedInstr?.symbol, ticker, madeRecos]);
+
+  const toggle = (setter) => (id) => setter((m) => ({ ...m, [id]: !m[id] }));
+  const selectedContactsCount = Object.values(selUsers).filter(Boolean).length;
+  const selectedGroupsCount = Object.values(selGroups).filter(Boolean).length;
+  const recipientCount = selectedContactsCount + selectedGroupsCount;
+  const filteredContacts = peopleSearch.trim()
+    ? connections.filter((c) => (c.name || "").toLowerCase().includes(peopleSearch.trim().toLowerCase()))
+    : connections;
+  const allContactsSelected = connections.length > 0 && connections.every((c) => selUsers[c.user_id]);
+  const selectAllContacts = () => {
+    setSelUsers(allContactsSelected ? {} : Object.fromEntries(connections.map((c) => [c.user_id, true])));
+  };
+
+  // A public Circle is discoverable by anyone, so an idea shared to one can
+  // never be marked non-public — forcing (not defaulting) this keeps the
+  // toggle truthful even if it was switched off before a public Circle was
+  // picked. Mirrors web's hasPublicCircleSelected effect exactly.
+  const hasPublicCircleSelected = useMemo(
+    () => Object.keys(selGroups).some((id) => selGroups[id] && myGroups.find((g) => String(g.id) === String(id))?.circle_type === "public"),
+    [selGroups, myGroups]
+  );
+  useEffect(() => {
+    if (hasPublicCircleSelected) setIsPublic(true);
+  }, [hasPublicCircleSelected]);
+
+  const submit = async () => {
+    const invalid = validateRecoDraft({
+      assetName,
+      ticker,
+      priceAt: priceData?.price || 0,
+      priceError,
+      targetPrice,
+      stopLoss,
+      isPublic: isPublic || hasPublicCircleSelected,
+      recipientCount,
+    });
     if (invalid) {
       setError(invalid);
       return;
@@ -125,41 +233,34 @@ function NewRecoScreen() {
       ticker,
       assetClass,
       sector,
+      currency,
       exchange,
       recType,
-      priceAt,
+      priceAt: priceData?.price || 0,
+      priceSource: priceData?.source || null,
       targetPrice,
       stopLoss,
       horizon,
       conviction,
       thesis,
-      isPublic,
+      isPublic: isPublic || hasPublicCircleSelected,
     });
     const res = await createRecommendation(recoPayload, recipients);
     setSaving(false);
     if (res.ok) {
-      // The same five parameters the web sends, so the two clients' ideas
-      // can be compared in one report rather than only counted.
       track("reco_created", {
         rec_type: recoPayload.recType || "Buy",
         asset_class: recoPayload.assetClass || "",
-        is_public: !!isPublic,
+        is_public: !!recoPayload.isPublic,
         has_ticker: !!recoPayload.ticker,
         conviction: recoPayload.conviction || "",
       });
-    }
-    if (res.ok) {
-      // A PUBLIC idea creates no delivery rows, so nothing notifies anyone
-      // server-side — the author's connections only hear about it if the
-      // client asks. The web does this in its create flow; mobile did not,
-      // so an idea posted from the phone reached nobody. Fire-and-forget:
-      // the post already succeeded.
-      if (isPublic) {
+      if (recoPayload.isPublic) {
         announcePublicReco({
           reco: recoPayload,
           recoId: res.recommendation?.id,
           me: profile,
-          contacts: connections.filter((c) => c.status === "accepted"),
+          contacts: connections,
         });
       }
       router.back();
@@ -167,6 +268,12 @@ function NewRecoScreen() {
       setError(res.error === "not_authorized" ? "You're not allowed to post this." : "Couldn't post. Try again.");
     }
   };
+
+  const targetDate = calcTargetDate(today(), horizon);
+  const valid =
+    (assetName.trim() || ticker.trim()) &&
+    (isPublic || hasPublicCircleSelected || recipientCount > 0) &&
+    ((priceData?.price || 0) > 0 || !!priceError);
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -180,105 +287,172 @@ function NewRecoScreen() {
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-          <Field label="Asset name *">
-            <TextInput style={styles.input} placeholder="Hindustan Aeronautics" placeholderTextColor={colors.muted} value={assetName} onChangeText={setAssetName} />
-          </Field>
-          <Field label="Ticker *">
-            <InstrumentSearch
-              value={ticker}
-              placeholder="HAL"
-              onChangeText={(t) => {
-                setTicker(t);
-                // Hand-typed ticker: drop the details that belonged to the
-                // previously selected instrument rather than mislabelling
-                // this one with them.
-                setAssetClass(null);
-                setSector(null);
-                setExchange(null);
-              }}
-              onSelect={(sel) => {
-                setTicker(sel.symbol);
-                if (sel.name) setAssetName(sel.name);
-                setAssetClass(sel.assetClass);
-                setSector(sel.sector);
-                setExchange(sel.exchange);
-              }}
-            />
-          </Field>
-
-          <Field label="Type">
+          {/* ── Idea type — the first, quickest decision ─────────────── */}
+          <Field label="Idea type">
             <View style={styles.seg}>
               {TYPES.map((t) => {
                 const active = recType === t;
                 return (
-                  <Pressable key={t} style={[styles.segBtn, active && styles.segBtnActive]} onPress={() => setRecType(t)}>
-                    <Text style={[styles.segText, active && styles.segTextActive]}>{t}</Text>
+                  <Pressable
+                    key={t}
+                    style={[
+                      styles.segBtn,
+                      active && (t === "Buy" ? styles.segBtnBuy : styles.segBtnSell),
+                    ]}
+                    onPress={() => setRecType(t)}
+                  >
+                    <Text style={[styles.segText, active && (t === "Buy" ? styles.segTextBuy : styles.segTextSell)]}>{t}</Text>
                   </Pressable>
                 );
               })}
             </View>
           </Field>
 
+          {/* ── Instrument — search first; everything else follows from it ── */}
+          <Field label="Search ticker or company">
+            <InstrumentSearch
+              value={ticker}
+              placeholder="e.g. RELIANCE or Reliance Industries…"
+              onChangeText={(t) => {
+                setTicker(t);
+                // Editing away from a picked instrument drops the fields that
+                // belonged to it — otherwise a hand-typed ticker would keep a
+                // stale locked industry/currency/entry-price from whatever
+                // was selected before.
+                if (selectedInstr) {
+                  setSelectedInstr(null);
+                  setAssetClass(null);
+                  setSector(null);
+                  setExchange(null);
+                }
+              }}
+              onSelect={onInstrSelect}
+            />
+          </Field>
+
+          {selectedInstr ? (
+            <View style={styles.instrChip}>
+              <Ionicons name="checkmark-circle" size={15} color={colors.accentInk} />
+              <Text style={styles.instrChipText} numberOfLines={1}>
+                {selectedInstr.symbol} — {selectedInstr.name}
+              </Text>
+              <Text style={styles.instrChipMeta}>{selectedInstr.exchange}</Text>
+            </View>
+          ) : (
+            <Pressable onPress={() => setManualOpen((v) => !v)} style={styles.manualToggle}>
+              <Text style={styles.manualToggleText}>Not in the list? Enter manually</Text>
+              <Ionicons name={manualOpen ? "chevron-up" : "chevron-down"} size={14} color={colors.muted} />
+            </Pressable>
+          )}
+
+          {manualOpen && !selectedInstr ? (
+            <View style={styles.manualRow}>
+              <Field label="Asset name" style={{ flex: 1 }}>
+                <TextInput style={styles.input} placeholder="e.g. Apple Inc." placeholderTextColor={colors.muted} value={assetName} onChangeText={setAssetName} />
+              </Field>
+            </View>
+          ) : null}
+
+          {activeRecoForTicker ? (
+            <View style={styles.warnNote}>
+              <Ionicons name="warning-outline" size={14} color={colors.accentInk} />
+              <Text style={styles.warnText}>
+                You already have a live idea on {activeRecoForTicker.ticker}. You can post this one too, or{" "}
+                <Text
+                  style={styles.warnLink}
+                  onPress={() => {
+                    // The detail screen resolves a private idea from this
+                    // hand-off, not a public-feed lookup — without it, an
+                    // idea that isn't public would show as unopenable. Made
+                    // recos carry no author fields (they're the caller's
+                    // own — see api's getMade reshape), so stamp them the
+                    // same way the Track tab's "Created" list already does,
+                    // or isOwner on the detail screen reads false and hides
+                    // the exit control on the author's own idea.
+                    putReco({ ...activeRecoForTicker, byName: profile?.full_name || "You", from: profile?.id });
+                    router.push(`/reco/${activeRecoForTicker.id}`);
+                  }}
+                >
+                  share a follow-up
+                </Text>{" "}
+                on the original instead.
+              </Text>
+            </View>
+          ) : null}
+
+          {/* ── Classification — industry auto-fills and locks from the
+              instrument master, exactly like the web ──────────────────── */}
           <View style={styles.row}>
-            <Field label="Reco price" style={{ flex: 1 }}>
-              <TextInput style={styles.input} placeholder="4380" placeholderTextColor={colors.muted} keyboardType="numeric" value={priceAt} onChangeText={setPriceAt} />
+            <Field label="Industry" style={{ flex: 1 }}>
+              <SelectField
+                value={sector}
+                onChange={setSector}
+                options={sectorOptions}
+                placeholder="Select industry"
+                searchable
+                locked={!!selectedInstr?.sector}
+                lockedLabel={selectedInstr?.sector}
+              />
             </Field>
-            <Field label="Target price" style={{ flex: 1 }}>
-              <TextInput style={styles.input} placeholder="6200" placeholderTextColor={colors.muted} keyboardType="numeric" value={targetPrice} onChangeText={setTargetPrice} />
+            <Field label="Conviction" style={{ flex: 1 }}>
+              <SelectField value={conviction} onChange={setConviction} options={CONVICTIONS} placeholder="Not specified" />
             </Field>
           </View>
 
-          <Field label="Stop loss (optional)">
-            <TextInput style={styles.input} placeholder="3900" placeholderTextColor={colors.muted} keyboardType="numeric" value={stopLoss} onChangeText={setStopLoss} />
+          <View style={styles.row}>
+            <Field label="Currency" style={{ flex: 1 }}>
+              <SelectField
+                value={currency}
+                onChange={setCurrency}
+                options={CURRENCIES}
+                locked={!!selectedInstr}
+                lockedLabel={`${CURRENCY_SYMBOL[currency] || currency} ${currency}`}
+              />
+            </Field>
+            <Field label="Horizon" style={{ flex: 1 }}>
+              <SelectField value={horizon} onChange={setHorizon} options={HORIZONS} />
+            </Field>
+          </View>
+
+          {/* ── Entry price — auto-stamped, never typed ──────────────────── */}
+          <Field label={`Entry price (${CURRENCY_SYMBOL[currency] || currency})`}>
+            {priceLoading ? (
+              <View style={styles.priceBoxNeutral}>
+                <ActivityIndicator size="small" color={colors.muted} />
+                <Text style={styles.priceNeutralText}>Fetching previous close…</Text>
+              </View>
+            ) : priceData ? (
+              <View style={styles.priceBoxGood}>
+                <Text style={styles.priceGoodValue}>
+                  {CURRENCY_SYMBOL[currency] || currency}
+                  {Number(priceData.price).toLocaleString("en-IN")}
+                </Text>
+                <Text style={styles.priceGoodMeta}>
+                  Auto-stamped · {sourceName(priceData.source)} · {priceData.date}
+                </Text>
+              </View>
+            ) : priceError ? (
+              <View style={styles.priceBoxWarn}>
+                <Ionicons name="alert-circle-outline" size={14} color={colors.accent} />
+                <Text style={styles.priceWarnText}>{priceError}</Text>
+              </View>
+            ) : (
+              <View style={styles.priceBoxNeutral}>
+                <Text style={styles.priceNeutralText}>Select an instrument above</Text>
+              </View>
+            )}
           </Field>
 
-          {/* Chips, not free text. calcTargetDate only understands these four
-              strings, so a typed horizon (the old field even suggested "12M",
-              which is not "12m") silently produced no target date and left the
-              idea with no expiry. */}
-          <Field label="Horizon (optional)">
-            <View style={styles.chipRow}>
-              {HORIZONS.map((h) => (
-                <Pressable
-                  key={h}
-                  style={[styles.chip, horizon === h && styles.chipOn]}
-                  onPress={() => setHorizon((cur) => (cur === h ? "" : h))}
-                >
-                  <Text style={[styles.chipText, horizon === h && styles.chipTextOn]}>{h}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </Field>
+          <View style={styles.row}>
+            <Field label="Target price (opt.)" style={{ flex: 1 }}>
+              <TextInput style={styles.input} placeholder="0" placeholderTextColor={colors.muted} keyboardType="numeric" value={targetPrice} onChangeText={setTargetPrice} />
+            </Field>
+            <Field label="Stop loss (opt.)" style={{ flex: 1 }}>
+              <TextInput style={styles.input} placeholder="0" placeholderTextColor={colors.muted} keyboardType="numeric" value={stopLoss} onChangeText={setStopLoss} />
+            </Field>
+          </View>
 
-          <Field label="Sector (optional)">
-            <View style={styles.chipRow}>
-              {sectorOptions.map((sec) => (
-                <Pressable
-                  key={sec}
-                  style={[styles.chip, sector === sec && styles.chipOn]}
-                  onPress={() => setSector((cur) => (cur === sec ? null : sec))}
-                >
-                  <Text style={[styles.chipText, sector === sec && styles.chipTextOn]}>{sec}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </Field>
-
-          <Field label="Conviction (optional)">
-            <View style={styles.chipRow}>
-              {CONVICTIONS.map((c) => (
-                <Pressable
-                  key={c}
-                  style={[styles.chip, conviction === c && styles.chipOn]}
-                  onPress={() => setConviction((cur) => (cur === c ? "" : c))}
-                >
-                  <Text style={[styles.chipText, conviction === c && styles.chipTextOn]}>{c}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </Field>
-
-          <Field label="Thesis">
+          <Field label="Thesis (optional)">
             <TextInput
               style={[styles.input, styles.textarea]}
               placeholder="Why is this a good idea?"
@@ -289,76 +463,131 @@ function NewRecoScreen() {
             />
           </Field>
 
-          {/* Share step — who sees this idea */}
-          <Text style={styles.sectionLabel}>Share with</Text>
+          {/* ── Who should see this? ─────────────────────────────────── */}
+          <Text style={styles.sectionLabel}>Who should see this?</Text>
 
-          <Pressable style={styles.checkRow} onPress={() => setIsPublic((v) => !v)}>
+          <Pressable
+            style={[styles.publicRow, hasPublicCircleSelected && styles.publicRowLocked]}
+            onPress={() => !hasPublicCircleSelected && setIsPublic((v) => !v)}
+            disabled={hasPublicCircleSelected}
+          >
             <Ionicons
-              name={isPublic ? "checkbox" : "square-outline"}
+              name={isPublic || hasPublicCircleSelected ? "checkbox" : "square-outline"}
               size={22}
-              color={isPublic ? colors.accent : colors.muted}
+              color={isPublic || hasPublicCircleSelected ? colors.accent : colors.muted}
             />
             <View style={{ flex: 1 }}>
-              <Text style={styles.checkLabel}>Post publicly</Text>
-              <Text style={styles.checkSub}>Visible to everyone on the platform feed</Text>
+              <Text style={styles.checkLabel}>🌐 Public</Text>
+              <Text style={styles.checkSub}>Anyone on myInvestorCircle can discover this.</Text>
+              {hasPublicCircleSelected ? (
+                <Text style={styles.lockedNote}>Can't be turned off — a public Circle is selected below.</Text>
+              ) : null}
             </View>
           </Pressable>
 
-          {groups.length > 0 ? (
-            <>
-              <Text style={styles.groupLabel}>Circles</Text>
-              {groups.map((g) => (
-                <Pressable key={String(g.id)} style={styles.checkRow} onPress={() => toggle(setSelGroups)(g.id)}>
-                  <Ionicons
-                    name={selGroups[g.id] ? "checkbox" : "square-outline"}
-                    size={22}
-                    color={selGroups[g.id] ? colors.accent : colors.muted}
-                  />
-                  <View style={[styles.swatch, { backgroundColor: g.color || colors.accent }]}>
-                    <Ionicons name="people" size={13} color="#fff" />
-                  </View>
-                  <Text style={styles.checkLabel} numberOfLines={1}>
-                    {g.name}
-                  </Text>
-                </Pressable>
-              ))}
-            </>
-          ) : null}
+          {/* Circles — a handful at most, so tappable chips (like web) beat a
+              checkbox list. */}
+          <View style={styles.shareBlock}>
+            <Text style={styles.shareBlockTitle}>⭕ Circles</Text>
+            <Text style={styles.shareBlockSub}>Select one or more Circles.</Text>
+            {myGroups.length === 0 ? (
+              <Text style={styles.emptyNote}>No Circles yet — Circles you belong to (or own) will appear here.</Text>
+            ) : (
+              <View style={styles.chipWrap}>
+                {myGroups.map((g) => {
+                  const on = !!selGroups[g.id];
+                  return (
+                    <Pressable key={String(g.id)} style={[styles.circleChip, on && styles.circleChipOn]} onPress={() => toggle(setSelGroups)(g.id)}>
+                      {on ? <Ionicons name="checkmark" size={13} color="#fff" /> : null}
+                      <Ionicons name={g.circle_type === "public" ? "globe-outline" : "lock-closed-outline"} size={13} color={on ? "#fff" : colors.muted} />
+                      <Text style={[styles.circleChipText, on && styles.circleChipTextOn]} numberOfLines={1}>
+                        {g.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </View>
 
-          {connections.length > 0 ? (
-            <>
-              <Text style={styles.groupLabel}>Connections</Text>
-              {connections.map((c) => (
-                <Pressable key={String(c.user_id)} style={styles.checkRow} onPress={() => toggle(setSelUsers)(c.user_id)}>
-                  <Ionicons
-                    name={selUsers[c.user_id] ? "checkbox" : "square-outline"}
-                    size={22}
-                    color={selUsers[c.user_id] ? colors.accent : colors.muted}
-                  />
-                  <View style={styles.miniAvatar}>
-                    <Text style={styles.miniAvatarText}>{initialsOf(c.name)}</Text>
+          {/* People — expandable + searchable, with a select-all shortcut for
+              when the circle of connections is small enough to just pick
+              everyone. */}
+          <View style={styles.shareBlock}>
+            <Pressable style={styles.peopleHead} onPress={() => setPeopleOpen((o) => !o)}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.shareBlockTitle}>👥 People</Text>
+                <Text style={styles.shareBlockSub}>{selectedContactsCount > 0 ? `${selectedContactsCount} selected` : "Select specific people."}</Text>
+              </View>
+              <Ionicons name={peopleOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.muted} />
+            </Pressable>
+
+            {peopleOpen ? (
+              connections.length === 0 ? (
+                <Text style={styles.emptyNote}>No connections yet.</Text>
+              ) : (
+                <View style={{ marginTop: 8 }}>
+                  <View style={styles.peopleSearchRow}>
+                    <View style={styles.peopleSearchBox}>
+                      <Ionicons name="search" size={14} color={colors.muted} />
+                      <TextInput
+                        style={styles.peopleSearchInput}
+                        placeholder="Search people…"
+                        placeholderTextColor={colors.muted}
+                        value={peopleSearch}
+                        onChangeText={setPeopleSearch}
+                      />
+                    </View>
+                    <Pressable style={styles.selectAllBtn} onPress={selectAllContacts}>
+                      <Text style={styles.selectAllText}>{allContactsSelected ? "Clear all" : "Select all"}</Text>
+                    </Pressable>
                   </View>
-                  <Text style={styles.checkLabel} numberOfLines={1}>
-                    {c.name || c.username || "Investor"}
-                  </Text>
-                </Pressable>
-              ))}
-            </>
-          ) : null}
+                  <View style={{ maxHeight: 260 }}>
+                    <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                      {filteredContacts.length === 0 ? (
+                        <Text style={styles.emptyNote}>No people match "{peopleSearch}".</Text>
+                      ) : (
+                        filteredContacts.map((c) => (
+                          <Pressable key={String(c.user_id)} style={styles.checkRow} onPress={() => toggle(setSelUsers)(c.user_id)}>
+                            <Ionicons
+                              name={selUsers[c.user_id] ? "checkbox" : "square-outline"}
+                              size={20}
+                              color={selUsers[c.user_id] ? colors.accent : colors.muted}
+                            />
+                            <View style={styles.miniAvatar}>
+                              <Text style={styles.miniAvatarText}>{initialsOf(c.name)}</Text>
+                            </View>
+                            <Text style={styles.checkLabel} numberOfLines={1}>
+                              {c.name || c.username || "Investor"}
+                            </Text>
+                          </Pressable>
+                        ))
+                      )}
+                    </ScrollView>
+                  </View>
+                </View>
+              )
+            ) : null}
+          </View>
 
           <Text style={styles.note}>
             {recipientCount > 0
-              ? `Sharing with ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}${isPublic ? " · also public" : ""}`
-              : isPublic
+              ? `Sharing with ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}${isPublic || hasPublicCircleSelected ? " · also public" : ""}`
+              : isPublic || hasPublicCircleSelected
               ? "This idea will be posted publicly."
-              : "Pick at least one recipient, or make it public."}
+              : "Pick at least one person or Circle, or post publicly."}
           </Text>
+          {targetDate ? <Text style={styles.note}>Target date: {targetDate}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
+        </ScrollView>
 
-          <Pressable style={[styles.submit, saving && { opacity: 0.7 }]} onPress={submit} disabled={saving}>
+        {/* Primary action stays pinned above the keyboard, not buried at the
+            bottom of a long scroll. */}
+        <View style={styles.footer}>
+          <Pressable style={[styles.submit, (!valid || saving) && styles.submitDisabled]} onPress={submit} disabled={!valid || saving}>
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Post idea</Text>}
           </Pressable>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -374,18 +603,6 @@ function Field({ label, children, style }) {
 }
 
 const styles = StyleSheet.create({
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-  },
-  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13 },
-  chipTextOn: { color: "#fff" },
   flex: { flex: 1, backgroundColor: colors.bg },
   topbar: {
     flexDirection: "row",
@@ -398,7 +615,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17 },
-  form: { padding: 16, paddingBottom: 40 },
+  form: { padding: 16, paddingBottom: 24 },
   row: { flexDirection: "row", gap: 12 },
   label: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13, marginBottom: 7 },
   input: {
@@ -412,12 +629,50 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 15,
   },
-  textarea: { minHeight: 100, textAlignVertical: "top" },
+  textarea: { minHeight: 90, textAlignVertical: "top" },
   seg: { flexDirection: "row", backgroundColor: colors.surface2, borderRadius: 12, padding: 3, gap: 3 },
-  segBtn: { flex: 1, height: 40, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-  segBtnActive: { backgroundColor: colors.surface, shadowColor: "#141432", shadowOpacity: 0.12, shadowRadius: 4, elevation: 1 },
+  segBtn: { flex: 1, height: 42, borderRadius: 9, alignItems: "center", justifyContent: "center" },
+  segBtnBuy: { backgroundColor: colors.gainSoft },
+  segBtnSell: { backgroundColor: colors.lossSoft },
   segText: { color: colors.muted, fontFamily: fonts.bold, fontSize: 14 },
-  segTextActive: { color: colors.accentInk },
+  segTextBuy: { color: colors.gain },
+  segTextSell: { color: colors.loss },
+
+  instrChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: -6,
+    marginBottom: 16,
+    padding: 11,
+    borderRadius: 10,
+    backgroundColor: colors.accentSoft,
+  },
+  instrChipText: { flex: 1, color: colors.accentInk, fontFamily: fonts.semibold, fontSize: 13 },
+  instrChipMeta: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 11 },
+  manualToggle: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: -6, marginBottom: 16 },
+  manualToggleText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 12 },
+  manualRow: { marginBottom: 4 },
+
+  warnNote: {
+    flexDirection: "row",
+    gap: 8,
+    padding: 11,
+    borderRadius: 10,
+    backgroundColor: colors.accentSoft,
+    marginBottom: 16,
+  },
+  warnText: { flex: 1, color: colors.accentInk, fontFamily: fonts.regular, fontSize: 12, lineHeight: 17 },
+  warnLink: { fontFamily: fonts.bold, textDecorationLine: "underline" },
+
+  priceBoxGood: { padding: 12, borderWidth: 1, borderColor: colors.gain, borderRadius: 11, backgroundColor: colors.gainSoft },
+  priceGoodValue: { color: colors.gain, fontFamily: fonts.extrabold, fontSize: 16 },
+  priceGoodMeta: { color: colors.gain, fontFamily: fonts.regular, fontSize: 10.5, marginTop: 3 },
+  priceBoxWarn: { flexDirection: "row", alignItems: "center", gap: 7, padding: 12, borderRadius: 11, backgroundColor: colors.accentSoft },
+  priceWarnText: { flex: 1, color: colors.accentInk, fontFamily: fonts.regular, fontSize: 12, lineHeight: 16 },
+  priceBoxNeutral: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 11, borderWidth: 1, borderColor: colors.line2, borderStyle: "dashed", backgroundColor: colors.surface2 },
+  priceNeutralText: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13 },
+
   sectionLabel: {
     color: colors.muted,
     fontFamily: fonts.bold,
@@ -425,31 +680,78 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: "uppercase",
     marginTop: 8,
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  groupLabel: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 12, marginTop: 12, marginBottom: 4 },
-  checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9 },
-  checkLabel: { flex: 1, color: colors.ink, fontFamily: fonts.semibold, fontSize: 14 },
-  checkSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
-  swatch: { width: 26, height: 26, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  miniAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.surface2,
+  publicRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+    padding: 12,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: colors.line,
+    marginBottom: 10,
+  },
+  publicRowLocked: { backgroundColor: colors.surface2 },
+  checkLabel: { color: colors.ink, fontFamily: fonts.bold, fontSize: 13.5 },
+  checkSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
+  lockedNote: { color: colors.accentInk, fontFamily: fonts.regular, fontSize: 11.5, marginTop: 4 },
+
+  shareBlock: { padding: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 11, marginBottom: 10 },
+  shareBlockTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 13.5 },
+  shareBlockSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
+  emptyNote: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12.5, marginTop: 8 },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  circleChip: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.surface,
+    maxWidth: "100%",
   },
+  circleChipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  circleChipText: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13 },
+  circleChipTextOn: { color: "#fff" },
+
+  peopleHead: { flexDirection: "row", alignItems: "center", gap: 10 },
+  peopleSearchRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  peopleSearchBox: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    backgroundColor: colors.surface2,
+  },
+  peopleSearchInput: { flex: 1, color: colors.ink, fontFamily: fonts.regular, fontSize: 13, paddingVertical: 8 },
+  selectAllBtn: { paddingHorizontal: 12, justifyContent: "center", borderRadius: 9, backgroundColor: colors.accentSoft },
+  selectAllText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 12 },
+  checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 },
+  miniAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: colors.surface2, alignItems: "center", justifyContent: "center" },
   miniAvatarText: { color: colors.inkSoft, fontFamily: fonts.bold, fontSize: 10 },
-  note: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 10, marginBottom: 8 },
-  error: { color: colors.loss, fontFamily: fonts.semibold, fontSize: 13, marginBottom: 8 },
+
+  note: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 4 },
+  error: { color: colors.loss, fontFamily: fonts.semibold, fontSize: 13, marginTop: 10 },
+
+  footer: {
+    padding: 14,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    backgroundColor: colors.surface,
+  },
   submit: {
     backgroundColor: colors.accent,
     borderRadius: 12,
     paddingVertical: 15,
     alignItems: "center",
-    marginTop: 4,
   },
+  submitDisabled: { opacity: 0.5 },
   submitText: { color: "#fff", fontFamily: fonts.bold, fontSize: 16 },
 });
 

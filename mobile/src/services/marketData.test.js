@@ -1,4 +1,4 @@
-import { getTodayClose, sourceName } from "./marketData";
+import { getTodayClose, getPreviousClose, sourceName } from "./marketData";
 
 jest.mock("./api", () => ({ API_ORIGIN: "https://api.test" }));
 
@@ -89,6 +89,38 @@ describe("getTodayClose", () => {
     // discard a legitimate zero.
     global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ price: 0, date: "x" }) }));
     await expect(getTodayClose("INFY")).resolves.toMatchObject({ price: 0 });
+  });
+});
+
+// New-idea entry price is auto-stamped from the previous close the instant an
+// instrument is picked (app/new.js) — same call the web makes
+// (src/services/marketData.js getPreviousClose). A hand-typed entry price
+// was never a thing on either client; this is the only path mobile has to
+// get one, so it needs the same never-blocks-the-caller guarantee as the
+// exit-price lookup above.
+describe("getPreviousClose", () => {
+  it("returns the quote for a symbol", async () => {
+    await expect(getPreviousClose("INFY")).resolves.toMatchObject({ price: 1450.5, source: "nse_bhavcopy" });
+  });
+
+  it("asks the same proxy, defaulting to NSE", async () => {
+    await getPreviousClose("INFY");
+    const url = global.fetch.mock.calls[0][0];
+    expect(url).toContain("https://api.test/api/price");
+    expect(url).toContain("symbol=INFY");
+    expect(url).toContain("exchange=NSE");
+  });
+
+  it("returns null, not a throw, when the fetch fails", async () => {
+    global.fetch = jest.fn(async () => {
+      throw new Error("offline");
+    });
+    await expect(getPreviousClose("INFY")).resolves.toBeNull();
+  });
+
+  it("returns null without asking when there is no symbol", async () => {
+    await expect(getPreviousClose("")).resolves.toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
 

@@ -76,13 +76,24 @@ export function buildProfilePayload(form) {
   return payload;
 }
 
-/** Returns an error string, or null when the form can be saved. */
+// 300, not some other round number — matches the web's textarea maxLength
+// exactly (Profile.jsx: both the inline hero editor and ProfileEditModal),
+// so a bio written right up against the limit on one client isn't truncated
+// or rejected on the other.
+export const BIO_MAX_LENGTH = 300;
+
+/**
+ * Returns an error string, or null when the form can be saved.
+ *
+ * No SEBI-number requirement here: the web's own save paths (Profile.jsx
+ * saveEdit / ProfileEditModal.save) never require one even when the
+ * registration status is a SEBI-registered kind — the field is optional
+ * there, so mobile blocking on it would let a user complete this edit on
+ * web but not on the phone for the identical input.
+ */
 export function validateProfile(form) {
   const f = form || {};
   if (!String(f.firstName || "").trim()) return "First name is required.";
-  if (String(f.bio || "").length > 500) return "Bio must be 500 characters or fewer.";
-  if (isSebiStatus(f.registrationStatus) && !String(f.sebiNum || "").trim()) {
-    return "SEBI registration number is required for a registered status.";
-  }
+  if (String(f.bio || "").length > BIO_MAX_LENGTH) return `Bio must be ${BIO_MAX_LENGTH} characters or fewer.`;
   return null;
 }

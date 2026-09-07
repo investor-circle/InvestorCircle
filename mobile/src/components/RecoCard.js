@@ -15,7 +15,7 @@ import { isTracked, subscribeTracked, toggleTracked } from "../services/trackSto
 // + invested state. Tappable (onPress) to open the detail screen.
 const SOURCE_LABELS = { public: "Public", network_engagement: "From your network" };
 
-function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = true }) {
+function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = true, expandThesis = false }) {
   const pct = returnPct(reco);
   const positive = pct >= 0;
   const isBuy = (reco.recType || "Buy") !== "Sell";
@@ -134,9 +134,11 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = tr
       </View>
 
       {/* getThesisText, not the raw column: a thesis with images is stored as
-          a JSON envelope, which used to render as visible JSON. */}
+          a JSON envelope, which used to render as visible JSON. Truncated to
+          2 lines on a feed/list card; the idea detail screen (expandThesis)
+          shows it in full — that's the whole reason to open the idea. */}
       {getThesisText(reco.thesis) ? (
-        <Text style={styles.thesis} numberOfLines={2}>
+        <Text style={styles.thesis} numberOfLines={expandThesis ? undefined : 2}>
           {getThesisText(reco.thesis)}
         </Text>
       ) : null}

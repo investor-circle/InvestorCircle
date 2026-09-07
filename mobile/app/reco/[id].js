@@ -302,7 +302,7 @@ function RecoDetailScreen() {
             // The card's own author name is the click-through to their
             // profile (see RecoCard's openAuthor) — a second "View profile"
             // CTA here duplicated it.
-            <RecoCard reco={reco} showActions={false} onOpenProfile={openProfile} />
+            <RecoCard reco={reco} showActions={false} expandThesis onOpenProfile={openProfile} />
           ) : (
             <View style={styles.missing}>
               {resolving ? (

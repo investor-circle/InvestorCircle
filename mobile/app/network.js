@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -196,7 +196,21 @@ function NetworkScreen() {
         ) : isOutgoing ? (
           <Text style={styles.pendingTag}>Requested</Text>
         ) : (
-          <Pressable style={styles.removeBtn} onPress={withBusy(item.connection_id, () => removeConnection(item.connection_id))}>
+          <Pressable
+            style={styles.removeBtn}
+            onPress={() =>
+              // Same confirm-before-remove the web requires (Connections.jsx)
+              // — mobile used to remove on a single tap with no way back.
+              Alert.alert("Remove connection?", `Remove ${item.name || "this person"} from your network?`, [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Remove",
+                  style: "destructive",
+                  onPress: withBusy(item.connection_id, () => removeConnection(item.connection_id)),
+                },
+              ])
+            }
+          >
             <Ionicons name="person-remove-outline" size={18} color={colors.muted} />
           </Pressable>
         )}

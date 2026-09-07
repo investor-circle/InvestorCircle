@@ -27,6 +27,7 @@ import {
 import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
+import DonutRing from "../../src/components/DonutRing";
 
 // Pulse — the web app's discovery surface, not a flat public list.
 // "Trending on MIC" ranks the public feed with the web's own rankTrending();
@@ -67,13 +68,23 @@ async function loadPulse() {
   // ids arrive as both numbers and strings depending on endpoint.
   const trackedSet = { has: (id) => tracked.has(String(id)) };
 
+  // Merged pool for "Fresh Ideas" and "What You Missed" — direct deliveries
+  // plus public platform recos, deduped by id. Mirrors the web's allFeedRecos
+  // (Discovery.jsx HomeFeed): both widgets are fed this pool there, not the
+  // narrower received-only list. Feeding rankWhatYouMissed just `received`
+  // (as mobile used to) silently dropped any missed-worthy idea that only
+  // reached the viewer through the public feed, and made "Fresh Ideas" a
+  // strict subset of what web shows for the same account.
+  const seenIds = new Set(received.map((r) => r.id));
+  const allFeedRecos = [...received, ...publicRecos.filter((r) => !seenIds.has(r.id))];
+
   const trending = rankTrending(publicRecos, { contactIds });
-  const missed = rankWhatYouMissed(received, { tracked: trackedSet, contactIds });
+  const missed = rankWhatYouMissed(allFeedRecos, { tracked: trackedSet, contactIds });
 
   // Fresh Ideas from your Circle — the newest ideas that reached you, not a
   // ranked selection. "What's new from people I follow" is a different
   // question from "what's moving", which is what the two widgets below answer.
-  const fresh = received
+  const fresh = allFeedRecos
     .filter((r) => !r.hidden)
     .sort((a, b) => new Date(b.date || b.created_at || 0) - new Date(a.date || a.created_at || 0))
     .slice(0, 5);
@@ -88,12 +99,35 @@ async function loadPulse() {
   return { trending, missed, publicRecos, fresh, trackedList };
 }
 
+// Quick-jump pills at the top of Pulse — tapping one scrolls straight to
+// that widget. Added because widgets used to blend into one long scroll
+// with no way to tell where one ends and the next begins short of reading
+// every card; this gives the same "which section am I looking at" clarity
+// a native app's segmented tab bar gives, without turning Pulse into a
+// paged/swipeable view (the web keeps all 4 widgets in one static stack —
+// see Discovery.jsx's comment rejecting a 2-column layout as "busier").
+const WIDGET_META = {
+  fresh: { label: "Fresh", icon: "sparkles", tint: colors.accent, tintSoft: colors.accentSoft },
+  trending: { label: "Trending", icon: "flame", tint: "#e8792b", tintSoft: "#fdeee1" },
+  missed: { label: "Missed", icon: "eye-off", tint: "#2b7de8", tintSoft: "#e6f0fd" },
+  tracked: { label: "Tracked", icon: "bookmark", tint: colors.gain, tintSoft: colors.gainSoft },
+};
+
 function PulseScreen() {
   const router = useRouter();
   const [data, setData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const mounted = useRef(true);
+  const scrollRef = useRef(null);
+  const offsets = useRef({});
+  const recordOffset = (key) => (e) => {
+    offsets.current[key] = e.nativeEvent.layout.y;
+  };
+  const jumpTo = (key) => {
+    const y = offsets.current[key];
+    if (y != null) scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+  };
 
   const load = useCallback(async () => {
     try {
@@ -107,7 +141,7 @@ function PulseScreen() {
     } catch (e) {
       if (mounted.current) {
         setError(true);
-        setData((p) => p ?? { trending: [], missed: [], publicRecos: [] });
+        setData((p) => p ?? { trending: [], missed: [], publicRecos: [], fresh: [], trackedList: [] });
       }
     }
   }, []);
@@ -157,15 +191,36 @@ function PulseScreen() {
     );
   }
 
-  const { trending, missed, publicRecos, fresh, trackedList } = data;
-  const nothing = trending.length === 0 && missed.length === 0 && publicRecos.length === 0;
-  const shown = new Set([...trending, ...missed].map((x) => String(x.idea?.id ?? x.id)));
-  const rest = publicRecos.filter((r) => !shown.has(String(r.id)));
+  const { trending, missed, fresh, trackedList } = data;
+  const nothing = trending.length === 0 && missed.length === 0 && fresh.length === 0 && trackedList.length === 0;
+
+  // Only offer a jump pill for a widget that actually has something to show —
+  // an empty section still renders (its empty state), but isn't worth a tap.
+  const jumpTargets = [
+    fresh.length > 0 && "fresh",
+    trending.length > 0 && "trending",
+    missed.length > 0 && "missed",
+    trackedList.length > 0 && "tracked",
+  ].filter(Boolean);
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
       {header}
+      {jumpTargets.length > 1 ? (
+        <View style={styles.jumpBar}>
+          {jumpTargets.map((key) => {
+            const meta = WIDGET_META[key];
+            return (
+              <Pressable key={key} style={[styles.jumpPill, { backgroundColor: meta.tintSoft }]} onPress={() => jumpTo(key)}>
+                <Ionicons name={meta.icon} size={13} color={meta.tint} />
+                <Text style={[styles.jumpPillText, { color: meta.tint }]}>{meta.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ paddingBottom: 28 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
@@ -188,7 +243,8 @@ function PulseScreen() {
             made "what's new" answer a different question on each client. */}
         {fresh.length > 0 ? (
           <Section
-            icon="sparkles-outline"
+            onLayout={recordOffset("fresh")}
+            meta={WIDGET_META.fresh}
             title="Fresh Ideas from your Circle"
             sub="The newest ideas shared with you"
             noTopDivider
@@ -200,7 +256,7 @@ function PulseScreen() {
         ) : null}
 
         {trending.length > 0 ? (
-          <Section icon="flame-outline" title="Trending on MIC" sub="Gaining attention across the platform">
+          <Section onLayout={recordOffset("trending")} meta={WIDGET_META.trending} title="Trending on MIC" sub="Gaining attention across the platform">
             {trending.map((t) => (
               <RankedCard key={String(t.idea?.id ?? t.id)} item={t} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
             ))}
@@ -209,7 +265,8 @@ function PulseScreen() {
 
         {missed.length > 0 ? (
           <Section
-            icon="eye-off-outline"
+            onLayout={recordOffset("missed")}
+            meta={WIDGET_META.missed}
             title="What You Missed"
             sub="Ideas from your circle that moved recently"
           >
@@ -219,18 +276,9 @@ function PulseScreen() {
           </Section>
         ) : null}
 
-        <MyTrackedWidget list={trackedList} onViewAll={() => router.push("/track")} />
-
-        {/* Everything else, so Pulse is never emptier than the old plain
-            list — minus whatever the ranked sections already showed above,
-            which would otherwise appear twice on the same screen. */}
-        {rest.length > 0 ? (
-          <Section icon="globe-outline" title="Latest public ideas" sub="Newest across the platform">
-            {rest.slice(0, 20).map((r) => (
-              <RecoCard key={String(r.id)} reco={r} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
-            ))}
-          </Section>
-        ) : null}
+        <View onLayout={recordOffset("tracked")}>
+          <MyTrackedWidget list={trackedList} onViewAll={() => router.push("/track")} />
+        </View>
 
         {/* Pulse is a curated highlight reel, not the whole feed — this is
             the way out to everything, the same as the web's "See full feed"
@@ -321,7 +369,7 @@ function MyTrackedWidget({ list, onViewAll }) {
 
   if (!list.length) {
     return (
-      <Section icon="bookmark-outline" title="My Tracked" sub="Ideas you're following">
+      <Section meta={WIDGET_META.tracked} title="My Tracked" sub="Ideas you're following">
         <View style={styles.trackedEmpty}>
           <Text style={styles.trackedEmptyTitle}>Track ideas, watch them move</Text>
           <Text style={styles.trackedEmptySub}>
@@ -332,20 +380,22 @@ function MyTrackedWidget({ list, onViewAll }) {
     );
   }
 
+  // Same 2-segment ("since tracking") / 3-segment ("since yesterday") donut
+  // the web draws over the SAME total (Discovery.jsx TrackedSummaryWidget) —
+  // see DonutRing.js for the shared geometry.
   const segments =
     mode === "yesterday"
       ? [
-          { n: sum.up, color: colors.gain, label: `${sum.up} up` },
-          { n: sum.down, color: colors.loss, label: `${sum.down} down` },
-          { n: sum.noData, color: colors.line2, label: `${sum.noData} flat` },
+          { value: sum.up, color: colors.gain, label: "Up today" },
+          { value: sum.down, color: colors.loss, label: "Down today" },
         ]
       : [
-          { n: sum.inMoney, color: colors.gain, label: `${sum.inMoney} in profit` },
-          { n: sum.outMoney, color: colors.loss, label: `${sum.outMoney} behind` },
+          { value: sum.inMoney, color: colors.gain, label: "In the money" },
+          { value: sum.outMoney, color: colors.loss, label: "Out of money" },
         ];
 
   return (
-    <Section icon="bookmark-outline" title="My Tracked" sub="Ideas you're following">
+    <Section meta={WIDGET_META.tracked} title="My Tracked" sub="Ideas you're following">
       <View style={styles.trackedCard}>
         <View style={styles.modeRow}>
           {[
@@ -362,24 +412,19 @@ function MyTrackedWidget({ list, onViewAll }) {
           ))}
         </View>
 
-        <View style={styles.trackedHead}>
-          <Text style={styles.trackedTotal}>{sum.total}</Text>
-          <Text style={styles.trackedTotalLabel}>
-            idea{sum.total === 1 ? "" : "s"} tracked
-          </Text>
-        </View>
-
-        <View style={styles.splitBar}>
-          {segments.map((seg, i) =>
-            seg.n > 0 ? <View key={i} style={{ flex: seg.n, backgroundColor: seg.color }} /> : null
-          )}
-        </View>
-        <View style={styles.splitLegend}>
-          {segments.map((seg, i) => (
-            <Text key={i} style={[styles.legendText, { color: seg.color }]}>
-              {seg.label}
-            </Text>
-          ))}
+        <View style={styles.donutRow}>
+          <DonutRing total={sum.total} segments={segments} label="tracked" />
+          <View style={styles.donutLegend}>
+            {segments.map((seg, i) => (
+              <View key={i} style={[styles.legendPill, { backgroundColor: `${seg.color}1a` }]}>
+                <Text style={[styles.legendPillLabel, { color: seg.color }]}>{seg.label}</Text>
+                <Text style={[styles.legendPillValue, { color: seg.color }]}>{seg.value}</Text>
+              </View>
+            ))}
+            {mode === "yesterday" && sum.noData > 0 ? (
+              <Text style={styles.noDataNote}>{sum.noData} more without price history yet</Text>
+            ) : null}
+          </View>
         </View>
 
         {movers.length ? (
@@ -416,13 +461,18 @@ function MyTrackedWidget({ list, onViewAll }) {
 // this screen). A full-width divider plus a colour-badged icon gives every
 // widget a clear start, the way a native settings/grouped list breaks
 // sections rather than just adding whitespace.
-function Section({ icon, title, sub, children, noTopDivider }) {
+function Section({ meta, title, sub, children, noTopDivider, onLayout }) {
+  const tint = meta?.tint || colors.accentInk;
+  const tintSoft = meta?.tintSoft || colors.accentSoft;
   return (
-    <View style={styles.section}>
-      {!noTopDivider ? <View style={styles.sectionDivider} /> : null}
+    <View style={styles.section} onLayout={onLayout}>
+      {/* Divider tinted per widget — a quick colour cue (reinforced by the
+          matching icon badge below and the jump pill above) that a new
+          section has started, not just more whitespace. */}
+      {!noTopDivider ? <View style={[styles.sectionDivider, { backgroundColor: tintSoft }]} /> : null}
       <View style={styles.sectionHead}>
-        <View style={styles.sectionIconBadge}>
-          <Ionicons name={icon} size={15} color={colors.accentInk} />
+        <View style={[styles.sectionIconBadge, { backgroundColor: tintSoft }]}>
+          <Ionicons name={meta?.icon ? `${meta.icon}-outline` : "ellipse-outline"} size={15} color={tint} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.sectionTitle}>{title}</Text>
@@ -444,16 +494,19 @@ const styles = StyleSheet.create({
   trackedHead: { flexDirection: "row", alignItems: "baseline", gap: 7, marginTop: 14 },
   trackedTotal: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 26 },
   trackedTotalLabel: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13 },
-  splitBar: {
+  donutRow: { flexDirection: "row", alignItems: "center", gap: 16, marginTop: 12 },
+  donutLegend: { flex: 1, gap: 6 },
+  legendPill: {
     flexDirection: "row",
-    height: 8,
-    borderRadius: 4,
-    overflow: "hidden",
-    marginTop: 10,
-    backgroundColor: colors.surface2,
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
   },
-  splitLegend: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 7 },
-  legendText: { fontFamily: fonts.semibold, fontSize: 12 },
+  legendPillLabel: { fontFamily: fonts.semibold, fontSize: 12 },
+  legendPillValue: { fontFamily: fonts.extrabold, fontSize: 14 },
+  noDataNote: { color: colors.muted, fontFamily: fonts.regular, fontSize: 10.5, marginTop: 1 },
   moversWrap: { marginTop: 14, gap: 6 },
   moversLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.4 },
   moverRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
@@ -478,6 +531,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft,
   },
   fullFeedText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 14 },
+  jumpBar: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+    backgroundColor: colors.surface,
+  },
+  jumpPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  jumpPillText: { fontFamily: fonts.bold, fontSize: 12 },
   flex: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   section: { marginTop: 28 },

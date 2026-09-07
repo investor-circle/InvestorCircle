@@ -31,6 +31,7 @@ import {
   isSebiStatus,
   REG_STATUSES,
   REG_LABELS,
+  BIO_MAX_LENGTH,
 } from "../src/utils/profile";
 import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -287,9 +288,9 @@ function SettingsScreen() {
               value={form.bio}
               onChangeText={set("bio")}
               multiline
-              maxLength={500}
+              maxLength={BIO_MAX_LENGTH}
             />
-            <Text style={styles.counter}>{form.bio.length}/500</Text>
+            <Text style={styles.counter}>{form.bio.length}/{BIO_MAX_LENGTH}</Text>
 
             <Text style={styles.fieldLabel}>Links</Text>
             {[
