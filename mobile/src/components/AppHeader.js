@@ -57,6 +57,12 @@ export default function AppHeader({ title }) {
           {title}
         </Text>
       </View>
+      {/* Discover investors — same Sparkles icon as the web's top-bar/
+          sidebar entry (App.jsx: DISCOVER > Investors), pushed here so it
+          isn't only reachable through the Profile menu. */}
+      <Pressable style={styles.iconBtn} onPress={() => router.push("/people")} hitSlop={6}>
+        <Ionicons name="sparkles-outline" size={22} color={colors.ink} />
+      </Pressable>
       <Pressable style={styles.iconBtn} onPress={() => router.push("/search")} hitSlop={6}>
         <Ionicons name="search-outline" size={22} color={colors.ink} />
       </Pressable>

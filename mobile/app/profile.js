@@ -70,7 +70,7 @@ function ProfileScreen() {
         <View style={styles.menu}>
           <MenuRow icon="ribbon-outline" label="Your track record" onPress={() => router.push("/track-record")} />
           <MenuRow icon="people-outline" label="Your network" onPress={() => router.push("/network")} />
-          <MenuRow icon="search-outline" label="Find investors" onPress={() => router.push("/people")} />
+          <MenuRow icon="sparkles-outline" label="Discover investors" onPress={() => router.push("/people")} />
           <MenuRow icon="gift-outline" label="Invite friends" onPress={() => setInviteOpen(true)} />
           <MenuRow icon="albums-outline" label="Your Circles" onPress={() => router.push("/circles")} />
           <MenuRow icon="briefcase-outline" label="Portfolio" onPress={() => router.push("/portfolio")} />

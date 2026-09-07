@@ -39,6 +39,10 @@ function NetworkScreen() {
   const [tab, setTab] = useState(
     TABS.some((t) => t.id === initialTab) ? String(initialTab) : "connections"
   );
+  // Requests has its own two sub-tabs — received (need YOUR action) vs sent
+  // (waiting on someone else) — each with its own count, rather than one
+  // combined list where the two directions were easy to mix up.
+  const [requestsSubTab, setRequestsSubTab] = useState("received");
   const [rows, setRows] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState({}); // connectionId -> true while a mutation runs
@@ -104,7 +108,7 @@ function NetworkScreen() {
     tab === "connections"
       ? active
       : tab === "requests"
-      ? [...incoming, ...outgoing]
+      ? (requestsSubTab === "received" ? incoming : outgoing)
       : tab === "tracking"
       ? tracking || []
       : trackers || [];
@@ -291,7 +295,7 @@ function NetworkScreen() {
             t.id === "connections"
               ? active.length
               : t.id === "requests"
-              ? incoming.length
+              ? incoming.length + outgoing.length
               : t.id === "tracking"
               ? counts.trackingCount
               : counts.trackersCount;
@@ -313,6 +317,29 @@ function NetworkScreen() {
           );
         })}
       </View>
+
+      {tab === "requests" ? (
+        <View style={styles.subTabs}>
+          {[
+            ["received", "Requests Received", incoming.length],
+            ["sent", "Requests Sent", outgoing.length],
+          ].map(([id, label, n]) => {
+            const activeSub = requestsSubTab === id;
+            return (
+              <Pressable
+                key={id}
+                style={[styles.subTab, activeSub && styles.subTabActive]}
+                onPress={() => setRequestsSubTab(id)}
+              >
+                <Text style={[styles.subTabText, activeSub && styles.subTabTextActive]} numberOfLines={1}>
+                  {label}
+                  {n > 0 ? ` (${n})` : ""}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
 
       {/* "What is My P&L?" — same explanation text as the web, verbatim, so
           the number means the same thing on both clients. */}
@@ -356,7 +383,9 @@ function NetworkScreen() {
                 {tab === "connections"
                   ? "No connections yet"
                   : tab === "requests"
-                  ? "No pending requests"
+                  ? requestsSubTab === "received"
+                    ? "No requests received"
+                    : "No requests sent"
                   : tab === "tracking"
                   ? "Not tracking anyone yet"
                   : "Nobody is tracking you yet"}
@@ -365,7 +394,9 @@ function NetworkScreen() {
                 {tab === "connections"
                   ? "Connect with other investors to see their ideas in your feed."
                   : tab === "requests"
-                  ? "Connection requests will appear here."
+                  ? requestsSubTab === "received"
+                    ? "Connection requests other investors send you will appear here."
+                    : "Requests you send to other investors will appear here until they respond."
                   : tab === "tracking"
                   ? "Track an investor to follow their ideas without needing them to accept."
                   : "People who track you will appear here."}
@@ -421,6 +452,19 @@ const styles = StyleSheet.create({
   tabText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 12.5, textAlign: "center" },
   tabCount: { color: colors.muted, fontFamily: fonts.extrabold, fontSize: 13 },
   tabTextActive: { color: "#fff" },
+  subTabs: {
+    flexDirection: "row",
+    gap: 6,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: colors.surface2,
+    borderRadius: 10,
+    padding: 3,
+  },
+  subTab: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" },
+  subTabActive: { backgroundColor: colors.surface },
+  subTabText: { color: colors.muted, fontFamily: fonts.bold, fontSize: 12.5 },
+  subTabTextActive: { color: colors.accentInk },
   pnlBox: { alignItems: "flex-end", marginRight: 2 },
   pnlValue: { fontFamily: fonts.extrabold, fontSize: 14 },
   pnlLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 8.5, letterSpacing: 0.3, marginTop: 1 },
