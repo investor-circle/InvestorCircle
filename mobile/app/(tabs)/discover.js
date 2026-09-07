@@ -27,7 +27,6 @@ import {
 import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
-import DonutRing from "../../src/components/DonutRing";
 
 // Pulse — the web app's discovery surface, not a flat public list.
 // "Trending on MIC" ranks the public feed with the web's own rankTrending();
@@ -380,18 +379,22 @@ function MyTrackedWidget({ list, onViewAll }) {
     );
   }
 
-  // Same 2-segment ("since tracking") / 3-segment ("since yesterday") donut
-  // the web draws over the SAME total (Discovery.jsx TrackedSummaryWidget) —
-  // see DonutRing.js for the shared geometry.
+  // Same 2-segment ("since tracking") / 3-segment ("since yesterday") split
+  // the web's donut draws over the SAME total (Discovery.jsx
+  // TrackedSummaryWidget) — rendered here as a bar, not a true ring: a real
+  // donut needs react-native-svg, a native dependency that would force a
+  // fresh EAS build before this reaches any installed app. Revisit once a
+  // build is due for other reasons.
   const segments =
     mode === "yesterday"
       ? [
-          { value: sum.up, color: colors.gain, label: "Up today" },
-          { value: sum.down, color: colors.loss, label: "Down today" },
+          { n: sum.up, color: colors.gain, label: `${sum.up} up` },
+          { n: sum.down, color: colors.loss, label: `${sum.down} down` },
+          { n: sum.noData, color: colors.line2, label: `${sum.noData} flat` },
         ]
       : [
-          { value: sum.inMoney, color: colors.gain, label: "In the money" },
-          { value: sum.outMoney, color: colors.loss, label: "Out of money" },
+          { n: sum.inMoney, color: colors.gain, label: `${sum.inMoney} in profit` },
+          { n: sum.outMoney, color: colors.loss, label: `${sum.outMoney} behind` },
         ];
 
   return (
@@ -412,19 +415,24 @@ function MyTrackedWidget({ list, onViewAll }) {
           ))}
         </View>
 
-        <View style={styles.donutRow}>
-          <DonutRing total={sum.total} segments={segments} label="tracked" />
-          <View style={styles.donutLegend}>
-            {segments.map((seg, i) => (
-              <View key={i} style={[styles.legendPill, { backgroundColor: `${seg.color}1a` }]}>
-                <Text style={[styles.legendPillLabel, { color: seg.color }]}>{seg.label}</Text>
-                <Text style={[styles.legendPillValue, { color: seg.color }]}>{seg.value}</Text>
-              </View>
-            ))}
-            {mode === "yesterday" && sum.noData > 0 ? (
-              <Text style={styles.noDataNote}>{sum.noData} more without price history yet</Text>
-            ) : null}
-          </View>
+        <View style={styles.trackedHead}>
+          <Text style={styles.trackedTotal}>{sum.total}</Text>
+          <Text style={styles.trackedTotalLabel}>
+            idea{sum.total === 1 ? "" : "s"} tracked
+          </Text>
+        </View>
+
+        <View style={styles.splitBar}>
+          {segments.map((seg, i) =>
+            seg.n > 0 ? <View key={i} style={{ flex: seg.n, backgroundColor: seg.color }} /> : null
+          )}
+        </View>
+        <View style={styles.splitLegend}>
+          {segments.map((seg, i) => (
+            <Text key={i} style={[styles.legendText, { color: seg.color }]}>
+              {seg.label}
+            </Text>
+          ))}
         </View>
 
         {movers.length ? (
@@ -494,19 +502,16 @@ const styles = StyleSheet.create({
   trackedHead: { flexDirection: "row", alignItems: "baseline", gap: 7, marginTop: 14 },
   trackedTotal: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 26 },
   trackedTotalLabel: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13 },
-  donutRow: { flexDirection: "row", alignItems: "center", gap: 16, marginTop: 12 },
-  donutLegend: { flex: 1, gap: 6 },
-  legendPill: {
+  splitBar: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
+    height: 8,
+    borderRadius: 4,
+    overflow: "hidden",
+    marginTop: 10,
+    backgroundColor: colors.surface2,
   },
-  legendPillLabel: { fontFamily: fonts.semibold, fontSize: 12 },
-  legendPillValue: { fontFamily: fonts.extrabold, fontSize: 14 },
-  noDataNote: { color: colors.muted, fontFamily: fonts.regular, fontSize: 10.5, marginTop: 1 },
+  splitLegend: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 7 },
+  legendText: { fontFamily: fonts.semibold, fontSize: 12 },
   moversWrap: { marginTop: 14, gap: 6 },
   moversLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.4 },
   moverRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
