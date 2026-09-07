@@ -80,7 +80,7 @@ export default function AppHeader({ title }) {
       </Pressable>
       <Pressable style={styles.avatarBtn} onPress={() => router.push("/profile")} hitSlop={6}>
         <View style={styles.avatarRing}>
-          <Avatar profile={profile} size={28} />
+          <Avatar profile={profile} size={40} />
         </View>
       </Pressable>
     </View>
@@ -138,10 +138,12 @@ const styles = StyleSheet.create({
   // A ring makes the account avatar read as a tappable control rather than
   // plain decoration, the same affordance the search/notification icons get
   // for free from their own icon-button hit area.
+  // At par with the logo (46x46) — was 34x34/28, noticeably smaller than
+  // everything else in the bar and easy to miss as the way into Profile.
   avatarRing: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     borderWidth: 1.5,
     borderColor: colors.line,
     alignItems: "center",
