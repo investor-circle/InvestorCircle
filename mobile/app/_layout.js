@@ -14,9 +14,10 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { AppState, StyleSheet, View } from "react-native";
+import { AppState, StyleSheet, View, Alert } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import * as Clipboard from "expo-clipboard";
 import * as Updates from "expo-updates";
 import {
   useFonts,
@@ -154,7 +155,21 @@ function RootNavigator() {
         const now = Date.now();
         const last = lastExternalLinkRef.current;
         if (last.url === url && now - last.at < 4000) {
-          addLog("warn", `deeplink: ignoring repeat of ${url} within 4s (app-link re-interception loop guard)`);
+          // Android intercepted our own Custom Tab and handed the link right
+          // back to us — verified App Links can outrank even an
+          // already-open browser tab on some devices (see app.json's
+          // intentFilter: it claims the whole domain, with no path
+          // restriction, which referral/reset links need). A second attempt
+          // would just loop forever, so stop opening a browser and instead
+          // give the user something they CAN act on: the link, copied and
+          // ready to paste into their own browser app.
+          addLog("warn", `deeplink: app-link re-interception loop detected for ${url} — falling back to copy-link`);
+          Clipboard.setStringAsync(url).catch(() => {});
+          Alert.alert(
+            "Couldn't open in a browser",
+            "Your phone keeps sending this link back to the app. It's been copied — paste it into your browser app to open it.",
+            [{ text: "OK" }]
+          );
           return;
         }
         lastExternalLinkRef.current = { url, at: now };
