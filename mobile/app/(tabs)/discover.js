@@ -21,9 +21,10 @@ import {
   byTicker,
   mapTrackedReco,
   summariseTracked,
-  topMovers,
   trackedTickers,
 } from "../../src/utils/trackedSummary";
+import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../src/utils/trackedActivity";
+import { useAuth } from "../../src/context/AuthContext";
 import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
@@ -95,7 +96,11 @@ async function loadPulse() {
   seedTracked(trackedIds, [...publicRecos, ...received].map((r) => r.id));
 
   debugLog(`pulse: public=${publicRecos.length} trending=${trending.length} received=${received.length} missed=${missed.length} fresh=${fresh.length} tracked=${trackedList.length}`);
-  return { trending, missed, publicRecos, fresh, trackedList };
+  // allFeedRecos also feeds My Tracked's "reinforced" activity category
+  // (deriveTrackedActivity) — the same pool web's TrackedSummaryWidget uses
+  // for the identical join (a different creator's new post on a tracked
+  // ticker).
+  return { trending, missed, publicRecos, fresh, trackedList, allFeedRecos };
 }
 
 // Quick-jump pills at the top of Pulse — tapping one scrolls straight to
@@ -114,6 +119,7 @@ const WIDGET_META = {
 
 function PulseScreen() {
   const router = useRouter();
+  const { profile } = useAuth();
   const [data, setData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
@@ -140,7 +146,7 @@ function PulseScreen() {
     } catch (e) {
       if (mounted.current) {
         setError(true);
-        setData((p) => p ?? { trending: [], missed: [], publicRecos: [], fresh: [], trackedList: [] });
+        setData((p) => p ?? { trending: [], missed: [], publicRecos: [], fresh: [], trackedList: [], allFeedRecos: [] });
       }
     }
   }, []);
@@ -190,7 +196,7 @@ function PulseScreen() {
     );
   }
 
-  const { trending, missed, fresh, trackedList } = data;
+  const { trending, missed, fresh, trackedList, allFeedRecos } = data;
   const nothing = trending.length === 0 && missed.length === 0 && fresh.length === 0 && trackedList.length === 0;
 
   // Only offer a jump pill for a widget that actually has something to show —
@@ -276,7 +282,13 @@ function PulseScreen() {
         ) : null}
 
         <View onLayout={recordOffset("tracked")}>
-          <MyTrackedWidget list={trackedList} onViewAll={() => router.push("/track")} />
+          <MyTrackedWidget
+            list={trackedList}
+            allRecos={allFeedRecos}
+            userId={profile?.id}
+            onViewAll={() => router.push("/track")}
+            onOpenActivity={openReco}
+          />
         </View>
 
         {/* Pulse is a curated highlight reel, not the whole feed — this is
@@ -338,9 +350,10 @@ function RankedCard({ item, onPress, onOpenProfile, onOpenTicker }) {
  * made lazily on first switch rather than on every Pulse load — Pulse's
  * first paint is the thing this screen is judged on.
  */
-function MyTrackedWidget({ list, onViewAll }) {
+function MyTrackedWidget({ list, allRecos, userId, onViewAll, onOpenActivity }) {
   const [mode, setMode] = useState("yesterday");
   const [daily, setDaily] = useState(null);
+  const [seenCommentCounts, setSeenCommentCounts] = useState({});
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
 
@@ -360,10 +373,36 @@ function MyTrackedWidget({ list, onViewAll }) {
     };
   }, [mode, tickerKey]);
 
+  // Same "seen comment count" snapshot the web keeps (trackedActivity.js),
+  // just backed by AsyncStorage instead of localStorage: read it once to
+  // know what's NEW, then overwrite it with the current counts so the same
+  // comments don't show as new again next visit.
+  const commentCountKey = useMemo(() => list.map((r) => `${r.id}:${r.commentCount}`).join(","), [list]);
+  useEffect(() => {
+    if (!list.length) return;
+    let cancelled = false;
+    // Read BEFORE overwrite, not concurrently with it — saving first would
+    // stamp the snapshot with today's counts before this pass ever compares
+    // against yesterday's, so every comment would look "not new" forever.
+    getSeenCommentCounts(userId).then((counts) => {
+      if (cancelled || !mounted.current) return;
+      setSeenCommentCounts(counts);
+      saveSeenCommentCounts(userId, list);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentCountKey, userId]);
+
   const sum = useMemo(() => summariseTracked(list, mode === "yesterday" ? daily : null), [list, daily, mode]);
-  const movers = useMemo(
-    () => (mode === "yesterday" ? topMovers(list, daily, 3) : []),
-    [list, daily, mode]
+
+  // Same activity feed as the web's My Tracked (trackedActivity.js), shown
+  // below the split for BOTH modes — exit signals, movers, new comments,
+  // reinforcement from a different creator on a tracked ticker.
+  const activity = useMemo(
+    () => deriveTrackedActivity(list, allRecos, { mode, seenCommentCounts, dailyPrices: daily }),
+    [list, allRecos, mode, seenCommentCounts, daily]
   );
 
   if (!list.length) {
@@ -379,22 +418,22 @@ function MyTrackedWidget({ list, onViewAll }) {
     );
   }
 
-  // Same 2-segment ("since tracking") / 3-segment ("since yesterday") split
-  // the web's donut draws over the SAME total (Discovery.jsx
+  // Same split the web's donut draws over the SAME total (Discovery.jsx
   // TrackedSummaryWidget) — rendered here as a bar, not a true ring: a real
   // donut needs react-native-svg, a native dependency that would force a
   // fresh EAS build before this reaches any installed app. Revisit once a
-  // build is due for other reasons.
+  // build is due for other reasons. Labels match the web verbatim: "Up
+  // today"/"Down today" in yesterday mode, "In the money"/"Out of money" in
+  // tracking mode — mobile previously invented its own wording here.
   const segments =
     mode === "yesterday"
       ? [
-          { n: sum.up, color: colors.gain, label: `${sum.up} up` },
-          { n: sum.down, color: colors.loss, label: `${sum.down} down` },
-          { n: sum.noData, color: colors.line2, label: `${sum.noData} flat` },
+          { n: sum.up, color: colors.gain, label: "Up today", value: sum.up },
+          { n: sum.down, color: colors.loss, label: "Down today", value: sum.down },
         ]
       : [
-          { n: sum.inMoney, color: colors.gain, label: `${sum.inMoney} in profit` },
-          { n: sum.outMoney, color: colors.loss, label: `${sum.outMoney} behind` },
+          { n: sum.inMoney, color: colors.gain, label: "In the money", value: sum.inMoney },
+          { n: sum.outMoney, color: colors.loss, label: "Out of money", value: sum.outMoney },
         ];
 
   return (
@@ -422,34 +461,33 @@ function MyTrackedWidget({ list, onViewAll }) {
           </Text>
         </View>
 
+        {/* Bar: the "up"/"in the money" share fills from the left, the
+            "down"/"out of money" share from the right — so each segment's
+            row below sits directly under its own end of the bar, and the
+            down/out-of-money count reads on the extreme right, matching
+            the row it belongs to. */}
         <View style={styles.splitBar}>
           {segments.map((seg, i) =>
             seg.n > 0 ? <View key={i} style={{ flex: seg.n, backgroundColor: seg.color }} /> : null
           )}
         </View>
-        <View style={styles.splitLegend}>
-          {segments.map((seg, i) => (
-            <Text key={i} style={[styles.legendText, { color: seg.color }]}>
-              {seg.label}
-            </Text>
-          ))}
-        </View>
+        {segments.map((seg, i) => (
+          <View key={i} style={[styles.legendRow, { backgroundColor: `${seg.color}1a` }, i > 0 && { marginTop: 6 }]}>
+            <Text style={[styles.legendRowLabel, { color: seg.color }]}>{seg.label}</Text>
+            <Text style={[styles.legendRowValue, { color: seg.color }]}>{seg.value}</Text>
+          </View>
+        ))}
+        {mode === "yesterday" && sum.noData > 0 ? (
+          <Text style={styles.noDataNote}>{sum.noData} more without price history yet</Text>
+        ) : null}
 
-        {movers.length ? (
-          <View style={styles.moversWrap}>
-            <Text style={styles.moversLabel}>Biggest moves</Text>
-            {movers.map(({ reco, changePct }) => (
-              <View key={String(reco.id)} style={styles.moverRow}>
-                <Text style={styles.moverTicker} numberOfLines={1}>
-                  {reco.ticker || reco.assetName}
-                </Text>
-                <Text
-                  style={[styles.moverPct, { color: changePct >= 0 ? colors.gain : colors.loss }]}
-                >
-                  {changePct >= 0 ? "+" : ""}
-                  {Number(changePct).toFixed(2)}%
-                </Text>
-              </View>
+        {/* Same activity cards as the web, same headlines, same order:
+            exit signals, then movers, then new comments, then reinforced —
+            shown for both modes. */}
+        {activity.length ? (
+          <View style={styles.activityWrap}>
+            {activity.map((item) => (
+              <TrackedActivityRow key={`${item.type}:${item.idea.id}`} item={item} onPress={() => onOpenActivity?.(item.idea)} />
             ))}
           </View>
         ) : null}
@@ -461,6 +499,35 @@ function MyTrackedWidget({ list, onViewAll }) {
       </View>
     </Section>
   );
+}
+
+// Icon + colour per activity type/direction — same mapping as the web's
+// TRACKED_ACTIVITY_ICON + iconColor/iconBg logic in Discovery.jsx.
+const ACTIVITY_ICON = { exit: "flag", mover: "trending-up", comment: "chatbubble-outline", reinforced: "people-outline" };
+
+function TrackedActivityRow({ item, onPress }) {
+  const isDownMover = item.type === "mover" && item.direction === "down";
+  const tint = item.type === "exit" || isDownMover ? colors.loss : item.type === "mover" ? colors.gain : colors.accentInk;
+  const tintSoft = item.type === "exit" || isDownMover ? colors.lossSoft : item.type === "mover" ? colors.gainSoft : colors.accentSoft;
+  return (
+    <Pressable style={styles.activityRow} onPress={onPress}>
+      <View style={[styles.activityIcon, { backgroundColor: tintSoft }]}>
+        <Ionicons name={ACTIVITY_ICON[item.type] || "ellipse"} size={12} color={tint} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.activityHeadline}>{item.headline}</Text>
+        {item.date ? <Text style={styles.activityDate}>{formatActivityDate(item.date)}</Text> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function formatActivityDate(d) {
+  try {
+    return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  } catch {
+    return "";
+  }
 }
 
 // Widgets used to run straight into one another with just 18px of margin and
@@ -510,13 +577,23 @@ const styles = StyleSheet.create({
     marginTop: 10,
     backgroundColor: colors.surface2,
   },
-  splitLegend: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 7 },
-  legendText: { fontFamily: fonts.semibold, fontSize: 12 },
-  moversWrap: { marginTop: 14, gap: 6 },
-  moversLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.4 },
-  moverRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  moverTicker: { flex: 1, color: colors.ink, fontFamily: fonts.semibold, fontSize: 13.5 },
-  moverPct: { fontFamily: fonts.extrabold, fontSize: 13 },
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginTop: 7,
+  },
+  legendRowLabel: { fontFamily: fonts.semibold, fontSize: 12.5 },
+  legendRowValue: { fontFamily: fonts.extrabold, fontSize: 15 },
+  noDataNote: { color: colors.muted, fontFamily: fonts.regular, fontSize: 10.5, marginTop: 6, paddingLeft: 2 },
+  activityWrap: { marginTop: 14, borderTopWidth: 1, borderTopColor: colors.line },
+  activityRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, paddingVertical: 9 },
+  activityIcon: { width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center", marginTop: 1, flexShrink: 0 },
+  activityHeadline: { color: colors.ink, fontFamily: fonts.semibold, fontSize: 12.5, lineHeight: 17 },
+  activityDate: { color: colors.muted, fontFamily: fonts.regular, fontSize: 10.5, marginTop: 1 },
   viewAll: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingTop: 14 },
   viewAllText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 13 },
   trackedEmpty: { paddingHorizontal: 16, paddingBottom: 4 },

@@ -123,6 +123,10 @@ export function mapTrackedReco(r) {
     price: Number(r.current_price || 0),
     date: r.created_at ? String(r.created_at).slice(0, 10) : null,
     exitSignal: r.exit_signal,
+    // Needed by trackedActivity.js's exitSignalItems (sorts/dates by
+    // exitDate) — dropped here previously, which meant an exit activity
+    // card had no real date to show or sort by.
+    exitDate: r.exit_date ? String(r.exit_date).slice(0, 10) : null,
     exitPrice: r.exit_price ? Number(r.exit_price) : null,
     commentCount: Number(r.comment_count || 0),
     from: r.recommender_id,

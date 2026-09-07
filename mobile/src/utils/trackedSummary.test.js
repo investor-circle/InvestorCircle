@@ -146,6 +146,7 @@ describe("reshaping the API row", () => {
       created_at: "2026-09-01T10:20:30.000Z",
       recommender_id: "u1",
       comment_count: "3",
+      exit_date: "2026-09-05T00:00:00.000Z",
     });
     expect(m).toMatchObject({
       id: 7,
@@ -157,6 +158,10 @@ describe("reshaping the API row", () => {
       date: "2026-09-01",
       from: "u1",
       commentCount: 3,
+      // trackedActivity.js's exitSignalItems sorts/dates by exitDate — a row
+      // with exit_signal but no mapped exitDate showed an exit card with
+      // nothing to sort or display it by.
+      exitDate: "2026-09-05",
     });
   });
 
