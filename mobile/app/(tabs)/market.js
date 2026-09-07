@@ -69,7 +69,20 @@ function MarketScreen() {
     Promise.allSettled([getConsensusRecosPublic(), getMyConnections()]).then(([r, c]) => {
       if (!mounted.current) return;
       setRecos(r.status === "fulfilled" ? r.value : []);
-      if (c.status === "fulfilled") setCircleIds((c.value || []).map((x) => x.id).filter(Boolean));
+      // getMyConnections() rows carry the OTHER person's id as `user_id`
+      // (see api/_lib/handlers/connections.js) — there is no bare `id` field
+      // on a connection row at all, so this always collected an empty list
+      // and the "My Circle" tab had nobody in it to filter by. buildTickerList
+      // then had nothing to show, and the featured-card rail — computed FROM
+      // that tab's ticker list — silently disappeared along with it.
+      if (c.status === "fulfilled") {
+        setCircleIds(
+          (c.value || [])
+            .filter((x) => x.status === "accepted")
+            .map((x) => x.user_id)
+            .filter(Boolean)
+        );
+      }
     });
     return () => {
       mounted.current = false;

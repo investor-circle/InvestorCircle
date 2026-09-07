@@ -43,10 +43,20 @@ export default function AppHeader({ title }) {
   return (
     <View style={styles.bar}>
       <Image source={LOGO} style={styles.logo} />
-      <Text style={styles.title} numberOfLines={1}>
-        {title}
-      </Text>
-      <View style={{ flex: 1 }} />
+      {/* Two lines, brand then page — "F..." was the brand name and the page
+          title fighting for one line at a fixed font size and losing; a
+          bigger logo needs the brand name out of that single line to stay
+          compact rather than widening the bar further. numberOfLines={1} on
+          the title with ellipsizeMode keeps a long page name truncating
+          cleanly instead of wrapping the bar to a third line. */}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.brand} numberOfLines={1}>
+          My Investor Circle
+        </Text>
+        <Text style={styles.title} numberOfLines={1} ellipsizeMode="tail">
+          {title}
+        </Text>
+      </View>
       <Pressable style={styles.iconBtn} onPress={() => router.push("/search")} hitSlop={6}>
         <Ionicons name="search-outline" size={22} color={colors.ink} />
       </Pressable>
@@ -59,7 +69,9 @@ export default function AppHeader({ title }) {
         ) : null}
       </Pressable>
       <Pressable style={styles.avatarBtn} onPress={() => router.push("/profile")} hitSlop={6}>
-        <Avatar profile={profile} size={30} />
+        <View style={styles.avatarRing}>
+          <Avatar profile={profile} size={28} />
+        </View>
       </Pressable>
     </View>
   );
@@ -69,17 +81,53 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: "row",
     alignItems: "center",
-    height: 52,
+    height: 58,
     paddingHorizontal: 14,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
-    gap: 9,
+    gap: 10,
   },
-  logo: { width: 24, height: 24 },
-  title: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 17, letterSpacing: -0.2 },
+  // width/height only, no borderRadius: the source asset is already a
+  // rounded/shield mark, and forcing a square crop on top of it clipped part
+  // of the artwork at this larger size.
+  logo: { width: 36, height: 36 },
+  // includeFontPadding:false + an explicit lineHeight bigger than the
+  // fontSize: without it Android's own extra glyph padding combined with
+  // Plus Jakarta Sans' descender metrics clipped the "y" in "My Investor
+  // Circle" against this Text's tight auto-computed line box — the same
+  // class of bug as the bottom-tab labels, just never applied here.
+  brand: {
+    color: colors.muted,
+    fontFamily: fonts.bold,
+    fontSize: 10.5,
+    lineHeight: 14,
+    includeFontPadding: false,
+    letterSpacing: 0.2,
+  },
+  title: {
+    color: colors.ink,
+    fontFamily: fonts.extrabold,
+    fontSize: 16,
+    lineHeight: 20,
+    includeFontPadding: false,
+    letterSpacing: -0.2,
+    marginTop: 1,
+  },
   iconBtn: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
   avatarBtn: { marginLeft: 2 },
+  // A ring makes the account avatar read as a tappable control rather than
+  // plain decoration, the same affordance the search/notification icons get
+  // for free from their own icon-button hit area.
+  avatarRing: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    borderColor: colors.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   badge: {
     position: "absolute",
     top: 3,

@@ -59,7 +59,7 @@ async function loadFeedProgressive(onPartial) {
   const trackedIds = settledOr(trackedR, []);
 
   const cfg = computeEffectiveFeedConfig(feedCfg.options, feedCfg.prefs);
-  const activeConns = (connections || []).filter((c) => c.status === "active");
+  const activeConns = (connections || []).filter((c) => c.status === "accepted");
   const contactIds = new Set(activeConns.map((c) => c.user_id));
 
   let networkRecos = [];

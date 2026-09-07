@@ -40,7 +40,7 @@ function NewCircleScreen() {
     mounted.current = true;
     (async () => {
       const conns = await getMyConnections();
-      if (mounted.current) setConnections((conns || []).filter((c) => c.status === "active"));
+      if (mounted.current) setConnections((conns || []).filter((c) => c.status === "accepted"));
     })();
     return () => {
       mounted.current = false;

@@ -12,9 +12,10 @@ import { iciFromStatsRow } from "../../src/utils/ici";
 import TrackButton from "../../src/components/TrackButton";
 import { useAuth } from "../../src/context/AuthContext";
 import Avatar from "../../src/components/Avatar";
-import TrackRecordView from "../../src/components/TrackRecordView";
+import TrackRecordView, { SocialLinks } from "../../src/components/TrackRecordView";
 import { fetchProfileNavInfo } from "../../src/services/profileNav";
 import { putReco } from "../../src/utils/recoStore";
+import { mapProfileReco } from "../../src/utils/feed";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 
@@ -124,6 +125,7 @@ function InvestorProfileScreen() {
             <Text style={styles.name}>{profile.full_name || "Investor"}</Text>
             {profile.username ? <Text style={styles.username}>@{profile.username}</Text> : null}
             {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+            <SocialLinks profile={profile} />
 
             {/* Tracking is one-way, so it is offered to anyone except the
                 viewer themselves — following your own profile is meaningless
@@ -147,7 +149,10 @@ function InvestorProfileScreen() {
             onOpenReco={(r) => {
               // Seed the hand-off cache so the detail screen opens from data
               // already in memory rather than re-fetching what this list has.
-              putReco(r);
+              // Mapped to RecoCard's shape first (see mapProfileReco) — the
+              // raw row has no by_name/from_id/camelCase price fields, which
+              // is what made the detail screen show "Someone" and NaN prices.
+              putReco(mapProfileReco(r, profile));
               router.push(`/reco/${r.id}`);
             }}
             onOpenCircle={(slug) => router.push(`/circle/s/${encodeURIComponent(slug)}`)}

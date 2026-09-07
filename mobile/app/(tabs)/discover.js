@@ -61,7 +61,7 @@ async function loadPulse() {
   const connections = settled(connR, []) || [];
   const trackedIds = settled(trackedR, []) || [];
 
-  const contactIds = new Set(connections.filter((c) => c.status === "active").map((c) => c.user_id));
+  const contactIds = new Set(connections.filter((c) => c.status === "accepted").map((c) => c.user_id));
   const tracked = new Set((trackedIds || []).map(String));
   // rankWhatYouMissed checks membership with .has() on whatever it's given;
   // ids arrive as both numbers and strings depending on endpoint.
@@ -181,10 +181,15 @@ function PulseScreen() {
           </View>
         ) : null}
 
+        {/* Widget order and titles mirror the web's Pulse column exactly
+            (features/discovery/Discovery.jsx: Fresh Ideas from your Circle →
+            Trending on MIC → What You Missed → My Tracked) — mobile used to
+            run My Tracked second and swap Trending/What You Missed, which
+            made "what's new" answer a different question on each client. */}
         {fresh.length > 0 ? (
           <Section
             icon="sparkles-outline"
-            title="Fresh from your Circle"
+            title="Fresh Ideas from your Circle"
             sub="The newest ideas shared with you"
             noTopDivider
           >
@@ -194,12 +199,18 @@ function PulseScreen() {
           </Section>
         ) : null}
 
-        <MyTrackedWidget list={trackedList} onViewAll={() => router.push("/track")} />
+        {trending.length > 0 ? (
+          <Section icon="flame-outline" title="Trending on MIC" sub="Gaining attention across the platform">
+            {trending.map((t) => (
+              <RankedCard key={String(t.idea?.id ?? t.id)} item={t} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
+            ))}
+          </Section>
+        ) : null}
 
         {missed.length > 0 ? (
           <Section
             icon="eye-off-outline"
-            title="What you missed"
+            title="What You Missed"
             sub="Ideas from your circle that moved recently"
           >
             {missed.map((m) => (
@@ -208,13 +219,7 @@ function PulseScreen() {
           </Section>
         ) : null}
 
-        {trending.length > 0 ? (
-          <Section icon="trending-up-outline" title="Trending on MIC" sub="Gaining attention across the platform">
-            {trending.map((t) => (
-              <RankedCard key={String(t.idea?.id ?? t.id)} item={t} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
-            ))}
-          </Section>
-        ) : null}
+        <MyTrackedWidget list={trackedList} onViewAll={() => router.push("/track")} />
 
         {/* Everything else, so Pulse is never emptier than the old plain
             list — minus whatever the ranked sections already showed above,

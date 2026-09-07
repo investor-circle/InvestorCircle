@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Share, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -7,7 +7,7 @@ import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Updates from "expo-updates";
-import { getLogs, clearLogs, formatLogs } from "../src/utils/logger";
+import { getLogs, clearLogs, formatLogs, addLog, flushLogs } from "../src/utils/logger";
 import { getMarks, formatRequestStats, sinceStart } from "../src/utils/perf";
 import { API_ORIGIN, pendingRequests } from "../src/services/api";
 import { isAnalyticsAvailable } from "../src/services/analytics";
@@ -24,6 +24,41 @@ function DebugScreen() {
   const router = useRouter();
   const { user, profile } = useAuth();
   const [logs, setLogs] = useState([]);
+
+  // The real update lifecycle, from expo-updates' own state machine —
+  // Updates.isEmbeddedLaunch/channel/runtimeVersion (used in `env` below)
+  // only describe what's CURRENTLY running; they say nothing about why an
+  // update that exists on the server never took over. useUpdates() is the
+  // one API in this SDK that surfaces WHY (isEmergencyLaunch +
+  // emergencyLaunchReason: a downloaded update crashed and got rolled back;
+  // checkError/downloadError: the automatic startup check/download itself
+  // failed). Read-only field access on a documented hook — no calls that
+  // can be missing from this SDK version, verified against
+  // node_modules/expo-updates/build/UseUpdates.d.ts before adding this.
+  const updatesInfo = Updates.useUpdates();
+  const loggedUpdatesInfoRef = useRef("");
+  useEffect(() => {
+    const snapshot = [
+      `emergencyLaunch=${updatesInfo.currentlyRunning?.isEmergencyLaunch ?? "?"}`,
+      updatesInfo.currentlyRunning?.emergencyLaunchReason
+        ? `reason="${updatesInfo.currentlyRunning.emergencyLaunchReason}"`
+        : "",
+      `isChecking=${updatesInfo.isChecking}`,
+      `isDownloading=${updatesInfo.isDownloading}`,
+      `isUpdateAvailable=${updatesInfo.isUpdateAvailable}`,
+      `isUpdatePending=${updatesInfo.isUpdatePending}`,
+      `restartCount=${updatesInfo.restartCount}`,
+      `lastCheck=${updatesInfo.lastCheckForUpdateTimeSinceRestart?.toISOString() ?? "never"}`,
+      updatesInfo.checkError ? `checkError="${updatesInfo.checkError.message}"` : "",
+      updatesInfo.downloadError ? `downloadError="${updatesInfo.downloadError.message}"` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    if (snapshot !== loggedUpdatesInfoRef.current) {
+      loggedUpdatesInfoRef.current = snapshot;
+      addLog("info", `updates: state ${snapshot}`);
+    }
+  }, [updatesInfo]);
 
   const [marks, setMarks] = useState([]);
   const [pending, setPending] = useState([]);
@@ -71,9 +106,27 @@ function DebugScreen() {
     ? pending.map((p) => `  ${Math.round(p.waitingMs / 1000)}s  ${p.label}`).join("\n")
     : "  (nothing in flight)";
 
+  const updateState = [
+    `isEmergencyLaunch: ${updatesInfo.currentlyRunning?.isEmergencyLaunch ?? "?"}`,
+    updatesInfo.currentlyRunning?.emergencyLaunchReason
+      ? `emergencyLaunchReason: ${updatesInfo.currentlyRunning.emergencyLaunchReason}`
+      : null,
+    `isChecking: ${updatesInfo.isChecking}  isDownloading: ${updatesInfo.isDownloading}`,
+    `isUpdateAvailable: ${updatesInfo.isUpdateAvailable}  isUpdatePending: ${updatesInfo.isUpdatePending}`,
+    `restartCount: ${updatesInfo.restartCount}`,
+    `lastCheckForUpdateTimeSinceRestart: ${updatesInfo.lastCheckForUpdateTimeSinceRestart?.toISOString() ?? "never"}`,
+    updatesInfo.checkError ? `checkError: ${updatesInfo.checkError.message}` : null,
+    updatesInfo.downloadError ? `downloadError: ${updatesInfo.downloadError.message}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   // One block, so a report is a single paste rather than four.
   const report = [
     env,
+    "",
+    "UPDATE LIFECYCLE (why an OTA update did or didn't take effect)",
+    updateState,
     "",
     "STARTUP TIMELINE",
     startup,
@@ -96,20 +149,32 @@ function DebugScreen() {
   const [updateMsg, setUpdateMsg] = useState("");
   const checkForUpdate = async () => {
     setUpdateMsg("Checking…");
+    addLog("info", "updates: checkForUpdateAsync starting");
     try {
       const res = await Updates.checkForUpdateAsync();
+      addLog("info", `updates: checkForUpdateAsync -> isAvailable=${res.isAvailable} manifest=${res.manifest?.id ?? "none"}`);
       if (!res.isAvailable) {
         setUpdateMsg("Already up to date.");
+        await flushLogs();
         return;
       }
       setUpdateMsg("Downloading…");
-      await Updates.fetchUpdateAsync();
-      // Reloading is the point: an update that is downloaded but not applied
-      // looks exactly like no update at all.
+      const fetched = await Updates.fetchUpdateAsync();
+      addLog(
+        "info",
+        `updates: fetchUpdateAsync -> isNew=${fetched.isNew} manifestId=${fetched.manifest?.id ?? "none"}`
+      );
+      setUpdateMsg("Applying — app will restart…");
+      // Flush BEFORE reloading: if the fetched bundle throws on its very
+      // first launch, this is the last chance to persist that we got this
+      // far, since reloadAsync tears down this JS context immediately.
+      await flushLogs();
       await Updates.reloadAsync();
     } catch (e) {
       // Expected, and worth saying plainly, in a build made before updates
       // were enabled or when running from a dev server.
+      addLog("error", `updates: check/fetch/reload failed: ${e?.message || e}`);
+      await flushLogs();
       setUpdateMsg(`Updates unavailable here: ${e?.message || e}`);
     }
   };

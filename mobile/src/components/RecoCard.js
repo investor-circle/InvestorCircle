@@ -1,6 +1,6 @@
 import { memo, useCallback, useState, useSyncExternalStore } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import Avatar from "./Avatar";
 import { fetchProfileNavInfo } from "../services/profileNav";
 import { colors, fonts } from "../theme/colors";
@@ -225,11 +225,14 @@ function LikeButton({ reco }) {
       accessibilityLabel={liked ? "Unlike this idea" : "Like this idea"}
       accessibilityState={{ selected: !!liked }}
     >
-      <Ionicons
-        name={liked ? "thumbs-up" : "thumbs-up-outline"}
-        size={15}
-        color={liked ? colors.accentInk : colors.muted}
-      />
+      {/* Feather's outline thumbs-up, not Ionicons' filled glyph — this is the
+          same stroke-based shape as lucide-react's ThumbsUp the web uses
+          (features/recommendations/Recommendations.jsx, Discovery.jsx); the
+          two icon sets draw the hand differently enough that Ionicons read
+          as a visibly different icon, not just a different weight. Liked
+          state is conveyed by color, matching the web's on-like styling,
+          since Feather has no separate filled variant. */}
+      <Feather name="thumbs-up" size={14} color={liked ? colors.accentInk : colors.muted} />
       {count > 0 ? (
         <Text style={[styles.footerStatText, liked && { color: colors.accentInk }]}>{count}</Text>
       ) : null}

@@ -74,7 +74,7 @@ function NewRecoScreen() {
     (async () => {
       const [conns, grps] = await Promise.all([getMyConnections(), getMyGroups()]);
       if (!mounted.current) return;
-      setConnections((conns || []).filter((c) => c.status === "active"));
+      setConnections((conns || []).filter((c) => c.status === "accepted"));
       setGroups(grps || []);
     })();
     return () => {
@@ -159,7 +159,7 @@ function NewRecoScreen() {
           reco: recoPayload,
           recoId: res.recommendation?.id,
           me: profile,
-          contacts: connections.filter((c) => c.status === "active"),
+          contacts: connections.filter((c) => c.status === "accepted"),
         });
       }
       router.back();

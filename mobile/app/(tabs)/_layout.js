@@ -1,9 +1,20 @@
-import { View, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
+
+// The <Tabs initialRouteName> prop below only decides which tab is focused
+// when this navigator mounts fresh with no path. The app's actual landing
+// navigation is router.replace("/(tabs)") in app/_layout.js's post-login
+// redirect, which is Expo Router's own file-based resolution — separate
+// from the React Navigation prop — and defaults to whichever file is named
+// "index" unless this export says otherwise. Without it, every login opened
+// on Feed (index.js) regardless of the Tabs prop below.
+export const unstable_settings = {
+  initialRouteName: "discover",
+};
 
 export default function TabsLayout() {
   const router = useRouter();
@@ -28,17 +39,37 @@ export default function TabsLayout() {
           tabBarStyle: {
             backgroundColor: colors.surface,
             borderTopColor: colors.line,
-            height: 64 + bottomInset,
-            paddingBottom: bottomInset + 4,
+            height: 72 + bottomInset,
+            paddingBottom: bottomInset + 6,
             paddingTop: 8,
           },
-          // lineHeight + no-shrink label: custom fonts (Plus Jakarta Sans)
-          // render with extra vertical metrics on Android, and the default
-          // tab bar item height clipped the descenders of every label
-          // ("Pulse", "Feed", …), not just the long ones.
-          tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 10.5, lineHeight: 13 },
-          tabBarItemStyle: { paddingTop: 2, paddingBottom: 2 },
+          tabBarItemStyle: { paddingTop: 4, paddingBottom: 4 },
           tabBarAllowFontScaling: false,
+          // A style object handed to react-navigation's own label component
+          // still truncated every label — even "Feed" (4 chars) — to 2-3
+          // characters plus an ellipsis on this device. That component
+          // measures/sizes itself before the custom Plus Jakarta Sans font
+          // swaps in (see _layout.js's own note on fonts loading async), and
+          // never re-measures once it does, so it keeps the system-font
+          // layout box a wider Plus Jakarta Sans glyph run doesn't fit in.
+          // Rendering the label directly removes that stale measurement:
+          // this Text owns its own full-width, post-font-load layout.
+          tabBarLabel: ({ focused, children }) => (
+            <Text
+              numberOfLines={1}
+              style={{
+                width: "100%",
+                textAlign: "center",
+                includeFontPadding: false,
+                fontFamily: fonts.semibold,
+                fontSize: 10.5,
+                lineHeight: 13,
+                color: focused ? colors.accent : colors.muted,
+              }}
+            >
+              {children}
+            </Text>
+          ),
         }}
       >
         <Tabs.Screen

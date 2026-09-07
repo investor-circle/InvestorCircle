@@ -17,6 +17,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppState, StyleSheet, View } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import * as Updates from "expo-updates";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -38,6 +39,24 @@ import { colors } from "../src/theme/colors";
 
 function RootNavigator() {
   const { user, authLoading, profile, patchProfile } = useAuth();
+
+  // Root cause of every "OTA published, phone never picks it up" report
+  // this app has had: expo-updates downloads a new update in the background
+  // automatically, but does NOT apply it automatically — the documented
+  // API contract (expo-updates' own useUpdates() JSDoc example) requires
+  // the app to call reloadAsync() itself once isUpdatePending is true.
+  // Nothing did that, so downloaded updates sat applied-but-inert
+  // (Diagnostics showed isUpdatePending: true while still reporting
+  // "embedded") until whatever launch happened to also trigger a reload
+  // for an unrelated reason. This is the one-line fix the whole
+  // debugging session was missing.
+  const { isUpdatePending } = Updates.useUpdates();
+  useEffect(() => {
+    if (isUpdatePending) {
+      addLog("info", "updates: isUpdatePending — reloading to apply it");
+      Updates.reloadAsync();
+    }
+  }, [isUpdatePending]);
   const segments = useSegments();
   const router = useRouter();
   // useSegments() returns a NEW array every render, so depending on it
@@ -94,6 +113,19 @@ function RootNavigator() {
   // https://myinvestorcircle.com with autoVerify and NO path restriction
   // (app.json), so this app intercepts EVERY link to the site. Anything it
   // doesn't understand is a link the user watched do nothing.
+  // Dedupe guard for the external-web-link branch below: the app.json intent
+  // filter claims ALL of https://myinvestorcircle.com with autoVerify and no
+  // path restriction, so when the Custom Tab this app opens tries to load
+  // that same URL, Android can hand that navigation straight back to this
+  // app as a fresh "url" event instead of letting the browser show it — which
+  // reopens the tab, which gets intercepted again, looping open/close as
+  // fast as the OS will cycle it (observed: repeated "opening in browser" +
+  // appstate background/active in lockstep, dozens of times per second).
+  // Ignoring a repeat of the same URL within a few seconds breaks that loop
+  // regardless of why the redelivery happens, without touching the app-link
+  // config other flows (referrals, password reset) depend on.
+  const lastExternalLinkRef = useRef({ url: null, at: 0 });
+
   useEffect(() => {
     const handle = (url) => {
       // An invite (?ref=alice) arrives before there is an account to attach it
@@ -119,6 +151,13 @@ function RootNavigator() {
       // silently doing nothing is not. Deliberately a Custom Tab rather than
       // Linking.openURL, which Android would route straight back to this app.
       if (isExternalWebLink(url)) {
+        const now = Date.now();
+        const last = lastExternalLinkRef.current;
+        if (last.url === url && now - last.at < 4000) {
+          addLog("warn", `deeplink: ignoring repeat of ${url} within 4s (app-link re-interception loop guard)`);
+          return;
+        }
+        lastExternalLinkRef.current = { url, at: now };
         addLog("info", `deeplink: opening in browser ${url}`);
         WebBrowser.openBrowserAsync(url).catch(() => {});
       }
@@ -205,6 +244,17 @@ function RootNavigator() {
     };
   }, [authLoading, user]);
 
+  // Single navigation decision per resolved auth state — at most ONE
+  // router.replace() call here, ever. An earlier version of this effect was
+  // split into two separate effects (this one, plus a second one forcing
+  // /(tabs)/discover for an already-signed-in cold start), and both fired
+  // in the SAME render pass on a fresh login: two back-to-back replace()
+  // calls to react-navigation while (tabs) and its Tabs navigator were
+  // still mounting for the first time. That update group is the one EAS
+  // Update's own dashboard recorded a crash against on-device — merged
+  // back into one effect/one decision so that redundant double-navigation
+  // can't happen again, whichever case fires.
+  const forcedInitialTabRef = useRef(false);
   useEffect(() => {
     if (authLoading) return;
     const inAuthGroup = segments[0] === "(auth)";
@@ -215,8 +265,28 @@ function RootNavigator() {
     const isPublicRoute = segments[0] === "reset-password";
     if (!user && !inAuthGroup && !isPublicRoute) {
       router.replace("/(auth)/login");
-    } else if (user && inAuthGroup) {
-      router.replace("/(tabs)");
+      return;
+    }
+    if (user && inAuthGroup) {
+      // Fresh login. Also covers the landing tab, so the cold-start branch
+      // below never redundantly re-fires for this same transition.
+      forcedInitialTabRef.current = true;
+      router.replace("/(tabs)/discover");
+      return;
+    }
+    if (user && !forcedInitialTabRef.current) {
+      // Cold start with an already-signed-in (persisted) session — this
+      // branch never ran through "(auth)" at all, so the case above never
+      // fires for it. That left it relying entirely on (tabs)/_layout.js's
+      // unstable_settings.initialRouteName to land on Pulse, which —
+      // confirmed on-device — was not reliably doing so. Forcing it here,
+      // once per app session, closes that gap. Safe to fire unconditionally:
+      // the deep-link effects below resolve via an async
+      // Linking.getInitialURL().then(...), so a real deep-link target always
+      // lands after this synchronous replace and wins, the same way it
+      // already wins over the (auth)-group replace above.
+      forcedInitialTabRef.current = true;
+      router.replace("/(tabs)/discover");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, segKey]);
@@ -271,6 +341,9 @@ function RootNavigator() {
         <Stack.Screen name="contact" />
         <Stack.Screen name="debug" />
         <Stack.Screen name="new" options={{ presentation: "modal" }} />
+        {/* Google sign-in's OAuth redirect lands here (see oauthredirect.js)
+            instead of expo-router's built-in Unmatched Route screen. */}
+        <Stack.Screen name="oauthredirect" />
       </Stack>
       {/* Last child, so it covers the navigator rather than sitting behind
           it. absoluteFill + the default pointerEvents means nothing
