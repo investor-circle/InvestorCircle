@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { colors } from "../src/theme/colors";
@@ -37,35 +37,53 @@ import { useAuth } from "../src/context/AuthContext";
  * login, was open before the OAuth tab) before Firebase's own auth state
  * had actually changed, landing back on login looking signed-out even when
  * sign-in was about to succeed a moment later; tapping Google sign-in again
- * then hit the ALREADY-authenticated state and worked. Waiting for
- * authLoading/user instead removes the guess: this screen holds its spinner
- * until the real outcome is known, then goes to exactly one place.
+ * then hit the ALREADY-authenticated state and worked.
+ *
+ * A second attempt at "wait for the real outcome" (checking `authLoading`)
+ * turned out to have the exact same bug in a different shape: authLoading
+ * is a ONE-SHOT flag for the app's very first Firebase auth check at boot
+ * (see AuthContext.js) — by the time a user is far enough into the app to
+ * tap "Sign in with Google", it has already been false for a while and
+ * nothing ever sets it true again for a mid-session sign-in attempt. So on
+ * every landing here, `authLoading` was already false and `user` was still
+ * null (the credential exchange genuinely hadn't finished yet), and the
+ * `else` branch fired immediately — bouncing back to login before sign-in
+ * had any chance to complete. Reported as "Google sign-in lands back on the
+ * login page."
+ *
+ * The fix drops authLoading from this screen entirely and reacts ONLY to
+ * `user` turning truthy (however long the exchange takes), with the 10s
+ * timer as the sole "genuinely failed" fallback — checked against a ref so
+ * it never fires after sign-in has already succeeded.
  */
 export default function OAuthRedirectScreen() {
   const router = useRouter();
-  const { user, authLoading } = useAuth();
+  const { user } = useAuth();
+  const userRef = useRef(user);
+  userRef.current = user;
 
   useEffect(() => {
     addLog("info", "oauthredirect: landed on OAuth redirect route, returning to app");
   }, []);
 
   useEffect(() => {
-    if (authLoading) return;
-    addLog("info", `oauthredirect: auth resolved signedIn=${!!user}, navigating`);
-    if (user) router.replace("/(tabs)");
-    else if (router.canGoBack()) router.back();
-    else router.replace("/(auth)/login");
-  }, [authLoading, user, router]);
+    if (!user) return;
+    addLog("info", "oauthredirect: signed in, navigating to app");
+    router.replace("/(tabs)");
+  }, [user, router]);
 
   // Fallback only: if the credential exchange itself never settles (a
-  // genuine network failure rather than "still in flight"), don't strand
-  // the user on a spinner forever — send them back to try again.
+  // genuine network failure, or the user backed out of the Google account
+  // picker rather than completing it) — don't strand the user on a spinner
+  // forever. Guarded by the ref rather than the `user` closed over at effect
+  // setup time, since this timer is armed once on mount and must still see
+  // a sign-in that completes in the meantime.
   useEffect(() => {
     const t = setTimeout(() => {
-      if (authLoading) {
-        addLog("warn", "oauthredirect: auth still unresolved after 10s, giving up and returning to login");
-        router.replace("/(auth)/login");
-      }
+      if (userRef.current) return; // the effect above already navigated
+      addLog("warn", "oauthredirect: no sign-in after 10s, giving up and returning to login");
+      if (router.canGoBack()) router.back();
+      else router.replace("/(auth)/login");
     }, 10000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
