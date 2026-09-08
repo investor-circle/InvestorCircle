@@ -2,9 +2,10 @@ import { memo, useCallback, useState, useSyncExternalStore } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import Avatar from "./Avatar";
+import ThesisText from "./ThesisText";
 import { fetchProfileNavInfo } from "../services/profileNav";
 import { colors, fonts } from "../theme/colors";
-import { fmt, fmtDate, fmtPct, getThesisText, returnPct } from "../utils/format";
+import { fmt, fmtDate, fmtPct, returnPct } from "../utils/format";
 import { isLiked, subscribeReactions, toggleReaction } from "../services/reactionStore";
 import { isTracked, subscribeTracked, toggleTracked } from "../services/trackStore";
 
@@ -133,15 +134,16 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = tr
         ) : null}
       </View>
 
-      {/* getThesisText, not the raw column: a thesis with images is stored as
-          a JSON envelope, which used to render as visible JSON. Truncated to
-          2 lines on a feed/list card; the idea detail screen (expandThesis)
-          shows it in full — that's the whole reason to open the idea. */}
-      {getThesisText(reco.thesis) ? (
-        <Text style={styles.thesis} numberOfLines={expandThesis ? undefined : 2}>
-          {getThesisText(reco.thesis)}
-        </Text>
-      ) : null}
+      {/* ThesisText renders the same bold/italic/link markup and attached
+          images the web's ThesisRenderer shows, not just the raw column — a
+          thesis with images is stored as a JSON envelope, which used to
+          render as visible JSON. previewLines/defaultExpanded mirror the
+          web's own two call sites: 2-line clamp on a feed/list card, full
+          text with an 8-line "Show less" clamp on the idea detail screen
+          (expandThesis) — that's the whole reason to open the idea. */}
+      <View style={reco.thesis ? styles.thesisWrap : null}>
+        <ThesisText thesis={reco.thesis} previewLines={expandThesis ? 8 : 2} defaultExpanded={expandThesis} />
+      </View>
 
       {/* Footer — status + sector pills, comments, invested */}
       <View style={styles.footer}>
@@ -327,7 +329,7 @@ const styles = StyleSheet.create({
   gridLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 10, letterSpacing: 0.5, marginBottom: 2 },
   gridValue: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
 
-  thesis: { color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 17, marginBottom: 9 },
+  thesisWrap: { marginBottom: 9 },
 
   footer: { flexDirection: "row", alignItems: "center", gap: 8, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 9 },
   pill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },

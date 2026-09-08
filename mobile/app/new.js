@@ -27,6 +27,7 @@ import { putReco } from "../src/utils/recoStore";
 import { colors, fonts } from "../src/theme/colors";
 import InstrumentSearch from "../src/components/InstrumentSearch";
 import SelectField from "../src/components/SelectField";
+import ThesisEditor from "../src/components/ThesisEditor";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
 const TYPES = ["Buy", "Sell"];
@@ -453,14 +454,7 @@ function NewRecoScreen() {
           </View>
 
           <Field label="Thesis (optional)">
-            <TextInput
-              style={[styles.input, styles.textarea]}
-              placeholder="Why is this a good idea?"
-              placeholderTextColor={colors.muted}
-              multiline
-              value={thesis}
-              onChangeText={setThesis}
-            />
+            <ThesisEditor value={thesis} onChange={setThesis} />
           </Field>
 
           {/* ── Who should see this? ─────────────────────────────────── */}
@@ -629,7 +623,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 15,
   },
-  textarea: { minHeight: 90, textAlignVertical: "top" },
   seg: { flexDirection: "row", backgroundColor: colors.surface2, borderRadius: 12, padding: 3, gap: 3 },
   segBtn: { flex: 1, height: 42, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   segBtnBuy: { backgroundColor: colors.gainSoft },
