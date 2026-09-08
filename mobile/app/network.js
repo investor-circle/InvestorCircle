@@ -156,17 +156,23 @@ function NetworkScreen() {
     const pnlInfo = isAccepted ? pnlFor(item) : null;
     return (
       <View style={styles.row}>
-        <Avatar uid={item.user_id} name={item.name} size={44} gradient />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.name} numberOfLines={1}>
-            {item.name || "Investor"}
-          </Text>
-          {item.username ? (
-            <Text style={styles.username} numberOfLines={1}>
-              @{item.username}
+        <Pressable
+          style={styles.rowMain}
+          onPress={() => item.username && router.push(`/investor/${encodeURIComponent(item.username)}`)}
+          disabled={!item.username}
+        >
+          <Avatar uid={item.user_id} name={item.name} size={44} gradient />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.name} numberOfLines={1}>
+              {item.name || "Investor"}
             </Text>
-          ) : null}
-        </View>
+            {item.username ? (
+              <Text style={styles.username} numberOfLines={1}>
+                @{item.username}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
 
         {/* My P&L — same formula and description as the web (recoStats() in
             src/utils/format.js, ported verbatim): a directional signal from
@@ -482,6 +488,7 @@ const styles = StyleSheet.create({
   pnlNoteBold: { fontFamily: fonts.bold, color: colors.ink },
   pnlNoteLink: { fontFamily: fonts.bold, color: colors.accentInk },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  rowMain: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1, minWidth: 0 },
   name: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15 },
   username: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, marginTop: 1 },
   actionsRow: { flexDirection: "row", alignItems: "center", gap: 8 },

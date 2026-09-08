@@ -22,6 +22,7 @@ import { fmt, fmtDate } from "../../src/utils/format";
 import { getTodayClose, sourceName } from "../../src/services/marketData";
 import Avatar from "../../src/components/Avatar";
 import { primeAvatars } from "../../src/services/avatarCache";
+import { fetchProfileNavInfo } from "../../src/services/profileNav";
 import { setLiked } from "../../src/services/reactionStore";
 import { setTracked } from "../../src/services/trackStore";
 import { track } from "../../src/services/analytics";
@@ -270,6 +271,18 @@ function RecoDetailScreen() {
     [router]
   );
 
+  // A comment carries the commenter's name but not their username (only the
+  // Circle feed selects recommender_username server-side) — same lookup
+  // RecoCard's own author tap uses.
+  const openCommentAuthor = useCallback(
+    async (uid) => {
+      if (!uid) return;
+      const info = await fetchProfileNavInfo(uid);
+      if (info?.username) openProfile(info.username);
+    },
+    [openProfile]
+  );
+
   const submitComment = useCallback(async () => {
     const text = comment.trim();
     if (!text || posting) return;
@@ -428,16 +441,19 @@ function RecoDetailScreen() {
           ) : eng.comments.length === 0 ? (
             <Text style={styles.noComments}>No comments yet. Start the conversation.</Text>
           ) : (
-            eng.comments.map((c) => (
-              <View key={String(c.id)} style={styles.comment}>
-                <View style={styles.commentHead}>
-                  <Avatar uid={c.userId ?? c.user_id} name={c.userName || c.user_name} size={26} />
-                  <Text style={styles.commentAuthor}>{c.userName || c.user_name || "User"}</Text>
+            eng.comments.map((c) => {
+              const uid = c.userId ?? c.user_id;
+              return (
+                <View key={String(c.id)} style={styles.comment}>
+                  <Pressable style={styles.commentHead} onPress={() => openCommentAuthor(uid)} disabled={!uid}>
+                    <Avatar uid={uid} name={c.userName || c.user_name} size={26} />
+                    <Text style={styles.commentAuthor}>{c.userName || c.user_name || "User"}</Text>
+                  </Pressable>
+                  <Text style={styles.commentBody}>{c.comment}</Text>
+                  <Text style={styles.commentDate}>{fmtDate(c.createdAt || c.created_at)}</Text>
                 </View>
-                <Text style={styles.commentBody}>{c.comment}</Text>
-                <Text style={styles.commentDate}>{fmtDate(c.createdAt || c.created_at)}</Text>
-              </View>
-            ))
+              );
+            })
           )}
         </ScrollView>
 
