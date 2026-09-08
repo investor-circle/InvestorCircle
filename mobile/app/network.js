@@ -271,7 +271,7 @@ function NetworkScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10} style={{ width: 40 }}>
           <Ionicons name="chevron-back" size={24} color={colors.ink} />
         </Pressable>
-        <Text style={styles.topTitle}>Your network</Text>
+        <Text style={styles.topTitle}>My network</Text>
         <View style={{ width: 40 }} />
       </View>
 

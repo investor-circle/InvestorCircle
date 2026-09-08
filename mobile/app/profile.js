@@ -65,11 +65,11 @@ function ProfileScreen() {
         </LinearGradient>
 
         <View style={styles.menu}>
-          <MenuRow icon="ribbon-outline" label="Your track record" onPress={() => router.push("/track-record")} />
-          <MenuRow icon="people-outline" label="Your network" onPress={() => router.push("/network")} />
+          <MenuRow icon="ribbon-outline" label="My track record" onPress={() => router.push("/track-record")} />
+          <MenuRow icon="people-outline" label="My network" onPress={() => router.push("/network")} />
           <MenuRow icon="sparkles-outline" label="Discover investors" onPress={() => router.push("/people")} />
           <MenuRow icon="gift-outline" label="Invite friends" onPress={() => setInviteOpen(true)} />
-          <MenuRow icon="albums-outline" label="Your Circles" onPress={() => router.push("/circles")} />
+          <MenuRow icon="albums-outline" label="My Circles" onPress={() => router.push("/circles")} />
           <MenuRow icon="briefcase-outline" label="Portfolio" onPress={() => router.push("/portfolio")} />
           <MenuRow icon="notifications-outline" label="Notifications" onPress={() => router.push("/notifications")} />
           <MenuRow icon="options-outline" label="Feed Settings" onPress={() => router.push("/feed-settings")} last />

@@ -39,7 +39,7 @@ function CirclesScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10} style={{ width: 40 }}>
           <Ionicons name="chevron-back" size={24} color={colors.ink} />
         </Pressable>
-        <Text style={styles.topTitle}>Your Circles</Text>
+        <Text style={styles.topTitle}>My Circles</Text>
         <Pressable onPress={() => router.push("/circle/new")} hitSlop={10} style={{ width: 40, alignItems: "flex-end" }}>
           <Ionicons name="add" size={26} color={colors.accent} />
         </Pressable>

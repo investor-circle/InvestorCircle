@@ -61,10 +61,20 @@ export default function AppHeader({ title }) {
       {/* Discover investors — same Sparkles icon AND the same filled-purple
           treatment as the web's top-bar entry (App.jsx), which visually
           calls it out from the plain outline icons beside it. Pushed here
-          so it isn't only reachable through the Profile menu. */}
+          so it isn't only reachable through the Profile menu. Kept a touch
+          smaller and softer than the account avatar beside it (also on this
+          gradient now that it falls back to it) — two full-vibrancy chips
+          the same size and colour right next to each other competed for
+          the eye instead of one clearly reading as "you" and the other as
+          an action. */}
       <Pressable onPress={() => router.push("/people")} hitSlop={6}>
-        <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.discoverBtn}>
-          <Ionicons name="sparkles" size={19} color="#fff" />
+        <LinearGradient
+          colors={GRADIENT.colors}
+          start={GRADIENT.start}
+          end={GRADIENT.end}
+          style={[styles.discoverBtn, { opacity: 0.82 }]}
+        >
+          <Ionicons name="sparkles" size={16} color="#fff" />
         </LinearGradient>
       </Pressable>
       <Pressable style={styles.iconBtn} onPress={() => router.push("/search")} hitSlop={6}>
@@ -80,7 +90,11 @@ export default function AppHeader({ title }) {
       </Pressable>
       <Pressable style={styles.avatarBtn} onPress={() => router.push("/profile")} hitSlop={6}>
         <View style={styles.avatarRing}>
-          <Avatar profile={profile} size={40} />
+          {/* gradient: without a photo this used to fall back to a flat grey
+              chip — every reco card's own avatar already uses the vibrant
+              brand gradient for the same fallback, so this was the one
+              place in the app a photo-less user looked washed out. */}
+          <Avatar profile={profile} size={40} gradient />
         </View>
       </Pressable>
     </View>
@@ -128,9 +142,9 @@ const styles = StyleSheet.create({
   },
   iconBtn: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
   discoverBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
   },
