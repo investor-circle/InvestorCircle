@@ -102,6 +102,11 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  // One shared toggle for the password field (login and signup, same as the
+  // web's shared showPw) and a separate one for confirm-password, matching
+  // the web's LoginPage exactly.
+  const [showPw, setShowPw] = useState(false);
+  const [showCpw, setShowCpw] = useState(false);
 
   const reset = (next) => {
     touched.current = true; // an explicit choice outranks the invite default
@@ -281,26 +286,40 @@ export default function LoginScreen() {
           />
 
           {tab !== "forgot" ? (
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor={colors.muted}
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-            />
+            <View style={styles.pwRow}>
+              <TextInput
+                style={[styles.input, styles.pwInput]}
+                placeholder="Password"
+                placeholderTextColor={colors.muted}
+                secureTextEntry={!showPw}
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={password}
+                onChangeText={setPassword}
+              />
+              <Pressable onPress={() => setShowPw((v) => !v)} hitSlop={10} style={styles.eyeBtn}>
+                <Ionicons name={showPw ? "eye-off-outline" : "eye-outline"} size={19} color={colors.muted} />
+              </Pressable>
+            </View>
           ) : null}
 
           {tab === "signup" ? (
             <>
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm password"
-                placeholderTextColor={colors.muted}
-                secureTextEntry
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-              />
+              <View style={styles.pwRow}>
+                <TextInput
+                  style={[styles.input, styles.pwInput]}
+                  placeholder="Confirm password"
+                  placeholderTextColor={colors.muted}
+                  secureTextEntry={!showCpw}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                />
+                <Pressable onPress={() => setShowCpw((v) => !v)} hitSlop={10} style={styles.eyeBtn}>
+                  <Ionicons name={showCpw ? "eye-off-outline" : "eye-outline"} size={19} color={colors.muted} />
+                </Pressable>
+              </View>
               {password.length > 0 ? (
                 <Text style={styles.hint}>
                   {pw.length ? "✓" : "○"} 6–25 characters {"  "}
@@ -429,6 +448,9 @@ const styles = StyleSheet.create({
   segTextActive: { color: colors.accentInk },
   form: { gap: 12 },
   row: { flexDirection: "row", gap: 12 },
+  pwRow: { position: "relative", justifyContent: "center" },
+  pwInput: { paddingRight: 44 },
+  eyeBtn: { position: "absolute", right: 14, padding: 4 },
   input: {
     borderWidth: 1,
     borderColor: colors.line2,

@@ -9,7 +9,7 @@ loadPersistedLogs();
 // stopped at instead of just never arriving.
 mark("js-bundle-executed");
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -127,6 +127,20 @@ function RootNavigator() {
   // config other flows (referrals, password reset) depend on.
   const lastExternalLinkRef = useRef({ url: null, at: 0 });
 
+  // Whether the app has finished asking the OS what URL (if any) launched
+  // it. The redirect-to-login effect below MUST wait for this before it
+  // forces a signed-out user onto "/(auth)/login" — Linking.getInitialURL()
+  // is genuinely async (a native bridge round trip), and on a cold start via
+  // the password-reset link, Firebase's own "signed out" resolution can land
+  // first. Without this guard the login redirect fired before the reset
+  // link's router.replace("/reset-password…") did, and depending on how
+  // expo-router's navigator settled the two calls, the visible result was
+  // the login screen with the reset link silently dropped — exactly the
+  // "tapping the email link just opens login" report this fixes. A 1.5s cap
+  // means a native call that never resolves can't strand someone signed out
+  // with no way to reach login at all.
+  const [initialUrlChecked, setInitialUrlChecked] = useState(false);
+
   useEffect(() => {
     const handle = (url) => {
       // An invite (?ref=alice) arrives before there is an account to attach it
@@ -177,9 +191,24 @@ function RootNavigator() {
         WebBrowser.openBrowserAsync(url).catch(() => {});
       }
     };
-    Linking.getInitialURL().then((url) => url && handle(url));
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      setInitialUrlChecked(true);
+    };
+    Linking.getInitialURL()
+      .then((url) => url && handle(url))
+      .finally(settle);
+    // Belt-and-braces: a native call that never resolves must not strand a
+    // signed-out user with no route to login at all (see the comment above
+    // initialUrlChecked).
+    const timeout = setTimeout(settle, 1500);
     const sub = Linking.addEventListener("url", ({ url }) => handle(url));
-    return () => sub.remove();
+    return () => {
+      sub.remove();
+      clearTimeout(timeout);
+    };
   }, [router]);
 
   // …and redeem it once there IS an account. Mirrors the web's post-login
@@ -287,6 +316,9 @@ function RootNavigator() {
     // just tapped and back to the login form they are locked out of.
     const isPublicRoute = segments[0] === "reset-password";
     if (!user && !inAuthGroup && !isPublicRoute) {
+      // Wait until the initial-URL check has had its chance to redirect to
+      // reset-password first — see initialUrlChecked above.
+      if (!initialUrlChecked) return;
       router.replace("/(auth)/login");
       return;
     }
@@ -312,7 +344,7 @@ function RootNavigator() {
       router.replace("/(tabs)");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, authLoading, segKey]);
+  }, [user, authLoading, segKey, initialUrlChecked]);
 
   // Username + consent are required before the account can be used, exactly
   // as on the web. Google sign-in has no signup form, so those accounts arrive
