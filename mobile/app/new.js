@@ -68,6 +68,10 @@ function NewRecoScreen() {
   const [thesis, setThesis] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  // Set once the idea is live — swaps the form for the confirmation screen
+  // (see the web's MakeRecoModal `posted` state), so posting always ends in
+  // visible feedback instead of just snapping back to the previous screen.
+  const [posted, setPosted] = useState(null); // { id, ticker, assetName }
 
   // Share targets
   const [isPublic, setIsPublic] = useState(true);
@@ -264,10 +268,48 @@ function NewRecoScreen() {
           contacts: connections,
         });
       }
-      router.back();
+      // Only show the confirmation when the server actually gave back a real
+      // id — same guard as the web — otherwise there's no live idea to link
+      // to, so just leave like before.
+      if (res.recommendation?.id) {
+        setPosted({ id: String(res.recommendation.id), ticker: recoPayload.ticker, assetName: recoPayload.assetName });
+      } else {
+        router.back();
+      }
     } else {
       setError(res.error === "not_authorized" ? "You're not allowed to post this." : "Couldn't post. Try again.");
     }
+  };
+
+  // "Post another idea" from the confirmation screen — same screen, blanked
+  // back to a fresh form instead of leaving, so posting several ideas in one
+  // sitting doesn't mean reopening New Idea each time. Mirrors the web's
+  // resetForm exactly (Recommendations.jsx MakeRecoModal).
+  const resetForm = () => {
+    setSelectedInstr(null);
+    setManualOpen(false);
+    setAssetName("");
+    setTicker("");
+    setAssetClass(null);
+    setSector(null);
+    setCurrency("INR");
+    setExchange(null);
+    setRecType("Buy");
+    setPriceData(null);
+    setPriceLoading(false);
+    setPriceError("");
+    setTargetPrice("");
+    setHorizon("12m");
+    setStopLoss("");
+    setConviction("");
+    setThesis("");
+    setError("");
+    setIsPublic(true);
+    setSelUsers({});
+    setSelGroups({});
+    setPeopleOpen(false);
+    setPeopleSearch("");
+    setPosted(null);
   };
 
   const targetDate = calcTargetDate(today(), horizon);
@@ -275,6 +317,40 @@ function NewRecoScreen() {
     (assetName.trim() || ticker.trim()) &&
     (isPublic || hasPublicCircleSelected || recipientCount > 0) &&
     ((priceData?.price || 0) > 0 || !!priceError);
+
+  // Confirmation screen: shown in place of the form once the idea is live,
+  // matching the web's MakeRecoModal `posted` state exactly — same title,
+  // copy, and the two actions (post another / go look at it).
+  if (posted) {
+    return (
+      <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
+        <View style={styles.topbar}>
+          <View style={{ width: 26 }} />
+          <Text style={styles.topTitle}>Idea posted</Text>
+          <Pressable onPress={() => router.back()} hitSlop={10}>
+            <Ionicons name="close" size={26} color={colors.ink} />
+          </Pressable>
+        </View>
+        <View style={styles.postedWrap}>
+          <View style={styles.postedIcon}>
+            <Ionicons name="checkmark" size={28} color={colors.gain} />
+          </View>
+          <Text style={styles.postedTitle}>Your idea has been posted</Text>
+          <Text style={styles.postedSub}>
+            {posted.ticker && posted.ticker !== "—" ? posted.ticker : posted.assetName} is now live in your circle.
+          </Text>
+          <View style={styles.postedActions}>
+            <Pressable style={styles.postedGhostBtn} onPress={resetForm}>
+              <Text style={styles.postedGhostText}>Post another idea</Text>
+            </Pressable>
+            <Pressable style={styles.postedPriBtn} onPress={() => router.replace(`/reco/${posted.id}`)}>
+              <Text style={styles.postedPriText}>Check it here</Text>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -610,6 +686,45 @@ const styles = StyleSheet.create({
   },
   topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17 },
   form: { padding: 16, paddingBottom: 24 },
+  postedWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
+  postedIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: colors.gainSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 18,
+  },
+  postedTitle: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 18, textAlign: "center" },
+  postedSub: {
+    color: colors.muted,
+    fontFamily: fonts.regular,
+    fontSize: 13.5,
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 26,
+    lineHeight: 20,
+  },
+  postedActions: { flexDirection: "row", gap: 10, width: "100%" },
+  postedGhostBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: colors.surface2,
+  },
+  postedGhostText: { color: colors.inkSoft, fontFamily: fonts.bold, fontSize: 14 },
+  postedPriBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: colors.accent,
+  },
+  postedPriText: { color: "#fff", fontFamily: fonts.bold, fontSize: 14 },
   row: { flexDirection: "row", gap: 12 },
   label: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13, marginBottom: 7 },
   input: {
