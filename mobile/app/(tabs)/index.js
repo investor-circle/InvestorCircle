@@ -252,7 +252,7 @@ function PulseScreen() {
             meta={WIDGET_META.fresh}
             title="Fresh Ideas from your Circle"
             sub="The newest ideas shared with you"
-            noTopDivider
+            first
           >
             {fresh.map((r) => (
               <RecoCard key={String(r.id)} reco={r} onPress={openReco} onOpenProfile={openProfile} onOpenTicker={openTicker} />
@@ -533,19 +533,19 @@ function formatActivityDate(d) {
 // Widgets used to run straight into one another with just 18px of margin and
 // a same-weight icon+title row, so where "My Tracked" ended and "Trending on
 // MIC" began was not obvious on a quick scroll (reported directly against
-// this screen). A full-width divider plus a colour-badged icon gives every
-// widget a clear start, the way a native settings/grouped list breaks
-// sections rather than just adding whitespace.
-function Section({ meta, title, sub, children, noTopDivider, onLayout }) {
+// this screen). A thin divider bar was tried first, but at 8px it still read
+// as "a bit more whitespace" rather than a clear break. The heading itself is
+// now the page break: a full-bleed wash of the widget's own tint (a low-alpha
+// hex suffix, same "colour + transparency" trick as the tracked-summary
+// legend rows below) sits behind the icon badge and title, edge to edge, so
+// the transition is visible the instant a new section scrolls into view —
+// without the wash being solid/loud enough to compete with the cards below.
+function Section({ meta, title, sub, children, first, onLayout }) {
   const tint = meta?.tint || colors.accentInk;
   const tintSoft = meta?.tintSoft || colors.accentSoft;
   return (
-    <View style={styles.section} onLayout={onLayout}>
-      {/* Divider tinted per widget — a quick colour cue (reinforced by the
-          matching icon badge below and the jump pill above) that a new
-          section has started, not just more whitespace. */}
-      {!noTopDivider ? <View style={[styles.sectionDivider, { backgroundColor: tintSoft }]} /> : null}
-      <View style={styles.sectionHead}>
+    <View style={[styles.section, first && styles.sectionFirst]} onLayout={onLayout}>
+      <View style={[styles.sectionHead, { backgroundColor: `${tint}1a` }]}>
         <View style={[styles.sectionIconBadge, { backgroundColor: tintSoft }]}>
           <Ionicons name={meta?.icon ? `${meta.icon}-outline` : "ellipse-outline"} size={15} color={tint} />
         </View>
@@ -554,7 +554,7 @@ function Section({ meta, title, sub, children, noTopDivider, onLayout }) {
           {sub ? <Text style={styles.sectionSub}>{sub}</Text> : null}
         </View>
       </View>
-      {children}
+      <View style={styles.sectionBody}>{children}</View>
     </View>
   );
 }
@@ -634,8 +634,12 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   section: { marginTop: 28 },
-  sectionDivider: { height: 8, backgroundColor: colors.surface2, marginBottom: 20 },
-  sectionHead: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, marginBottom: 12 },
+  // The first widget already sits right under the jump bar, which is its own
+  // visual break — a full 28px on top of that reads as a stray gap rather
+  // than a second transition.
+  sectionFirst: { marginTop: 14 },
+  sectionHead: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 12 },
+  sectionBody: { marginTop: 12 },
   sectionIconBadge: {
     width: 30,
     height: 30,
