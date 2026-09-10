@@ -272,6 +272,29 @@ function NewRecoScreen() {
       // id — same guard as the web — otherwise there's no live idea to link
       // to, so just leave like before.
       if (res.recommendation?.id) {
+        // Same fix as "share a follow-up" above: the detail screen resolves
+        // a private idea from this hand-off (recoStore), not a public-feed
+        // lookup — and that lookup fails here even for a PUBLIC idea, since
+        // it explicitly excludes the caller's own posts (see
+        // api/_lib/handlers/lookups.js action=public-feed). Without this,
+        // "Check it here" landed on "This idea isn't publicly viewable" for
+        // every Circle-only idea, and for a public one too.
+        putReco({
+          ...recoPayload,
+          id: String(res.recommendation.id),
+          date: res.recommendation.created_at,
+          byName: profile?.full_name || "You",
+          from: profile?.id,
+          feedSource: recoPayload.isPublic ? "public" : "direct",
+          reaction: "none",
+          hidden: false,
+          invested: false,
+          deliveryId: null,
+          likes: 0,
+          commentCount: 0,
+          exitSignal: false,
+          exitDate: null,
+        });
         setPosted({ id: String(res.recommendation.id), ticker: recoPayload.ticker, assetName: recoPayload.assetName });
       } else {
         router.back();
