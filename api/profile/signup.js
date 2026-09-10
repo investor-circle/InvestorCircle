@@ -165,8 +165,26 @@ export default async function handler(req, res) {
                 (xmax = 0) AS is_new_signup
     `;
   } catch (e) {
-    // Unique-violation on the username column
+    // Unique-violation (23505) — could be either UNIQUE column on this table
+    // (username, or email — user_profiles.email is UNIQUE NOT NULL, see
+    // supabase/migration_auth.sql). This INSERT's email always comes from a
+    // verified Firebase ID token, and Firebase itself refuses to create a
+    // second account for an email already in use, so this specific
+    // collision should be unreachable in practice — but if it ever is
+    // (e.g. a race, or the two systems disagreeing), the two need
+    // different messages: a taken USERNAME is something to fix by picking
+    // another; a taken EMAIL means an account already exists and the
+    // sign-up should not have gotten this far. Postgres' `detail` on a
+    // unique_violation always names the offending column ("Key (column)=
+    // (value) already exists."), which distinguishes them without having
+    // to hardcode a specific constraint name that isn't declared in any
+    // committed migration for username.
     if (e?.code === '23505') {
+      const detail = String(e?.detail || e?.constraint || '');
+      if (/\bemail\b/i.test(detail)) {
+        res.status(409).json({ error: 'An account with this email already exists. Please sign in instead.' });
+        return;
+      }
       res.status(409).json({ error: 'Username already taken' });
       return;
     }
