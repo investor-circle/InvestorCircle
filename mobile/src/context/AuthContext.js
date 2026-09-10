@@ -15,6 +15,9 @@ import {
   createUserWithEmailAndPassword,
   updateProfile as fbUpdateProfile,
   signOut,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  verifyBeforeUpdateEmail,
 } from "firebase/auth";
 import { auth } from "../config/firebase";
 import { unregisterCurrentDevice } from "../services/pushNotifications";
@@ -25,6 +28,7 @@ import { identify } from "../services/analytics";
 import { clearFeedCache } from "../services/feedCache";
 import { API_ORIGIN } from "../services/api";
 import { completeSignup } from "../services/api/authApi";
+import { emailChangeErrorMessage } from "../utils/authErrors";
 
 const AuthContext = createContext(null);
 
@@ -84,7 +88,29 @@ export function AuthProvider({ children }) {
         const profileFromApi = profileSettled.status === "fulfilled" ? profileSettled.value?.profile || null : null;
 
         if (profileFromApi) {
-          setProfile(profileFromApi);
+          // Mirrors the web's AuthContext.jsx: profile.email is a display
+          // copy written once at signup (api/profile/sync.js) that never
+          // updates on its own after a verifyBeforeUpdateEmail change lands
+          // — re-run sync (safe for an existing row, see its own ON
+          // CONFLICT clause) whenever the two disagree, so "your email" in
+          // the app catches up with the one that actually signs you in.
+          const emailChanged =
+            idToken && firebaseUser.email && profileFromApi.email &&
+            profileFromApi.email.toLowerCase() !== firebaseUser.email.toLowerCase();
+          if (emailChanged) {
+            try {
+              const res = await fetch(PROFILE_SYNC_API, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${idToken}` },
+              });
+              const data = res.ok ? await res.json().catch(() => null) : null;
+              setProfile(data?.profile || profileFromApi);
+            } catch (_) {
+              setProfile(profileFromApi);
+            }
+          } else {
+            setProfile(profileFromApi);
+          }
         } else {
           let syncedViaApi = false;
           if (idToken) {
@@ -209,12 +235,58 @@ export function AuthProvider({ children }) {
     return { success: true };
   };
 
+  // Google-only account (no password credential) has no password to
+  // reauthenticate with, and its email IS the Google account's — the
+  // caller (settings.js) uses this to hide the change-email affordance
+  // rather than offer a flow that can only ever fail.
+  const hasPasswordProvider = () => (user?.providerData || []).some((p) => p.providerId === "password");
+
+  /**
+   * Sends a confirmation link to the NEW address; the sign-in email itself
+   * does not change until that link is clicked (verifyBeforeUpdateEmail,
+   * Firebase's recommended flow over the deprecated updateEmail — nothing
+   * takes effect without proving control of the new inbox first). This
+   * session's own onAuthStateChanged effect above re-syncs profile.email
+   * once the change lands, on whichever session next resolves auth.
+   *
+   * Mirrors the web's submitChangeEmail in src/features/profile/Profile.jsx.
+   */
+  const changeEmail = async (newEmail, currentPassword) => {
+    if (!user) return { error: "Not signed in" };
+    const email = (newEmail || "").trim();
+    if (!email || !email.includes("@")) return { error: "Enter a valid email address." };
+    if (email.toLowerCase() === (user.email || "").toLowerCase()) {
+      return { error: "That is already your current email." };
+    }
+    if (!currentPassword) return { error: "Enter your current password to confirm." };
+    try {
+      const cred = EmailAuthProvider.credential(user.email, currentPassword);
+      await reauthenticateWithCredential(user, cred);
+      await verifyBeforeUpdateEmail(user, email);
+      return { success: true };
+    } catch (e) {
+      return { error: emailChangeErrorMessage(e?.code) };
+    }
+  };
+
   const userIsAdmin = ADMIN_EMAILS.includes(user?.email?.toLowerCase()) || profile?.is_admin === true;
   const patchProfile = (patch) => setProfile((p) => ({ ...p, ...patch }));
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, authLoading, login, signup, logout, userIsAdmin, updateProfile, patchProfile }}
+      value={{
+        user,
+        profile,
+        authLoading,
+        login,
+        signup,
+        logout,
+        userIsAdmin,
+        updateProfile,
+        patchProfile,
+        hasPasswordProvider,
+        changeEmail,
+      }}
     >
       {children}
     </AuthContext.Provider>
