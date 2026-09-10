@@ -371,16 +371,20 @@ function RootNavigator() {
     checkAppLock();
   }, [authLoading, checkAppLock]);
 
-  // Re-lock on every return to the foreground, not just cold start — the
-  // whole point is that a phone left unattended mid-session (not just one
-  // freshly opened) still needs proving who picked it up.
+  // Re-lock on returning to the foreground after being away for a while —
+  // not cold start alone, since the whole point is that a phone left
+  // unattended mid-session also needs proving who picked it up, but not on
+  // every brief switch-away (checking a copied OTP, a quick notification
+  // peek) either, which would make the lock feel broken rather than secure.
+  const LOCK_GRACE_MS = 60000;
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "background" || state === "inactive") {
         backgroundedAt.current = Date.now();
       } else if (state === "active" && backgroundedAt.current) {
+        const awayMs = Date.now() - backgroundedAt.current;
         backgroundedAt.current = null;
-        if (!authLoading) checkAppLock();
+        if (!authLoading && awayMs >= LOCK_GRACE_MS) checkAppLock();
       }
     });
     return () => sub.remove();

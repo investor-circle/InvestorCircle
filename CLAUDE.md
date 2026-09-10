@@ -279,6 +279,33 @@ modules. These are now durable conventions, not a one-time cleanup:
     build is already planned for other reasons; re-enable the Profile menu
     entry once it's fixed.
 
+## Mobile native changes already merged, queued for the next build
+
+Code and asset changes below are committed to the repo but have **not shipped
+to anyone** — they need a new EAS build (native dependency, app icon, or
+`app.json` native config all fall outside what OTA can deliver; see "Mobile
+OTA updates" above). Nothing here needs further sign-off — implementation is
+done and reviewed — it's listed so a build doesn't quietly skip one of them.
+Remove an entry once a build that includes it has actually shipped.
+
+- **App icon rework** (`4e5133a`). New `icon.png` / Android adaptive-icon
+  layers (foreground, background, monochrome) and a matching
+  `android.adaptiveIcon.backgroundColor` (`#E6F4FE` → `#F5FBFF`) in
+  `mobile/app.json`. No `expo.version` bump — no native dependency,
+  permission, or plugin changed, just baked-in asset content — so any build
+  picks it up regardless of the version number at build time.
+- **Fingerprint / Face ID / device-PIN app lock** (`89e029b`). Adds the
+  `expo-local-authentication` native dependency (`mobile/package.json`),
+  its config plugin in `mobile/app.json` (adds `NSFaceIDUsageDescription` on
+  iOS and the biometric permissions on Android), and `expo.version` bumped
+  `1.0.1` → `1.0.2` per the OTA rule above. Feature code:
+  `mobile/src/services/appLock.js`, `mobile/src/components/AppLockScreen.js`,
+  wired into `mobile/app/_layout.js` (locks on cold start and on returning
+  from the background after 60+ seconds away) and `mobile/app/settings.js`
+  (the "Require Face ID / fingerprint" toggle). On by default; both the
+  toggle and the lock itself stay invisible on a device with nothing
+  enrolled (no biometric, no PIN/pattern) — see `isAppLockAvailable()`.
+
 ## Deployment considerations
 
 - Frontend auto-deploys to GitHub Pages on every push to `main` — treat changes
