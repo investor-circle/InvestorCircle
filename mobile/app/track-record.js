@@ -13,7 +13,7 @@ import { mapProfileReco } from "../src/utils/feed";
 import { iciFromStatsRow } from "../src/utils/ici";
 import { profileUrl } from "../src/utils/links";
 import { putReco } from "../src/utils/recoStore";
-import Avatar from "../src/components/Avatar";
+import ExpandableAvatar from "../src/components/ExpandableAvatar";
 import TrackRecordView, { SocialLinks } from "../src/components/TrackRecordView";
 import { colors, fonts, GRADIENT } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -127,7 +127,7 @@ function MyTrackRecordScreen() {
               broken rather than "there's more below." */}
           <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
             <View style={styles.heroTop}>
-              <Avatar profile={profile || me} size={50} style={styles.heroAvatar} />
+              <ExpandableAvatar profile={profile || me} size={50} style={styles.heroAvatar} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.name} numberOfLines={1}>
                   {profile?.full_name || me?.full_name || "—"}
