@@ -4,7 +4,7 @@
     "slug": "myinvestorcircle",
     "owner": "myinvestorcircle.com",
     "scheme": "myinvestorcircle",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "newArchEnabled": true,
@@ -73,6 +73,12 @@
       "expo-router",
       "@react-native-firebase/app",
       "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Use Face ID to unlock myInvestorCircle."
+        }
+      ],
       "./plugins/withCrashLogger"
     ],
     "experiments": {

@@ -9,7 +9,7 @@ loadPersistedLogs();
 // stopped at instead of just never arriving.
 mark("js-bundle-executed");
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -30,6 +30,8 @@ import {
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import ErrorBoundary from "../src/components/ErrorBoundary";
 import SetupGate, { setupIncomplete } from "../src/components/SetupGate";
+import AppLockScreen from "../src/components/AppLockScreen";
+import { isAppLockAvailable, getAppLockEnabled } from "../src/services/appLock";
 import { shouldOfferDiscover } from "../src/utils/setup";
 import { parseDeepLink, parseReferral, parsePasswordReset, isExternalWebLink } from "../src/utils/deepLinks";
 import { rememberReferral, redeemPendingReferral } from "../src/services/referral";
@@ -346,6 +348,44 @@ function RootNavigator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, segKey, initialUrlChecked]);
 
+  // App lock — a fingerprint/Face ID/device-PIN gate in front of an already
+  // signed-in session (see src/services/appLock.js for what this is and why
+  // it is not a login method). null = still deciding whether to lock at
+  // all, so the covering overlay stays up for that brief async check too —
+  // otherwise a device where the check resolves to "yes, lock" would flash
+  // real app content for a moment first.
+  const [locked, setLocked] = useState(null);
+  const backgroundedAt = useRef(null);
+
+  const checkAppLock = useCallback(async () => {
+    if (!user) {
+      setLocked(false);
+      return;
+    }
+    const [available, enabled] = await Promise.all([isAppLockAvailable(), getAppLockEnabled()]);
+    setLocked(available && enabled);
+  }, [user]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    checkAppLock();
+  }, [authLoading, checkAppLock]);
+
+  // Re-lock on every return to the foreground, not just cold start — the
+  // whole point is that a phone left unattended mid-session (not just one
+  // freshly opened) still needs proving who picked it up.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "background" || state === "inactive") {
+        backgroundedAt.current = Date.now();
+      } else if (state === "active" && backgroundedAt.current) {
+        backgroundedAt.current = null;
+        if (!authLoading) checkAppLock();
+      }
+    });
+    return () => sub.remove();
+  }, [authLoading, checkAppLock]);
+
   // Username + consent are required before the account can be used, exactly
   // as on the web. Google sign-in has no signup form, so those accounts arrive
   // with neither; without this they landed straight in the feed with no public
@@ -407,6 +447,22 @@ function RootNavigator() {
         <View style={StyleSheet.absoluteFill}>
           <ErrorBoundary label="setup">
             <SetupGate profile={profile} patchProfile={patchProfile} />
+          </ErrorBoundary>
+        </View>
+      ) : null}
+      {/* Last of all — covers the setup gate too. Nothing about setup or the
+          app itself should be visible before the phone's owner is proven.
+          A blank cover (not the prompt itself) while still deciding —
+          showing AppLockScreen here would fire its biometric prompt for
+          everyone for a frame, including someone who has the setting off or
+          a device that can't use it at all. */}
+      {!authLoading && user && locked === null ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg }]} />
+      ) : null}
+      {locked === true ? (
+        <View style={StyleSheet.absoluteFill}>
+          <ErrorBoundary label="app-lock">
+            <AppLockScreen onUnlocked={() => setLocked(false)} />
           </ErrorBoundary>
         </View>
       ) : null}

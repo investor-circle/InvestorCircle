@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -22,6 +23,7 @@ import {
   getRegOptions,
 } from "../src/services/api/profileApi";
 import { pickAndCompressAvatar } from "../src/services/avatarImage";
+import { isAppLockAvailable, getAppLockEnabled, setAppLockEnabled } from "../src/services/appLock";
 import Avatar from "../src/components/Avatar";
 import { setCachedAvatar } from "../src/services/avatarCache";
 import {
@@ -96,6 +98,28 @@ function SettingsScreen() {
     setEmailMsg(`We've sent a confirmation link to ${newEmail.trim()}. Your sign-in email won't change until you tap it.`);
     setEmailPassword("");
   }, [newEmail, emailPassword, changeEmail]);
+
+  // App lock — a device-level fingerprint/Face ID/PIN gate in front of the
+  // already-signed-in session (see src/services/appLock.js). The toggle is
+  // only shown at all on a device that can actually use it — offering it
+  // where it can only ever fail to prompt would be worse than not offering
+  // it. On by default (see appLock.js's getAppLockEnabled) — read here, not
+  // assumed, so a device that already has it turned off shows that state.
+  const [lockAvailable, setLockAvailable] = useState(false);
+  const [lockEnabled, setLockEnabled] = useState(true);
+
+  useEffect(() => {
+    isAppLockAvailable().then(async (available) => {
+      if (!mounted.current) return;
+      setLockAvailable(available);
+      if (available) setLockEnabled(await getAppLockEnabled());
+    });
+  }, []);
+
+  const toggleLock = useCallback((next) => {
+    setLockEnabled(next);
+    setAppLockEnabled(next);
+  }, []);
 
   // Re-seed once the profile arrives (it can be null on first render).
   useEffect(() => {
@@ -459,6 +483,29 @@ function SettingsScreen() {
               </Text>
             ) : null}
           </View>
+
+          {lockAvailable ? (
+            <>
+              <Text style={styles.sectionTitle}>Security</Text>
+              <View style={styles.card}>
+                <View style={styles.prefRow}>
+                  <Ionicons name="finger-print-outline" size={22} color={colors.accentInk} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.prefLabel}>Require Face ID / fingerprint</Text>
+                    <Text style={styles.prefDesc}>
+                      Lock the app whenever you leave and come back — on top of staying signed in.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={lockEnabled}
+                    onValueChange={toggleLock}
+                    trackColor={{ true: colors.accent }}
+                    thumbColor="#fff"
+                  />
+                </View>
+              </View>
+            </>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
