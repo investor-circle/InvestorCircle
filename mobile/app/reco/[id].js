@@ -33,6 +33,7 @@ import {
   trackReco,
   untrackReco,
 } from "../../src/services/api/engagementApi";
+import { searchPeople } from "../../src/services/api/peopleApi";
 import {
   setExitSignal,
   cancelExitSignal,
@@ -45,8 +46,36 @@ import { withBoundary } from "../../src/components/ErrorBoundary";
 import ShareRecoSheet from "../../src/components/ShareRecoSheet";
 import InvestPriceModal from "../../src/components/InvestPriceModal";
 
+// The @token, if any, ending exactly at the caret — mirrors the web's
+// activeMentionQuery in Recommendations.jsx's RecoComments.
+function activeMentionQuery(text, caret) {
+  const upto = text.slice(0, caret);
+  const m = upto.match(/(?:^|\s)@([a-zA-Z0-9_]{0,20})$/);
+  return m ? { query: m[1], start: caret - m[1].length - 1 } : null;
+}
+
+// Renders comment text as plain strings + tappable spans for confirmed
+// mentions (present in that comment's own server-resolved `mentions` list).
+// Mirrors the web's renderCommentBody.
+function renderCommentBody(text, mentions, onPressMention) {
+  if (!text) return text;
+  const usernames = new Set((mentions || []).map((m) => (m.username || "").toLowerCase()));
+  if (!usernames.size) return text;
+  return text.split(/(@[a-zA-Z0-9_]{5,20})/g).map((part, i) => {
+    const m = part.match(/^@([a-zA-Z0-9_]{5,20})$/);
+    if (m && usernames.has(m[1].toLowerCase())) {
+      return (
+        <Text key={i} style={styles.mention} onPress={() => onPressMention(m[1])}>
+          {part}
+        </Text>
+      );
+    }
+    return part;
+  });
+}
+
 function RecoDetailScreen() {
-  const { id, username } = useLocalSearchParams();
+  const { id, username, highlightComment } = useLocalSearchParams();
   const router = useRouter();
   const { profile, user } = useAuth();
   // Normally handed over in memory from the list — instant, no refetch. On a
@@ -63,6 +92,17 @@ function RecoDetailScreen() {
   const [shareOpen, setShareOpen] = useState(false);
   const [hidden, setHidden] = useState(!!reco?.hidden);
   const mounted = useRef(true);
+
+  // @mention suggestion dropdown state — see activeMentionQuery above.
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const [forcedSelection, setForcedSelection] = useState(null);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionResults, setMentionResults] = useState([]);
+  const [mentionAnchor, setMentionAnchor] = useState(null);
+  const mentionSeq = useRef(0);
+
+  const scrollRef = useRef(null);
+  const commentOffsets = useRef({}); // commentId -> y, captured via onLayout
 
   // Owner-only controls. The server independently enforces that only the
   // recommender may signal an exit — this just decides what to render.
@@ -297,6 +337,58 @@ function RecoDetailScreen() {
     }
   }, [comment, posting, id]);
 
+  // Re-derive the @mention dropdown whenever either the text or the cursor
+  // moves — recomputing from both (rather than reacting to text alone) is
+  // what keeps this correct once RN delivers the onChangeText and
+  // onSelectionChange events for the same keystroke slightly out of order.
+  useEffect(() => {
+    const active = activeMentionQuery(comment, selection.start);
+    if (!active) {
+      setMentionOpen(false);
+      return;
+    }
+    setMentionAnchor(active.start);
+    const seq = ++mentionSeq.current;
+    if (active.query.length < 2) {
+      setMentionResults([]);
+      setMentionOpen(true);
+      return;
+    }
+    searchPeople(active.query, 6).then((people) => {
+      if (seq !== mentionSeq.current) return; // a newer keystroke has since fired
+      setMentionResults(people);
+      setMentionOpen(true);
+    });
+  }, [comment, selection.start]);
+
+  const selectMention = useCallback(
+    (person) => {
+      if (mentionAnchor == null) return;
+      const caret = selection.start;
+      const next = `${comment.slice(0, mentionAnchor)}@${person.username} ${comment.slice(caret)}`;
+      setComment(next);
+      setMentionOpen(false);
+      const pos = mentionAnchor + person.username.length + 2;
+      setForcedSelection({ start: pos, end: pos });
+      // Only forces the cursor for this one render — leaving `selection` a
+      // controlled prop permanently causes cursor jumps on Android while
+      // typing normally afterwards.
+      setTimeout(() => setForcedSelection(null), 50);
+    },
+    [mentionAnchor, selection.start, comment]
+  );
+
+  // Deep-linked from a "mentioned you in a comment" notification — scroll to
+  // and highlight the specific comment once its layout is known. Mirrors the
+  // web's highlightCommentId handling in RecoComments.
+  useEffect(() => {
+    if (!highlightComment || !eng?.comments?.length) return;
+    const y = commentOffsets.current[String(highlightComment)];
+    if (y != null) {
+      setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true }), 250);
+    }
+  }, [highlightComment, eng]);
+
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.topbar}>
@@ -309,8 +401,14 @@ function RecoDetailScreen() {
         </Pressable>
       </View>
 
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+      {/* Android's KeyboardAvoidingView `behavior` was previously undefined
+          here, which is a no-op — nothing shrank the view to make room for
+          the keyboard, so the composer sat hidden behind it. "height" is the
+          standard fix: it resizes this view to fit above the keyboard,
+          independent of the window's own softInputMode, and (unlike
+          "position") without shifting the content that's still visible. */}
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <ScrollView ref={scrollRef} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
           {reco ? (
             // The card's own author name is the click-through to their
             // profile (see RecoCard's openAuthor) — a second "View profile"
@@ -443,13 +541,22 @@ function RecoDetailScreen() {
           ) : (
             eng.comments.map((c) => {
               const uid = c.userId ?? c.user_id;
+              const isHighlighted = String(c.id) === String(highlightComment);
               return (
-                <View key={String(c.id)} style={styles.comment}>
+                <View
+                  key={String(c.id)}
+                  style={[styles.comment, isHighlighted && styles.commentHighlighted]}
+                  onLayout={(e) => {
+                    commentOffsets.current[String(c.id)] = e.nativeEvent.layout.y;
+                  }}
+                >
                   <Pressable style={styles.commentHead} onPress={() => openCommentAuthor(uid)} disabled={!uid}>
                     <Avatar uid={uid} name={c.userName || c.user_name} size={26} />
                     <Text style={styles.commentAuthor}>{c.userName || c.user_name || "User"}</Text>
                   </Pressable>
-                  <Text style={styles.commentBody}>{c.comment}</Text>
+                  <Text style={styles.commentBody}>
+                    {renderCommentBody(c.comment, c.mentions, (uname) => router.push(`/investor/${uname}`))}
+                  </Text>
                   <Text style={styles.commentDate}>{fmtDate(c.createdAt || c.created_at)}</Text>
                 </View>
               );
@@ -458,22 +565,47 @@ function RecoDetailScreen() {
         </ScrollView>
 
         {/* Comment composer */}
-        <View style={styles.composer}>
-          <TextInput
-            style={styles.composerInput}
-            placeholder="Add a comment…"
-            placeholderTextColor={colors.muted}
-            value={comment}
-            onChangeText={setComment}
-            multiline
-          />
-          <Pressable
-            style={[styles.sendBtn, (!comment.trim() || posting) && styles.sendBtnDisabled]}
-            onPress={submitComment}
-            disabled={!comment.trim() || posting}
-          >
-            {posting ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="send" size={18} color="#fff" />}
-          </Pressable>
+        <View style={styles.composerWrap}>
+          {mentionOpen && (
+            <View style={styles.mentionDropdown}>
+              <ScrollView keyboardShouldPersistTaps="always">
+                {mentionResults.length === 0 ? (
+                  <Text style={styles.mentionEmpty}>No matching investors</Text>
+                ) : (
+                  mentionResults.map((p) => (
+                    <Pressable key={p.id} style={styles.mentionRow} onPress={() => selectMention(p)}>
+                      <Avatar uid={p.id} name={p.full_name || p.username} size={24} />
+                      <View style={{ minWidth: 0 }}>
+                        <Text style={styles.mentionName} numberOfLines={1}>
+                          {p.full_name || p.username}
+                        </Text>
+                        <Text style={styles.mentionUsername}>@{p.username}</Text>
+                      </View>
+                    </Pressable>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          )}
+          <View style={styles.composer}>
+            <TextInput
+              style={styles.composerInput}
+              placeholder="Add a comment… (@ to mention someone)"
+              placeholderTextColor={colors.muted}
+              value={comment}
+              onChangeText={setComment}
+              onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+              selection={forcedSelection || undefined}
+              multiline
+            />
+            <Pressable
+              style={[styles.sendBtn, (!comment.trim() || posting) && styles.sendBtnDisabled]}
+              onPress={submitComment}
+              disabled={!comment.trim() || posting}
+            >
+              {posting ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="send" size={18} color="#fff" />}
+            </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
 
@@ -593,6 +725,27 @@ const styles = StyleSheet.create({
   commentAuthor: { color: colors.ink, fontFamily: fonts.bold, fontSize: 13 },
   commentBody: { color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 14, lineHeight: 19 },
   commentDate: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, marginTop: 5 },
+  commentHighlighted: { borderColor: colors.accent, borderWidth: 1.5, backgroundColor: colors.accentSoft },
+  mention: { color: colors.accentInk, fontFamily: fonts.bold },
+
+  composerWrap: { position: "relative" },
+  mentionDropdown: {
+    position: "absolute",
+    bottom: "100%",
+    left: 12,
+    right: 60,
+    marginBottom: 6,
+    maxHeight: 220,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  mentionRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 9 },
+  mentionName: { color: colors.ink, fontFamily: fonts.bold, fontSize: 13 },
+  mentionUsername: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11 },
+  mentionEmpty: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, padding: 12 },
 
   composer: {
     flexDirection: "row",

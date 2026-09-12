@@ -56,6 +56,11 @@ const TEMPLATES = {
     body: `${name} commented on your idea${ticker ? ' · ' + ticker : ''}`,
     tag: 'contact_comment',
   }),
+  mention: (name, ticker) => ({
+    title: '📣 You were mentioned',
+    body: `${name} mentioned you in a comment${ticker ? ' · ' + ticker : ''}`,
+    tag: 'mention',
+  }),
 };
 
 /**

@@ -30,6 +30,7 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
     contact_like:            "liked your idea",
     network_like:            "liked an idea",
     network_comment:         "commented on an idea",
+    mention:                 "mentioned you in a comment",
   };
   const TYPE_ICON = {
     contact_recommendation: "💡",
@@ -37,6 +38,7 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
     contact_like:           "👍",
     network_like:           "👍",
     network_comment:        "💬",
+    mention:                "📣",
   };
 
   // Build the display text — friendly, natural language for all notification types
@@ -89,6 +91,10 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
       return <>{ticker||'An idea you track'}{byLine} has expired</>;
     if (n.type === 'idea_expiring_today')
       return <>Your idea {ticker||''} expires today</>;
+
+    // "Ananya Iyer mentioned you in a comment — INFY"
+    if (n.type === 'mention')
+      return <><b>{n.from_name||'Someone'}</b> mentioned you in a comment{ticker ? <> — {ticker}</> : ''}</>;
 
     // Other engagement types
     if (n.type === 'contact_comment')

@@ -46,7 +46,8 @@ import {
   untrackReco as dbUntrackReco
 } from "../../services/api/engagementApi";
 import {
-  getSectors as dbGetSectors
+  getSectors as dbGetSectors,
+  searchPeople as dbSearchPeople
 } from "../../services/api/lookupsApi";
 import {
   getPublicProfile as dbGetPublicProfile,
@@ -2333,7 +2334,7 @@ function RecoLinkSharePopover({ url, anchorEl, copied, onCopy, onClose }) {
 
 /* ─── RecoPostPage — dedicated shareable post view for a single recommendation ── */
 
-export function RecoPostPage({ username, recoId, viewerUser, ME, contacts=[], groups=[], onBack, onNavigateProfile }) {
+export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser, ME, contacts=[], groups=[], onBack, onNavigateProfile }) {
   const isMobile = useIsMobile();
   const [data,         setData]         = useState(null);
   const [reco,         setReco]         = useState(null);
@@ -2694,7 +2695,7 @@ export function RecoPostPage({ username, recoId, viewerUser, ME, contacts=[], gr
           <div id="rpp-comments" style={{background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
                        padding:'20px', marginBottom:14}}>
             <div style={{fontWeight:700, fontSize:15, marginBottom:16}}>Comments</div>
-            <RecoComments recoId={recoId} me={commentMe}/>
+            <RecoComments recoId={recoId} me={commentMe} highlightCommentId={highlightCommentId}/>
             {!viewerUser && (
               <div style={{textAlign:'center', marginTop:12, fontSize:13, color:'var(--muted)'}}>
                 <a href={window.location.pathname} style={{color:'var(--accent)', fontWeight:700}}>
@@ -2758,13 +2759,57 @@ export function InvestedToggle({ invested, investedPrice, reco, onMark, onUnmark
   );
 }
 
+/* ─── @mention helpers — shared by the comment composer and renderer ───────────── */
+
+// The @token, if any, ending exactly at the caret — e.g. typing "hi @ro"
+// with the caret at the end returns "ro". Used to decide whether to open
+// the suggestion dropdown and what to search for.
+function activeMentionQuery(text, caret) {
+  const upto = text.slice(0, caret);
+  const m = upto.match(/(?:^|\s)@([a-zA-Z0-9_]{0,20})$/);
+  return m ? { query: m[1], start: caret - m[1].length - 1 } : null;
+}
+
+// Renders comment text as plain strings + clickable spans for confirmed
+// mentions — confirmed meaning present in that comment's own `mentions`
+// list (server-resolved), not just anything shaped like "@word". Building
+// an array of nodes (rather than dangerouslySetInnerHTML, as ThesisRenderer
+// does for the richer thesis field) keeps this free of any HTML-injection
+// surface, which a plain-text field like a comment has no reason to need.
+function renderCommentBody(text, mentions) {
+  if (!text) return text;
+  const usernames = new Set((mentions || []).map(m => (m.username || '').toLowerCase()));
+  if (!usernames.size) return text;
+  return text.split(/(@[a-zA-Z0-9_]{5,20})/g).map((part, i) => {
+    const m = part.match(/^@([a-zA-Z0-9_]{5,20})$/);
+    if (m && usernames.has(m[1].toLowerCase())) {
+      return (
+        <span key={i} style={{color:'var(--accent-ink)',fontWeight:700,cursor:'pointer'}}
+          onClick={e=>{ e.stopPropagation(); openProfile(m[1]); }}>
+          {part}
+        </span>
+      );
+    }
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+}
+
 /* ─── Shared comments component ─────────────────────────────────────────────────── */
 
-export function RecoComments({ recoId, me }) {
+export function RecoComments({ recoId, me, highlightCommentId }) {
   const [comments,  setComments]  = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [text,      setText]      = useState('');
   const [submitting,setSubmitting]= useState(false);
+  const inputRef = useRef(null);
+  const wrapRef  = useRef(null);
+
+  // @mention suggestion dropdown state. `anchor` is the index of the "@" the
+  // current query started at, so a selection knows exactly what to replace.
+  const [mentionOpen,    setMentionOpen]    = useState(false);
+  const [mentionResults, setMentionResults] = useState([]);
+  const [mentionAnchor,  setMentionAnchor]  = useState(null);
+  const mentionSeq = useRef(0);
 
   useEffect(()=>{
     if(!recoId){ setLoading(false); return; }
@@ -2774,13 +2819,58 @@ export function RecoComments({ recoId, me }) {
       .catch(()=>setLoading(false));
   },[recoId]);
 
+  // Deep-linked from a "mentioned you in a comment" notification — scroll the
+  // specific comment into view once it's loaded. Same pattern as CirclePage's
+  // highlightIdeaId.
+  useEffect(()=>{
+    if(!highlightCommentId || !comments.length) return;
+    const el = document.getElementById(`comment-${highlightCommentId}`);
+    if (el) setTimeout(()=>el.scrollIntoView({behavior:'smooth', block:'center'}), 150);
+  },[comments, highlightCommentId]);
+
+  // Close the suggestion dropdown on an outside click.
+  useEffect(()=>{
+    if (!mentionOpen) return;
+    const h = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setMentionOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  },[mentionOpen]);
+
+  const onTextChange = (e) => {
+    const value = e.target.value;
+    const caret = e.target.selectionStart ?? value.length;
+    setText(value);
+
+    const active = activeMentionQuery(value, caret);
+    if (!active) { setMentionOpen(false); return; }
+    setMentionAnchor(active.start);
+    const seq = ++mentionSeq.current;
+    if (active.query.length < 2) { setMentionResults([]); setMentionOpen(true); return; }
+    dbSearchPeople(active.query, 6).then(people => {
+      if (seq !== mentionSeq.current) return; // a newer keystroke has since fired
+      setMentionResults(people);
+      setMentionOpen(true);
+    }).catch(()=>{});
+  };
+
+  const selectMention = (person) => {
+    if (mentionAnchor == null) return;
+    const caret = inputRef.current?.selectionStart ?? text.length;
+    const next = `${text.slice(0, mentionAnchor)}@${person.username} ${text.slice(caret)}`;
+    setText(next);
+    setMentionOpen(false);
+    const pos = mentionAnchor + person.username.length + 2;
+    setTimeout(()=>{ inputRef.current?.focus(); inputRef.current?.setSelectionRange(pos, pos); }, 0);
+  };
+
   const submit=async()=>{
     if(!text.trim()||!me?.id) return;
     setSubmitting(true);
     const name=[me.firstName,me.lastName].filter(Boolean).join(' ')||me.name||'User';
     try{
-      // Server derives the commenter's display name from their own profile and
-      // performs the owner/network notification fan-out (see engagement.js).
+      // Server derives the commenter's display name from their own profile,
+      // resolves any @username tokens against real accounts, and performs
+      // the owner/network/mention notification fan-out (see engagement.js).
       const comment = await dbCommentOnReco(recoId, text.trim());
       setComments(prev=>[...prev, comment]);
       setText('');
@@ -2794,13 +2884,36 @@ export function RecoComments({ recoId, me }) {
       {me?.id && (
         <div style={{display:'flex',gap:9,marginBottom:14,alignItems:'flex-start'}}>
           <div className="av" style={{width:30,height:30,background:'var(--grad)',fontSize:11,flexShrink:0}}>{initialsOf(me.name||'?')}</div>
-          <div style={{flex:1,display:'flex',gap:8}}>
-            <input value={text} onChange={e=>setText(e.target.value)} placeholder="Add a comment…"
-              onKeyDown={e=>e.key==='Enter'&&!submitting&&text.trim()&&submit()}
+          <div ref={wrapRef} style={{flex:1,display:'flex',gap:8,position:'relative'}}>
+            <input ref={inputRef} value={text} onChange={onTextChange} placeholder="Add a comment… (@ to mention someone)"
+              onKeyDown={e=>{
+                if(e.key==='Enter' && mentionOpen && mentionResults.length){ e.preventDefault(); selectMention(mentionResults[0]); return; }
+                if(e.key==='Escape' && mentionOpen){ setMentionOpen(false); return; }
+                if(e.key==='Enter' && !submitting && text.trim()) submit();
+              }}
               style={{flex:1,border:'1px solid var(--line-2)',borderRadius:10,padding:'8px 12px',fontSize:13,outline:'none',background:'var(--surface)',fontFamily:'var(--font)'}}/>
             <button className="btn btn-pri btn-sm" disabled={!text.trim()||submitting} onClick={submit} style={{flexShrink:0}}>
               {submitting?<Loader size={13} className="spin"/>:<Send size={13}/>}
             </button>
+            {mentionOpen && (
+              <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,width:260,background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,boxShadow:'0 8px 28px rgba(0,0,0,.13)',zIndex:200,maxHeight:220,overflowY:'auto'}}>
+                {mentionResults.length===0
+                  ? <div className="muted small" style={{padding:'10px 14px'}}>No matching investors</div>
+                  : mentionResults.map(p=>(
+                      <div key={p.id} onMouseDown={()=>selectMention(p)}
+                        style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',cursor:'pointer'}}
+                        onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
+                        onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                        <div className="av" style={{width:24,height:24,fontSize:10,flexShrink:0,background:'var(--grad)'}}>{initialsOf(p.full_name||p.username)}</div>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.full_name||p.username}</div>
+                          <div className="muted" style={{fontSize:11}}>@{p.username}</div>
+                        </div>
+                      </div>
+                    ))
+                }
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2809,18 +2922,23 @@ export function RecoComments({ recoId, me }) {
         ? <div className="muted small" style={{paddingBottom:8}}><Loader size={13} className="spin" style={{marginRight:6}}/>Loading comments…</div>
         : comments.length===0
           ? <div className="muted small" style={{fontStyle:'italic'}}>No comments yet — be the first!</div>
-          : comments.map(c=>(
-              <div key={c.id} style={{display:'flex',gap:9,marginBottom:12}}>
+          : comments.map(c=>{
+              const isHighlighted = String(c.id)===String(highlightCommentId);
+              return (
+              <div key={c.id} id={`comment-${c.id}`} style={{display:'flex',gap:9,marginBottom:12}}>
                 <div className="av" style={{width:28,height:28,background:'var(--accent)',fontSize:10,flexShrink:0}}>{initialsOf(c.user_name||'?')}</div>
                 <div style={{flex:1}}>
                   <div style={{display:'flex',alignItems:'baseline',gap:7,marginBottom:2}}>
                     <span style={{fontSize:12,fontWeight:700}}>{c.userName||'User'}</span>
                     <span className="muted small" style={{fontSize:11}}>{new Date(c.createdAt).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
                   </div>
-                  <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.6,background:'var(--surface-2)',borderRadius:10,padding:'7px 11px'}}>{c.comment}</div>
+                  <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.6,background: isHighlighted ? 'var(--accent-soft, rgba(109,93,245,.1))' : 'var(--surface-2)',
+                    border: isHighlighted ? '1.5px solid var(--accent)' : '1px solid transparent',
+                    borderRadius:10,padding:'7px 11px'}}>{renderCommentBody(c.comment, c.mentions)}</div>
                 </div>
               </div>
-            ))
+              );
+            })
       }
     </div>
   );
