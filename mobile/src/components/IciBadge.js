@@ -88,19 +88,25 @@ const styles = StyleSheet.create({
   scoreSm: { fontSize: 12 },
   band: { fontFamily: fonts.semibold, fontSize: 11 },
   bandSm: { fontSize: 10 },
-  ringWrap: { alignItems: "center", gap: 8 },
+  ringWrap: { alignItems: "center", gap: 6 },
+  // Trimmed from 108/38pt down: this ring + its 7-row breakdown below was
+  // the single biggest thing standing between the top of the track record
+  // page and the Ideas/Active/Closed/Years stat row — tall enough on its
+  // own to push that whole row (and the hint that there's more to scroll
+  // to) off the first screen regardless of how compact the hero above it
+  // was. Only usage of the "xl" size is this page, so safe to tighten here.
   ring: {
-    width: 108,
-    height: 108,
-    borderRadius: 54,
-    borderWidth: 7,
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    borderWidth: 6,
     alignItems: "center",
     justifyContent: "center",
   },
-  ringScore: { fontFamily: fonts.extrabold, fontSize: 38, lineHeight: 42 },
-  ringMax: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 11, marginTop: -2 },
-  ringBand: { fontFamily: fonts.extrabold, fontSize: 14, letterSpacing: 0.3 },
-  breakdown: { alignSelf: "stretch", marginTop: 14, gap: 8 },
+  ringScore: { fontFamily: fonts.extrabold, fontSize: 32, lineHeight: 36 },
+  ringMax: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 10.5, marginTop: -2 },
+  ringBand: { fontFamily: fonts.extrabold, fontSize: 13, letterSpacing: 0.3 },
+  breakdown: { alignSelf: "stretch", marginTop: 10, gap: 5 },
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
   rowLabel: { flex: 1, color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 12 },
   track: { width: 70, height: 5, borderRadius: 3, backgroundColor: colors.line, overflow: "hidden" },

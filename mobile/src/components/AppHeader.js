@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, Image } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import Avatar from "./Avatar";
 import { useAuth } from "../context/AuthContext";
 import { getMyNotifications } from "../services/api/notificationsApi";
-import { colors, fonts } from "../theme/colors";
+import { colors, fonts, GRADIENT } from "../theme/colors";
 
 const LOGO = require("../../assets/mic-logo.png");
 
@@ -57,6 +58,25 @@ export default function AppHeader({ title }) {
           {title}
         </Text>
       </View>
+      {/* Discover investors — same Sparkles icon AND the same filled-purple
+          treatment as the web's top-bar entry (App.jsx), which visually
+          calls it out from the plain outline icons beside it. Pushed here
+          so it isn't only reachable through the Profile menu. Kept a touch
+          smaller and softer than the account avatar beside it (also on this
+          gradient now that it falls back to it) — two full-vibrancy chips
+          the same size and colour right next to each other competed for
+          the eye instead of one clearly reading as "you" and the other as
+          an action. */}
+      <Pressable onPress={() => router.push("/people")} hitSlop={6}>
+        <LinearGradient
+          colors={GRADIENT.colors}
+          start={GRADIENT.start}
+          end={GRADIENT.end}
+          style={[styles.discoverBtn, { opacity: 0.82 }]}
+        >
+          <Ionicons name="sparkles" size={16} color="#fff" />
+        </LinearGradient>
+      </Pressable>
       <Pressable style={styles.iconBtn} onPress={() => router.push("/search")} hitSlop={6}>
         <Ionicons name="search-outline" size={22} color={colors.ink} />
       </Pressable>
@@ -70,7 +90,11 @@ export default function AppHeader({ title }) {
       </Pressable>
       <Pressable style={styles.avatarBtn} onPress={() => router.push("/profile")} hitSlop={6}>
         <View style={styles.avatarRing}>
-          <Avatar profile={profile} size={28} />
+          {/* gradient: without a photo this used to fall back to a flat grey
+              chip — every reco card's own avatar already uses the vibrant
+              brand gradient for the same fallback, so this was the one
+              place in the app a photo-less user looked washed out. */}
+          <Avatar profile={profile} size={40} gradient />
         </View>
       </Pressable>
     </View>
@@ -81,7 +105,7 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: "row",
     alignItems: "center",
-    height: 58,
+    height: 64,
     paddingHorizontal: 14,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
@@ -90,8 +114,10 @@ const styles = StyleSheet.create({
   },
   // width/height only, no borderRadius: the source asset is already a
   // rounded/shield mark, and forcing a square crop on top of it clipped part
-  // of the artwork at this larger size.
-  logo: { width: 36, height: 36 },
+  // of the artwork at this larger size. Sized up to actually fill the bar's
+  // vertical space instead of floating in the middle of it with empty
+  // padding above and below.
+  logo: { width: 46, height: 46 },
   // includeFontPadding:false + an explicit lineHeight bigger than the
   // fontSize: without it Android's own extra glyph padding combined with
   // Plus Jakarta Sans' descender metrics clipped the "y" in "My Investor
@@ -115,14 +141,23 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   iconBtn: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
+  discoverBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   avatarBtn: { marginLeft: 2 },
   // A ring makes the account avatar read as a tappable control rather than
   // plain decoration, the same affordance the search/notification icons get
   // for free from their own icon-button hit area.
+  // At par with the logo (46x46) — was 34x34/28, noticeably smaller than
+  // everything else in the bar and easy to miss as the way into Profile.
   avatarRing: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     borderWidth: 1.5,
     borderColor: colors.line,
     alignItems: "center",

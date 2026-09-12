@@ -34,6 +34,11 @@
  *                recommendation owner, plus 'network_comment' notifications to
  *                the commenter's accepted connections (excluding the owner).
  *                Skipped entirely if the commenter is the recommendation owner.
+ *              — separately, any @username tokens in the comment text are
+ *                resolved against user_profiles and stored as `mentions`;
+ *                each resolved user (never the commenter themselves) gets a
+ *                'mention' notification + push. This does NOT fan out to
+ *                either party's network — only the tagged person is told.
  *     track:   { recoId, isInvested?, investedPrice? }
  *              — isInvested omitted/undefined: plain bookmark
  *                (INSERT ... ON CONFLICT DO NOTHING).
@@ -98,13 +103,42 @@ function mapComment(c) {
     userName:  c.user_name,
     comment:   c.comment,
     createdAt: c.created_at,
+    mentions:  c.mentions || [],
   };
+}
+
+// Username rule the app enforces everywhere else (signup, settings, lookups
+// people-search) — see api/_lib/handlers/lookups.js's own USERNAME_RE.
+const MENTION_TOKEN_RE = /@([a-zA-Z0-9_]{5,20})(?![a-zA-Z0-9_])/g;
+const MAX_MENTIONS_PER_COMMENT = 20;
+
+/**
+ * Resolve @username tokens found in a comment against real accounts.
+ *
+ * Client-side autocomplete always inserts an exact, real username, but the
+ * server re-resolves independently rather than trusting a client-supplied
+ * list of ids — the same reason userName above is looked up server-side
+ * rather than accepted from the request body.
+ *
+ * @returns [{ id, username }] — deduped, self excluded, capped.
+ */
+async function resolveMentions(commentText, commenterId) {
+  const candidates = [...new Set(
+    [...commentText.matchAll(MENTION_TOKEN_RE)].map(m => m[1].toLowerCase())
+  )].slice(0, MAX_MENTIONS_PER_COMMENT);
+  if (!candidates.length) return [];
+
+  const rows = await sql`
+    SELECT id, username FROM user_profiles
+    WHERE LOWER(username) = ANY(${candidates}) AND id != ${commenterId}
+  `;
+  return rows.map(r => ({ id: r.id, username: r.username }));
 }
 
 async function getEngagement(recoId, userId) {
   const [likeRows, commentRows, myReactionRows, trackingRows] = await Promise.all([
     sql`SELECT COUNT(*)::int AS cnt FROM recommendation_reactions WHERE reco_id = ${String(recoId)}`,
-    sql`SELECT id, user_id, user_name, comment, created_at
+    sql`SELECT id, user_id, user_name, comment, created_at, mentions
         FROM recommendation_comments WHERE reco_id = ${recoId} ORDER BY created_at ASC`,
     sql`SELECT reaction FROM recommendation_reactions
         WHERE reco_id = ${String(recoId)} AND user_id = ${userId} LIMIT 1`,
@@ -244,6 +278,33 @@ async function notifyComment({ recoId, userId, commenterName, commentText }) {
     }).catch(() => {});
 }
 
+/**
+ * Notify each user @mentioned in a comment. Deliberately narrower than
+ * notifyComment above: no email, and no fan-out to anyone's network — being
+ * tagged is a direct, personal notification, not something the mentioner's
+ * or owner's connections should also see.
+ *
+ * reference_id is set to recoId (unlike contact_comment/contact_like, which
+ * only carry it in metadata) so the existing mobile notifTarget() resolves a
+ * tap without needing a separate fix — see mobile/src/utils/notifications.js.
+ */
+function notifyMentions({ mentions, recoId, commentId, userId, commenterName, ownerUsername, ticker, assetName }) {
+  if (!mentions.length) return;
+  const meta = JSON.stringify({ ticker, assetName, recoId, commentId, recommenderUsername: ownerUsername || '' });
+  mentions.forEach(m => {
+    sql`INSERT INTO notifications (user_id, type, from_user_id, reference_id, metadata)
+        VALUES (${m.id}, 'mention', ${userId}, ${recoId}, ${meta})`
+      .then(() => sendPush(
+        m.id,
+        'mention',
+        { full_name: commenterName, username: m.username },
+        ownerUsername && recoId ? `/investor/${ownerUsername}/reco/${recoId}?highlightComment=${encodeURIComponent(commentId)}` : null,
+        ticker
+      ))
+      .catch(() => {});
+  });
+}
+
 export default async function handleEngagement(req, res, userId) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -333,15 +394,28 @@ export default async function handleEngagement(req, res, userId) {
 
       const profileRows = await sql`SELECT full_name FROM user_profiles WHERE id=${userId} LIMIT 1`;
       const userName = profileRows[0]?.full_name || 'User';
+      const mentions = await resolveMentions(commentText, userId);
 
       const inserted = await sql`
-        INSERT INTO recommendation_comments (reco_id, user_id, user_name, comment)
-        VALUES (${recoId}, ${userId}, ${userName}, ${commentText})
-        RETURNING id, user_id, user_name, comment, created_at
+        INSERT INTO recommendation_comments (reco_id, user_id, user_name, comment, mentions)
+        VALUES (${recoId}, ${userId}, ${userName}, ${commentText}, ${JSON.stringify(mentions)})
+        RETURNING id, user_id, user_name, comment, created_at, mentions
       `;
       const comment = mapComment(inserted[0]);
 
       notifyComment({ recoId, userId, commenterName: userName, commentText }).catch(() => {});
+      if (mentions.length) {
+        sql`SELECT ir.ticker, ir.asset_name AS asset_name, up.username AS recommender_username
+            FROM ic_recommendations ir JOIN user_profiles up ON up.id = ir.recommender_id
+            WHERE ir.id = ${recoId} LIMIT 1`
+          .then(rows => {
+            const row = rows[0] || {};
+            notifyMentions({
+              mentions, recoId, commentId: comment.id, userId, commenterName: userName,
+              ownerUsername: row.recommender_username, ticker: row.ticker, assetName: row.asset_name,
+            });
+          }).catch(() => {});
+      }
 
       res.status(200).json({ comment });
       return;

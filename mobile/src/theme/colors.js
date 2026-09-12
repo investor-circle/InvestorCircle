@@ -22,6 +22,7 @@ export const colors = {
   gainSoft: "#e6f4ec",
   loss: "#c2453d",
   lossSoft: "#f8eae8",
+  amber: "#9a6a16",
 
   side: "#0a0b18",
 

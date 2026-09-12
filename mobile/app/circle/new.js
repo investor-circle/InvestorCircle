@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { createGroup } from "../../src/services/api/groupsApi";
+import { createGroup, getMyGroups } from "../../src/services/api/groupsApi";
 import { getMyConnections } from "../../src/services/api/connectionsApi";
 import { initialsOf } from "../../src/utils/format";
 import { colors, fonts } from "../../src/theme/colors";
@@ -31,6 +31,7 @@ function NewCircleScreen() {
   const [circleType, setCircleType] = useState("private");
   const [color, setColor] = useState(SWATCHES[0]);
   const [connections, setConnections] = useState([]);
+  const [myGroups, setMyGroups] = useState([]);
   const [selected, setSelected] = useState({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -39,8 +40,10 @@ function NewCircleScreen() {
   useEffect(() => {
     mounted.current = true;
     (async () => {
-      const conns = await getMyConnections();
-      if (mounted.current) setConnections((conns || []).filter((c) => c.status === "accepted"));
+      const [conns, grps] = await Promise.all([getMyConnections(), getMyGroups()]);
+      if (!mounted.current) return;
+      setConnections((conns || []).filter((c) => c.status === "accepted"));
+      setMyGroups(grps || []);
     })();
     return () => {
       mounted.current = false;
@@ -48,12 +51,21 @@ function NewCircleScreen() {
   }, []);
 
   const submit = async () => {
-    if (!name.trim()) return setError("Give your Circle a name.");
+    const trimmed = name.trim();
+    if (!trimmed) return setError("Give your Circle a name.");
+    // Same client-side guard as web (Groups.jsx doCreateGroup) — checked
+    // against Circles the caller owns/admins, case-insensitively, before
+    // ever calling the API. The server itself enforces no uniqueness, so
+    // this is purely to catch the mistake early rather than after a round
+    // trip.
+    if (myGroups.some((g) => g.my_role === "admin" && (g.name || "").toLowerCase() === trimmed.toLowerCase())) {
+      return setError(`You already have a Circle named "${trimmed}".`);
+    }
     setError("");
     setSaving(true);
     const memberIds = Object.keys(selected).filter((id) => selected[id]);
     const res = await createGroup({
-      name: name.trim(),
+      name: trimmed,
       color,
       memberIds,
       circleType,

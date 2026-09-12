@@ -21,21 +21,14 @@ import { API_ORIGIN } from "./api";
 
 const TIMEOUT_MS = 10000;
 
-/**
- * Today's close for one symbol.
- * @returns { price, currency, date, source, symbol } or null — never throws.
- *
- * Null is a legitimate answer, not an error: the web shows "Price
- * unavailable — will not be stamped" and still lets the exit through, so the
- * exit is never blocked by a price lookup.
- */
-export async function getTodayClose(symbol, exchange = "NSE") {
-  const sym = String(symbol || "").trim();
+async function fetchPrice(params) {
+  const sym = String(params.symbol || "").trim();
   if (!sym) return null;
 
   const url =
     `${API_ORIGIN}/api/price?symbol=${encodeURIComponent(sym)}` +
-    `&exchange=${encodeURIComponent(exchange || "NSE")}`;
+    `&exchange=${encodeURIComponent(params.exchange || "NSE")}` +
+    (params.date ? `&date=${encodeURIComponent(params.date)}` : "");
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -50,6 +43,29 @@ export async function getTodayClose(symbol, exchange = "NSE") {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Today's close for one symbol.
+ * @returns { price, currency, date, source, symbol } or null — never throws.
+ *
+ * Null is a legitimate answer, not an error: the web shows "Price
+ * unavailable — will not be stamped" and still lets the exit through, so the
+ * exit is never blocked by a price lookup.
+ */
+export async function getTodayClose(symbol, exchange = "NSE") {
+  return fetchPrice({ symbol, exchange });
+}
+
+/**
+ * Previous trading day's close — used to auto-stamp a new idea's entry price,
+ * the same call the web makes the moment an instrument is picked
+ * (src/services/marketData.js getPreviousClose). A new idea's entry price is
+ * never typed by hand on either client; this is the only way mobile gets one.
+ * @returns { price, currency, date, source, symbol } or null — never throws.
+ */
+export async function getPreviousClose(symbol, exchange = "NSE") {
+  return fetchPrice({ symbol, exchange });
 }
 
 /** Human-readable label for a price source. Mirrors the web's sourceName(). */

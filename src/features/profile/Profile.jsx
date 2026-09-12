@@ -25,7 +25,13 @@ import {
   ArrowUpDown,
   ChevronDown
 } from "lucide-react";
-import { createUserWithEmailAndPassword, updateProfile as fbUpdateProfile } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword,
+  updateProfile as fbUpdateProfile,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  verifyBeforeUpdateEmail,
+} from "firebase/auth";
 import { auth as primaryAuth } from "../../firebase";
 import {
   getClaimAdminLink as dbGetClaimAdminLink,
@@ -61,6 +67,33 @@ import { SECTOR_EMOJI } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
 import { getClosedInfo, initialsOf } from "../../utils/format";
+
+/**
+ * Firebase Auth error -> user-facing message, for the "change email" flow
+ * specifically (reauthenticate + verifyBeforeUpdateEmail). Kept local to
+ * this feature rather than a shared util — this codebase inlines these per
+ * feature (see LoginPage.jsx's own friendlyError/googleErrorMessage) rather
+ * than maintaining one central switch every caller has to fit.
+ */
+function emailChangeErrorMessage(code) {
+  switch (code) {
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+      return 'Incorrect password. Please try again.';
+    case 'auth/invalid-email':
+      return 'Enter a valid email address.';
+    case 'auth/email-already-in-use':
+      return 'That email is already in use by another account.';
+    case 'auth/requires-recent-login':
+      return 'For your security, please sign out and back in, then try again.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts — please wait a moment, then try again.';
+    case 'auth/network-request-failed':
+      return 'Network error. Please check your connection and try again.';
+    default:
+      return "Couldn't update your email. Please try again.";
+  }
+}
 
 /* ── ProfileSharePopover — Copy link / Share on WhatsApp for a profile,
    same anchored-popover-on-desktop / bottom-sheet-on-mobile pattern as the
@@ -156,6 +189,17 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   const [editErr,          setEditErr]          = useState('');
   const [regOptions,       setRegOptions]       = useState([]);
   const [sebiVerifyMsg,    setSebiVerifyMsg]    = useState('');
+
+  // Email change — a separate flow from the fields above, deliberately: it
+  // needs Firebase re-authentication + a verification link to the NEW
+  // address (verifyBeforeUpdateEmail), not just a DB field save, so it has
+  // its own open/busy/message state rather than folding into saveEdit().
+  const [changingEmail,    setChangingEmail]    = useState(false);
+  const [newEmail,         setNewEmail]         = useState('');
+  const [emailPassword,    setEmailPassword]    = useState('');
+  const [emailBusy,        setEmailBusy]        = useState(false);
+  const [emailMsg,         setEmailMsg]         = useState('');
+  const [emailErr,         setEmailErr]         = useState('');
 
   // Investment Ideas list — search / filter / sort (icon-triggered, see toolbar below)
   const [ideaSearchOpen, setIdeaSearchOpen] = useState(false);
@@ -265,6 +309,50 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
       setSavingEdit(false);
       // Keep the modal open on failure — silently closing it here was the bug:
       // the form looked like it saved, but the write never reached the server.
+    }
+  };
+
+  // A Google-only account has no password to reauthenticate with, and its
+  // email IS the Google account's — offer the flow only when there's a
+  // password credential to confirm the change with.
+  const hasPasswordProvider = (viewerUser?.providerData || []).some(p => p.providerId === 'password');
+
+  const startChangeEmail = () => {
+    setNewEmail('');
+    setEmailPassword('');
+    setEmailErr('');
+    setEmailMsg('');
+    setChangingEmail(true);
+  };
+
+  // Sends a confirmation link to the NEW address; the sign-in email itself
+  // does not change until that link is clicked (verifyBeforeUpdateEmail,
+  // Firebase's recommended flow over the deprecated updateEmail — it can't
+  // be hijacked by a typo'd or someone-else's address since nothing takes
+  // effect without proving control of the new inbox). AuthContext.jsx's own
+  // sync-on-mismatch picks up the change once it lands, and re-syncs the
+  // stored profile.email to match.
+  const submitChangeEmail = async () => {
+    const email = newEmail.trim();
+    if (!email || !email.includes('@')) { setEmailErr('Enter a valid email address.'); return; }
+    if (email.toLowerCase() === (viewerUser?.email || '').toLowerCase()) {
+      setEmailErr('That is already your current email.');
+      return;
+    }
+    if (!emailPassword) { setEmailErr('Enter your current password to confirm.'); return; }
+    setEmailBusy(true);
+    setEmailErr('');
+    setEmailMsg('');
+    try {
+      const cred = EmailAuthProvider.credential(viewerUser.email, emailPassword);
+      await reauthenticateWithCredential(viewerUser, cred);
+      await verifyBeforeUpdateEmail(viewerUser, email);
+      setEmailMsg(`We've sent a confirmation link to ${email}. Your sign-in email won't change until you click it.`);
+      setEmailPassword('');
+    } catch (e) {
+      setEmailErr(emailChangeErrorMessage(e?.code));
+    } finally {
+      setEmailBusy(false);
     }
   };
 
@@ -741,15 +829,53 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                   ))}
                 </div>
 
-                {/* Read-only username + email — email auto-populated from auth */}
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
-                  {[{label:'Username',val:`@${username}`},{label:'Email',val:profile.email||viewerUser?.email||''}].map((f,i)=>(
-                    <div key={i}>
-                      <div style={{fontSize:11,color:'rgba(255,255,255,.35)',marginBottom:6,display:'flex',alignItems:'center',gap:4,fontWeight:600}}><Lock size={10}/>{f.label} <span style={{fontWeight:400,fontSize:10}}>(cannot be changed)</span></div>
-                      <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',borderRadius:9,padding:'10px 13px',fontSize:13,color:'rgba(255,255,255,.4)',fontFamily:'inherit'}}>{f.val||<span style={{opacity:.4,fontStyle:'italic'}}>not set</span>}</div>
+                {/* Username stays read-only. Email CAN be changed, but not as
+                    a plain field save — Firebase requires re-authentication
+                    plus a confirmation link to the new address, so it's its
+                    own inline flow below rather than part of Save changes. */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:changingEmail?12:20}}>
+                  <div>
+                    <div style={{fontSize:11,color:'rgba(255,255,255,.35)',marginBottom:6,display:'flex',alignItems:'center',gap:4,fontWeight:600}}><Lock size={10}/>Username <span style={{fontWeight:400,fontSize:10}}>(cannot be changed)</span></div>
+                    <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',borderRadius:9,padding:'10px 13px',fontSize:13,color:'rgba(255,255,255,.4)',fontFamily:'inherit'}}>@{username}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginBottom:6,fontWeight:600}}>Email</div>
+                    <div style={{background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',borderRadius:9,padding:'10px 13px',fontSize:13,color:'#fff',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+                      <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        {profile.email||viewerUser?.email||<span style={{opacity:.4,fontStyle:'italic'}}>not set</span>}
+                      </span>
+                      {hasPasswordProvider && !changingEmail && (
+                        <button onClick={startChangeEmail} style={{background:'none',border:'none',color:'#a78bfa',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>
+                          Change
+                        </button>
+                      )}
                     </div>
-                  ))}
+                    {!hasPasswordProvider && (
+                      <div style={{fontSize:10.5,color:'rgba(255,255,255,.3)',marginTop:5}}>Managed by Google Sign-In</div>
+                    )}
+                  </div>
                 </div>
+
+                {changingEmail && (
+                  <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.1)',borderRadius:12,padding:'14px 16px',marginBottom:20}}>
+                    <div style={{fontSize:13,fontWeight:700,color:'#fff',marginBottom:10}}>Change email</div>
+                    <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="New email address"
+                      autoCapitalize="none" autoCorrect="off"
+                      style={{width:'100%',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',borderRadius:9,padding:'10px 13px',fontSize:14,color:'#fff',fontFamily:'var(--font)',outline:'none',boxSizing:'border-box',marginBottom:8}}/>
+                    <input type="password" value={emailPassword} onChange={e=>setEmailPassword(e.target.value)} placeholder="Current password"
+                      style={{width:'100%',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',borderRadius:9,padding:'10px 13px',fontSize:14,color:'#fff',fontFamily:'var(--font)',outline:'none',boxSizing:'border-box',marginBottom:10}}/>
+                    {emailErr && <div style={{fontSize:12.5,color:'#fca5b5',marginBottom:8}}>{emailErr}</div>}
+                    {emailMsg && <div style={{fontSize:12.5,color:'#86efac',marginBottom:8}}>{emailMsg}</div>}
+                    <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                      <button onClick={()=>setChangingEmail(false)} style={{padding:'8px 14px',borderRadius:8,fontWeight:700,fontSize:12.5,cursor:'pointer',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontFamily:'var(--font)'}}>
+                        Close
+                      </button>
+                      <button onClick={submitChangeEmail} disabled={emailBusy} className="btn btn-pri" style={{padding:'8px 16px',fontSize:12.5}}>
+                        {emailBusy ? 'Sending…' : 'Send confirmation link'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Bio */}
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Bio</div>

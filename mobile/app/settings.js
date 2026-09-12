@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -22,6 +23,7 @@ import {
   getRegOptions,
 } from "../src/services/api/profileApi";
 import { pickAndCompressAvatar } from "../src/services/avatarImage";
+import { isAppLockAvailable, getAppLockEnabled, setAppLockEnabled } from "../src/services/appLock";
 import Avatar from "../src/components/Avatar";
 import { setCachedAvatar } from "../src/services/avatarCache";
 import {
@@ -31,6 +33,7 @@ import {
   isSebiStatus,
   REG_STATUSES,
   REG_LABELS,
+  BIO_MAX_LENGTH,
 } from "../src/utils/profile";
 import { colors, fonts } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -44,7 +47,7 @@ import { withBoundary } from "../src/components/ErrorBoundary";
 // with, not a parity feature.
 function SettingsScreen() {
   const router = useRouter();
-  const { profile, patchProfile } = useAuth();
+  const { user, profile, patchProfile, hasPasswordProvider, changeEmail } = useAuth();
 
   // One form object rather than a state variable per field: profile-edit-save
   // is a whole-record write, so the payload must always carry every field
@@ -61,6 +64,62 @@ function SettingsScreen() {
   const [unStatus, setUnStatus] = useState("idle"); // idle|invalid|checking|available|taken
   const [unMsg, setUnMsg] = useState("");
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Email change — a separate flow from the profile-record save above,
+  // deliberately: it needs Firebase re-authentication + a verification link
+  // to the NEW address (AuthContext.changeEmail -> verifyBeforeUpdateEmail),
+  // not just a field save. Mirrors the web's Profile.jsx edit modal.
+  const [changingEmail, setChangingEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailMsg, setEmailMsg] = useState("");
+  const [emailErr, setEmailErr] = useState("");
+
+  const startChangeEmail = useCallback(() => {
+    setNewEmail("");
+    setEmailPassword("");
+    setEmailErr("");
+    setEmailMsg("");
+    setChangingEmail(true);
+  }, []);
+
+  const submitChangeEmail = useCallback(async () => {
+    setEmailBusy(true);
+    setEmailErr("");
+    setEmailMsg("");
+    const res = await changeEmail(newEmail, emailPassword);
+    if (!mounted.current) return;
+    setEmailBusy(false);
+    if (res?.error) {
+      setEmailErr(res.error);
+      return;
+    }
+    setEmailMsg(`We've sent a confirmation link to ${newEmail.trim()}. Your sign-in email won't change until you tap it.`);
+    setEmailPassword("");
+  }, [newEmail, emailPassword, changeEmail]);
+
+  // App lock — a device-level fingerprint/Face ID/PIN gate in front of the
+  // already-signed-in session (see src/services/appLock.js). The toggle is
+  // only shown at all on a device that can actually use it — offering it
+  // where it can only ever fail to prompt would be worse than not offering
+  // it. On by default (see appLock.js's getAppLockEnabled) — read here, not
+  // assumed, so a device that already has it turned off shows that state.
+  const [lockAvailable, setLockAvailable] = useState(false);
+  const [lockEnabled, setLockEnabled] = useState(true);
+
+  useEffect(() => {
+    isAppLockAvailable().then(async (available) => {
+      if (!mounted.current) return;
+      setLockAvailable(available);
+      if (available) setLockEnabled(await getAppLockEnabled());
+    });
+  }, []);
+
+  const toggleLock = useCallback((next) => {
+    setLockEnabled(next);
+    setAppLockEnabled(next);
+  }, []);
 
   // Re-seed once the profile arrives (it can be null on first render).
   useEffect(() => {
@@ -279,6 +338,58 @@ function SettingsScreen() {
               </>
             )}
 
+            <Text style={styles.fieldLabel}>Email</Text>
+            <View style={styles.unRow}>
+              <Text style={[styles.readonly, { marginTop: 0, flex: 1 }]} numberOfLines={1}>
+                {profile?.email || user?.email || "not set"}
+              </Text>
+              {hasPasswordProvider?.() && !changingEmail ? (
+                <Pressable onPress={startChangeEmail} hitSlop={8}>
+                  <Text style={styles.photoLink}>Change</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            {!hasPasswordProvider?.() ? (
+              <Text style={styles.unHint}>Managed by Google Sign-In</Text>
+            ) : null}
+
+            {changingEmail ? (
+              <View style={styles.emailCard}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="New email address"
+                  placeholderTextColor={colors.muted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  value={newEmail}
+                  onChangeText={setNewEmail}
+                />
+                <TextInput
+                  style={[styles.input, { marginTop: 8 }]}
+                  placeholder="Current password"
+                  placeholderTextColor={colors.muted}
+                  secureTextEntry
+                  value={emailPassword}
+                  onChangeText={setEmailPassword}
+                />
+                {emailErr ? <Text style={styles.unBad}>{emailErr}</Text> : null}
+                {emailMsg ? <Text style={[styles.unHint, { color: colors.gain }]}>{emailMsg}</Text> : null}
+                <View style={styles.emailActions}>
+                  <Pressable style={styles.emailCancelBtn} onPress={() => setChangingEmail(false)}>
+                    <Text style={styles.emailCancelText}>Close</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.saveBtn, styles.emailSendBtn, emailBusy && { opacity: 0.7 }]}
+                    onPress={submitChangeEmail}
+                    disabled={emailBusy}
+                  >
+                    {emailBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Send confirmation link</Text>}
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+
             <Text style={styles.fieldLabel}>Bio</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
@@ -287,9 +398,9 @@ function SettingsScreen() {
               value={form.bio}
               onChangeText={set("bio")}
               multiline
-              maxLength={500}
+              maxLength={BIO_MAX_LENGTH}
             />
-            <Text style={styles.counter}>{form.bio.length}/500</Text>
+            <Text style={styles.counter}>{form.bio.length}/{BIO_MAX_LENGTH}</Text>
 
             <Text style={styles.fieldLabel}>Links</Text>
             {[
@@ -372,6 +483,29 @@ function SettingsScreen() {
               </Text>
             ) : null}
           </View>
+
+          {lockAvailable ? (
+            <>
+              <Text style={styles.sectionTitle}>Security</Text>
+              <View style={styles.card}>
+                <View style={styles.prefRow}>
+                  <Ionicons name="finger-print-outline" size={22} color={colors.accentInk} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.prefLabel}>Require Face ID / fingerprint</Text>
+                    <Text style={styles.prefDesc}>
+                      Lock the app whenever you leave and come back — on top of staying signed in.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={lockEnabled}
+                    onValueChange={toggleLock}
+                    trackColor={{ true: colors.accent }}
+                    thumbColor="#fff"
+                  />
+                </View>
+              </View>
+            </>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -451,6 +585,25 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   readonly: { color: colors.muted, fontFamily: fonts.medium, fontSize: 13, marginTop: 10 },
+  emailCard: {
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 11,
+    padding: 12,
+    marginTop: 8,
+  },
+  emailActions: { flexDirection: "row", gap: 8, marginTop: 10 },
+  emailCancelBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 11,
+    backgroundColor: colors.surface2,
+  },
+  emailCancelText: { color: colors.inkSoft, fontFamily: fonts.bold, fontSize: 14 },
+  emailSendBtn: { flex: 2, marginTop: 0 },
   saveBtn: {
     backgroundColor: colors.accent,
     borderRadius: 11,

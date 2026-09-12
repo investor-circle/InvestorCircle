@@ -1032,11 +1032,13 @@ export default function App() {
 
     // ── Dedicated Reco Post page ─────────────────────────────────────
     if (pubRecoId) {
+      const pubQuery = new URLSearchParams(pageHash.split('?')[1] || '');
       return (
         <div className="app"><style>{STYLES}</style>
           <RecoPostPage
             username={pubUsername}
             recoId={pubRecoId}
+            highlightCommentId={pubQuery.get('highlightComment')}
             viewerUser={user}
             ME={ME}
             contacts={contacts}
@@ -1462,22 +1464,25 @@ export default function App() {
                     }
                     setNotifOpen(false);
 
-                    const recoTypes = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation','exit_signal','idea_expired','idea_expiring_today'];
+                    const recoTypes = ['contact_like','contact_comment','network_like','network_comment','contact_recommendation','exit_signal','idea_expired','idea_expiring_today','mention'];
 
                     if (recoTypes.includes(n.type)) {
                       const recoId   = n.metadata?.recoId   || null;
                       const username = n.metadata?.recommenderUsername || null;
+                      // Mentions carry the specific comment being tagged in —
+                      // scroll to and highlight it once the idea page loads.
+                      const highlight = n.metadata?.commentId ? `?highlightComment=${encodeURIComponent(n.metadata.commentId)}` : '';
 
                       if (recoId && username) {
                         // Best case: go directly to the specific reco
-                        window.location.hash = `#/investor/${username}/reco/${recoId}`;
+                        window.location.hash = `#/investor/${username}/reco/${recoId}${highlight}`;
                       } else if (n.from_user_id) {
                         // Look up username from from_user_id, then navigate
                         dbLookupUser('id', n.from_user_id)
                           .then(row => {
                             if (!row?.username) return;
                             window.location.hash = recoId
-                              ? `#/investor/${row.username}/reco/${recoId}`
+                              ? `#/investor/${row.username}/reco/${recoId}${highlight}`
                               : `#/investor/${row.username}`;
                           }).catch(()=>{});
                       } else if (username) {

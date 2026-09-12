@@ -23,6 +23,8 @@ export function buildRecoPayload(form = {}) {
     return Number.isFinite(n) ? n : null;
   };
 
+  // Entry price is never typed — it is auto-stamped from the previous close
+  // the moment an instrument is picked (see app/new.js), same as web.
   const priceAt = num(form.priceAt);
   const horizon = form.horizon || null;
 
@@ -31,12 +33,14 @@ export function buildRecoPayload(form = {}) {
     ticker: String(form.ticker || "").trim().toUpperCase(),
     assetClass: form.assetClass ?? null,
     sector: form.sector ?? null,
+    currency: form.currency || "INR",
     // The server defaults exchange to NSE when absent; only send one we
     // actually got from the instrument master.
     ...(form.exchange ? { exchange: form.exchange } : {}),
     recType: form.recType || "Buy",
     priceAt,
     price: priceAt, // current == entry at creation time
+    priceSource: form.priceSource || null,
     targetPrice: num(form.targetPrice),
     stopLoss: num(form.stopLoss),
     horizon,
@@ -50,7 +54,11 @@ export function buildRecoPayload(form = {}) {
 }
 
 /**
- * Validate the form the way the screen should before submitting.
+ * Validate the form the way the screen should before submitting. Mirrors the
+ * web's `valid` check in MakeRecoModal (Recommendations.jsx): an entry price
+ * is required UNLESS the auto-stamp genuinely failed (priceError present),
+ * in which case the web still lets the post through — the nightly batch
+ * fills it in later — so mobile must not block on it either.
  * @returns an error string, or null when it is safe to post.
  */
 export function validateRecoDraft(form = {}) {
@@ -58,7 +66,6 @@ export function validateRecoDraft(form = {}) {
     return "Add an instrument name or ticker.";
   }
   for (const [key, label] of [
-    ["priceAt", "Reco price"],
     ["targetPrice", "Target price"],
     ["stopLoss", "Stop loss"],
   ]) {
@@ -66,6 +73,9 @@ export function validateRecoDraft(form = {}) {
     if (v !== "" && v !== null && v !== undefined && !Number.isFinite(Number(v))) {
       return `${label} must be a number.`;
     }
+  }
+  if (!(Number(form.priceAt) > 0) && !form.priceError) {
+    return "Waiting on entry price — pick an instrument, or try again.";
   }
   if (form.isPublic === false && !form.recipientCount) {
     return "Pick at least one person or Circle, or post publicly.";

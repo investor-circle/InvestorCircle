@@ -13,7 +13,7 @@ import { mapProfileReco } from "../src/utils/feed";
 import { iciFromStatsRow } from "../src/utils/ici";
 import { profileUrl } from "../src/utils/links";
 import { putReco } from "../src/utils/recoStore";
-import Avatar from "../src/components/Avatar";
+import ExpandableAvatar from "../src/components/ExpandableAvatar";
 import TrackRecordView, { SocialLinks } from "../src/components/TrackRecordView";
 import { colors, fonts, GRADIENT } from "../src/theme/colors";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -120,16 +120,39 @@ function MyTrackRecordScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: 36 }}>
+          {/* Avatar beside the name/username, not stacked above it — a
+              centred vertical stack spent a whole row's height on identity
+              alone before the bio even started. The bio itself is no longer
+              line-capped: it was getting cut off mid-sentence, which read as
+              broken rather than "there's more below." */}
           <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
-            <Avatar profile={profile || me} size={78} style={styles.heroAvatar} />
-            <Text style={styles.name}>{profile?.full_name || me?.full_name || "—"}</Text>
-            <Text style={styles.username}>@{username}</Text>
-            {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+            <View style={styles.heroTop}>
+              <ExpandableAvatar profile={profile || me} size={50} style={styles.heroAvatar} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.name} numberOfLines={1}>
+                  {profile?.full_name || me?.full_name || "—"}
+                </Text>
+                <Text style={styles.username} numberOfLines={1}>
+                  @{username}
+                </Text>
+              </View>
+              <Pressable
+                style={styles.editIconBtn}
+                onPress={() => router.push("/settings")}
+                hitSlop={8}
+                accessibilityLabel="Edit profile"
+              >
+                <Ionicons name="create-outline" size={16} color="#fff" />
+              </Pressable>
+            </View>
+            {profile?.bio ? (
+              <Text style={styles.bio}>{profile.bio}</Text>
+            ) : (
+              <Pressable onPress={() => router.push("/settings")}>
+                <Text style={styles.addBioLink}>+ Add a bio</Text>
+              </Pressable>
+            )}
             <SocialLinks profile={profile} />
-            <Pressable style={styles.editBtn} onPress={() => router.push("/settings")}>
-              <Ionicons name="create-outline" size={14} color="#fff" />
-              <Text style={styles.editText}>{profile?.bio ? "Edit profile" : "Add a bio"}</Text>
-            </Pressable>
           </LinearGradient>
 
           {/* Exactly what a visitor sees, from the same endpoint. */}
@@ -187,35 +210,32 @@ const styles = StyleSheet.create({
   topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 8 },
   hero: {
-    alignItems: "center",
-    paddingTop: 26,
-    paddingBottom: 26,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 14,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
-  heroAvatar: { borderWidth: 2, borderColor: "rgba(255,255,255,0.55)", marginBottom: 10 },
-  name: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 22 },
-  username: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 14, marginTop: 3 },
-  bio: {
-    color: "rgba(255,255,255,0.9)",
-    fontFamily: fonts.regular,
-    fontSize: 13,
-    textAlign: "center",
-    marginTop: 10,
-    lineHeight: 19,
-    paddingHorizontal: 28,
-  },
-  editBtn: {
-    flexDirection: "row",
+  heroTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+  heroAvatar: { borderWidth: 2, borderColor: "rgba(255,255,255,0.55)" },
+  name: { color: "#fff", fontFamily: fonts.extrabold, fontSize: 17 },
+  username: { color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 13, marginTop: 1 },
+  editIconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: "center",
-    gap: 6,
-    marginTop: 14,
+    justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.22)",
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
   },
-  editText: { color: "#fff", fontFamily: fonts.bold, fontSize: 12.5 },
+  bio: {
+    color: "rgba(255,255,255,0.92)",
+    fontFamily: fonts.regular,
+    fontSize: 12.5,
+    marginTop: 10,
+    lineHeight: 18,
+  },
+  addBioLink: { color: "#fff", fontFamily: fonts.bold, fontSize: 12.5, marginTop: 10 },
   emptyIdeas: { alignItems: "center", padding: 28, gap: 8 },
   emptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15, marginTop: 6 },
   emptySub: {

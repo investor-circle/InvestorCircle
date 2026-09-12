@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import RecoListScreen from "../../src/components/RecoListScreen";
 import AppHeader from "../../src/components/AppHeader";
@@ -35,6 +35,11 @@ const EMPTY = {
 function TrackScreen() {
   const { profile } = useAuth();
   const [tab, setTab] = useState("received");
+  // Counts shown under each tab label — null until known, so a tab never
+  // flashes "(0)" before its first real fetch resolves.
+  const [counts, setCounts] = useState({ received: null, made: null, tracked: null });
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
 
   // getMyMadeRecos returns server-mapped rows without a byName (they're the
   // caller's own) — stamp the caller's name so RecoCard shows it, not "Unknown".
@@ -47,11 +52,14 @@ function TrackScreen() {
       // not deleted, so they are filtered out here for the same reason the
       // Feed filters them out.
       const rows = await getMyReceivedRecos();
-      return (rows || []).filter((r) => r && r.id != null && !r.hidden);
+      const filtered = (rows || []).filter((r) => r && r.id != null && !r.hidden);
+      if (mounted.current) setCounts((c) => ({ ...c, received: filtered.length }));
+      return filtered;
     }
     if (tab === "made") {
       const rows = await getMyMadeRecos();
       const myName = profile?.full_name || "You";
+      if (mounted.current) setCounts((c) => ({ ...c, made: rows.length }));
       // Stamp the caller's uid too, for the same reason as the name: these
       // rows have no author fields (they ARE the caller's), so without it
       // the card could not look up their own profile picture.
@@ -59,6 +67,7 @@ function TrackScreen() {
     }
     const rows = await getMyTrackedRecos();
     const mapped = rows.map(mapTrackedReco);
+    if (mounted.current) setCounts((c) => ({ ...c, tracked: mapped.length }));
     // This list IS every tracked idea, so seed the store directly rather
     // than round-tripping through getMyTrackedRecoIds again.
     const ids = mapped.map((r) => r.id);
@@ -66,17 +75,50 @@ function TrackScreen() {
     return mapped;
   }, [tab, profile?.full_name, profile?.id]);
 
+  // The two tabs NOT currently active still need a count shown up front
+  // (same as web, where Created/Received/Tracked are all in memory at
+  // once) — fetched once on mount, independent of whichever tab the loader
+  // above is fetching for display.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [recvR, madeR, trackedR] = await Promise.allSettled([
+        getMyReceivedRecos(),
+        getMyMadeRecos(),
+        getMyTrackedRecos(),
+      ]);
+      if (cancelled || !mounted.current) return;
+      const lenOr = (r, filterHidden) => {
+        if (r.status !== "fulfilled") return null;
+        const rows = r.value || [];
+        return filterHidden ? rows.filter((x) => x && x.id != null && !x.hidden).length : rows.length;
+      };
+      setCounts({
+        received: lenOr(recvR, true),
+        made: lenOr(madeR, false),
+        tracked: lenOr(trackedR, false),
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const subHeader = (
     <View style={styles.tabs}>
       {TABS.map((t) => {
         const active = tab === t.id;
+        const n = counts[t.id];
         return (
           <Pressable
             key={t.id}
             style={[styles.tab, active && styles.tabActive]}
             onPress={() => setTab(t.id)}
           >
-            <Text style={[styles.tabText, active && styles.tabTextActive]}>{t.label}</Text>
+            <Text style={[styles.tabText, active && styles.tabTextActive]}>
+              {t.label}
+              {n != null ? ` (${n})` : ""}
+            </Text>
           </Pressable>
         );
       })}

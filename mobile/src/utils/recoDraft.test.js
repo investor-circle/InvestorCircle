@@ -14,9 +14,13 @@ const full = {
   ticker: " infy ",
   assetClass: "equity",
   sector: "IT",
+  currency: "INR",
   exchange: "NSE",
   recType: "Sell",
-  priceAt: "1450",
+  // Entry price is auto-stamped (getPreviousClose), never typed — the form
+  // hands buildRecoPayload a number, not a string, once the fetch resolves.
+  priceAt: 1450,
+  priceSource: "nse_bhavcopy",
   targetPrice: "1700",
   stopLoss: "1300",
   horizon: "12m",
@@ -33,10 +37,12 @@ describe("buildRecoPayload", () => {
       ticker: "INFY",
       assetClass: "equity",
       sector: "IT",
+      currency: "INR",
       exchange: "NSE",
       recType: "Sell",
       priceAt: 1450,
       price: 1450,
+      priceSource: "nse_bhavcopy",
       targetPrice: 1700,
       stopLoss: 1300,
       horizon: "12m",
@@ -107,23 +113,35 @@ describe("validateRecoDraft", () => {
 
   it("needs something to identify the instrument", () => {
     expect(validateRecoDraft({})).toMatch(/name or ticker/);
-    expect(validateRecoDraft({ ticker: "INFY" })).toBeNull();
+    expect(validateRecoDraft({ ticker: "INFY", priceAt: 100 })).toBeNull();
   });
 
-  it("rejects a non-numeric price, naming which one", () => {
-    expect(validateRecoDraft({ ticker: "X", priceAt: "abc" })).toMatch(/Reco price/);
-    expect(validateRecoDraft({ ticker: "X", targetPrice: "1,700" })).toMatch(/Target price/);
-    expect(validateRecoDraft({ ticker: "X", stopLoss: "n/a" })).toMatch(/Stop loss/);
+  it("rejects a non-numeric optional price, naming which one", () => {
+    expect(validateRecoDraft({ ticker: "X", priceAt: 100, targetPrice: "1,700" })).toMatch(/Target price/);
+    expect(validateRecoDraft({ ticker: "X", priceAt: 100, stopLoss: "n/a" })).toMatch(/Stop loss/);
   });
 
   it("allows blank optional prices", () => {
-    expect(validateRecoDraft({ ticker: "X", priceAt: "", targetPrice: null, stopLoss: undefined })).toBeNull();
+    expect(validateRecoDraft({ ticker: "X", priceAt: 100, targetPrice: null, stopLoss: undefined })).toBeNull();
+  });
+
+  // Entry price is auto-stamped, never typed — the same "still let it through"
+  // rule the web's `valid` check uses (Recommendations.jsx MakeRecoModal):
+  // block on a price that's still loading, but not on one that genuinely
+  // failed to fetch (priceError set) — the nightly batch fills it in later.
+  it("blocks submit while the auto-stamped price is still missing", () => {
+    expect(validateRecoDraft({ ticker: "X" })).toMatch(/entry price/i);
+    expect(validateRecoDraft({ ticker: "X", priceAt: 0 })).toMatch(/entry price/i);
+  });
+
+  it("lets a failed price fetch through, same as the web", () => {
+    expect(validateRecoDraft({ ticker: "X", priceError: "unavailable" })).toBeNull();
   });
 
   it("stops a private idea going nowhere", () => {
     // Not public and nobody selected means the idea would be visible to
     // literally no one, including on the author's own feed.
-    expect(validateRecoDraft({ ticker: "X", isPublic: false, recipientCount: 0 })).toMatch(/at least one/);
-    expect(validateRecoDraft({ ticker: "X", isPublic: false, recipientCount: 1 })).toBeNull();
+    expect(validateRecoDraft({ ticker: "X", priceAt: 100, isPublic: false, recipientCount: 0 })).toMatch(/at least one/);
+    expect(validateRecoDraft({ ticker: "X", priceAt: 100, isPublic: false, recipientCount: 1 })).toBeNull();
   });
 });

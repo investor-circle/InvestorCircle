@@ -226,7 +226,7 @@ function MarketScreen() {
 
   return (
     <SafeAreaView style={styles.flex} edges={["top"]}>
-      <AppHeader title="Insights" />
+      <AppHeader title="Market Insights" />
 
       {recos === null ? (
         <ActivityIndicator color={colors.accent} style={{ marginTop: 40 }} />

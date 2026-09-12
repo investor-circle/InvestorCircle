@@ -248,6 +248,64 @@ modules. These are now durable conventions, not a one-time cleanup:
 - JS-only fixes ship via the "Mobile — Publish OTA update" workflow and cost no
   EAS build. Only native changes need a build.
 
+## Mobile known issues (deferred to a future native build)
+
+- **Privacy Policy / About / Market Insights links can bounce back into the
+  app on Android instead of opening a browser.** Root cause:
+  `mobile/app.json`'s Android `intentFilters` claims
+  `https://myinvestorcircle.com` with `autoVerify: true` and no path
+  restriction — required so referral (`?ref=`) and password-reset
+  (`?mode=resetPassword`) links, which arrive as a bare-root URL, open the
+  app automatically. Because the web is a `HashRouter` SPA, every route
+  (`/#/privacy` included) is indistinguishable from the bare root at the
+  Android intent-filter level (fragments aren't visible to path matching),
+  so the OS can't tell "a real deep link" apart from "a page the app can't
+  render" and sometimes hands the outgoing Custom Tab navigation straight
+  back to the app. The app already has a client-side loop guard for this
+  (`app/_layout.js`'s `handle()`) that falls back to copying the link to
+  the clipboard with an explanatory alert rather than looping forever —
+  that is the current, deliberately-JS-only mitigation.
+  - The **Privacy Policy** entry is hidden from the Profile menu for now
+    (`app/profile.js`) since it's the one link a user is likely to tap
+    expecting it to just work; the login-consent screen and `SetupGate`
+    still link to it (both with the same clipboard fallback), since those
+    can't be dropped without losing consent-flow parity with web.
+  - The real fix — narrowing the Android `intentFilters` in `mobile/app.json`
+    so it stops claiming paths it can't distinguish from real deep links —
+    requires a native rebuild (not OTA-shippable) and changes app-wide
+    deep-link behavior (referral/reset links might show Android's app-picker
+    instead of auto-opening), so it needs explicit sign-off before
+    implementing, not just a build slot. Tackle this the next time a native
+    build is already planned for other reasons; re-enable the Profile menu
+    entry once it's fixed.
+
+## Mobile native changes already merged, queued for the next build
+
+Code and asset changes below are committed to the repo but have **not shipped
+to anyone** — they need a new EAS build (native dependency, app icon, or
+`app.json` native config all fall outside what OTA can deliver; see "Mobile
+OTA updates" above). Nothing here needs further sign-off — implementation is
+done and reviewed — it's listed so a build doesn't quietly skip one of them.
+Remove an entry once a build that includes it has actually shipped.
+
+- **App icon rework** (`4e5133a`). New `icon.png` / Android adaptive-icon
+  layers (foreground, background, monochrome) and a matching
+  `android.adaptiveIcon.backgroundColor` (`#E6F4FE` → `#F5FBFF`) in
+  `mobile/app.json`. No `expo.version` bump — no native dependency,
+  permission, or plugin changed, just baked-in asset content — so any build
+  picks it up regardless of the version number at build time.
+- **Fingerprint / Face ID / device-PIN app lock** (`89e029b`). Adds the
+  `expo-local-authentication` native dependency (`mobile/package.json`),
+  its config plugin in `mobile/app.json` (adds `NSFaceIDUsageDescription` on
+  iOS and the biometric permissions on Android), and `expo.version` bumped
+  `1.0.1` → `1.0.2` per the OTA rule above. Feature code:
+  `mobile/src/services/appLock.js`, `mobile/src/components/AppLockScreen.js`,
+  wired into `mobile/app/_layout.js` (locks on cold start and on returning
+  from the background after 60+ seconds away) and `mobile/app/settings.js`
+  (the "Require Face ID / fingerprint" toggle). On by default; both the
+  toggle and the lock itself stay invisible on a device with nothing
+  enrolled (no biometric, no PIN/pattern) — see `isAppLockAvailable()`.
+
 ## Deployment considerations
 
 - Frontend auto-deploys to GitHub Pages on every push to `main` — treat changes

@@ -1,4 +1,15 @@
-import { fmt, fmtPct, fmtDate, initialsOf, returnPct, scoreFeedRec } from "./format";
+import {
+  fmt,
+  fmtPct,
+  fmtDate,
+  initialsOf,
+  returnPct,
+  scoreFeedRec,
+  parseThesis,
+  serializeThesis,
+  getThesisText,
+  parseThesisRuns,
+} from "./format";
 
 describe("fmtDate", () => {
   // CLAUDE.md incident note: a shared date helper assumed every caller passed
@@ -63,6 +74,68 @@ describe("fmt / fmtPct / initialsOf", () => {
     expect(initialsOf("Meera")).toBe("M");
     expect(initialsOf(null)).toBe("?");
     expect(() => initialsOf("  double  spaces ")).not.toThrow();
+  });
+});
+
+describe("serializeThesis / parseThesis round-trip", () => {
+  it("stores plain text as a bare string when there are no images", () => {
+    const serialized = serializeThesis({ text: "Strong moat, cheap valuation.", images: [] });
+    expect(serialized).toBe("Strong moat, cheap valuation.");
+    expect(parseThesis(serialized)).toEqual({ __v: "0", text: "Strong moat, cheap valuation.", images: [] });
+  });
+
+  it("wraps text+images in the versioned JSON envelope", () => {
+    const serialized = serializeThesis({ text: "Chart looks great", images: ["data:image/jpeg;base64,abc"] });
+    const parsed = JSON.parse(serialized);
+    expect(parsed).toEqual({ __v: "1", text: "Chart looks great", images: ["data:image/jpeg;base64,abc"] });
+    expect(getThesisText(serialized)).toBe("Chart looks great");
+  });
+
+  it("returns null for empty text and no images, same as the web", () => {
+    expect(serializeThesis({ text: "  ", images: [] })).toBeNull();
+    expect(serializeThesis({ text: "", images: undefined })).toBeNull();
+  });
+
+  it("trims text before storing", () => {
+    expect(serializeThesis({ text: "  padded  ", images: [] })).toBe("padded");
+  });
+
+  it("still reads an old plain-text row (no envelope) as version 0", () => {
+    expect(parseThesis("Just a plain thesis")).toEqual({ __v: "0", text: "Just a plain thesis", images: [] });
+  });
+
+  it("treats the placeholder dash and empty/null as no thesis", () => {
+    expect(parseThesis("—")).toBeNull();
+    expect(parseThesis("")).toBeNull();
+    expect(parseThesis(null)).toBeNull();
+  });
+});
+
+describe("parseThesisRuns", () => {
+  it("parses bold, italic and links in the same precedence as the web renderer", () => {
+    const lines = parseThesisRuns("**Buy** the dip, _not_ the top — see [chart](https://example.com/c)");
+    expect(lines).toHaveLength(1);
+    const runs = lines[0];
+    expect(runs.find((r) => r.text === "Buy")?.bold).toBe(true);
+    expect(runs.find((r) => r.text === "not")?.italic).toBe(true);
+    const link = runs.find((r) => r.link);
+    expect(link.text).toBe("chart");
+    expect(link.link).toBe("https://example.com/c");
+  });
+
+  it("splits on newlines into separate lines, like the web's <br/>", () => {
+    expect(parseThesisRuns("line one\nline two")).toHaveLength(2);
+  });
+
+  it("leaves plain text with no markup as a single unstyled run", () => {
+    const [runs] = parseThesisRuns("nothing fancy here");
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ text: "nothing fancy here", bold: false, italic: false, link: null });
+  });
+
+  it("never throws on empty or garbage input", () => {
+    expect(() => parseThesisRuns("")).not.toThrow();
+    expect(() => parseThesisRuns(undefined)).not.toThrow();
   });
 });
 

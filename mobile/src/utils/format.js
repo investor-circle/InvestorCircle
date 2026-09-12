@@ -236,3 +236,92 @@ export function parseThesis(raw) {
 export function getThesisText(raw) {
   return parseThesis(raw)?.text || "";
 }
+
+/**
+ * Thesis editing limits. Mirrored verbatim from the web's
+ * src/constants/app.js — these are what makes a thesis written on one
+ * client render (and re-edit) the same on the other, not just look similar.
+ */
+export const THESIS_MAX_CHARS = 500;
+export const THESIS_MAX_IMAGES = 2;
+export const THESIS_MAX_MB = 2; // original upload limit, per image
+export const THESIS_TARGET_KB = 100; // compressed target per image
+
+export const THESIS_EMOJIS = [
+  "😊", "😄", "😂", "🤔", "💡", "✅", "❌", "⚠️", "🔥", "💯",
+  "📈", "📉", "📊", "💰", "💎", "🏆", "🚀", "⬆️", "⬇️", "↗️",
+  "🎯", "📌", "⏰", "🔔", "💬", "👀", "🙌", "💪", "🤝", "👍",
+  "🟢", "🔴", "🟡", "🔵", "⚡", "🌟", "📝", "🔍", "💼", "🏦",
+];
+
+/**
+ * The inverse of parseThesis: given the editor's working {text, images},
+ * produce the string to send to the server. Ported verbatim from the web's
+ * serializeThesis (src/utils/format.js) — a thesis with no images is stored
+ * as a plain string (so old rows without the envelope stay readable
+ * everywhere), and one with images is the versioned JSON envelope.
+ */
+export function serializeThesis({ text, images }) {
+  const t = (text || "").trim();
+  if (!t && !images?.length) return null;
+  if (!images?.length) return t;
+  return JSON.stringify({ __v: "1", text: t, images });
+}
+
+// Non-greedy so "**a** and **b**" gives two bold runs, not one bold run
+// spanning "a** and **b".
+const BOLD_RE = /\*\*(.+?)\*\*/g;
+const ITALIC_RE = /_(.+?)_/g;
+const LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+
+function splitByFlag(runs, re, flag) {
+  const out = [];
+  for (const run of runs) {
+    if (run.link) { out.push(run); continue; }
+    const str = run.text;
+    let lastIndex = 0, m;
+    re.lastIndex = 0;
+    while ((m = re.exec(str))) {
+      if (m.index > lastIndex) out.push({ ...run, text: str.slice(lastIndex, m.index) });
+      out.push({ ...run, text: m[1], [flag]: true });
+      lastIndex = m.index + m[0].length;
+    }
+    if (lastIndex < str.length || out.length === 0) out.push({ ...run, text: str.slice(lastIndex) });
+  }
+  return out;
+}
+
+function splitLinks(runs) {
+  const out = [];
+  for (const run of runs) {
+    const str = run.text;
+    let lastIndex = 0, m;
+    LINK_RE.lastIndex = 0;
+    while ((m = LINK_RE.exec(str))) {
+      if (m.index > lastIndex) out.push({ ...run, text: str.slice(lastIndex, m.index) });
+      out.push({ ...run, text: m[1], link: m[2] });
+      lastIndex = m.index + m[0].length;
+    }
+    if (lastIndex < str.length || out.length === 0) out.push({ ...run, text: str.slice(lastIndex) });
+  }
+  return out;
+}
+
+/**
+ * Parse a thesis's plain text into lines of styled runs, for a native
+ * renderer that (unlike the web) has no dangerouslySetInnerHTML to hand a
+ * markdown-to-HTML string to. Mirrors the web's ThesisRenderer regex order
+ * exactly — bold, then italic, then links — so the same stored text produces
+ * the same visual result on both clients: {text, bold, italic, link}[][],
+ * one array of runs per line (split on "\n", the same as the web's <br/>).
+ */
+export function parseThesisRuns(text) {
+  const lines = String(text || "").split("\n");
+  return lines.map((line) => {
+    let runs = [{ text: line, bold: false, italic: false, link: null }];
+    runs = splitByFlag(runs, BOLD_RE, "bold");
+    runs = splitByFlag(runs, ITALIC_RE, "italic");
+    runs = splitLinks(runs);
+    return runs;
+  });
+}

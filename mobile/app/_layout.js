@@ -9,14 +9,15 @@ loadPersistedLogs();
 // stopped at instead of just never arriving.
 mark("js-bundle-executed");
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { AppState, StyleSheet, View } from "react-native";
+import { AppState, StyleSheet, View, Alert } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import * as Clipboard from "expo-clipboard";
 import * as Updates from "expo-updates";
 import {
   useFonts,
@@ -29,6 +30,8 @@ import {
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import ErrorBoundary from "../src/components/ErrorBoundary";
 import SetupGate, { setupIncomplete } from "../src/components/SetupGate";
+import AppLockScreen from "../src/components/AppLockScreen";
+import { isAppLockAvailable, getAppLockEnabled } from "../src/services/appLock";
 import { shouldOfferDiscover } from "../src/utils/setup";
 import { parseDeepLink, parseReferral, parsePasswordReset, isExternalWebLink } from "../src/utils/deepLinks";
 import { rememberReferral, redeemPendingReferral } from "../src/services/referral";
@@ -126,6 +129,20 @@ function RootNavigator() {
   // config other flows (referrals, password reset) depend on.
   const lastExternalLinkRef = useRef({ url: null, at: 0 });
 
+  // Whether the app has finished asking the OS what URL (if any) launched
+  // it. The redirect-to-login effect below MUST wait for this before it
+  // forces a signed-out user onto "/(auth)/login" — Linking.getInitialURL()
+  // is genuinely async (a native bridge round trip), and on a cold start via
+  // the password-reset link, Firebase's own "signed out" resolution can land
+  // first. Without this guard the login redirect fired before the reset
+  // link's router.replace("/reset-password…") did, and depending on how
+  // expo-router's navigator settled the two calls, the visible result was
+  // the login screen with the reset link silently dropped — exactly the
+  // "tapping the email link just opens login" report this fixes. A 1.5s cap
+  // means a native call that never resolves can't strand someone signed out
+  // with no way to reach login at all.
+  const [initialUrlChecked, setInitialUrlChecked] = useState(false);
+
   useEffect(() => {
     const handle = (url) => {
       // An invite (?ref=alice) arrives before there is an account to attach it
@@ -154,7 +171,21 @@ function RootNavigator() {
         const now = Date.now();
         const last = lastExternalLinkRef.current;
         if (last.url === url && now - last.at < 4000) {
-          addLog("warn", `deeplink: ignoring repeat of ${url} within 4s (app-link re-interception loop guard)`);
+          // Android intercepted our own Custom Tab and handed the link right
+          // back to us — verified App Links can outrank even an
+          // already-open browser tab on some devices (see app.json's
+          // intentFilter: it claims the whole domain, with no path
+          // restriction, which referral/reset links need). A second attempt
+          // would just loop forever, so stop opening a browser and instead
+          // give the user something they CAN act on: the link, copied and
+          // ready to paste into their own browser app.
+          addLog("warn", `deeplink: app-link re-interception loop detected for ${url} — falling back to copy-link`);
+          Clipboard.setStringAsync(url).catch(() => {});
+          Alert.alert(
+            "Couldn't open in a browser",
+            "Your phone keeps sending this link back to the app. It's been copied — paste it into your browser app to open it.",
+            [{ text: "OK" }]
+          );
           return;
         }
         lastExternalLinkRef.current = { url, at: now };
@@ -162,9 +193,24 @@ function RootNavigator() {
         WebBrowser.openBrowserAsync(url).catch(() => {});
       }
     };
-    Linking.getInitialURL().then((url) => url && handle(url));
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      setInitialUrlChecked(true);
+    };
+    Linking.getInitialURL()
+      .then((url) => url && handle(url))
+      .finally(settle);
+    // Belt-and-braces: a native call that never resolves must not strand a
+    // signed-out user with no route to login at all (see the comment above
+    // initialUrlChecked).
+    const timeout = setTimeout(settle, 1500);
     const sub = Linking.addEventListener("url", ({ url }) => handle(url));
-    return () => sub.remove();
+    return () => {
+      sub.remove();
+      clearTimeout(timeout);
+    };
   }, [router]);
 
   // …and redeem it once there IS an account. Mirrors the web's post-login
@@ -247,13 +293,21 @@ function RootNavigator() {
   // Single navigation decision per resolved auth state — at most ONE
   // router.replace() call here, ever. An earlier version of this effect was
   // split into two separate effects (this one, plus a second one forcing
-  // /(tabs)/discover for an already-signed-in cold start), and both fired
+  // the tabs navigator for an already-signed-in cold start), and both fired
   // in the SAME render pass on a fresh login: two back-to-back replace()
   // calls to react-navigation while (tabs) and its Tabs navigator were
   // still mounting for the first time. That update group is the one EAS
   // Update's own dashboard recorded a crash against on-device — merged
   // back into one effect/one decision so that redundant double-navigation
   // can't happen again, whichever case fires.
+  //
+  // Both branches below replace to "/(tabs)", not "/(tabs)/discover" — the
+  // Pulse screen IS (tabs)/index.js now (see (tabs)/_layout.js's comment),
+  // so the plain group path already resolves to it via Expo Router's own
+  // file-based default, with no initialRouteName race to lose. Landing on
+  // Feed first before this effect corrected it to Pulse — visible as a
+  // Feed-then-Pulse flash on every cold start — is exactly the failure mode
+  // that rename removes at the source instead of racing to fix afterward.
   const forcedInitialTabRef = useRef(false);
   useEffect(() => {
     if (authLoading) return;
@@ -264,6 +318,9 @@ function RootNavigator() {
     // just tapped and back to the login form they are locked out of.
     const isPublicRoute = segments[0] === "reset-password";
     if (!user && !inAuthGroup && !isPublicRoute) {
+      // Wait until the initial-URL check has had its chance to redirect to
+      // reset-password first — see initialUrlChecked above.
+      if (!initialUrlChecked) return;
       router.replace("/(auth)/login");
       return;
     }
@@ -271,25 +328,67 @@ function RootNavigator() {
       // Fresh login. Also covers the landing tab, so the cold-start branch
       // below never redundantly re-fires for this same transition.
       forcedInitialTabRef.current = true;
-      router.replace("/(tabs)/discover");
+      router.replace("/(tabs)");
       return;
     }
     if (user && !forcedInitialTabRef.current) {
       // Cold start with an already-signed-in (persisted) session — this
       // branch never ran through "(auth)" at all, so the case above never
-      // fires for it. That left it relying entirely on (tabs)/_layout.js's
-      // unstable_settings.initialRouteName to land on Pulse, which —
-      // confirmed on-device — was not reliably doing so. Forcing it here,
-      // once per app session, closes that gap. Safe to fire unconditionally:
+      // fires for it. Still needed regardless of which tab is the default:
+      // the root Stack has no app/index.js of its own (only the (auth) and
+      // (tabs) groups), so nothing here auto-resolves to either without an
+      // explicit navigation once auth settles. Safe to fire unconditionally:
       // the deep-link effects below resolve via an async
       // Linking.getInitialURL().then(...), so a real deep-link target always
       // lands after this synchronous replace and wins, the same way it
       // already wins over the (auth)-group replace above.
       forcedInitialTabRef.current = true;
-      router.replace("/(tabs)/discover");
+      router.replace("/(tabs)");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, authLoading, segKey]);
+  }, [user, authLoading, segKey, initialUrlChecked]);
+
+  // App lock — a fingerprint/Face ID/device-PIN gate in front of an already
+  // signed-in session (see src/services/appLock.js for what this is and why
+  // it is not a login method). null = still deciding whether to lock at
+  // all, so the covering overlay stays up for that brief async check too —
+  // otherwise a device where the check resolves to "yes, lock" would flash
+  // real app content for a moment first.
+  const [locked, setLocked] = useState(null);
+  const backgroundedAt = useRef(null);
+
+  const checkAppLock = useCallback(async () => {
+    if (!user) {
+      setLocked(false);
+      return;
+    }
+    const [available, enabled] = await Promise.all([isAppLockAvailable(), getAppLockEnabled()]);
+    setLocked(available && enabled);
+  }, [user]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    checkAppLock();
+  }, [authLoading, checkAppLock]);
+
+  // Re-lock on returning to the foreground after being away for a while —
+  // not cold start alone, since the whole point is that a phone left
+  // unattended mid-session also needs proving who picked it up, but not on
+  // every brief switch-away (checking a copied OTP, a quick notification
+  // peek) either, which would make the lock feel broken rather than secure.
+  const LOCK_GRACE_MS = 60000;
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "background" || state === "inactive") {
+        backgroundedAt.current = Date.now();
+      } else if (state === "active" && backgroundedAt.current) {
+        const awayMs = Date.now() - backgroundedAt.current;
+        backgroundedAt.current = null;
+        if (!authLoading && awayMs >= LOCK_GRACE_MS) checkAppLock();
+      }
+    });
+    return () => sub.remove();
+  }, [authLoading, checkAppLock]);
 
   // Username + consent are required before the account can be used, exactly
   // as on the web. Google sign-in has no signup form, so those accounts arrive
@@ -352,6 +451,22 @@ function RootNavigator() {
         <View style={StyleSheet.absoluteFill}>
           <ErrorBoundary label="setup">
             <SetupGate profile={profile} patchProfile={patchProfile} />
+          </ErrorBoundary>
+        </View>
+      ) : null}
+      {/* Last of all — covers the setup gate too. Nothing about setup or the
+          app itself should be visible before the phone's owner is proven.
+          A blank cover (not the prompt itself) while still deciding —
+          showing AppLockScreen here would fire its biometric prompt for
+          everyone for a frame, including someone who has the setting off or
+          a device that can't use it at all. */}
+      {!authLoading && user && locked === null ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg }]} />
+      ) : null}
+      {locked === true ? (
+        <View style={StyleSheet.absoluteFill}>
+          <ErrorBoundary label="app-lock">
+            <AppLockScreen onUnlocked={() => setLocked(false)} />
           </ErrorBoundary>
         </View>
       ) : null}

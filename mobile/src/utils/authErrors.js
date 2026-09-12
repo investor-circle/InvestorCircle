@@ -71,6 +71,30 @@ export function googleOnlyAccountHint(methods, googleAvailable) {
       "This account uses Google Sign-In, which isn't available in this version of the app yet. Please sign in on the website for now.";
 }
 
+// For the "change email" flow specifically (reauthenticate + Firebase's
+// verifyBeforeUpdateEmail) — mirrors src/features/profile/Profile.jsx's
+// emailChangeErrorMessage on the web, so the two clients say the same thing
+// about the same failure.
+export function emailChangeErrorMessage(code) {
+  switch (code) {
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+      return "Incorrect password. Please try again.";
+    case "auth/invalid-email":
+      return "Enter a valid email address.";
+    case "auth/email-already-in-use":
+      return "That email is already in use by another account.";
+    case "auth/requires-recent-login":
+      return "For your security, please sign out and back in, then try again.";
+    case "auth/too-many-requests":
+      return "Too many attempts — please wait a moment, then try again.";
+    case "auth/network-request-failed":
+      return "Network error. Please check your connection and try again.";
+    default:
+      return "Couldn't update your email. Please try again.";
+  }
+}
+
 export function googleErrorMessage(code) {
   switch (code) {
     case "auth/operation-not-allowed":

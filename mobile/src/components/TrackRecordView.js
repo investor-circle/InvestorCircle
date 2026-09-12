@@ -88,7 +88,11 @@ function TrackRecordView({
 
       {ici ? (
         <View style={styles.iciCard}>
-          <Text style={styles.iciEyebrow}>CREDIBILITY (ICI) SCORE</Text>
+          {/* Spelled out, not just the acronym — "ICI" means nothing to a
+              first-time visitor, and this is the number the whole app is
+              organised around. Neither client defines it anywhere else on
+              this page. */}
+          <Text style={styles.iciEyebrow}>INVESTOR CREDIBILITY INDEX (ICI) SCORE</Text>
           {/* The lead figure on this page — everything else here is evidence
               for this one number, so it gets the ring treatment rather than
               a chip the same size as a status pill. */}
@@ -482,19 +486,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     marginHorizontal: 16,
-    marginTop: 16,
+    marginTop: 12,
   },
   iciEyebrow: {
     color: colors.muted,
     fontFamily: fonts.extrabold,
-    fontSize: 11,
-    letterSpacing: 1,
-    marginBottom: 12,
+    fontSize: 10.5,
+    letterSpacing: 0.6,
+    textAlign: "center",
+    marginBottom: 9,
   },
-  iciSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 10 },
-  statGrid: { flexDirection: "row", gap: 9, marginHorizontal: 16, marginTop: 16 },
+  iciSub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 8 },
+  statGrid: { flexDirection: "row", gap: 9, marginHorizontal: 16, marginTop: 12 },
   stat: {
     flex: 1,
     backgroundColor: colors.surface,

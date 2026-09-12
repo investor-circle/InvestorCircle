@@ -31,6 +31,7 @@ import {
 import { useAuth } from "../../src/context/AuthContext";
 import Avatar from "../../src/components/Avatar";
 import { primeAvatars } from "../../src/services/avatarCache";
+import { fetchProfileNavInfo } from "../../src/services/profileNav";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 
@@ -41,6 +42,15 @@ function ManageCircleScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { user } = useAuth();
+
+  const openProfile = (username) => username && router.push(`/investor/${encodeURIComponent(username)}`);
+  // getMyGroups' member rows don't carry username (unlike join-requests /
+  // eligible-members, which do) — resolve it the same way RecoCard's author
+  // tap and the idea detail page's comment avatars do.
+  const openMemberProfile = async (uid) => {
+    const info = await fetchProfileNavInfo(uid);
+    if (info?.username) openProfile(info.username);
+  };
 
   const [group, setGroup] = useState(null);
   const [eligible, setEligible] = useState([]);
@@ -165,10 +175,16 @@ function ManageCircleScreen() {
               <View style={styles.card}>
                 {requests.map((r, i) => (
                   <View key={String(r.id)} style={[styles.row, i < requests.length - 1 && styles.rowBorder]}>
-                    <Avatar uid={r.user_id ?? r.id} name={r.full_name || r.name} size={34} />
-                    <Text style={styles.rowName} numberOfLines={1}>
-                      {r.full_name || r.name || r.username || "Investor"}
-                    </Text>
+                    <Pressable
+                      style={styles.rowAuthor}
+                      onPress={() => openProfile(r.username)}
+                      disabled={!r.username}
+                    >
+                      <Avatar uid={r.user_id ?? r.id} name={r.full_name || r.name} size={34} />
+                      <Text style={styles.rowName} numberOfLines={1}>
+                        {r.full_name || r.name || r.username || "Investor"}
+                      </Text>
+                    </Pressable>
                     {busy === `req-${r.id}` ? (
                       <ActivityIndicator color={colors.accent} />
                     ) : (
@@ -227,13 +243,15 @@ function ManageCircleScreen() {
             ) : (
               members.map((m, i) => (
                 <View key={String(m.user_id)} style={[styles.row, i < members.length - 1 && styles.rowBorder]}>
-                  <Avatar uid={m.user_id} name={m.name} size={34} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.rowName} numberOfLines={1}>
-                      {m.name || "Investor"}
-                    </Text>
-                    {m.role ? <Text style={styles.rowMeta}>{m.role}</Text> : null}
-                  </View>
+                  <Pressable style={styles.rowAuthor} onPress={() => openMemberProfile(m.user_id)}>
+                    <Avatar uid={m.user_id} name={m.name} size={34} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.rowName} numberOfLines={1}>
+                        {m.name || "Investor"}
+                      </Text>
+                      {m.role ? <Text style={styles.rowMeta}>{m.role}</Text> : null}
+                    </View>
+                  </Pressable>
                   {isOwner && m.user_id !== user?.uid ? (
                     busy === `rm-${m.user_id}` ? (
                       <ActivityIndicator color={colors.accent} />
@@ -261,10 +279,16 @@ function ManageCircleScreen() {
                 ) : (
                   eligible.map((p, i) => (
                     <View key={String(p.id)} style={[styles.row, i < eligible.length - 1 && styles.rowBorder]}>
-                      <Avatar uid={p.id} name={p.full_name} size={34} />
-                      <Text style={styles.rowName} numberOfLines={1}>
-                        {p.full_name || p.username || "Investor"}
-                      </Text>
+                      <Pressable
+                        style={styles.rowAuthor}
+                        onPress={() => openProfile(p.username)}
+                        disabled={!p.username}
+                      >
+                        <Avatar uid={p.id} name={p.full_name} size={34} />
+                        <Text style={styles.rowName} numberOfLines={1}>
+                          {p.full_name || p.username || "Investor"}
+                        </Text>
+                      </Pressable>
                       {busy === `add-${p.id}` ? (
                         <ActivityIndicator color={colors.accent} />
                       ) : (
@@ -367,6 +391,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11 },
+  rowAuthor: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 0 },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.line },
   inviteLink: { color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 13, marginBottom: 10 },
   inviteActions: { flexDirection: "row", alignItems: "center", gap: 10 },

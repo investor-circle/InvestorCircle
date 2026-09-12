@@ -171,16 +171,18 @@ function CircleBySlugScreen() {
               <Text style={styles.sectionTitle}>Members</Text>
               <View style={styles.card}>
                 {circle.members.map((m, i) => (
-                  <View
+                  <Pressable
                     key={String(m.user_id)}
                     style={[styles.row, i < circle.members.length - 1 && styles.rowBorder]}
+                    onPress={() => m.username && router.push(`/investor/${encodeURIComponent(m.username)}`)}
+                    disabled={!m.username}
                   >
                     <Avatar uid={m.user_id} profile={m} name={m.name} size={32} />
                     <Text style={styles.rowName} numberOfLines={1}>
                       {m.name || m.username || "Investor"}
                     </Text>
                     {m.role === "admin" ? <Text style={styles.roleTag}>admin</Text> : null}
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             </>

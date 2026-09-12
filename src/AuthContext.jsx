@@ -70,7 +70,30 @@ export function AuthProvider({ children }) {
         const profileFromApi = profileSettled.status === 'fulfilled' ? (profileSettled.value?.profile || null) : null;
 
         if (profileFromApi) {
-          setProfile(profileFromApi);
+          // The stored profile.email is a display copy of the Firebase Auth
+          // email, written once at signup (api/profile/sync.js) — it never
+          // updates on its own after a verifyBeforeUpdateEmail change lands
+          // (that only updates auth.currentUser.email, on whatever session
+          // clicks the confirmation link, which isn't necessarily this one).
+          // Re-run sync — safe to call for an existing row, see its own
+          // ON CONFLICT clause — whenever the two disagree, so "your email"
+          // in the app catches up with the one that actually signs you in.
+          const emailChanged = idToken && firebaseUser.email && profileFromApi.email &&
+            profileFromApi.email.toLowerCase() !== firebaseUser.email.toLowerCase();
+          if (emailChanged) {
+            try {
+              const res = await fetch(PROFILE_SYNC_API, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${idToken}` },
+              });
+              const data = res.ok ? await res.json().catch(() => null) : null;
+              setProfile(data?.profile || profileFromApi);
+            } catch (_) {
+              setProfile(profileFromApi);
+            }
+          } else {
+            setProfile(profileFromApi);
+          }
         } else {
           // No existing profile — create/sync it server-side.
           let syncedViaApi = false;

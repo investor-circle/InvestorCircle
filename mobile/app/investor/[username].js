@@ -11,7 +11,7 @@ import { getOwnerCircles } from "../../src/services/api/groupsApi";
 import { iciFromStatsRow } from "../../src/utils/ici";
 import TrackButton from "../../src/components/TrackButton";
 import { useAuth } from "../../src/context/AuthContext";
-import Avatar from "../../src/components/Avatar";
+import ExpandableAvatar from "../../src/components/ExpandableAvatar";
 import TrackRecordView, { SocialLinks } from "../../src/components/TrackRecordView";
 import { fetchProfileNavInfo } from "../../src/services/profileNav";
 import { putReco } from "../../src/utils/recoStore";
@@ -121,7 +121,7 @@ function InvestorProfileScreen() {
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
           <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={styles.hero}>
-            <Avatar profile={profile} size={78} style={styles.heroAvatar} />
+            <ExpandableAvatar profile={profile} size={78} style={styles.heroAvatar} />
             <Text style={styles.name}>{profile.full_name || "Investor"}</Text>
             {profile.username ? <Text style={styles.username}>@{profile.username}</Text> : null}
             {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}

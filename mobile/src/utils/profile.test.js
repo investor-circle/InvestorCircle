@@ -121,8 +121,12 @@ describe("validateProfile", () => {
     expect(validateProfile({ firstName: "Asha" })).toBeNull();
   });
 
-  it("requires a SEBI number when claiming a registered status", () => {
-    expect(validateProfile({ firstName: "A", registrationStatus: "sebi_ra" })).toMatch(/SEBI/);
+  // Matches the web on purpose: neither of its save paths (Profile.jsx
+  // saveEdit / ProfileEditModal.save) requires a SEBI number even when the
+  // claimed status is a registered kind, so mobile must not block on one
+  // either — the same input has to be saveable on both clients.
+  it("does not require a SEBI number for a registered status, matching web", () => {
+    expect(validateProfile({ firstName: "A", registrationStatus: "sebi_ra" })).toBeNull();
     expect(validateProfile({ firstName: "A", registrationStatus: "sebi_ria", sebiNum: "X" })).toBeNull();
   });
 
@@ -130,9 +134,9 @@ describe("validateProfile", () => {
     expect(validateProfile({ firstName: "A", registrationStatus: "self_directed" })).toBeNull();
   });
 
-  it("caps the bio at the length the input enforces", () => {
-    expect(validateProfile({ firstName: "A", bio: "x".repeat(501) })).toMatch(/500/);
-    expect(validateProfile({ firstName: "A", bio: "x".repeat(500) })).toBeNull();
+  it("caps the bio at 300 characters, matching the web's textarea", () => {
+    expect(validateProfile({ firstName: "A", bio: "x".repeat(301) })).toMatch(/300/);
+    expect(validateProfile({ firstName: "A", bio: "x".repeat(300) })).toBeNull();
   });
 });
 

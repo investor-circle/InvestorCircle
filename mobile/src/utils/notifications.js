@@ -21,6 +21,7 @@ const TYPE_LABEL = {
   contact_like: "liked your idea",
   network_like: "liked an idea",
   network_comment: "commented on an idea",
+  mention: "mentioned you in a comment",
 };
 
 export function notifText(n) {
@@ -57,6 +58,8 @@ export function notifText(n) {
       return `Your idea${ticker} expires today`;
     case "contact_comment":
       return `${who} commented on your${ticker} idea`;
+    case "mention":
+      return `${who} mentioned you in a comment${ticker ? ` —${ticker}` : ""}`;
     case "contact_recommendation":
       return `${who} posted a new idea${ticker ? ` —${ticker}` : ""}`;
     default: {
@@ -69,6 +72,7 @@ export function notifText(n) {
 
 // Ionicons name for a notification row's leading icon.
 export function notifIcon(type) {
+  if (type === "mention") return "at";
   if (type?.includes("like")) return "heart";
   if (type?.includes("comment")) return "chatbubble";
   if (type?.startsWith("connection")) return "person-add";
@@ -91,6 +95,7 @@ export function notifRecoId(n) {
     "exit_signal",
     "idea_expired",
     "idea_expiring_today",
+    "mention",
   ];
   return engagementTypes.includes(n.type) && n.reference_id ? String(n.reference_id) : null;
 }
@@ -114,7 +119,12 @@ export function notifTarget(n) {
   if (!n) return null;
 
   const recoId = notifRecoId(n);
-  if (recoId) return `/reco/${recoId}`;
+  if (recoId) {
+    // A mention points at one specific comment — carry it through so the
+    // idea screen can scroll to and highlight it, same as the web.
+    const commentId = n.metadata?.commentId;
+    return commentId ? `/reco/${recoId}?highlightComment=${encodeURIComponent(commentId)}` : `/reco/${recoId}`;
+  }
 
   // "N people started tracking you" is about the Tracking me list; landing on
   // Connections would make the reader hunt for what they were just told.

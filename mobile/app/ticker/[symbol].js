@@ -149,16 +149,25 @@ function TickerConsensusScreen() {
                   style={styles.ideaRow}
                   onPress={() => router.push(`/reco/${r.id}`)}
                 >
-                  <Avatar profile={r} uid={r.from} name={r.full_name} size={34} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.ideaName} numberOfLines={1}>
-                      {r.full_name || r.username || "Investor"}
-                    </Text>
-                    <Text style={styles.ideaMeta} numberOfLines={1}>
-                      {fmtDate(r.created_at)}
-                      {r.conviction ? ` · ${r.conviction} conviction` : ""}
-                    </Text>
-                  </View>
+                  {/* Nested Pressable: avatar+name go to the author's
+                      profile, the rest of the row still opens the idea. */}
+                  <Pressable
+                    style={styles.ideaRowAuthor}
+                    onPress={() => r.username && router.push(`/investor/${encodeURIComponent(r.username)}`)}
+                    disabled={!r.username}
+                    hitSlop={4}
+                  >
+                    <Avatar profile={r} uid={r.from} name={r.full_name} size={34} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.ideaName} numberOfLines={1}>
+                        {r.full_name || r.username || "Investor"}
+                      </Text>
+                      <Text style={styles.ideaMeta} numberOfLines={1}>
+                        {fmtDate(r.created_at)}
+                        {r.conviction ? ` · ${r.conviction} conviction` : ""}
+                      </Text>
+                    </View>
+                  </Pressable>
                   <Text
                     style={[
                       styles.tag,
@@ -389,6 +398,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
+  },
+  ideaRowAuthor: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    flex: 1,
+    minWidth: 0,
   },
   ideaName: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
   ideaMeta: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, marginTop: 1 },

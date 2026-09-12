@@ -5,17 +5,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 
-// The <Tabs initialRouteName> prop below only decides which tab is focused
-// when this navigator mounts fresh with no path. The app's actual landing
-// navigation is router.replace("/(tabs)") in app/_layout.js's post-login
-// redirect, which is Expo Router's own file-based resolution — separate
-// from the React Navigation prop — and defaults to whichever file is named
-// "index" unless this export says otherwise. Without it, every login opened
-// on Feed (index.js) regardless of the Tabs prop below.
-export const unstable_settings = {
-  initialRouteName: "discover",
-};
-
 export default function TabsLayout() {
   const router = useRouter();
   // Gesture-nav / on-screen buttons eat the bottom edge — reserve the real
@@ -29,9 +18,19 @@ export default function TabsLayout() {
           has, where Home is a two-tab page with Pulse selected and the raw
           idea feed behind it. Pulse is the daily read; the feed is where you
           go when you want everything. Landing on the feed instead meant the
-          two clients answered "what's new?" with different screens. */}
+          two clients answered "what's new?" with different screens.
+          Pulse's own screen file IS app/(tabs)/index.js (Feed lives at
+          feed.js) — that used to be reversed, with a router.replace() in
+          app/_layout.js correcting it after the fact once auth resolved.
+          On-device that correction happened late enough to be visibly a
+          Feed-then-Pulse flash on every cold start: Expo Router's file-based
+          default (whichever screen is literally named "index") always wins
+          the FIRST paint over both react-navigation's initialRouteName prop
+          and any unstable_settings export, no matter how early either fires.
+          Making Pulse the actual index file removes the ambiguity (and the
+          extra navigation call) instead of racing it — no initialRouteName
+          override needed here at all now. */}
       <Tabs
-        initialRouteName="discover"
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: colors.accent,
@@ -73,7 +72,7 @@ export default function TabsLayout() {
         }}
       >
         <Tabs.Screen
-          name="discover"
+          name="index"
           options={{
             title: "Pulse",
             tabBarIcon: ({ color, size }) => <Ionicons name="pulse" color={color} size={size} />,
@@ -82,7 +81,7 @@ export default function TabsLayout() {
         {/* "Feed", not "Home": with Pulse as the landing tab, calling the
             second one Home would name two different tabs as the start. */}
         <Tabs.Screen
-          name="index"
+          name="feed"
           options={{
             title: "Feed",
             tabBarIcon: ({ color, size }) => <Ionicons name="newspaper" color={color} size={size} />,

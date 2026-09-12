@@ -1,4 +1,4 @@
-import { friendlyAuthError, googleErrorMessage, googleOnlyAccountHint } from "./authErrors";
+import { friendlyAuthError, googleErrorMessage, googleOnlyAccountHint, emailChangeErrorMessage } from "./authErrors";
 
 // These strings are the only explanation a user gets when sign-in fails, so
 // the important properties are: a known code never falls through to the
@@ -69,6 +69,25 @@ describe("googleErrorMessage", () => {
     // give up instead of being offered the link.
     const msg = googleErrorMessage("auth/account-exists-with-different-credential");
     expect(msg).toContain("auth/account-exists-with-different-credential");
+  });
+});
+
+describe("emailChangeErrorMessage", () => {
+  it.each([
+    ["auth/wrong-password", /Incorrect password/],
+    ["auth/invalid-credential", /Incorrect password/],
+    ["auth/invalid-email", /valid email/],
+    ["auth/email-already-in-use", /already in use/],
+    ["auth/requires-recent-login", /sign out and back in/],
+    ["auth/too-many-requests", /Too many attempts/],
+    ["auth/network-request-failed", /Network error/],
+  ])("gives a specific message for %s", (code, pattern) => {
+    expect(emailChangeErrorMessage(code)).toMatch(pattern);
+  });
+
+  it("never returns an empty message for an unknown code", () => {
+    expect(emailChangeErrorMessage("auth/something-new").length).toBeGreaterThan(10);
+    expect(emailChangeErrorMessage(undefined).length).toBeGreaterThan(10);
   });
 });
 
