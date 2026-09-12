@@ -21,28 +21,59 @@ export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" s
    every idea/post, everywhere one renders. ONE canonical string (mirrored
    verbatim in mobile/src/components/IdeaDisclaimer.js) so wording can never
    drift between surfaces. Deliberately full text, never abbreviated — this
-   is compliance copy, not UI copy, so it isn't paraphrased for space. Visual
-   weight is kept low via typography (small, muted, unbolded) rather than by
-   shortening the text, so it reads as fine print without competing with the
-   idea's own content for attention. `compact` drops the size further for the
-   already-dense Trending-widget card; `divider` adds the same hairline
-   top-border/spacing convention used elsewhere in these cards for a section
-   break — omit it where the element directly above already ends in one, to
-   avoid stacking two dividers. */
+   is compliance copy, not UI copy, so it isn't paraphrased for space.
+
+   On a true detail surface (`defaultExpanded`) — RecoPostPage, an opened
+   table row — there's no space pressure and no reason to hide it behind a
+   click, so it just renders plainly. Everywhere else (a compact card in a
+   scrolling list — Pulse, Feed, Discovery, track record) a full paragraph
+   competed with the idea's own content on every single card, so it starts
+   collapsed to a single "Disclaimer" link and expands to the identical full
+   text in place — the wording never changes, only whether it's shown by
+   default, mirroring the Read more/Show less pattern ThesisRenderer already
+   uses for the same reason. stopPropagation matters here for the same
+   reason it does there: these cards navigate to the idea on any click, and
+   expanding the disclaimer must not also navigate away.
+
+   `compact` drops the font size further for the already-dense
+   Trending-widget card; `divider` adds the same hairline top-border/spacing
+   convention used elsewhere in these cards for a section break — omit it
+   where the element directly above already ends in one, to avoid stacking
+   two dividers. */
 export const IDEA_DISCLAIMER_TEXT =
   "This is the publisher’s personal view, for informational purposes only—not investment advice or a solicitation to buy/sell. myInvestorCircle (mic) does not endorse or provide this view. Please do your own research. Investments are subject to market risks.";
 
-export function IdeaDisclaimer({ align="left", compact=false, divider=false, style }) {
+export function IdeaDisclaimer({ align="left", compact=false, divider=false, defaultExpanded=false, style }) {
+  const [expanded, setExpanded] = useState(false);
+  const wrapStyle = {
+    fontSize: compact ? 9.5 : 11,
+    color: "var(--muted)",
+    lineHeight: 1.5,
+    textAlign: align,
+    ...(divider ? { borderTop: "1px solid var(--line)", paddingTop: 9, marginTop: 9 } : {}),
+    ...style,
+  };
+
+  if (defaultExpanded) {
+    return <div style={wrapStyle}>{IDEA_DISCLAIMER_TEXT}</div>;
+  }
+
   return (
-    <div style={{
-      fontSize: compact ? 9.5 : 11,
-      color: "var(--muted)",
-      lineHeight: 1.5,
-      textAlign: align,
-      ...(divider ? { borderTop: "1px solid var(--line)", paddingTop: 9, marginTop: 9 } : {}),
-      ...style,
-    }}>
-      {IDEA_DISCLAIMER_TEXT}
+    <div style={wrapStyle}>
+      {expanded ? (
+        <>
+          {IDEA_DISCLAIMER_TEXT}{' '}
+          <span onClick={e=>{ e.stopPropagation(); setExpanded(false); }}
+            style={{color:'var(--accent-ink)', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap'}}>
+            Hide
+          </span>
+        </>
+      ) : (
+        <span onClick={e=>{ e.stopPropagation(); setExpanded(true); }}
+          style={{color:'var(--accent-ink)', fontWeight:700, cursor:'pointer', textDecoration:'underline'}}>
+          Disclaimer
+        </span>
+      )}
     </div>
   );
 }

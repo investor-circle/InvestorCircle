@@ -821,7 +821,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                         <div className="cap" style={{marginBottom:10}}>Comments</div>
                         <RecoComments recoId={r.id} me={me}/>
                       </div>
-                      <IdeaDisclaimer style={{marginTop:14}}/>
+                      <IdeaDisclaimer defaultExpanded style={{marginTop:14}}/>
                     </div></td></tr>
                   )}
                 </React.Fragment>);
@@ -1348,7 +1348,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                           <span key={i} className="nl-item"><span className="av" style={{width:24,height:24,background:CONTACT_COLORS[i%CONTACT_COLORS.length],fontSize:9}}>{initialsOf(a.name)}</span>{a.name}<span className="muted small"> · {fmtDate(a.date)}</span></span>
                         ))}</div></>
                       )}
-                      <IdeaDisclaimer divider/>
+                      <IdeaDisclaimer defaultExpanded divider/>
                     </div></td></tr>
                   )}
                 </React.Fragment>);
@@ -2708,7 +2708,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
           </div>
 
           {/* ── Disclaimer ── */}
-          <IdeaDisclaimer align="center" style={{padding:'0 8px'}}/>
+          <IdeaDisclaimer align="center" defaultExpanded style={{padding:'0 8px'}}/>
         </>)}
       </div>
     </div>
