@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: "EAS build profile (see mobile/eas.json)"
+        description: "EAS build profile (see mobile/eas.json) — 'production' is the one Play Console accepts (.aab); preview/development build a sideloadable .apk"
         type: choice
-        options: [preview, development]
+        options: [preview, development, production]
         default: preview
 
 jobs:
