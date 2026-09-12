@@ -178,7 +178,7 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = tr
           </View>
         ) : null}
       </View>
-      <IdeaDisclaimer />
+      <IdeaDisclaimer defaultExpanded={expandThesis} />
     </View>
   );
 
