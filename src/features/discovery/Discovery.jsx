@@ -41,7 +41,7 @@ import {
   trackReco as dbTrackReco,
   getMyTrackedRecos as dbGetMyTrackedRecos
 } from "../../services/api/engagementApi";
-import { ConsensusBar, ConvBadge, InstrumentSearch, SectionErrorBoundary, SparkLine, WidgetHeader } from "../../components/common";
+import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, SectionErrorBoundary, SparkLine, WidgetHeader } from "../../components/common";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
@@ -238,6 +238,7 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
           />
         </div>
       </div>
+      <IdeaDisclaimer style={{marginTop:8}}/>
     </div>
   );
 }
@@ -829,6 +830,7 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
           <Bookmark size={11}/>
         </button>
       </div>
+      <IdeaDisclaimer compact divider/>
     </div>
   );
 }

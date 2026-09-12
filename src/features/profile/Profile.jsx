@@ -62,7 +62,7 @@ import {
   forwardRecommendation as dbForwardReco
 } from "../../services/api/recommendationsApi";
 import { IdeaSharePopover, ThesisRenderer } from "../recommendations/Recommendations";
-import { ClosedInfoLine, ConvBadge, IciDonut, OpenInAppBanner, RetBadge, ScoreBox, SmallAnchoredPopover, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClosedInfoLine, ConvBadge, IciDonut, IdeaDisclaimer, OpenInAppBanner, RetBadge, ScoreBox, SmallAnchoredPopover, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
 import { SECTOR_EMOJI } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
@@ -1224,6 +1224,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                           )}
                         </div>
                       </div>
+                      <IdeaDisclaimer style={{marginTop:10}}/>
                     </div>
                   );
                 })}

@@ -2,6 +2,7 @@ import { memo, useCallback, useState, useSyncExternalStore } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import Avatar from "./Avatar";
+import IdeaDisclaimer from "./IdeaDisclaimer";
 import ThesisText from "./ThesisText";
 import { fetchProfileNavInfo } from "../services/profileNav";
 import { colors, fonts } from "../theme/colors";
@@ -177,6 +178,7 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = tr
           </View>
         ) : null}
       </View>
+      <IdeaDisclaimer />
     </View>
   );
 
