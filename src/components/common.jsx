@@ -17,6 +17,36 @@ import { useIsMobile } from "../hooks/index";
 
 export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;
 
+/* ── IdeaDisclaimer — the standard SEBI/regulatory disclaimer shown beneath
+   every idea/post, everywhere one renders. ONE canonical string (mirrored
+   verbatim in mobile/src/components/IdeaDisclaimer.js) so wording can never
+   drift between surfaces. Deliberately full text, never abbreviated — this
+   is compliance copy, not UI copy, so it isn't paraphrased for space. Visual
+   weight is kept low via typography (small, muted, unbolded) rather than by
+   shortening the text, so it reads as fine print without competing with the
+   idea's own content for attention. `compact` drops the size further for the
+   already-dense Trending-widget card; `divider` adds the same hairline
+   top-border/spacing convention used elsewhere in these cards for a section
+   break — omit it where the element directly above already ends in one, to
+   avoid stacking two dividers. */
+export const IDEA_DISCLAIMER_TEXT =
+  "This is the publisher’s personal view, for informational purposes only—not investment advice or a solicitation to buy/sell. myInvestorCircle (mic) does not endorse or provide this view. Please do your own research. Investments are subject to market risks.";
+
+export function IdeaDisclaimer({ align="left", compact=false, divider=false, style }) {
+  return (
+    <div style={{
+      fontSize: compact ? 9.5 : 11,
+      color: "var(--muted)",
+      lineHeight: 1.5,
+      textAlign: align,
+      ...(divider ? { borderTop: "1px solid var(--line)", paddingTop: 9, marginTop: 9 } : {}),
+      ...style,
+    }}>
+      {IDEA_DISCLAIMER_TEXT}
+    </div>
+  );
+}
+
 export const Avatar = ({ f, size=40 }) => {
   if (!f) return <div className="av" style={{ width:size, height:size, background:"var(--grad)", fontSize:size*0.38 }}>?</div>;
   const avatarUrl = f.avatarUrl || f.avatar_url;

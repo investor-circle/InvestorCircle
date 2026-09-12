@@ -63,7 +63,7 @@ import {
   setExitSignal as dbSetExit,
   updateDelivery
 } from "../../services/api/recommendationsApi";
-import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, InstrumentSearch, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, IdeaDisclaimer, InstrumentSearch, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
 import { CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, SECTOR_EMOJI, THESIS_EMOJIS, THESIS_MAX_CHARS, THESIS_MAX_IMAGES, THESIS_MAX_MB, TODAY } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
@@ -821,6 +821,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                         <div className="cap" style={{marginBottom:10}}>Comments</div>
                         <RecoComments recoId={r.id} me={me}/>
                       </div>
+                      <IdeaDisclaimer style={{marginTop:14}}/>
                     </div></td></tr>
                   )}
                 </React.Fragment>);
@@ -1347,6 +1348,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                           <span key={i} className="nl-item"><span className="av" style={{width:24,height:24,background:CONTACT_COLORS[i%CONTACT_COLORS.length],fontSize:9}}>{initialsOf(a.name)}</span>{a.name}<span className="muted small"> · {fmtDate(a.date)}</span></span>
                         ))}</div></>
                       )}
+                      <IdeaDisclaimer divider/>
                     </div></td></tr>
                   )}
                 </React.Fragment>);
@@ -2706,11 +2708,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
           </div>
 
           {/* ── Disclaimer ── */}
-          <div style={{fontSize:11, color:'var(--muted)', lineHeight:1.7,
-                       textAlign:'center', padding:'0 8px'}}>
-            Publicly shared investment opinion. Not SEBI registered advice.
-            Past performance does not indicate future results.
-          </div>
+          <IdeaDisclaimer align="center" style={{padding:'0 8px'}}/>
         </>)}
       </div>
     </div>
@@ -3185,6 +3183,7 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
             />
           </div>
         </div>
+        <IdeaDisclaimer style={{marginTop:10}}/>
       </div>
     </div>
   );
