@@ -40,12 +40,11 @@
       not HTML — an &amp; here would land in the parsed string literally, so
       ampersands stay bare.
 
-      Two things a checklist would add are deliberately absent. sameAs: we
-      have no official social profiles yet, and naming a handle we don't own
-      is worse than naming none. WebSite.potentialAction: the sitelinks
-      searchbox requires a URL-addressable search endpoint, and HashRouter
-      leaves us with none to honour — declaring one that 404s is a false
-      claim about the site.
+      WebSite.potentialAction is deliberately absent and should stay that way
+      until there is something real to point it at: the sitelinks searchbox
+      requires a URL-addressable search endpoint, and HashRouter leaves us
+      with none to honour — declaring one that 404s is a false claim about
+      the site.
     -->
     <script type="application/ld+json">
     {
@@ -65,6 +64,11 @@
           },
           "image": "https://myinvestorcircle.com/og-image.png",
           "description": "A private investing community where members share investment ideas and build a transparent, permanent public track record. My Investor Circle does not provide investment advice and does not recommend securities.",
+          "sameAs": [
+            "https://x.com/myInvestorCircl",
+            "https://www.facebook.com/share/1HjKSsGFVp/",
+            "https://www.instagram.com/myinvestorcircle"
+          ],
           "contactPoint": {
             "@type": "ContactPoint",
             "contactType": "customer support",
