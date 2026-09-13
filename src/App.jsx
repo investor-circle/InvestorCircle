@@ -119,6 +119,7 @@ import { CirclePage } from "./features/groups/Groups";
 import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./features/discovery/Discovery";
 import { DiscoverModal, DiscoverPeoplePage, OnboardingGate } from "./features/onboarding/Onboarding";
 import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
+import LandingPage from "./features/marketing/LandingPage";
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
 import { RecoPostPage, Recommendations } from "./features/recommendations/Recommendations";
 import { useIsMobile } from "./hooks/index";
@@ -536,6 +537,14 @@ export default function App() {
     const code   = params.get('oobCode');
     return (mode === 'resetPassword' && code) ? code : null;
   });
+
+  // ── Signed-out view: null shows the public landing page, 'login'/'signup'
+  // hand over to LoginPage on that tab. See the auth gate further down.
+  const [authView, setAuthView] = useState(null);
+
+  // Signing in consumes the choice, so a later sign-out lands back on the
+  // landing page instead of dropping straight into the form it came from.
+  useEffect(() => { if (user) setAuthView(null); }, [user]);
 
   // ── Claim state: token + profile for unclaimed-creator claim flow ─────────────
   // Reads URL params synchronously so the token is available on first render —
@@ -1122,7 +1131,36 @@ export default function App() {
     />
   );
 
-  if (!user) return <LoginPage />;
+  // ── Signed out: public landing page, with LoginPage one click away ──────────
+  // Two arrivals skip the landing page entirely and go straight to the form,
+  // because they came here to do a specific thing: a referral link (?ref=, held
+  // in mic_ref) and a "Join to connect" from a public profile (held in
+  // pending_connect_username). Password reset never reaches here — resetOobCode
+  // returns above this.
+  if (!user) {
+    const wantsFormDirectly =
+      !!localStorage.getItem('mic_ref') ||
+      !!sessionStorage.getItem('pending_connect_username');
+
+    if (wantsFormDirectly || authView) {
+      return (
+        <SectionErrorBoundary label="Sign in">
+          <LoginPage
+            initialTab={authView === 'signup' ? 'signup' : 'login'}
+            onBack={wantsFormDirectly ? null : () => setAuthView(null)}
+          />
+        </SectionErrorBoundary>
+      );
+    }
+    return (
+      <SectionErrorBoundary label="Landing page">
+        <LandingPage
+          onSignIn={() => setAuthView('login')}
+          onCreateAccount={() => setAuthView('signup')}
+        />
+      </SectionErrorBoundary>
+    );
+  }
 
 
   // Non-admin users are ALWAYS investors.

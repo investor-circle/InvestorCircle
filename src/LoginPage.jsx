@@ -80,7 +80,10 @@ function pwValid(pw) {
   return c.length && c.hasLetter && c.hasNumber;
 }
 
-export default function LoginPage() {
+// initialTab / onBack are supplied when the landing page hands over (App.jsx's
+// auth gate). Both are optional: a referral or connect arrival renders this
+// screen directly, with no landing page behind it to go back to.
+export default function LoginPage({ initialTab = null, onBack = null }) {
   const { login } = useAuth();
 
   // If user arrived from a public profile "Join to connect" button,
@@ -91,7 +94,11 @@ export default function LoginPage() {
   const referralCode = localStorage.getItem("mic_ref");
 
   // tab: "login" | "signup" | "forgot"
-  const [tab,        setTab]        = useState(pendingUsername || referralCode ? "signup" : "login");
+  // A pending connect or referral still wins over initialTab: those arrivals
+  // are here to sign up for a specific reason, whatever button was pressed.
+  const [tab,        setTab]        = useState(
+    pendingUsername || referralCode ? "signup" : (initialTab || "login")
+  );
   const [busy,       setBusy]       = useState(false);
   const [err,        setErr]        = useState("");
   const [showPw,     setShowPw]     = useState(false);
@@ -357,6 +364,18 @@ export default function LoginPage() {
         background: `radial-gradient(700px 500px at 15% -5%, rgba(109,93,245,.45), transparent 55%),
                      radial-gradient(600px 400px at 90% 105%, rgba(207,82,216,.28), transparent 55%)`,
       }}/>
+
+      {onBack && (
+        <button onClick={onBack} style={{
+          position: "absolute", top: 26, left: 32, display: "flex", alignItems: "center", gap: 7,
+          background: "none", border: "none", cursor: "pointer", padding: 8,
+          fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: "#8a8daa",
+        }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          Back
+        </button>
+      )}
 
       <div style={{ width: "100%", maxWidth: 420, position: "relative" }}>
 
