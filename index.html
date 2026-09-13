@@ -34,6 +34,56 @@
     <meta property="og:image:alt" content="myInvestorCircle — discover, share and discuss investment ideas with a circle of investors you trust." />
     <meta name="twitter:card" content="summary_large_image" />
 
+    <!--
+      Structured data, so the brand resolves from declared facts rather than
+      from whatever Google infers off a login screen. Note this is raw JSON,
+      not HTML — an &amp; here would land in the parsed string literally, so
+      ampersands stay bare.
+
+      Two things a checklist would add are deliberately absent. sameAs: we
+      have no official social profiles yet, and naming a handle we don't own
+      is worse than naming none. WebSite.potentialAction: the sitelinks
+      searchbox requires a URL-addressable search endpoint, and HashRouter
+      leaves us with none to honour — declaring one that 404s is a false
+      claim about the site.
+    -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://myinvestorcircle.com/#organization",
+          "name": "My Investor Circle",
+          "alternateName": ["myInvestorCircle", "MIC"],
+          "url": "https://myinvestorcircle.com/",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://myinvestorcircle.com/mic-logo.png",
+            "width": 1024,
+            "height": 1024
+          },
+          "image": "https://myinvestorcircle.com/og-image.png",
+          "description": "A private investing community where members share investment ideas and build a transparent, permanent public track record. My Investor Circle does not provide investment advice and does not recommend securities.",
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "contactType": "customer support",
+            "email": "hello@myinvestorcircle.com",
+            "availableLanguage": "English"
+          }
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://myinvestorcircle.com/#website",
+          "name": "My Investor Circle",
+          "url": "https://myinvestorcircle.com/",
+          "inLanguage": "en",
+          "publisher": { "@id": "https://myinvestorcircle.com/#organization" }
+        }
+      ]
+    }
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!--
