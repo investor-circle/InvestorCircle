@@ -321,6 +321,20 @@ Remove an entry once a build that includes it has actually shipped.
   `SOCIALS` in `mobile/app/contact.js`. All three list the official brand
   accounts and must be changed together.
 
+## Copy backlog
+
+- **Say "idea", never "call".** The product vocabulary for a posted
+  investment idea is *idea*; `features/marketing/LandingPage.jsx` follows
+  this and has a test that fails if "call" reappears there. Two pieces of
+  older copy still say "call" and are queued to be reworded:
+  - `FAQS` in `src/features/marketing/Marketing.jsx` — "the original call
+    stays on record".
+  - `ABOUT_DEFAULT_HTML` in `src/constants/app.js` — "What calls has this
+    person made in the past?".
+  Note the About text is only a *fallback*: `getAboutUsContent()` serves
+  DB-stored HTML when present, so editing the constant may change nothing
+  in production — check the stored value too.
+
 ## Deployment considerations
 
 - Frontend auto-deploys to GitHub Pages on every push to `main` — treat changes
