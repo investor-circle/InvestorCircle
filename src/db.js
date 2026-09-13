@@ -865,6 +865,34 @@ export async function getTickerRecos(ticker) {
   return api.ok ? (api.data.recos || []) : [];
 }
 
+// Unauthenticated counterpart to getTickerRecos, for a signed-out visitor on
+// the Stock Insights page (#/security/:ticker). Backed by the same
+// is_public-filtered public-ideas.js handler that api/seo.js's /stock/:symbol
+// page uses — see CLAUDE.md's "public-ideas.js is the only place public idea
+// data is queried" rule. Field names are adapted to match what
+// SecurityIntelligencePage already expects from getTickerRecos, so the rest
+// of that component's logic runs unmodified against either data source:
+//   - `from` becomes the author's username (there is no uid to hand a signed-
+//     out caller) — used only to group/dedupe by investor and to check circle
+//     membership, both of which are naturally empty with no signed-in viewer.
+//   - `username`/`full_name` are read straight off author_username/author_name.
+export async function getPublicTickerIdeas(ticker) {
+  if (!ticker) return [];
+  try {
+    const res = await fetch(`${API_BASE}/data?resource=public-ideas&action=by-symbol&symbol=${encodeURIComponent(ticker)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.ideas || []).map(idea => ({
+      ...idea,
+      from: idea.author_username,
+      username: idea.author_username,
+      full_name: idea.author_name,
+    }));
+  } catch (_) {
+    return [];
+  }
+}
+
 export async function getInvestorIciBatch(uids) {
   const api = await callApi('/data?resource=lookups', { method: 'POST', body: { action: 'investor-ici-batch', uids } });
   return api.ok ? (api.data.stats || []) : [];

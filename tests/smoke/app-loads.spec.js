@@ -51,4 +51,24 @@ test.describe("app shell", () => {
     expect(bodyText.trim().length).toBeGreaterThan(0);
     expect(pageErrors, `Uncaught page errors:\n${pageErrors.join("\n")}`).toEqual([]);
   });
+
+  test("a Stock Insights deep link renders for a signed-out visitor, not a crash", async ({ page }) => {
+    // #/security/:ticker is the new indexable deep link into the existing
+    // Stock Insights page (SecurityIntelligencePage), reached with no
+    // signed-in viewer — same shape of check as the investor-profile route
+    // above: no live backend here, so the real assertion is that a signed-
+    // out render degrades to an empty state rather than throwing.
+    const pageErrors = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+
+    await page.goto("/#/security/RELIANCE");
+    await page.waitForTimeout(3000);
+
+    await expect(page.getByText("Stock Insights").first()).toBeVisible();
+    await expect(page.getByText("RELIANCE").first()).toBeVisible();
+
+    const bodyText = await page.locator("body").innerText();
+    expect(bodyText.trim().length).toBeGreaterThan(0);
+    expect(pageErrors, `Uncaught page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
 });

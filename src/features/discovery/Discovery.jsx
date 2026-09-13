@@ -34,6 +34,7 @@ import {
   forwardRecommendation as dbForwardReco,
   getConsensusRecosPublic as dbGetConsensusRecosPublic,
   getTickerRecos as dbGetTickerRecos,
+  getPublicTickerIdeas as dbGetPublicTickerIdeas,
   updateDelivery as dbUpdateDelivery
 } from "../../services/api/recommendationsApi";
 import {
@@ -41,7 +42,7 @@ import {
   trackReco as dbTrackReco,
   getMyTrackedRecos as dbGetMyTrackedRecos
 } from "../../services/api/engagementApi";
-import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, SectionErrorBoundary, SparkLine, WidgetHeader } from "../../components/common";
+import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
@@ -1934,7 +1935,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
    SECURITY INTELLIGENCE
    ═══════════════════════════════════════════════════════════════════ */
 
-export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenSecurity, onBack, onHome }) {
+export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerUser, trackedIds, onOpenSecurity, onBack, onHome }) {
   const isMobile = useIsMobile();
   const { ticker, name } = securityTicker || {};
   const [recos, setRecos]     = useState([]);
@@ -1945,7 +1946,19 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
   const [investorIcis, setInvestorIcis] = useState({}); // uid → {score,band}
   const [searchOpen, setSearchOpen] = useState(false); // mobile: search starts collapsed to an icon
 
-  const circleIds = useMemo(()=>contacts.map(c=>c.id),[contacts]);
+  // viewerUser is undefined/null for a signed-out visitor reaching this page
+  // via #/security/:ticker (see App.jsx) — same "nullable viewer, one
+  // component" pattern as PublicProfilePage. "Your Circle" (renamed from "My
+  // Circle" — the old name read as "everyone on myInvestorCircle" to some
+  // users) is connections plus tracked investors; both are naturally empty
+  // with no signed-in viewer, which is what lets the Consensus/Investors tabs
+  // below degrade to a soft sign-in prompt with no extra branching there.
+  const signedIn = !!viewerUser;
+  const circleIds = useMemo(()=>{
+    const ids = new Set((contacts||[]).map(c=>c.id));
+    (trackedIds||new Set()).forEach(id=>ids.add(id));
+    return ids;
+  },[contacts, trackedIds]);
 
   // The page can stay mounted across multiple onOpenSecurity() calls (e.g.
   // navigating from one security's modal straight to another's insights
@@ -1954,9 +1967,12 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
     if (securityTicker?.tab) setTab(securityTicker.tab);
   }, [ticker, securityTicker?.tab]);
 
-  // Fetch real ICI scores for all investors when recos loads
+  // Fetch real ICI scores for all investors when recos loads. Only meaningful
+  // when signed in: the public (signed-out) data path below has no uid to
+  // hand this batch lookup, only the author's username (see
+  // getPublicTickerIdeas in db.js), so it would just look up nothing.
   useEffect(()=>{
-    if (!recos.length) return;
+    if (!signedIn || !recos.length) return;
     const uids = [...new Set(recos.map(r=>r.from).filter(Boolean))];
     if (!uids.length) return;
     dbGetInvestorIciBatch(uids)
@@ -1977,15 +1993,16 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
         setInvestorIcis(scores);
       })
       .catch(()=>{});
-  },[recos]);
+  },[recos, signedIn]);
 
   useEffect(()=>{
     if (!ticker) return;
     setLoading(true); setRecos([]);
-    dbGetTickerRecos(ticker)
+    const fetchRecos = signedIn ? dbGetTickerRecos(ticker) : dbGetPublicTickerIdeas(ticker);
+    fetchRecos
       .then(rows=>{ setRecos(rows); setLoading(false); })
       .catch(()=>setLoading(false));
-  },[ticker]);
+  },[ticker, signedIn]);
 
 
   // stats useMemo hoisted above early return to comply with React Rules of Hooks.
@@ -2005,8 +2022,8 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
     const convMap = {};
     recos.forEach(r=>{ if(r.conviction) convMap[r.conviction]=(convMap[r.conviction]||0)+1; });
     const firstDate = recos[recos.length-1]?.created_at;
-    const activeR  = recos;
-    const exitedR  = [];  // status column not in schema
+    const activeR  = recos.filter(r=>r.status==='Active');
+    const exitedR  = recos.filter(r=>r.status==='Closed' || r.status==='Expired');
     return { months, convMap, firstDate, total:recos.length, active:activeR.length, exited:exitedR.length };
   },[recos]);
 
@@ -2032,16 +2049,26 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
 
       {/* ── Discovery landing ── */}
       <div style={{maxWidth:540,margin:'0 auto',padding:'40px 16px 0'}}>
-        {/* Search box — large and prominent */}
-        <div style={{background:'var(--surface)',border:'2px solid var(--accent)',borderRadius:16,padding:'4px 8px 4px 16px',display:'flex',alignItems:'center',gap:10,marginBottom:24,boxShadow:'0 4px 24px rgba(109,93,245,.12)'}}>
-          <Search size={20} color="var(--accent)" style={{flexShrink:0}}/>
-          <div style={{flex:1}}>
-            <InstrumentSearch
-              onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
-              placeholder="Search any stock or ETF — e.g. RELIANCE, HDFC Bank…"
-            />
+        {/* Search box — large and prominent. The instrument list itself is an
+            authenticated lookup, so a signed-out visitor gets a sign-in
+            prompt here instead of a search box that would silently return
+            nothing — this landing state is only reached from in-app
+            navigation today, but keep it honest either way. */}
+        {signedIn ? (
+          <div style={{background:'var(--surface)',border:'2px solid var(--accent)',borderRadius:16,padding:'4px 8px 4px 16px',display:'flex',alignItems:'center',gap:10,marginBottom:24,boxShadow:'0 4px 24px rgba(109,93,245,.12)'}}>
+            <Search size={20} color="var(--accent)" style={{flexShrink:0}}/>
+            <div style={{flex:1}}>
+              <InstrumentSearch
+                onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
+                placeholder="Search any stock or ETF — e.g. RELIANCE, HDFC Bank…"
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div style={{background:'var(--surface-2)',border:'1px dashed var(--line)',borderRadius:16,padding:'16px',marginBottom:24,textAlign:'center'}}>
+            <div style={{fontSize:13,color:'var(--muted)'}}>Sign in to search any stock or ETF on myInvestorCircle.</div>
+          </div>
+        )}
 
         {/* Instructional copy */}
         <div style={{textAlign:'center',padding:'0 8px'}}>
@@ -2062,9 +2089,14 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
     </>
   );
 
-  // No status filter - column not confirmed in schema; show all recommendations
-  const activeRecos  = recos;  // all fetched recos are current (no status column)
-  const circleRecos  = recos.filter(r=>circleIds.includes(r.from));
+  // Consensus strength/AI summary deliberately keep considering every idea on
+  // the ticker, not just ones currently flagged Active — that matching the
+  // pre-existing behavior here (unlike the Idea History badges and Statistics
+  // tab below, which now show the real per-idea status) is intentional: it's
+  // a business calculation CLAUDE.md marks sensitive, so its input set is
+  // left unchanged by this pass rather than narrowed as a side effect.
+  const activeRecos  = recos;
+  const circleRecos  = recos.filter(r=>circleIds.has(r.from));
   const community    = computeConsensus(activeRecos);
   const circle       = computeConsensus(circleRecos);
 
@@ -2093,13 +2125,18 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
       setAiLoading(false);
     }, 800);
   };
-  const investorMap = {};  // keyed by recommender uid — populated below
+  const investorMap = {};  // keyed by recommender uid (or username, signed-out) — populated below
   recos.forEach(r=>{
     if (!investorMap[r.from]) investorMap[r.from] = {...r};
   });
   const investors = Object.values(investorMap);
-  const inCircle  = investors.filter(r=>circleIds.includes(r.from));
-  const notCircle = investors.filter(r=>!circleIds.includes(r.from));
+  const inCircle  = investors.filter(r=>circleIds.has(r.from));
+  const notCircle = investors.filter(r=>!circleIds.has(r.from));
+  // investorMap keeps each investor's most recent idea on this ticker (recos
+  // arrives newest-first), so "still active" here means their latest call on
+  // {ticker} is currently open — the same per-idea status now available from
+  // both data paths.
+  const activeInvestorCount = investors.filter(r=>r.status==='Active').length;
 
   return (
     <>
@@ -2108,16 +2145,22 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           <div className="eyebrow">Stock Insights</div>
           <div style={{display:'flex',alignItems:'baseline',gap:14,flexWrap:'wrap'}}>
             <div className="page-title">{ticker}</div>
-            <div style={{fontSize:16,color:'var(--muted)',fontWeight:400}}>{name}</div>
+            <div style={{fontSize:16,color:'var(--muted)',fontWeight:400}}>{name || recos[0]?.asset_name || ''}</div>
           </div>
-          <div className="page-sub">{activeRecos.length} active idea{activeRecos.length!==1?'s':''} · {investors.length} investor{investors.length!==1?'s':''} tracking</div>
+          <div className="page-sub">
+            {loading ? 'Loading…' : investors.length===0 ? `No public ideas on ${ticker} yet.` :
+              `${investors.length} ${investors.length===1?'person has':'people have'} shared ${investors.length===1?'a view':'their views'} on ${ticker} — ${activeInvestorCount} ${activeInvestorCount===1?'is':'are'} still active`}
+          </div>
         </div>
 
         {backHomeButtons}
 
         {/* ── Switch-security search — compact, tucked into the header's empty space.
-             On mobile there's no spare width, so it starts collapsed to an icon. ── */}
-        {isMobile ? (
+             On mobile there's no spare width, so it starts collapsed to an icon.
+             Hidden for a signed-out visitor: the instrument list is an
+             authenticated lookup (see the ticker-less landing state above),
+             so the box would just come back empty. ── */}
+        {signedIn && (isMobile ? (
           !searchOpen ? (
             <button className="iconbtn" style={{width:36,height:36,flexShrink:0}} onClick={()=>setSearchOpen(true)}>
               <Search size={15}/>
@@ -2140,7 +2183,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
               placeholder={`Switch security…`}
             />
           </div>
-        )}
+        ))}
 
         {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
       </div>
@@ -2196,20 +2239,43 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
               </div>
             </div>
           </div>
-          {/* Circle vs Community */}
+          {/* Your Circle vs Community */}
           <div className="card">
-            <div className="card-head"><Globe size={15}/> Circle vs Community</div>
+            <div className="card-head"><Globe size={15}/> Your Circle vs Community</div>
             <div className="card-body" style={{display:'flex',flexDirection:'column',gap:16,padding:'16px 18px'}}>
-              {[['My Circle',circle],['Community',community]].map(([l,c])=>(
-                <div key={l}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-                    <span style={{fontSize:13,fontWeight:600}}>{l}</span>
-                    <span style={{fontSize:13,fontWeight:700,color:consensusStrengthColor(c)}}>{c.label}</span>
+              <div style={{fontSize:11.5,color:'var(--muted)',lineHeight:1.6,paddingBottom:2}}>
+                <strong style={{color:'var(--ink-soft)'}}>Community</strong> is every public idea shared on myInvestorCircle. <strong style={{color:'var(--ink-soft)'}}>Your Circle</strong> is just the people you're connected with or tracking.
+              </div>
+              {signedIn ? (
+                [['Your Circle',circle],['Community',community]].map(([l,c])=>(
+                  <div key={l}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                      <span style={{fontSize:13,fontWeight:600}}>{l}</span>
+                      <span style={{fontSize:13,fontWeight:700,color:consensusStrengthColor(c)}}>{c.label}</span>
+                    </div>
+                    <ConsensusBar cons={c} width={'100%'}/>
+                    <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{c.total} investor{c.total!==1?'s':''}</div>
                   </div>
-                  <ConsensusBar cons={c} width={'100%'}/>
-                  <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{c.total} investor{c.total!==1?'s':''}</div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <>
+                  {/* Soft conversion prompt in place of Your Circle — there is
+                      no signed-in viewer, so there is no circle to compute. */}
+                  <div style={{padding:'14px 16px',background:'var(--surface-2)',borderRadius:10,border:'1px dashed var(--line)',textAlign:'center'}}>
+                    <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>See how Your Circle is positioned</div>
+                    <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Sign in to see what the people you're connected with and tracking think of {ticker}.</div>
+                    <button className="btn btn-pri btn-sm" onClick={()=>{window.location.hash='';}}>Sign in</button>
+                  </div>
+                  <div>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                      <span style={{fontSize:13,fontWeight:600}}>Community</span>
+                      <span style={{fontSize:13,fontWeight:700,color:consensusStrengthColor(community)}}>{community.label}</span>
+                    </div>
+                    <ConsensusBar cons={community} width={'100%'}/>
+                    <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{community.total} investor{community.total!==1?'s':''}</div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -2221,6 +2287,41 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
           <div className="card-head"><Clock size={15}/> Idea History <span style={{fontSize:11,color:'var(--muted)',fontWeight:400,marginLeft:4}}>(immutable — all calls are permanent)</span></div>
           {recos.length===0&&!loading?(
             <div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>No ideas for {ticker} yet.</div>
+          ):isMobile?(
+            /* ── Mobile: cards, not the table below — a 6-column table forced
+                 to scroll sideways was the thing worth fixing here; this also
+                 has room for a thesis glimpse the table never had. ── */
+            <div style={{display:'flex',flexDirection:'column',gap:10,padding:'10px'}}>
+              {recos.map(r=>{
+                const inYourCircle = circleIds.has(r.from);
+                const goToReco = r.username ? ()=>{ window.location.hash = `#/investor/${r.username}/idea/${r.id}`; } : undefined;
+                return (
+                  <div key={r.id} onClick={goToReco} style={{border:'1px solid var(--line)',borderRadius:12,padding:'12px 14px',cursor:goToReco?'pointer':'default'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                      <div className="av" style={{width:28,height:28,fontSize:10,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:700,fontSize:13}}>{r.full_name||r.username||'Anonymous'}</div>
+                        {inYourCircle&&<span style={{fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.05em'}}>Your Circle</span>}
+                      </div>
+                      <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,flexShrink:0,
+                        background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
+                        color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>
+                        {r.recommendation_type==='Buy'?'BUY':'SELL'}
+                      </span>
+                    </div>
+                    {r.thesis&&r.thesis!=='—'&&(
+                      <div style={{marginBottom:8,fontSize:12.5}}><ThesisRenderer thesis={r.thesis} previewLines={2}/></div>
+                    )}
+                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',fontSize:12,color:'var(--muted)'}}>
+                      <span>{r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'}</span>
+                      {r.reco_price&&<span>· Entry ₹{Number(r.reco_price).toLocaleString('en-IN')}</span>}
+                      <ConvBadge level={r.conviction}/>
+                      <StatusBadge2 status={r.status||'Active'}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ):(
             <div style={{overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -2233,7 +2334,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                 </thead>
                 <tbody>
                   {recos.map(r=>{
-                    const inMyCircle = circleIds.includes(r.from);
+                    const inYourCircle = circleIds.has(r.from);
                     const goToReco = r.username ? ()=>{ window.location.hash = `#/investor/${r.username}/idea/${r.id}`; } : undefined;
                     return (
                       <tr key={r.id} style={{borderBottom:'1px solid var(--line)',cursor:goToReco?'pointer':'default'}} onClick={goToReco}
@@ -2242,9 +2343,12 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                         <td style={{padding:'12px 14px'}}>
                           <div style={{display:'flex',alignItems:'center',gap:8}}>
                             <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
-                            <div>
+                            <div style={{minWidth:0}}>
                               <div style={{fontWeight:700,fontSize:13}}>{r.full_name||r.username||'Anonymous'}</div>
-                              {inMyCircle&&<span style={{fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.05em'}}>My Circle</span>}
+                              {inYourCircle&&<span style={{fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.05em'}}>Your Circle</span>}
+                              {r.thesis&&r.thesis!=='—'&&(
+                                <div style={{marginTop:4,fontSize:12,color:'var(--ink-soft)',maxWidth:320}}><ThesisRenderer thesis={r.thesis} previewLines={2}/></div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -2263,10 +2367,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                         </td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}><ConvBadge level={r.conviction}/></td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}>
-                          <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:5,
-                            background:'var(--gain-soft)',color:'var(--gain)'}}>
-                            Active
-                          </span>
+                          <StatusBadge2 status={r.status||'Active'}/>
                         </td>
                       </tr>
                     );
@@ -2281,7 +2382,20 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
       {/* Tab: Investors */}
       {tab==='investors'&&(
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
-          {[['In My Circle', inCircle, true], ['Community', notCircle, false]].map(([label, list, isCircle])=>(
+          {/* Soft conversion prompt in place of "In Your Circle" — with no
+              signed-in viewer, circleIds is empty and inCircle would just be
+              [], silently omitting the section below rather than explaining
+              why. */}
+          {!signedIn && (
+            <div className="card">
+              <div className="card-body" style={{padding:'14px 16px',textAlign:'center'}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>See who in Your Circle is invested in {ticker}</div>
+                <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Sign in to see which of your connections and tracked investors have shared a view on {ticker}.</div>
+                <button className="btn btn-pri btn-sm" onClick={()=>{window.location.hash='';}}>Sign in</button>
+              </div>
+            </div>
+          )}
+          {[['In Your Circle', inCircle, true], ['Community', notCircle, false]].map(([label, list, isCircle])=>(
             list.length > 0 && (
               <div key={label} className="card">
                 <div className="card-head">

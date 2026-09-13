@@ -236,7 +236,7 @@ export default function App() {
   // !user are all guards that change across the component's lifetime.
   useEffect(() => {
     const p = routeLocation.pathname;
-    if (p.startsWith('/investor/')) return;
+    if (p.startsWith('/investor/') || p.startsWith('/security/')) return;
     if (isInv && INVESTOR_PATH_TO_PAGE[p] && INVESTOR_PATH_TO_PAGE[p] !== investorPage) {
       setInvestorPage(INVESTOR_PATH_TO_PAGE[p]);
     } else if (!isInv && ADMIN_PATH_TO_PAGE[p] && ADMIN_PATH_TO_PAGE[p] !== adminPage) {
@@ -1104,6 +1104,44 @@ export default function App() {
     );
   }
 
+  // ── Stock Insights route — no auth required ──────────────────────────────────
+  // Matches: #/security/TICKER (optionally ?tab=timeline etc.)
+  // Same "one component, nullable viewer" pattern as the public profile route
+  // above: SecurityIntelligencePage already degrades correctly for a null
+  // viewerUser (empty Your Circle, soft sign-in prompts on the Consensus/
+  // Investors tabs, no ICI batch lookup) — see Discovery.jsx. This is what
+  // makes the existing Stock Insights page reachable and indexable for a
+  // signed-out visitor/crawler, without a second page to keep in sync.
+  //
+  // In-app navigation (clicking a ticker from Home/Portfolio/Market Insights)
+  // deliberately still uses the internal page==='sec_intel' state below, not
+  // this hash — changing that would drop signed-in users out of the app
+  // shell (sidebar/nav) on every ticker click, which nobody asked for. This
+  // route exists for shared/typed/crawled links, which is what's indexable.
+  const securityMatch = pageHash.match(/^#\/security\/([A-Za-z0-9.&_-]{1,24})/i);
+  if (securityMatch && !authLoading) {
+    const secTicker = decodeURIComponent(securityMatch[1]).toUpperCase();
+    const secQuery = new URLSearchParams(pageHash.split('?')[1] || '');
+    return (
+      <div className="app"><style>{STYLES}</style>
+        <SectionErrorBoundary label="Stock Insights">
+          <div className="content" style={{maxWidth:1100,margin:'0 auto',padding:isMobile?'16px 12px':'28px 24px'}}>
+            <SecurityIntelligencePage
+              securityTicker={{ ticker: secTicker, tab: secQuery.get('tab') || undefined }}
+              contacts={contacts}
+              me={ME}
+              viewerUser={user}
+              trackedIds={trackedCreatorIds}
+              onOpenSecurity={(t, n, tab) => { window.location.hash = `#/security/${encodeURIComponent(t)}${tab?`?tab=${tab}`:''}`; }}
+              onBack={()=>{ window.location.hash = ''; }}
+              onHome={()=>{ window.location.hash = ''; }}
+            />
+          </div>
+        </SectionErrorBoundary>
+      </div>
+    );
+  }
+
   // ── Auth gate ───────────────────────────────────────────────────────────────
   if (authLoading) return <AppLoadingScreen/>;
   // ── Creator claim flow: show claim page ONLY after auth has resolved ─────────
@@ -1738,7 +1776,7 @@ export default function App() {
             {isInv && showDiscover && <SectionErrorBoundary label="Discover"><DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/></SectionErrorBoundary>}
             {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><React.Suspense fallback={<div className="empty">Loading Portfolio…</div>}><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} onOpenSecurity={openSecurity} setPage={setPage}/></React.Suspense></SectionErrorBoundary>}
             {isInv && page==="market_intel" && <SectionErrorBoundary label="Market Insights"><MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
-            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity} onBack={()=>setPage(secInsightsFrom)} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
+            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} viewerUser={user} trackedIds={trackedCreatorIds} onOpenSecurity={openSecurity} onBack={()=>setPage(secInsightsFrom)} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
             {isInv && page==="discover"     && <SectionErrorBoundary label="Discover People"><DiscoverPeoplePage ME={ME}/></SectionErrorBoundary>}
             {isInv && page==="network"   && <SectionErrorBoundary label="Network"><Network
                 connections={connections} setConnections={setConnections}
