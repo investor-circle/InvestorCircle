@@ -332,7 +332,13 @@ indexing nor WhatsApp's link-preview card runs the app's JavaScript.
 - **Edge caching is load-bearing, not an optimisation.** The pages set
   `s-maxage`/`stale-while-revalidate` so a crawler working through the
   sitemap does not spend Vercel "Fast Origin Transfer" on every hit — the
-  meter closest to its limit on the current plan.
+  meter closest to its limit on the current plan. This is also why
+  `vercel.json`'s no-cache header rule names the data endpoints
+  (`/api/(data|price|push|cas|email|reset|profile)(.*)`) instead of the
+  tidier `/api/(.*)`: these pages are rewritten *to* `/api/seo` and
+  `/api/sitemap`, and a blanket rule risks stamping `no-cache` on them —
+  which would look fine and quietly send every crawler hit to the origin.
+  Widen that pattern back and the caching silently stops working.
 - The sitemap lists the home page and one URL per stock with public ideas.
   Individual idea pages are deliberately absent: they exist so a shared
   link renders properly, and a few hundred words each would be thin content
