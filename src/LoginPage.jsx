@@ -365,9 +365,9 @@ export default function LoginPage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 13 }}>
             <img src="/mic-logo.png" alt="myInvestorCircle" style={{ width: 52, height: 52, flexShrink: 0 }} />
             <div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: "-.3px", lineHeight: 1.1 }}>
+              <h1 style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: "-.3px", lineHeight: 1.1, margin: 0 }}>
                 myInvestorCircle
-              </div>
+              </h1>
               <div style={{ fontSize: 13, color: "#6a6d90", marginTop: 3 }}>
                 Your private investing circle
               </div>
