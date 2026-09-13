@@ -61,7 +61,7 @@ const FRESH_WINDOW_MS = 48 * 60 * 60 * 1000;
 /* ─── Compact "daily briefing" card for a single fresh idea ─────────────
    Distinct from the full FeedCard: no % return, tighter layout, and the
    whole card is a real navigable link to the recommendation's dedicated,
-   shareable page (#/investor/:username/reco/:id — reused, not reinvented).
+   shareable page (#/investor/:username/idea/:id — reused, not reinvented).
    Like / Bookmark / Mark-invested / Share all call the same handlers and
    API functions FeedCard uses; Comment is a lightweight entry point that
    opens the same detail page (where the comment thread lives). ── */
@@ -103,7 +103,7 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
   const goToDetail = async () => {
     let uname = username;
     if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
-    if (uname) window.location.hash = `#/investor/${uname}/reco/${r.id}`;
+    if (uname) window.location.hash = `#/investor/${uname}/idea/${r.id}`;
   };
 
   // ── Mutation helpers — mirror FeedCard's react()/patch() so Like/Track/
@@ -335,7 +335,7 @@ function TrackedActivityRow({ item, contacts }) {
   const goToDetail = async () => {
     let uname = r.from_username || recommenderInfo?.username;
     if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
-    if (uname) window.location.hash = `#/investor/${uname}/reco/${r.id}`;
+    if (uname) window.location.hash = `#/investor/${uname}/idea/${r.id}`;
   };
 
   const Icon = TRACKED_ACTIVITY_ICON[item.type] || Activity;
@@ -608,11 +608,11 @@ function WhatYouMissedCard({ item, tracked, toggleTrack }) {
   const [recommenderInfo, setRecommenderInfo] = useState(null);
   useEffect(() => { if (r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo); }, [r.from]);
 
-  // Same #/investor/:username/reco/:id deep link FreshIdeaCard already uses.
+  // Same #/investor/:username/idea/:id deep link FreshIdeaCard already uses.
   const goToDetail = async () => {
     let uname = r.from_username || recommenderInfo?.username;
     if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
-    if (uname) window.location.hash = `#/investor/${uname}/reco/${r.id}`;
+    if (uname) window.location.hash = `#/investor/${uname}/idea/${r.id}`;
   };
 
   const isGain = movement.direction === 'up';
@@ -716,11 +716,11 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
   const isBuy = (r.recommendation_type || r.recType || 'Buy') === 'Buy';
   const isTracked = tracked?.has(r.id);
 
-  // Same deep link every other Pulse card uses — #/investor/:username/reco/:id.
+  // Same deep link every other Pulse card uses — #/investor/:username/idea/:id.
   const goToDetail = async () => {
     let uname = username;
     if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
-    if (uname) window.location.hash = `#/investor/${uname}/reco/${r.id}`;
+    if (uname) window.location.hash = `#/investor/${uname}/idea/${r.id}`;
   };
 
   // Trending items come from the platform-wide public pool, so their local
@@ -2234,7 +2234,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, onOpenS
                 <tbody>
                   {recos.map(r=>{
                     const inMyCircle = circleIds.includes(r.from);
-                    const goToReco = r.username ? ()=>{ window.location.hash = `#/investor/${r.username}/reco/${r.id}`; } : undefined;
+                    const goToReco = r.username ? ()=>{ window.location.hash = `#/investor/${r.username}/idea/${r.id}`; } : undefined;
                     return (
                       <tr key={r.id} style={{borderBottom:'1px solid var(--line)',cursor:goToReco?'pointer':'default'}} onClick={goToReco}
                         onMouseEnter={goToReco?(e)=>{e.currentTarget.style.background='var(--surface-2)';}:undefined}

@@ -826,7 +826,7 @@ export function CirclePage({ slug, inviteCode, highlightIdeaId, autoOpenRequests
                 border: isHighlighted ? '1.5px solid var(--accent)' : '1px solid var(--line)',
                 borderRadius:10,cursor:'pointer',transition:'background .3s, border-color .3s'}}
               onClick={()=>{
-                const dest = idea.recommender_username ? `#/investor/${idea.recommender_username}/reco/${idea.id}` : null;
+                const dest = idea.recommender_username ? `#/investor/${idea.recommender_username}/idea/${idea.id}` : null;
                 if (dest) window.location.hash = dest;
               }}>
               <Avatar f={{name:idea.recommender_name,avatarUrl:idea.recommender_avatar_url,color:idea.recommender_avatar_color,initials:initialsOf(idea.recommender_name||"?")}} size={34}/>

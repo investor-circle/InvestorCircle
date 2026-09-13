@@ -7,6 +7,16 @@ import { parseDeepLink, parseReferral, parsePasswordReset, isExternalWebLink } f
 
 describe("parseDeepLink — web hash URLs (what people actually share)", () => {
   it("routes a shared idea link to the idea, keeping the author", () => {
+    expect(parseDeepLink("https://myinvestorcircle.com/#/investor/alice/idea/123")).toEqual({
+      path: "/reco/123",
+      username: "alice",
+    });
+  });
+
+  // The segment used to be "reco". Links in that shape were shared to
+  // WhatsApp, e-mail and push notifications before the rename and are still
+  // out there, so they must resolve to exactly the same screen forever.
+  it("still routes the old /reco/ spelling to the same place", () => {
     expect(parseDeepLink("https://myinvestorcircle.com/#/investor/alice/reco/123")).toEqual({
       path: "/reco/123",
       username: "alice",
@@ -26,6 +36,9 @@ describe("parseDeepLink — web hash URLs (what people actually share)", () => {
 
 describe("parseDeepLink — custom scheme and bare paths", () => {
   it("handles the app's own scheme with no host", () => {
+    expect(parseDeepLink("myinvestorcircle://investor/bob/idea/9")).toEqual({ path: "/reco/9", username: "bob" });
+    expect(parseDeepLink("myinvestorcircle://idea/9")).toEqual({ path: "/reco/9" });
+    // Old spelling, same destination.
     expect(parseDeepLink("myinvestorcircle://investor/bob/reco/9")).toEqual({ path: "/reco/9", username: "bob" });
     expect(parseDeepLink("myinvestorcircle://reco/9")).toEqual({ path: "/reco/9" });
   });

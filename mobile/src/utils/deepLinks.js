@@ -44,17 +44,22 @@ export function parseDeepLink(url) {
   const parts = route.split("/").filter(Boolean);
   if (parts.length === 0) return null;
 
-  // /investor/:username/reco/:id  → the idea, remembering whose it is so the
+  // /investor/:username/idea/:id  → the idea, remembering whose it is so the
   // screen can fall back to that profile if the idea can't be resolved.
+  // "reco" is the old spelling of the segment: the web generates "idea" now,
+  // but links using "reco" were already shared to WhatsApp, e-mail and push
+  // notifications before the rename, so both must keep resolving here. The
+  // in-app route stays /reco/[id] — that is a local screen name, not a
+  // published URL, so renaming it would break nothing and fix nothing.
   if (parts[0] === "investor" && parts[1]) {
-    if (parts[2] === "reco" && parts[3]) {
+    if ((parts[2] === "idea" || parts[2] === "reco") && parts[3]) {
       return { path: `/reco/${encodeURIComponent(parts[3])}`, username: parts[1] };
     }
     return { path: `/investor/${encodeURIComponent(parts[1])}` };
   }
 
-  // /reco/:id — the app's own internal shape, also accepted from outside.
-  if (parts[0] === "reco" && parts[1]) {
+  // /idea/:id (and the old /reco/:id) — accepted from outside too.
+  if ((parts[0] === "idea" || parts[0] === "reco") && parts[1]) {
     return { path: `/reco/${encodeURIComponent(parts[1])}` };
   }
 

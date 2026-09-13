@@ -143,7 +143,7 @@ import { loadInstruments } from "./utils/instruments";
 
 /* ── URL routing for the major app sections (Phase 5 foundation) ──────────────
    Investor profile (#/investor/:username) and recommendation post
-   (#/investor/:username/reco/:id) URLs are handled separately below via the
+   (#/investor/:username/idea/:id) URLs are handled separately below via the
    pre-existing pageHash mechanism — deliberately left untouched.
    These maps give the main navigation sections real, shareable, refreshable
    URLs too, using the same hash-based scheme (see main.jsx for why). ────── */
@@ -301,7 +301,7 @@ export default function App() {
   // Investor profile URLs (#/investor/...) are DELIBERATELY left in the
   // address bar — the whole point of a public profile is that its link is
   // directly shareable, so the browser URL must show the real
-  // #/investor/username (or .../reco/id) link no matter how the user got
+  // #/investor/username (or .../idea/id) link no matter how the user got
   // there (search, Discovery, a Circle's member list, a notification,
   // etc.). To avoid reintroducing the identical-hash-is-a-no-op bug this
   // pattern has elsewhere, every exit from a profile page clears
@@ -664,7 +664,7 @@ export default function App() {
       if (event.data?.type !== 'MIC_NAVIGATE') return;
       try {
         const url = new URL(event.data.url);
-        if (url.hash) window.location.hash = url.hash;  // e.g. #/investor/ankur/reco/42
+        if (url.hash) window.location.hash = url.hash;  // e.g. #/investor/ankur/idea/42
       } catch { /* malformed URL — ignore */ }
     };
     navigator.serviceWorker.addEventListener('message', onMessage);
@@ -1033,8 +1033,11 @@ export default function App() {
   }
 
   // ── Public profile route — no auth required ────────────────────────────────
-  // Matches: #/investor/username  OR  #/investor/username/reco/recoId
-  const publicMatch = pageHash.match(/^#\/investor\/([a-z0-9_]+)(?:\/reco\/([a-zA-Z0-9-]+))?/i);
+  // Matches: #/investor/username  OR  #/investor/username/idea/ideaId
+  // "reco" is the old spelling of that segment and is still accepted: links
+  // using it were shared to WhatsApp, e-mail and push notifications before the
+  // rename and must keep resolving. Only "idea" is generated now.
+  const publicMatch = pageHash.match(/^#\/investor\/([a-z0-9_]+)(?:\/(?:idea|reco)\/([a-zA-Z0-9-]+))?/i);
   if (publicMatch && !authLoading) {
     const pubUsername = publicMatch[1];
     const pubRecoId   = publicMatch[2] || null;
@@ -1513,14 +1516,14 @@ export default function App() {
 
                       if (recoId && username) {
                         // Best case: go directly to the specific reco
-                        window.location.hash = `#/investor/${username}/reco/${recoId}${highlight}`;
+                        window.location.hash = `#/investor/${username}/idea/${recoId}${highlight}`;
                       } else if (n.from_user_id) {
                         // Look up username from from_user_id, then navigate
                         dbLookupUser('id', n.from_user_id)
                           .then(row => {
                             if (!row?.username) return;
                             window.location.hash = recoId
-                              ? `#/investor/${row.username}/reco/${recoId}${highlight}`
+                              ? `#/investor/${row.username}/idea/${recoId}${highlight}`
                               : `#/investor/${row.username}`;
                           }).catch(()=>{});
                       } else if (username) {

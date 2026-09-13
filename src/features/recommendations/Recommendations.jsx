@@ -1778,7 +1778,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
         if (isPublic && contacts?.length > 0) {
           const newRecoId = String(created?.id || '');
           const recoUrl   = newRecoId && me.username
-            ? `https://myinvestorcircle.com/#/investor/${me.username}/reco/${newRecoId}`
+            ? `https://myinvestorcircle.com/#/investor/${me.username}/idea/${newRecoId}`
             : `https://myinvestorcircle.com/#/investor/${me.username || ''}`;
 
           const meta = {
@@ -1795,7 +1795,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
             .catch(e => console.warn('notify-public-contacts:', e?.message || e));
           contacts.forEach(c => sendPush(c.id, {
             type: 'contact_recommendation',
-            deepLink: newRecoId && me.username ? `/investor/${me.username}/reco/${newRecoId}` : undefined,
+            deepLink: newRecoId && me.username ? `/investor/${me.username}/idea/${newRecoId}` : undefined,
           }));
           // Emails
           contacts.forEach(c => {
@@ -2142,7 +2142,7 @@ export function IdeaSharePopover({ reco, username, contacts=[], groups=[], ancho
   }, []);
 
   const url = username
-    ? `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${reco.id}`
+    ? `${window.location.origin}${window.location.pathname}#/investor/${username}/idea/${reco.id}`
     : null;
   const waMsg = url ? encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) on My Investor Circle:\n${url}`) : null;
   const copyLink = () => {
@@ -2352,7 +2352,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
   const [shareOpen,    setShareOpen]    = useState(false);
   const shareBtnRef = useRef(null);
 
-  const recoUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}/reco/${recoId}`;
+  const recoUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}/idea/${recoId}`;
 
   // Load profile + reco
   useEffect(() => {

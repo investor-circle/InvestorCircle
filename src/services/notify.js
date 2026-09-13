@@ -42,7 +42,7 @@ export const sendEmail = async (type, payload) => {
  *
  * @param userId   recipient
  * @param type     'connection_request' | 'connection_accepted' | 'contact_recommendation'
- * @param deepLink optional in-app path, e.g. `/investor/asha/reco/12`. The
+ * @param deepLink optional in-app path, e.g. `/investor/asha/idea/12`. The
  *                 origin is fixed server-side, so this cannot redirect the
  *                 notification off-site.
  *

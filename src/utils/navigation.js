@@ -42,7 +42,7 @@ export function gotoCircle(slug) {
 
 /** Navigate to a recommendation's dedicated post page by recommender username (hash-based routing). */
 export function openReco(username, recoId) {
-  if (username && recoId) window.location.hash = `#/investor/${username}/reco/${recoId}`;
+  if (username && recoId) window.location.hash = `#/investor/${username}/idea/${recoId}`;
 }
 
 /** Look up recommender username from userId then navigate to their reco's dedicated page. */
