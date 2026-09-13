@@ -3,8 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <!--
+      Every route here is a HashRouter fragment (#/investor/…, #/about), and a
+      fragment is never sent to the server — so crawlers collapse the entire
+      site onto this one URL. The canonical states that explicitly, and folds
+      in the query-string variants we hand out (referral ?ref=CODE, password
+      reset ?mode=resetPassword) which would otherwise each be indexed as a
+      separate page with identical content.
+    -->
+    <link rel="canonical" href="https://myinvestorcircle.com/" />
     <meta name="description" content="My Investor Circle is a private investing community to discover, share and discuss investment ideas with other investors, advisors and research professionals." />
     <title>My Investor Circle | Discover &amp; Share Investment Ideas</title>
+
+    <!--
+      Social link previews. The URLs must be absolute: WhatsApp/LinkedIn/X
+      fetch these tags on their own, with no document base to resolve a
+      relative path against. Twitter falls back to the og: tags for title,
+      description and image, so only twitter:card — which has no og:
+      equivalent — needs restating.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="My Investor Circle" />
+    <meta property="og:url" content="https://myinvestorcircle.com/" />
+    <meta property="og:title" content="My Investor Circle | Discover &amp; Share Investment Ideas" />
+    <meta property="og:description" content="A private investing community to discover, share and discuss investment ideas with other investors, advisors and research professionals." />
+    <meta property="og:image" content="https://myinvestorcircle.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="myInvestorCircle — discover, share and discuss investment ideas with a circle of investors you trust." />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!--
@@ -50,7 +79,7 @@
     <div id="root">
       <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="title">InvestorCircle</div>
+        <div class="title">myInvestorCircle</div>
         <div class="msg">Getting your circle ready…</div>
         <div class="sub">Just a moment</div>
       </div>
