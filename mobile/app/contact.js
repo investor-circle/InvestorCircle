@@ -45,6 +45,16 @@ const CATEGORIES = [
 ];
 
 const SUPPORT_EMAIL = "hello@myinvestorcircle.com";
+
+// Mirrors SOCIAL_LINKS in the web's src/constants/app.js — keep the two in
+// step. These are third-party domains, so none of them trip the Android
+// deep-link loop that myinvestorcircle.com links have to guard against
+// (see CLAUDE.md, "Mobile known issues"); a plain openURL is enough.
+const SOCIALS = [
+  { key: "x", label: "X", icon: "logo-twitter", url: "https://x.com/myInvestorCircl" },
+  { key: "facebook", label: "Facebook", icon: "logo-facebook", url: "https://www.facebook.com/profile.php?id=61593318230104" },
+  { key: "instagram", label: "Instagram", icon: "logo-instagram", url: "https://www.instagram.com/myinvestorcircle" },
+];
 // Same rule the server applies (EMAIL_RE in api/_lib/handlers/lookups.js), so
 // the form can say what's wrong without a round-trip to a 400.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -144,6 +154,20 @@ function ContactScreen() {
                   <Ionicons name="mail-outline" size={18} color={colors.accentInk} />
                   <Text style={styles.mailText}>{SUPPORT_EMAIL}</Text>
                 </Pressable>
+                <Text style={styles.followLabel}>Follow us</Text>
+                <View style={styles.socialRow}>
+                  {SOCIALS.map((s) => (
+                    <Pressable
+                      key={s.key}
+                      style={styles.socialBtn}
+                      accessibilityRole="link"
+                      accessibilityLabel={`My Investor Circle on ${s.label}`}
+                      onPress={() => Linking.openURL(s.url).catch(() => {})}
+                    >
+                      <Ionicons name={s.icon} size={19} color={colors.accentInk} />
+                    </Pressable>
+                  ))}
+                </View>
               </View>
 
               <Text style={styles.sectionTitle}>What can we help with?</Text>
@@ -261,6 +285,26 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
   },
   mailText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 14 },
+  followLabel: {
+    color: colors.muted,
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginTop: 16,
+    marginBottom: 9,
+  },
+  socialRow: { flexDirection: "row", gap: 10 },
+  socialBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
   sectionTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15, marginBottom: 9 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 18 },
   chip: {

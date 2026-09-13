@@ -41,6 +41,17 @@ export const ABOUT_DEFAULT_HTML = `
    requests.  openProfile / gotoUserProfile are the call-sites.
    ─────────────────────────────────────────────────────────────────────────── */
 
+/* Official brand accounts, rendered by SocialLinks in features/marketing.
+   The same URLs are hard-coded in index.html's JSON-LD sameAs block, which
+   is static HTML and cannot import this — change one and change the other,
+   or the structured data ends up claiming a profile the site never links to
+   (and vice versa), which is exactly the mismatch sameAs is read to detect. */
+export const SOCIAL_LINKS = [
+  { key:'x',         label:'X',         url:'https://x.com/myInvestorCircl' },
+  { key:'facebook',  label:'Facebook',  url:'https://www.facebook.com/profile.php?id=61593318230104' },
+  { key:'instagram', label:'Instagram', url:'https://www.instagram.com/myinvestorcircle' },
+];
+
 export const CURRENCY_SYM = { INR:'₹', USD:'$', GBP:'£', EUR:'€' };
 
 export const NOTIONAL = 1000; // assumed notional per acted recommendation, for demo P&L

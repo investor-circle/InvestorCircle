@@ -306,6 +306,21 @@ Remove an entry once a build that includes it has actually shipped.
   toggle and the lock itself stay invisible on a device with nothing
   enrolled (no biometric, no PIN/pattern) — see `isAppLockAvailable()`.
 
+## SEO work deferred
+
+- **The sitelinks searchbox (`WebSite.potentialAction` in `index.html`'s
+  JSON-LD) is wanted but not yet declarable.** Google's searchbox hands a
+  query to a URL-addressable search endpoint (`/search?q=…`); `HashRouter`
+  means no such URL exists, since everything after `#` never reaches a
+  server, so declaring one would point at a page that cannot resolve.
+  Revisit it **together with making public pages crawlable** — real URLs
+  for `#/investor/:username` and public ideas. The same routing change
+  unlocks both, and the searchbox is not worth doing on its own.
+- **`sameAs` in that JSON-LD duplicates `SOCIAL_LINKS` in
+  `src/constants/app.js`** (static HTML cannot import the constant) and
+  `SOCIALS` in `mobile/app/contact.js`. All three list the official brand
+  accounts and must be changed together.
+
 ## Deployment considerations
 
 - Frontend auto-deploys to GitHub Pages on every push to `main` — treat changes

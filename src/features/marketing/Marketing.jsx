@@ -5,15 +5,47 @@ import {
   ChevronDown,
   Mail,
   AlertTriangle,
-  Loader
+  Loader,
+  Twitter,
+  Facebook,
+  Instagram
 } from "lucide-react";
 import {
   getAboutUsContent as dbGetAboutUsContent,
   submitContactForm as dbSubmitContactForm,
   voteFeature as dbVoteFeature
 } from "../../services/api/lookupsApi";
-import { ABOUT_DEFAULT_HTML, PRIVACY_HTML, contactInputSt } from "../../constants/app";
+import { ABOUT_DEFAULT_HTML, PRIVACY_HTML, contactInputSt, SOCIAL_LINKS } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
+
+/* lucide still ships the pre-rebrand bird for X; it reads as the platform
+   more clearly than a bare letter at 17px, so it stays until lucide offers
+   a real X mark. */
+const SOCIAL_ICONS = { x: Twitter, facebook: Facebook, instagram: Instagram };
+
+export function SocialLinks({ size = 17 }) {
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:10}}>
+      {SOCIAL_LINKS.map(({ key, label, url }) => {
+        const Icon = SOCIAL_ICONS[key];
+        return (
+          <a key={key} href={url} target="_blank" rel="noopener noreferrer"
+            aria-label={`My Investor Circle on ${label}`} title={label}
+            style={{display:'flex',alignItems:'center',justifyContent:'center',
+              width:34,height:34,borderRadius:'50%',flexShrink:0,
+              background:'var(--surface-2)',border:'1px solid var(--line)',
+              color:'var(--muted)',textDecoration:'none',transition:'.15s'}}
+            onMouseEnter={e=>{e.currentTarget.style.color='var(--accent-ink)';
+                              e.currentTarget.style.borderColor='var(--accent-line)';}}
+            onMouseLeave={e=>{e.currentTarget.style.color='var(--muted)';
+                              e.currentTarget.style.borderColor='var(--line)';}}>
+            <Icon size={size}/>
+          </a>
+        );
+      })}
+    </div>
+  );
+}
 
 export function AboutPage() {
   const [html,    setHtml]    = useState(null);
@@ -335,6 +367,12 @@ export function ContactPage({ setPage }) {
               <div style={{marginTop:14,padding:'11px 14px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:10,fontSize:13,color:'var(--ink-soft)'}}>
                 📬 We aim to respond within <strong style={{color:'var(--ink)'}}>1–2 business days</strong>.
               </div>
+              <div style={{marginTop:16,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+                <span style={{fontSize:12,color:'var(--muted)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.5px'}}>
+                  Follow us
+                </span>
+                <SocialLinks/>
+              </div>
             </div>
           </div>
 
@@ -430,25 +468,30 @@ export function SiteFooter({ page, setPage }) {
   return (
     <div style={{
       marginTop:48, paddingTop:18, borderTop:'1px solid var(--line)',
-      display:'flex', gap:6, flexWrap:'wrap', justifyContent:'center',
-      alignItems:'center', fontSize:12,
+      display:'flex', flexDirection:'column', gap:14, alignItems:'center',
     }}>
-      <span style={{color:'var(--muted)'}}>© {new Date().getFullYear()} My Investor Circle</span>
-      {links.map(link => (
-        <React.Fragment key={link.id}>
-          <span style={{color:'var(--line-2)'}}>·</span>
-          <button onClick={()=>setPage(link.id)} style={{
-            background:'none', border:'none', cursor:'pointer', fontSize:12,
-            fontWeight: page===link.id ? 700 : 400,
-            color: page===link.id ? 'var(--accent-ink)' : 'var(--muted)',
-            fontFamily:'var(--font)', padding:0,
-            textDecoration: page===link.id ? 'underline' : 'none',
-            textUnderlineOffset: 3,
-          }}>
-            {link.label}
-          </button>
-        </React.Fragment>
-      ))}
+      <SocialLinks size={16}/>
+      <div style={{
+        display:'flex', gap:6, flexWrap:'wrap', justifyContent:'center',
+        alignItems:'center', fontSize:12,
+      }}>
+        <span style={{color:'var(--muted)'}}>© {new Date().getFullYear()} My Investor Circle</span>
+        {links.map(link => (
+          <React.Fragment key={link.id}>
+            <span style={{color:'var(--line-2)'}}>·</span>
+            <button onClick={()=>setPage(link.id)} style={{
+              background:'none', border:'none', cursor:'pointer', fontSize:12,
+              fontWeight: page===link.id ? 700 : 400,
+              color: page===link.id ? 'var(--accent-ink)' : 'var(--muted)',
+              fontFamily:'var(--font)', padding:0,
+              textDecoration: page===link.id ? 'underline' : 'none',
+              textUnderlineOffset: 3,
+            }}>
+              {link.label}
+            </button>
+          </React.Fragment>
+        ))}
+      </div>
     </div>
   );
 }

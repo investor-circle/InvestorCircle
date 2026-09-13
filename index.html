@@ -40,11 +40,14 @@
       not HTML — an &amp; here would land in the parsed string literally, so
       ampersands stay bare.
 
-      WebSite.potentialAction is deliberately absent and should stay that way
-      until there is something real to point it at: the sitelinks searchbox
+      WebSite.potentialAction is deliberately absent: the sitelinks searchbox
       requires a URL-addressable search endpoint, and HashRouter leaves us
       with none to honour — declaring one that 404s is a false claim about
-      the site.
+      the site. It is wanted, and is queued to land with the routing change
+      that makes public pages crawlable (see CLAUDE.md, "SEO work deferred").
+
+      sameAs must stay in step with SOCIAL_LINKS in src/constants/app.js,
+      which renders the same accounts in the footer and on the Contact page.
     -->
     <script type="application/ld+json">
     {
@@ -66,7 +69,7 @@
           "description": "A private investing community where members share investment ideas and build a transparent, permanent public track record. My Investor Circle does not provide investment advice and does not recommend securities.",
           "sameAs": [
             "https://x.com/myInvestorCircl",
-            "https://www.facebook.com/share/1HjKSsGFVp/",
+            "https://www.facebook.com/profile.php?id=61593318230104",
             "https://www.instagram.com/myinvestorcircle"
           ],
           "contactPoint": {
