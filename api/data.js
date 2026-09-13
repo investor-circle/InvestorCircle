@@ -44,6 +44,7 @@ import handleRecommendations from './_lib/handlers/recommendations.js';
 import handleNotifications from './_lib/handlers/notifications.js';
 import handleSharingPrefs from './_lib/handlers/sharing-prefs.js';
 import handlePublicProfile from './_lib/handlers/public-profile.js';
+import handlePublicIdeas from './_lib/handlers/public-ideas.js';
 import handleAdminSebi from './_lib/handlers/admin-sebi.js';
 import handleEngagement from './_lib/handlers/engagement.js';
 import handleClaimProfile from './_lib/handlers/claim-profile.js';
@@ -65,6 +66,11 @@ const RESOURCES = {
   'notifications':    { handler: handleNotifications,    auth: 'user'  },
   'sharing-prefs':    { handler: handleSharingPrefs,     auth: 'user'  },
   'public-profile':   { handler: handlePublicProfile,    auth: 'none'  },
+  // public-ideas backs the pages search engines and link-preview crawlers
+  // read (/stock/:symbol, /idea/:id, /search), so it is unauthenticated by
+  // design. Every one of its statements filters is_public = true, and its
+  // test fails if one stops — see api/_lib/handlers/public-ideas.js.
+  'public-ideas':     { handler: handlePublicIdeas,      auth: 'none'  },
   'admin-sebi':       { handler: handleAdminSebi,        auth: 'admin' },
   'engagement':       { handler: handleEngagement,       auth: 'user'  },
   'tracking':         { handler: handleTracking,         auth: 'user'  },
