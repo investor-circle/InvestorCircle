@@ -1,0 +1,17 @@
+# myinvestorcircle.com
+#
+# Public ideas and the stock pages that aggregate them are meant to be found.
+# Member PROFILES are not: that was a deliberate decision, and the structural
+# reason it holds is that profiles only exist as HashRouter routes
+# (/#/investor/name), which are not separate URLs to a crawler at all. The
+# rule below is the belt to that braces — if a profile ever does get a real
+# URL, it stays out of the index until that decision is revisited.
+
+User-agent: *
+Allow: /
+
+# Not indexable, and not to be crawled.
+Disallow: /investor/
+Disallow: /search
+
+Sitemap: https://myinvestorcircle.com/sitemap.xml

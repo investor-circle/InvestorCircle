@@ -1,5 +1,13 @@
 {
   "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/stock/:symbol", "destination": "/api/seo?page=stock&symbol=:symbol" },
+    { "source": "/idea/:id", "destination": "/api/seo?page=idea&id=:id" },
+    { "source": "/search", "destination": "/api/seo?page=search" },
+    { "source": "/sitemap.xml", "destination": "/api/sitemap" }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

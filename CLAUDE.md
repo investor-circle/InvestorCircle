@@ -306,17 +306,45 @@ Remove an entry once a build that includes it has actually shipped.
   toggle and the lock itself stay invisible on a device with nothing
   enrolled (no biometric, no PIN/pattern) — see `isAppLockAvailable()`.
 
+## Public, crawlable pages (`/stock`, `/idea`, `/search`)
+
+Three URLs are served as real server-rendered HTML by `api/seo.js`, routed
+by the `rewrites` in `vercel.json`. Everything else on the site is still the
+untouched `HashRouter` app — these exist because neither Googlebot's
+indexing nor WhatsApp's link-preview card runs the app's JavaScript.
+
+- **`api/_lib/handlers/public-ideas.js` is the only place public idea data
+  is queried.** Every statement in it filters `is_public = true`, and
+  `public-ideas.test.js` reads the SQL each action emits and fails if one
+  stops. `api/seo.js` and `api/sitemap.js` call that handler in-process
+  rather than writing their own queries — do the same for any new public
+  page, so the private-idea rule keeps living in exactly one file.
+- **`api/seo.js` hand-writes HTML around member-written text**, which
+  nothing else in this codebase does (React escapes for you). Everything
+  interpolated goes through `esc()`, and JSON-LD through `jsonLd()`, which
+  escapes `<` so a thesis cannot close the script block. `seo.test.js`
+  fires XSS payloads through every field — keep that true of new fields.
+- **Member profiles are deliberately not served here.** No route renders
+  one, `public/robots.txt` disallows `/investor/`, and profiles exist only
+  as hash routes, which are not separate URLs to a crawler. That is a
+  product decision (ideas are indexable, people are not) — revisit it
+  explicitly rather than by adding a route.
+- **Edge caching is load-bearing, not an optimisation.** The pages set
+  `s-maxage`/`stale-while-revalidate` so a crawler working through the
+  sitemap does not spend Vercel "Fast Origin Transfer" on every hit — the
+  meter closest to its limit on the current plan.
+- The sitemap lists the home page and one URL per stock with public ideas.
+  Individual idea pages are deliberately absent: they exist so a shared
+  link renders properly, and a few hundred words each would be thin content
+  competing with the stock page that aggregates them.
+
 ## SEO work deferred
 
-- **The sitelinks searchbox (`WebSite.potentialAction` in `index.html`'s
-  JSON-LD) is wanted but not yet declarable.** Google's searchbox hands a
-  query to a URL-addressable search endpoint (`/search?q=…`); `HashRouter`
-  means no such URL exists, since everything after `#` never reaches a
-  server, so declaring one would point at a page that cannot resolve.
-  Revisit it **together with making public pages crawlable** — real URLs
-  for `#/investor/:username` and public ideas. The same routing change
-  unlocks both, and the searchbox is not worth doing on its own.
-- **`sameAs` in that JSON-LD duplicates `SOCIAL_LINKS` in
+- **Per-idea share IMAGES.** Idea and stock pages have their own title and
+  description, so a shared link now previews correctly, but the image is
+  still the one site-wide `og-image.png`. Generating a per-idea image needs
+  a rendering step that does not exist yet.
+- **`sameAs` in `index.html`'s JSON-LD duplicates `SOCIAL_LINKS` in
   `src/constants/app.js`** (static HTML cannot import the constant) and
   `SOCIALS` in `mobile/app/contact.js`. All three list the official brand
   accounts and must be changed together.

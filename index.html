@@ -40,11 +40,10 @@
       not HTML — an &amp; here would land in the parsed string literally, so
       ampersands stay bare.
 
-      WebSite.potentialAction is deliberately absent: the sitelinks searchbox
-      requires a URL-addressable search endpoint, and HashRouter leaves us
-      with none to honour — declaring one that 404s is a false claim about
-      the site. It is wanted, and is queued to land with the routing change
-      that makes public pages crawlable (see CLAUDE.md, "SEO work deferred").
+      WebSite.potentialAction is now honoured: /search is a real server-
+      rendered page (api/seo.js, routed by vercel.json) rather than a hash
+      route, so the query Google hands it resolves. It searches public ideas
+      only — the same is_public-filtered endpoint everything else public uses.
 
       sameAs must stay in step with SOCIAL_LINKS in src/constants/app.js,
       which renders the same accounts in the footer and on the Contact page.
@@ -85,7 +84,15 @@
           "name": "My Investor Circle",
           "url": "https://myinvestorcircle.com/",
           "inLanguage": "en",
-          "publisher": { "@id": "https://myinvestorcircle.com/#organization" }
+          "publisher": { "@id": "https://myinvestorcircle.com/#organization" },
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+              "@type": "EntryPoint",
+              "urlTemplate": "https://myinvestorcircle.com/search?q={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+          }
         }
       ]
     }
