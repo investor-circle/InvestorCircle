@@ -1,5 +1,12 @@
 /**
- * api/sitemap.js — sitemap.xml, served at /sitemap.xml via vercel.json
+ * api/_lib/sitemap.js — sitemap.xml, served at /sitemap.xml via vercel.json
+ *
+ * Lives under api/_lib/ (excluded from Vercel's file-system function
+ * routing) and is dispatched through api/data.js as resource=sitemap — see
+ * the comment at the top of data.js. This used to be its own top-level
+ * route (api/sitemap.js); with api/_lib/seo.js also moved here for the same
+ * reason, that kept the deployment within Vercel's Hobby-plan cap of 12
+ * Serverless Functions.
  *
  * Lists only what is meant to be indexed: the home page and one URL per stock
  * that has at least one public idea. Individual idea pages are deliberately
@@ -19,7 +26,7 @@
  * is not itself worth scraping.
  */
 
-import handlePublicIdeas from './_lib/handlers/public-ideas.js';
+import handlePublicIdeas from './handlers/public-ideas.js';
 
 const SITE = 'https://myinvestorcircle.com';
 

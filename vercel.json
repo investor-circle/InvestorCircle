@@ -3,8 +3,8 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/stock/:symbol", "destination": "/api/seo?page=stock&symbol=:symbol" },
-    { "source": "/sitemap.xml", "destination": "/api/sitemap" },
+    { "source": "/stock/:symbol", "destination": "/api/data?resource=seo&page=stock&symbol=:symbol" },
+    { "source": "/sitemap.xml", "destination": "/api/data?resource=sitemap" },
 
     { "source": "/security/:symbol", "destination": "https://investorcircle-public.vercel.app/security/:symbol" },
     { "source": "/idea/:id", "destination": "https://investorcircle-public.vercel.app/idea/:id" },
@@ -13,6 +13,10 @@
   "headers": [
     {
       "source": "/api/(data|price|push|cas|email|reset|profile)(.*)",
+      "missing": [
+        { "type": "query", "key": "resource", "value": "seo" },
+        { "type": "query", "key": "resource", "value": "sitemap" }
+      ],
       "headers": [
         { "key": "Access-Control-Allow-Origin",  "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },

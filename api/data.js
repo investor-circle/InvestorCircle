@@ -52,6 +52,8 @@ import handleAdminConfig from './_lib/handlers/admin-config.js';
 import handleLookups from './_lib/handlers/lookups.js';
 import handleTracking from './_lib/handlers/tracking.js';
 import handlePricing from './_lib/handlers/pricing.js';
+import handleSeo from './_lib/seo.js';
+import handleSitemap from './_lib/sitemap.js';
 
 const RESOURCES = {
   'connections':      { handler: handleConnections,     auth: 'user'  },
@@ -87,6 +89,13 @@ const RESOURCES = {
   // scripts/stamp-prices.js is the sole price writer.) See
   // api/_lib/handlers/pricing.js.
   'pricing':          { handler: handlePricing,          auth: 'none'  },
+  // seo/sitemap serve the server-rendered public pages (/stock/:symbol,
+  // /sitemap.xml — see vercel.json's rewrites) and, like everything else
+  // here, are unauthenticated by design. Moved into this dispatcher (from
+  // being their own top-level api/*.js routes) specifically to stay under
+  // Vercel's Hobby-plan cap of 12 Serverless Functions — see api/_lib/seo.js.
+  'seo':              { handler: handleSeo,              auth: 'none'  },
+  'sitemap':          { handler: handleSitemap,           auth: 'none'  },
 };
 
 export default async function handler(req, res) {

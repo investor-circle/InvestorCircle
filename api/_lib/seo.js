@@ -1,11 +1,27 @@
 /**
- * api/seo.js — the server-rendered public pages
+ * api/_lib/seo.js — the server-rendered /stock/:symbol page
  *
- * Serves /stock/:symbol, /idea/:id and /search as real HTML with the content
- * already in it, via the rewrites in vercel.json. Everything else on the site
- * is still the untouched HashRouter app; these are the only URLs a search
- * engine or a link-preview crawler can read, and they exist because neither
- * Googlebot's indexing nor WhatsApp's preview card runs the app's JavaScript.
+ * Lives under api/_lib/ (excluded from Vercel's file-system function
+ * routing) rather than directly under api/, and is dispatched through
+ * api/data.js as resource=seo — see the comment at the top of data.js:
+ * Vercel's Hobby plan caps a deployment at 12 Serverless Functions, and
+ * this file used to be its own top-level route (api/seo.js), which pushed
+ * the count to 14. Moving it here (alongside every other resource) is the
+ * same fix data.js's own consolidation already used for Phase 3.
+ *
+ * Serves /stock/:symbol as real HTML with the content already in it, via
+ * the rewrite in vercel.json (-> /api/data?resource=seo&page=stock&...).
+ * Everything else on the site is still the untouched HashRouter app; this
+ * exists because neither Googlebot's indexing nor WhatsApp's preview card
+ * runs the app's JavaScript.
+ *
+ * The idea/search page-rendering code below (ideaPage/searchPage) is no
+ * longer routed to anything — /idea/:id and /search are now served by
+ * web-public/ (a separate SSR Next.js app; see its README.md) — but is left
+ * in place and still tested rather than deleted mid-fix. /stock/:symbol's
+ * own canonical tag points at /security/:symbol (web-public/), not itself,
+ * since that page now covers the same ground with the real Stock Insights
+ * experience — see the comment on `canonical` in stockPage() below.
  *
  * DATA COMES FROM public-ideas, NOT FROM NEW QUERIES. The rule that a private
  * idea never leaves the server lives in exactly one file
@@ -24,7 +40,7 @@
  * profile page is not.
  */
 
-import handlePublicIdeas from './_lib/handlers/public-ideas.js';
+import handlePublicIdeas from './handlers/public-ideas.js';
 
 const SITE = 'https://myinvestorcircle.com';
 const OG_IMAGE = `${SITE}/og-image.png`;

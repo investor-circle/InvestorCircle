@@ -20,8 +20,8 @@ const sqlTag = (strings) => {
   if (text.includes("COUNT(DISTINCT r.recommender_id)")) return Promise.resolve(summaryRows);
   return Promise.resolve(rows);
 };
-vi.mock("./_lib/auth.js", async () => {
-  const actual = await vi.importActual("./_lib/auth.js");
+vi.mock("./auth.js", async () => {
+  const actual = await vi.importActual("./auth.js");
   return { ...actual, sql: (...a) => sqlTag(...a) };
 });
 
