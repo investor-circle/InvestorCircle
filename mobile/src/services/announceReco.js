@@ -28,7 +28,7 @@ export function announcePublicReco({ reco, recoId, me, contacts }) {
   if (!id || !list.length) return;
 
   const username = me?.username || "";
-  const deepLink = username ? `/investor/${username}/reco/${id}` : null;
+  const deepLink = username ? `/investor/${username}/idea/${id}` : null;
   // The email still carries a full URL of its own; only push has its
   // destination resolved server-side.
   // One definition of what a public idea link looks like (services/api.js),

@@ -24,6 +24,7 @@ export {
   getConsensusRecosAll,
   getConsensusRecosPublic,
   getTickerRecos,
+  getPublicTickerIdeas,
   getNetworkEngagementFeed,
   getPublicFeed,
   getRecommenderUsername,

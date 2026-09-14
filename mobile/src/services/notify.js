@@ -57,7 +57,7 @@ export async function sendEmail(type, payload) {
  *
  * @param userId   recipient
  * @param type     'connection_request' | 'connection_accepted' | 'contact_recommendation'
- * @param deepLink optional in-app path, e.g. `/investor/asha/reco/12`
+ * @param deepLink optional in-app path, e.g. `/investor/asha/idea/12`
  */
 export async function sendPush(userId, { type, deepLink } = {}) {
   if (!userId || !type) return;

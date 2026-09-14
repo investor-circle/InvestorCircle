@@ -337,11 +337,47 @@ export default async function handleLookups(req, res) {
         try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
         const ticker = String(req.query?.ticker || '');
         if (!ticker) { res.status(400).json({ error: 'ticker is required' }); return; }
+        // status/return_pct: copied verbatim from public-ideas.js rather than
+        // shared, because the Neon HTTP driver binds every ${} in a tagged
+        // template as a parameter, not SQL text, so query fragments cannot be
+        // composed across files. lookups.tickerRecos.test.js pins all four
+        // copies (three in public-ideas.js, this one) identical.
+        //
+        // exit_signal/exit_date/exit_price/expiry_price/target_date were not
+        // previously selected here, which is why Stock Insights' Idea History
+        // hardcoded every row's status badge to "Active" regardless of the
+        // idea's real state — the client had no field to check. This is an
+        // additive fix (more columns from the same already-public-filtered
+        // row), not a change to who can see what.
         const rows = await sql`
           SELECT r.id, r.ticker, r.asset_name, r.recommendation_type,
                  r.recommender_id as "from", r.conviction, r.created_at,
                  r.thesis, r.reco_price, r.current_price, r.sector, r.exchange,
-                 up.username, up.full_name, up.registration_status
+                 r.exit_signal, r.exit_date, r.exit_price,
+                 r.expiry_price, r.target_date, r.target_price,
+                 up.username, up.full_name, up.registration_status,
+                 CASE
+                   WHEN r.exit_signal                                              THEN 'Closed'
+                   WHEN r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE THEN 'Expired'
+                   ELSE                                                                 'Active'
+                 END AS status,
+                 ROUND((CASE
+                   WHEN r.exit_signal THEN
+                     CASE r.recommendation_type
+                       WHEN 'Sell' THEN (COALESCE(r.reco_price,0) - COALESCE(r.exit_price, r.current_price, r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+                       ELSE             (COALESCE(r.exit_price, r.current_price, r.reco_price,0) - COALESCE(r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+                     END
+                   WHEN r.target_date IS NOT NULL AND r.target_date < CURRENT_DATE THEN
+                     CASE r.recommendation_type
+                       WHEN 'Sell' THEN (COALESCE(r.reco_price,0) - COALESCE(r.expiry_price, r.current_price, r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+                       ELSE             (COALESCE(r.expiry_price, r.current_price, r.reco_price,0) - COALESCE(r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+                     END
+                   ELSE
+                     CASE r.recommendation_type
+                       WHEN 'Sell' THEN (COALESCE(r.reco_price,0) - COALESCE(r.current_price, r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+                       ELSE             (COALESCE(r.current_price, r.reco_price,0) - COALESCE(r.reco_price,0)) / NULLIF(r.reco_price,0) * 100
+                     END
+                 END)::numeric, 2) AS return_pct
           FROM ic_recommendations r
           LEFT JOIN user_profiles up ON r.recommender_id = up.id
           WHERE r.ticker = ${ticker}

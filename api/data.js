@@ -44,6 +44,7 @@ import handleRecommendations from './_lib/handlers/recommendations.js';
 import handleNotifications from './_lib/handlers/notifications.js';
 import handleSharingPrefs from './_lib/handlers/sharing-prefs.js';
 import handlePublicProfile from './_lib/handlers/public-profile.js';
+import handlePublicIdeas from './_lib/handlers/public-ideas.js';
 import handleAdminSebi from './_lib/handlers/admin-sebi.js';
 import handleEngagement from './_lib/handlers/engagement.js';
 import handleClaimProfile from './_lib/handlers/claim-profile.js';
@@ -51,6 +52,8 @@ import handleAdminConfig from './_lib/handlers/admin-config.js';
 import handleLookups from './_lib/handlers/lookups.js';
 import handleTracking from './_lib/handlers/tracking.js';
 import handlePricing from './_lib/handlers/pricing.js';
+import handleSeo from './_lib/seo.js';
+import handleSitemap from './_lib/sitemap.js';
 
 const RESOURCES = {
   'connections':      { handler: handleConnections,     auth: 'user'  },
@@ -65,6 +68,11 @@ const RESOURCES = {
   'notifications':    { handler: handleNotifications,    auth: 'user'  },
   'sharing-prefs':    { handler: handleSharingPrefs,     auth: 'user'  },
   'public-profile':   { handler: handlePublicProfile,    auth: 'none'  },
+  // public-ideas backs the pages search engines and link-preview crawlers
+  // read (/stock/:symbol, /idea/:id, /search), so it is unauthenticated by
+  // design. Every one of its statements filters is_public = true, and its
+  // test fails if one stops — see api/_lib/handlers/public-ideas.js.
+  'public-ideas':     { handler: handlePublicIdeas,      auth: 'none'  },
   'admin-sebi':       { handler: handleAdminSebi,        auth: 'admin' },
   'engagement':       { handler: handleEngagement,       auth: 'user'  },
   'tracking':         { handler: handleTracking,         auth: 'user'  },
@@ -81,6 +89,13 @@ const RESOURCES = {
   // scripts/stamp-prices.js is the sole price writer.) See
   // api/_lib/handlers/pricing.js.
   'pricing':          { handler: handlePricing,          auth: 'none'  },
+  // seo/sitemap serve the server-rendered public pages (/stock/:symbol,
+  // /sitemap.xml — see vercel.json's rewrites) and, like everything else
+  // here, are unauthenticated by design. Moved into this dispatcher (from
+  // being their own top-level api/*.js routes) specifically to stay under
+  // Vercel's Hobby-plan cap of 12 Serverless Functions — see api/_lib/seo.js.
+  'seo':              { handler: handleSeo,              auth: 'none'  },
+  'sitemap':          { handler: handleSitemap,           auth: 'none'  },
 };
 
 export default async function handler(req, res) {

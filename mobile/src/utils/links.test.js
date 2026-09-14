@@ -21,7 +21,7 @@ describe("recoUrl", () => {
   });
 
   it("builds the same shareable URL the web hands out", () => {
-    expect(recoUrl("asha", "123")).toBe("https://myinvestorcircle.com/#/investor/asha/reco/123");
+    expect(recoUrl("asha", "123")).toBe("https://myinvestorcircle.com/#/investor/asha/idea/123");
   });
 
   it("returns nothing when the author's username is unknown", () => {
@@ -36,7 +36,7 @@ describe("recoUrl", () => {
   });
 
   it("escapes values rather than interpolating them raw", () => {
-    expect(recoUrl("a b", "1/2")).toBe("https://myinvestorcircle.com/#/investor/a%20b/reco/1%2F2");
+    expect(recoUrl("a b", "1/2")).toBe("https://myinvestorcircle.com/#/investor/a%20b/idea/1%2F2");
   });
 });
 

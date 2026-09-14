@@ -1,0 +1,22 @@
+{
+  "name": "investorcircle-public",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "SSR + hydration for myInvestorCircle's public, indexable, shareable surfaces (Stock Insights, an idea, search). Deployed as its own Vercel project so the main app's build/deploy stays untouched — see README.md.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "16.3.5",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "eslint-config-next": "16.3.5"
+  }
+}

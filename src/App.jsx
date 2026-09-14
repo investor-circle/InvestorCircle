@@ -119,6 +119,7 @@ import { CirclePage } from "./features/groups/Groups";
 import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./features/discovery/Discovery";
 import { DiscoverModal, DiscoverPeoplePage, OnboardingGate } from "./features/onboarding/Onboarding";
 import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
+import LandingPage from "./features/marketing/LandingPage";
 import { NotificationPanel } from "./features/notifications/NotificationPanel";
 import { RecoPostPage, Recommendations } from "./features/recommendations/Recommendations";
 import { useIsMobile } from "./hooks/index";
@@ -142,7 +143,7 @@ import { loadInstruments } from "./utils/instruments";
 
 /* ── URL routing for the major app sections (Phase 5 foundation) ──────────────
    Investor profile (#/investor/:username) and recommendation post
-   (#/investor/:username/reco/:id) URLs are handled separately below via the
+   (#/investor/:username/idea/:id) URLs are handled separately below via the
    pre-existing pageHash mechanism — deliberately left untouched.
    These maps give the main navigation sections real, shareable, refreshable
    URLs too, using the same hash-based scheme (see main.jsx for why). ────── */
@@ -235,7 +236,7 @@ export default function App() {
   // !user are all guards that change across the component's lifetime.
   useEffect(() => {
     const p = routeLocation.pathname;
-    if (p.startsWith('/investor/')) return;
+    if (p.startsWith('/investor/') || p.startsWith('/security/')) return;
     if (isInv && INVESTOR_PATH_TO_PAGE[p] && INVESTOR_PATH_TO_PAGE[p] !== investorPage) {
       setInvestorPage(INVESTOR_PATH_TO_PAGE[p]);
     } else if (!isInv && ADMIN_PATH_TO_PAGE[p] && ADMIN_PATH_TO_PAGE[p] !== adminPage) {
@@ -300,7 +301,7 @@ export default function App() {
   // Investor profile URLs (#/investor/...) are DELIBERATELY left in the
   // address bar — the whole point of a public profile is that its link is
   // directly shareable, so the browser URL must show the real
-  // #/investor/username (or .../reco/id) link no matter how the user got
+  // #/investor/username (or .../idea/id) link no matter how the user got
   // there (search, Discovery, a Circle's member list, a notification,
   // etc.). To avoid reintroducing the identical-hash-is-a-no-op bug this
   // pattern has elsewhere, every exit from a profile page clears
@@ -537,6 +538,14 @@ export default function App() {
     return (mode === 'resetPassword' && code) ? code : null;
   });
 
+  // ── Signed-out view: null shows the public landing page, 'login'/'signup'
+  // hand over to LoginPage on that tab. See the auth gate further down.
+  const [authView, setAuthView] = useState(null);
+
+  // Signing in consumes the choice, so a later sign-out lands back on the
+  // landing page instead of dropping straight into the form it came from.
+  useEffect(() => { if (user) setAuthView(null); }, [user]);
+
   // ── Claim state: token + profile for unclaimed-creator claim flow ─────────────
   // Reads URL params synchronously so the token is available on first render —
   // avoids the race where the useEffect fires after the initial render shows LoginPage.
@@ -655,7 +664,7 @@ export default function App() {
       if (event.data?.type !== 'MIC_NAVIGATE') return;
       try {
         const url = new URL(event.data.url);
-        if (url.hash) window.location.hash = url.hash;  // e.g. #/investor/ankur/reco/42
+        if (url.hash) window.location.hash = url.hash;  // e.g. #/investor/ankur/idea/42
       } catch { /* malformed URL — ignore */ }
     };
     navigator.serviceWorker.addEventListener('message', onMessage);
@@ -1024,8 +1033,11 @@ export default function App() {
   }
 
   // ── Public profile route — no auth required ────────────────────────────────
-  // Matches: #/investor/username  OR  #/investor/username/reco/recoId
-  const publicMatch = pageHash.match(/^#\/investor\/([a-z0-9_]+)(?:\/reco\/([a-zA-Z0-9-]+))?/i);
+  // Matches: #/investor/username  OR  #/investor/username/idea/ideaId
+  // "reco" is the old spelling of that segment and is still accepted: links
+  // using it were shared to WhatsApp, e-mail and push notifications before the
+  // rename and must keep resolving. Only "idea" is generated now.
+  const publicMatch = pageHash.match(/^#\/investor\/([a-z0-9_]+)(?:\/(?:idea|reco)\/([a-zA-Z0-9-]+))?/i);
   if (publicMatch && !authLoading) {
     const pubUsername = publicMatch[1];
     const pubRecoId   = publicMatch[2] || null;
@@ -1092,6 +1104,44 @@ export default function App() {
     );
   }
 
+  // ── Stock Insights route — no auth required ──────────────────────────────────
+  // Matches: #/security/TICKER (optionally ?tab=timeline etc.)
+  // Same "one component, nullable viewer" pattern as the public profile route
+  // above: SecurityIntelligencePage already degrades correctly for a null
+  // viewerUser (empty Your Circle, soft sign-in prompts on the Consensus/
+  // Investors tabs, no ICI batch lookup) — see Discovery.jsx. This is what
+  // makes the existing Stock Insights page reachable and indexable for a
+  // signed-out visitor/crawler, without a second page to keep in sync.
+  //
+  // In-app navigation (clicking a ticker from Home/Portfolio/Market Insights)
+  // deliberately still uses the internal page==='sec_intel' state below, not
+  // this hash — changing that would drop signed-in users out of the app
+  // shell (sidebar/nav) on every ticker click, which nobody asked for. This
+  // route exists for shared/typed/crawled links, which is what's indexable.
+  const securityMatch = pageHash.match(/^#\/security\/([A-Za-z0-9.&_-]{1,24})/i);
+  if (securityMatch && !authLoading) {
+    const secTicker = decodeURIComponent(securityMatch[1]).toUpperCase();
+    const secQuery = new URLSearchParams(pageHash.split('?')[1] || '');
+    return (
+      <div className="app"><style>{STYLES}</style>
+        <SectionErrorBoundary label="Stock Insights">
+          <div className="content" style={{maxWidth:1100,margin:'0 auto',padding:isMobile?'16px 12px':'28px 24px'}}>
+            <SecurityIntelligencePage
+              securityTicker={{ ticker: secTicker, tab: secQuery.get('tab') || undefined }}
+              contacts={contacts}
+              me={ME}
+              viewerUser={user}
+              trackedIds={trackedCreatorIds}
+              onOpenSecurity={(t, n, tab) => { window.location.hash = `#/security/${encodeURIComponent(t)}${tab?`?tab=${tab}`:''}`; }}
+              onBack={()=>{ window.location.hash = ''; }}
+              onHome={()=>{ window.location.hash = ''; }}
+            />
+          </div>
+        </SectionErrorBoundary>
+      </div>
+    );
+  }
+
   // ── Auth gate ───────────────────────────────────────────────────────────────
   if (authLoading) return <AppLoadingScreen/>;
   // ── Creator claim flow: show claim page ONLY after auth has resolved ─────────
@@ -1122,7 +1172,36 @@ export default function App() {
     />
   );
 
-  if (!user) return <LoginPage />;
+  // ── Signed out: public landing page, with LoginPage one click away ──────────
+  // Two arrivals skip the landing page entirely and go straight to the form,
+  // because they came here to do a specific thing: a referral link (?ref=, held
+  // in mic_ref) and a "Join to connect" from a public profile (held in
+  // pending_connect_username). Password reset never reaches here — resetOobCode
+  // returns above this.
+  if (!user) {
+    const wantsFormDirectly =
+      !!localStorage.getItem('mic_ref') ||
+      !!sessionStorage.getItem('pending_connect_username');
+
+    if (wantsFormDirectly || authView) {
+      return (
+        <SectionErrorBoundary label="Sign in">
+          <LoginPage
+            initialTab={authView === 'signup' ? 'signup' : 'login'}
+            onBack={wantsFormDirectly ? null : () => setAuthView(null)}
+          />
+        </SectionErrorBoundary>
+      );
+    }
+    return (
+      <SectionErrorBoundary label="Landing page">
+        <LandingPage
+          onSignIn={() => setAuthView('login')}
+          onCreateAccount={() => setAuthView('signup')}
+        />
+      </SectionErrorBoundary>
+    );
+  }
 
 
   // Non-admin users are ALWAYS investors.
@@ -1475,14 +1554,14 @@ export default function App() {
 
                       if (recoId && username) {
                         // Best case: go directly to the specific reco
-                        window.location.hash = `#/investor/${username}/reco/${recoId}${highlight}`;
+                        window.location.hash = `#/investor/${username}/idea/${recoId}${highlight}`;
                       } else if (n.from_user_id) {
                         // Look up username from from_user_id, then navigate
                         dbLookupUser('id', n.from_user_id)
                           .then(row => {
                             if (!row?.username) return;
                             window.location.hash = recoId
-                              ? `#/investor/${row.username}/reco/${recoId}${highlight}`
+                              ? `#/investor/${row.username}/idea/${recoId}${highlight}`
                               : `#/investor/${row.username}`;
                           }).catch(()=>{});
                       } else if (username) {
@@ -1697,7 +1776,7 @@ export default function App() {
             {isInv && showDiscover && <SectionErrorBoundary label="Discover"><DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/></SectionErrorBoundary>}
             {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><React.Suspense fallback={<div className="empty">Loading Portfolio…</div>}><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} onOpenSecurity={openSecurity} setPage={setPage}/></React.Suspense></SectionErrorBoundary>}
             {isInv && page==="market_intel" && <SectionErrorBoundary label="Market Insights"><MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
-            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} onOpenSecurity={openSecurity} onBack={()=>setPage(secInsightsFrom)} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
+            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} viewerUser={user} trackedIds={trackedCreatorIds} onOpenSecurity={openSecurity} onBack={()=>setPage(secInsightsFrom)} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
             {isInv && page==="discover"     && <SectionErrorBoundary label="Discover People"><DiscoverPeoplePage ME={ME}/></SectionErrorBoundary>}
             {isInv && page==="network"   && <SectionErrorBoundary label="Network"><Network
                 connections={connections} setConnections={setConnections}

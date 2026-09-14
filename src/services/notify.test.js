@@ -29,11 +29,11 @@ describe("sendPush", () => {
   });
 
   it("sends only the recipient, the type and an optional in-app path", async () => {
-    await sendPush("u1", { type: "contact_recommendation", deepLink: "/investor/asha/reco/9" });
+    await sendPush("u1", { type: "contact_recommendation", deepLink: "/investor/asha/idea/9" });
     expect(bodyOf(global.fetch.mock.calls[0])).toEqual({
       userId: "u1",
       type: "contact_recommendation",
-      deepLink: "/investor/asha/reco/9",
+      deepLink: "/investor/asha/idea/9",
     });
   });
 

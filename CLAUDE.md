@@ -306,6 +306,98 @@ Remove an entry once a build that includes it has actually shipped.
   toggle and the lock itself stay invisible on a device with nothing
   enrolled (no biometric, no PIN/pattern) — see `isAppLockAvailable()`.
 
+## Public, crawlable pages (`/stock`, `/security`, `/idea`, `/search`)
+
+`/stock/:symbol` is server-rendered HTML by `api/_lib/seo.js`, dispatched
+through `api/data.js` as `resource=seo` (see `vercel.json`'s rewrite).
+`/security/:symbol`, `/idea/:id` and `/search` are served by `web-public/` —
+a separate SSR Next.js app, deployed as its own Vercel project, proxied in
+from `vercel.json` — see `web-public/README.md`. Everything else on the
+site is still the untouched `HashRouter` app; these exist because neither
+Googlebot's indexing nor WhatsApp's link-preview card runs the app's
+JavaScript.
+
+- **`api/_lib/handlers/public-ideas.js` is the only place public idea data
+  is queried.** Every statement in it filters `is_public = true`, and
+  `public-ideas.test.js` reads the SQL each action emits and fails if one
+  stops. `api/_lib/seo.js` and `api/_lib/sitemap.js` call that handler
+  in-process rather than writing their own queries; `web-public/` calls its
+  already-public HTTP endpoint instead (a separate Vercel project, so no
+  in-process call is possible) rather than holding a second database
+  credential. Either way — do the same for any new public page, so the
+  private-idea rule keeps living in exactly one file.
+- **`api/_lib/seo.js` and `api/_lib/sitemap.js` live under `api/_lib/`, not
+  directly under `api/`, and are dispatched through `api/data.js`
+  (`resource=seo` / `resource=sitemap`) rather than being their own
+  top-level routes.** This is not a style choice: Vercel's Hobby plan caps
+  a deployment at 12 Serverless Functions (every file directly under `api/`
+  counts as one — `api/_lib/` is excluded, which is exactly why `api/data.js`
+  itself exists as a consolidated dispatcher for a dozen-plus resources, per
+  its own header comment). These two started as top-level `api/seo.js` /
+  `api/sitemap.js` routes and silently pushed a deployment to 14, over the
+  cap — moving them alongside every other resource in `api/data.js` is the
+  same fix already applied once. Adding a new top-level file under `api/`
+  should be treated as suspect by default; route it through `api/data.js`
+  (or `web-public/`, if it needs to be genuinely public and crawlable)
+  instead.
+- **`api/_lib/seo.js` hand-writes HTML around member-written text**, which
+  nothing else in this codebase does (React escapes for you). Everything
+  interpolated goes through `esc()`, and JSON-LD through `jsonLd()`, which
+  escapes `<` so a thesis cannot close the script block. `seo.test.js`
+  fires XSS payloads through every field — keep that true of new fields.
+- **`/stock/:symbol`'s canonical tag (and therefore its `og:url` and
+  JSON-LD `url`) points at `/security/:symbol`, not itself** — the two
+  cover the same ground (`/security/:symbol` with the full Stock Insights
+  experience), and this stops them being indexed as duplicate content.
+  `/stock/:symbol` itself still resolves; it is not retired.
+- **Member profiles are deliberately not served here.** No route renders
+  one, `public/robots.txt` disallows `/investor/`, and profiles exist only
+  as hash routes, which are not separate URLs to a crawler. That is a
+  product decision (ideas are indexable, people are not) — revisit it
+  explicitly rather than by adding a route.
+- **Edge caching is load-bearing, not an optimisation.** `/stock/:symbol`
+  sets `s-maxage`/`stale-while-revalidate` so a crawler working through the
+  sitemap does not spend Vercel "Fast Origin Transfer" on every hit — the
+  meter closest to its limit on the current plan. This is also why
+  `vercel.json`'s no-cache header rule on `/api/(data|price|push|cas|email|
+  reset|profile)(.*)` carries a `missing` condition excluding
+  `resource=seo` and `resource=sitemap`: without it, every `/api/data` call
+  — including the ones `/stock/:symbol` now makes internally — would get
+  `Cache-Control: s-maxage=0, no-cache` stamped on it by that rule, silently
+  overriding `seo.js`'s own caching and sending every crawler hit to the
+  origin. Removing that `missing` condition (or widening the pattern to
+  `/api/(.*)`) reintroduces exactly that bug.
+- The sitemap lists the home page and one URL per stock with public ideas,
+  under `/security/:symbol` (not `/stock/:symbol` — see above). Individual
+  idea pages are deliberately absent: they exist so a shared link renders
+  properly, and a few hundred words each would be thin content
+  competing with the stock page that aggregates them.
+
+## SEO work deferred
+
+- **Per-idea share IMAGES.** Idea and stock pages have their own title and
+  description, so a shared link now previews correctly, but the image is
+  still the one site-wide `og-image.png`. Generating a per-idea image needs
+  a rendering step that does not exist yet.
+- **`sameAs` in `index.html`'s JSON-LD duplicates `SOCIAL_LINKS` in
+  `src/constants/app.js`** (static HTML cannot import the constant) and
+  `SOCIALS` in `mobile/app/contact.js`. All three list the official brand
+  accounts and must be changed together.
+
+## Copy backlog
+
+- **Say "idea", never "call".** The product vocabulary for a posted
+  investment idea is *idea*; `features/marketing/LandingPage.jsx` follows
+  this and has a test that fails if "call" reappears there. Two pieces of
+  older copy still say "call" and are queued to be reworded:
+  - `FAQS` in `src/features/marketing/Marketing.jsx` — "the original call
+    stays on record".
+  - `ABOUT_DEFAULT_HTML` in `src/constants/app.js` — "What calls has this
+    person made in the past?".
+  Note the About text is only a *fallback*: `getAboutUsContent()` serves
+  DB-stored HTML when present, so editing the constant may change nothing
+  in production — check the stored value too.
+
 ## Deployment considerations
 
 - Frontend auto-deploys to GitHub Pages on every push to `main` — treat changes
