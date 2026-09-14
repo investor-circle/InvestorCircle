@@ -2172,56 +2172,68 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
           </div>
         </div>
 
-        {backHomeButtons}
+        {/* ── Actions row: Back, Home, Share, and (collapsed) the search icon,
+             grouped into one flex child so they wrap together as a single
+             row under the title on narrow screens, instead of each one
+             wrapping to wherever page-head's own space-between happens to
+             leave it — which used to scatter Share and the search icon onto
+             their own line, far apart. The one exception is the EXPANDED
+             mobile search box just below, which deliberately takes the full
+             width of its own row when active — that's a real, separate
+             full-width takeover, not the same layout bug. ── */}
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',flexShrink:0}}>
+          {backHomeButtons}
 
-        {shareUrl && (
-          <div style={{flexShrink:0}}>
-            <button ref={shareBtnRef} className="btn btn-ghost btn-sm" onClick={()=>setShareOpen(v=>!v)}>
-              <Share2 size={13}/> Share
-            </button>
-            {shareOpen && (
-              <LinkSharePopover
-                url={shareUrl}
-                title={`Share ${ticker}`}
-                message={`Check out ${ticker}${name?` (${name})`:''} on My Investor Circle:\n${shareUrl}`}
-                anchorEl={shareBtnRef.current}
-                copied={copied}
-                onCopy={copyShareLink}
-                onClose={()=>setShareOpen(false)}
+          {shareUrl && (
+            <div style={{flexShrink:0}}>
+              <button ref={shareBtnRef} className="btn btn-ghost btn-sm" onClick={()=>setShareOpen(v=>!v)}>
+                <Share2 size={13}/> Share
+              </button>
+              {shareOpen && (
+                <LinkSharePopover
+                  url={shareUrl}
+                  title={`Share ${ticker}`}
+                  message={`Check out ${ticker}${name?` (${name})`:''} on My Investor Circle:\n${shareUrl}`}
+                  anchorEl={shareBtnRef.current}
+                  copied={copied}
+                  onCopy={copyShareLink}
+                  onClose={()=>setShareOpen(false)}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Switch-security search — compact, tucked into the header. Hidden
+              for a signed-out visitor: the instrument list is an
+              authenticated lookup (see the ticker-less landing state above),
+              so the box would just come back empty. */}
+          {signedIn && (isMobile ? (
+            !searchOpen && (
+              <button className="iconbtn" style={{width:36,height:36,flexShrink:0}} onClick={()=>setSearchOpen(true)}>
+                <Search size={15}/>
+              </button>
+            )
+          ) : (
+            <div style={{width:220,flexShrink:0,fontSize:12}}>
+              <InstrumentSearch
+                onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
+                placeholder={`Switch security…`}
               />
-            )}
+            </div>
+          ))}
+        </div>
+
+        {signedIn && isMobile && searchOpen && (
+          <div style={{display:'flex',alignItems:'center',gap:8,width:'100%'}}>
+            <div style={{flex:1,fontSize:13}}>
+              <InstrumentSearch
+                onSelect={inst=>{ setSearchOpen(false); if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
+                placeholder={`Switch security…`}
+              />
+            </div>
+            <button className="iconbtn" style={{flexShrink:0}} onClick={()=>setSearchOpen(false)}><X size={15}/></button>
           </div>
         )}
-
-        {/* ── Switch-security search — compact, tucked into the header's empty space.
-             On mobile there's no spare width, so it starts collapsed to an icon.
-             Hidden for a signed-out visitor: the instrument list is an
-             authenticated lookup (see the ticker-less landing state above),
-             so the box would just come back empty. ── */}
-        {signedIn && (isMobile ? (
-          !searchOpen ? (
-            <button className="iconbtn" style={{width:36,height:36,flexShrink:0}} onClick={()=>setSearchOpen(true)}>
-              <Search size={15}/>
-            </button>
-          ) : (
-            <div style={{display:'flex',alignItems:'center',gap:8,width:'100%'}}>
-              <div style={{flex:1,fontSize:13}}>
-                <InstrumentSearch
-                  onSelect={inst=>{ setSearchOpen(false); if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
-                  placeholder={`Switch security…`}
-                />
-              </div>
-              <button className="iconbtn" style={{flexShrink:0}} onClick={()=>setSearchOpen(false)}><X size={15}/></button>
-            </div>
-          )
-        ) : (
-          <div style={{width:220,flexShrink:0,fontSize:12}}>
-            <InstrumentSearch
-              onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
-              placeholder={`Switch security…`}
-            />
-          </div>
-        ))}
 
         {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
       </div>

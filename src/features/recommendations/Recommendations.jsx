@@ -2141,8 +2141,14 @@ export function IdeaSharePopover({ reco, username, contacts=[], groups=[], ancho
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
+  // Real, indexable /idea/:id (web-public/), not the in-app #/investor/...
+  // hash route — same reasoning as Stock Insights' Share button: nobody
+  // sharing onward should have to know to strip the '#'. Safe unconditionally
+  // here because `username` (below) is only ever passed for a PUBLIC idea —
+  // callers pass null for a private one, which already skips this link
+  // entirely (see the "Public link unavailable" case further down).
   const url = username
-    ? `${window.location.origin}${window.location.pathname}#/investor/${username}/idea/${reco.id}`
+    ? `https://myinvestorcircle.com/idea/${encodeURIComponent(reco.id)}`
     : null;
   const waMsg = url ? encodeURIComponent(`Check out ${reco.ticker} (${reco.assetName}) on My Investor Circle:\n${url}`) : null;
   const copyLink = () => {
@@ -2300,7 +2306,11 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
   const [shareOpen,    setShareOpen]    = useState(false);
   const shareBtnRef = useRef(null);
 
-  const recoUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}/idea/${recoId}`;
+  // Real, indexable /idea/:id (web-public/), not this page's own
+  // #/investor/.../idea/:id hash URL — safe unconditionally because this
+  // page only ever loads public-profile data (see the useEffect below), so
+  // it can never be showing a private idea in the first place.
+  const recoUrl = `https://myinvestorcircle.com/idea/${encodeURIComponent(recoId)}`;
 
   // Load profile + reco
   useEffect(() => {
