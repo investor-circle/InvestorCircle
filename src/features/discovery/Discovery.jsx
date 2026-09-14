@@ -2159,72 +2159,68 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
 
   return (
     <>
-      <div className="page-head" style={{alignItems:'flex-start',flexWrap:'wrap',gap:16}}>
-        <div style={{flex:1,minWidth:200}}>
-          <div className="eyebrow">Stock Insights</div>
-          <div style={{display:'flex',alignItems:'baseline',gap:14,flexWrap:'wrap'}}>
-            <div className="page-title">{ticker}</div>
-            <div style={{fontSize:16,color:'var(--muted)',fontWeight:400}}>{name || recos[0]?.asset_name || ''}</div>
+      <div className="page-head" style={{display:'block'}}>
+        {/* ── Top line: eyebrow (left) + icon-only actions (right), always on
+             the same row — this is the actual header, not the title. Back/
+             Home/Share/search were previously grouped with the title block,
+             which has a minWidth that eats all the room on a phone, pushing
+             every action below the title AND subtitle together. Icon-only
+             (no text labels) is what actually lets four buttons sit next to
+             the eyebrow text on a narrow screen; `title` attributes keep
+             them identifiable without the label. ── */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+          <div className="eyebrow" style={{marginBottom:0}}>Stock Insights</div>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+            {onBack && <button className="iconbtn" title="Back" onClick={onBack}><ArrowLeft size={15}/></button>}
+            {onHome && <button className="iconbtn" title="Home" onClick={onHome}><Home size={15}/></button>}
+            {shareUrl && <button ref={shareBtnRef} className="iconbtn" title="Share" onClick={()=>setShareOpen(v=>!v)}><Share2 size={15}/></button>}
+            {/* Switch-security search — icon-only trigger here too; the
+                expanded input (mobile) or the wider desktop input render
+                below, out of this row, so they never fight it for space.
+                Hidden for a signed-out visitor: the instrument list is an
+                authenticated lookup (see the ticker-less landing state
+                above), so the box would just come back empty. */}
+            {signedIn && isMobile && !searchOpen && (
+              <button className="iconbtn" title="Switch security" onClick={()=>setSearchOpen(true)}><Search size={15}/></button>
+            )}
+            {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
           </div>
-          <div className="page-sub">
-            {loading ? 'Loading…' : investors.length===0 ? `No public ideas on ${ticker} yet.` :
-              `${investors.length} ${investors.length===1?'person has':'people have'} shared ${investors.length===1?'a view':'their views'} on ${ticker} — ${activeInvestorCount} ${activeInvestorCount===1?'is':'are'} still active`}
-          </div>
-        </div>
-
-        {/* ── Actions row: Back, Home, Share, and (collapsed) the search icon,
-             grouped into one flex child so they wrap together as a single
-             row under the title on narrow screens, instead of each one
-             wrapping to wherever page-head's own space-between happens to
-             leave it — which used to scatter Share and the search icon onto
-             their own line, far apart. The one exception is the EXPANDED
-             mobile search box just below, which deliberately takes the full
-             width of its own row when active — that's a real, separate
-             full-width takeover, not the same layout bug. ── */}
-        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',flexShrink:0}}>
-          {backHomeButtons}
-
-          {shareUrl && (
-            <div style={{flexShrink:0}}>
-              <button ref={shareBtnRef} className="btn btn-ghost btn-sm" onClick={()=>setShareOpen(v=>!v)}>
-                <Share2 size={13}/> Share
-              </button>
-              {shareOpen && (
-                <LinkSharePopover
-                  url={shareUrl}
-                  title={`Share ${ticker}`}
-                  message={`Check out ${ticker}${name?` (${name})`:''} on My Investor Circle:\n${shareUrl}`}
-                  anchorEl={shareBtnRef.current}
-                  copied={copied}
-                  onCopy={copyShareLink}
-                  onClose={()=>setShareOpen(false)}
-                />
-              )}
-            </div>
+          {shareOpen && (
+            <LinkSharePopover
+              url={shareUrl}
+              title={`Share ${ticker}`}
+              message={`Check out ${ticker}${name?` (${name})`:''} on My Investor Circle:\n${shareUrl}`}
+              anchorEl={shareBtnRef.current}
+              copied={copied}
+              onCopy={copyShareLink}
+              onClose={()=>setShareOpen(false)}
+            />
           )}
-
-          {/* Switch-security search — compact, tucked into the header. Hidden
-              for a signed-out visitor: the instrument list is an
-              authenticated lookup (see the ticker-less landing state above),
-              so the box would just come back empty. */}
-          {signedIn && (isMobile ? (
-            !searchOpen && (
-              <button className="iconbtn" style={{width:36,height:36,flexShrink:0}} onClick={()=>setSearchOpen(true)}>
-                <Search size={15}/>
-              </button>
-            )
-          ) : (
-            <div style={{width:220,flexShrink:0,fontSize:12}}>
-              <InstrumentSearch
-                onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
-                placeholder={`Switch security…`}
-              />
-            </div>
-          ))}
         </div>
+
+        <div style={{display:'flex',alignItems:'baseline',gap:14,flexWrap:'wrap',marginTop:8}}>
+          <div className="page-title">{ticker}</div>
+          <div style={{fontSize:16,color:'var(--muted)',fontWeight:400}}>{name || recos[0]?.asset_name || ''}</div>
+        </div>
+        <div className="page-sub">
+          {loading ? 'Loading…' : investors.length===0 ? `No public ideas on ${ticker} yet.` :
+            `${investors.length} ${investors.length===1?'person has':'people have'} shared ${investors.length===1?'a view':'their views'} on ${ticker} — ${activeInvestorCount} ${activeInvestorCount===1?'is':'are'} still active`}
+        </div>
+
+        {/* Desktop switch-security input — full width isn't needed on a
+            phone screen (the icon above expands to this instead), but there
+            is always spare room for it here on desktop. */}
+        {signedIn && !isMobile && (
+          <div style={{width:260,marginTop:10,fontSize:12}}>
+            <InstrumentSearch
+              onSelect={inst=>{ if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
+              placeholder={`Switch security…`}
+            />
+          </div>
+        )}
 
         {signedIn && isMobile && searchOpen && (
-          <div style={{display:'flex',alignItems:'center',gap:8,width:'100%'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,width:'100%',marginTop:10}}>
             <div style={{flex:1,fontSize:13}}>
               <InstrumentSearch
                 onSelect={inst=>{ setSearchOpen(false); if(inst&&onOpenSecurity) onOpenSecurity(inst.symbol,inst.name); }}
@@ -2234,8 +2230,6 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
             <button className="iconbtn" style={{flexShrink:0}} onClick={()=>setSearchOpen(false)}><X size={15}/></button>
           </div>
         )}
-
-        {loading&&<Loader size={16} className="spin" style={{color:'var(--muted)'}}/>}
       </div>
 
       {/* ── Tabs — segmented control, styled to be unmistakably a multi-tab bar ── */}
