@@ -184,7 +184,7 @@ def tpl_referral_converted(data):
 def tpl_connection_request(data):
     from_name     = data.get("from_name", "Someone")
     from_username = data.get("from_username", "")
-    profile_url   = f"{APP_URL}/#/investor/{from_username}" if from_username else APP_URL
+    profile_url   = f"{APP_URL}/investor/{from_username}" if from_username else APP_URL
     return {
         "subject": f"{from_name} wants to connect with you on myInvestorCircle 🤝",
         "html": layout(f"""
@@ -206,7 +206,7 @@ def tpl_connection_request(data):
 def tpl_connection_accepted(data):
     their_name     = data.get("their_name", "Someone")
     their_username = data.get("their_username", "")
-    profile_url    = f"{APP_URL}/#/investor/{their_username}" if their_username else APP_URL
+    profile_url    = f"{APP_URL}/investor/{their_username}" if their_username else APP_URL
     return {
         "subject": f"{their_name} accepted your connection on myInvestorCircle 🤝",
         "html": layout(f"""
@@ -253,7 +253,7 @@ def tpl_contact_recommendation(data):
     entry_price   = data.get("entry_price",   "")
     conviction    = data.get("conviction",    "")
     reco_url      = data.get("reco_url",      APP_URL)
-    profile_url   = f"{APP_URL}/#/investor/{from_username}" if from_username else APP_URL
+    profile_url   = f"{APP_URL}/investor/{from_username}" if from_username else APP_URL
 
     meta_parts = []
     if entry_price: meta_parts.append(f"<span>Entry: <strong>{entry_price}</strong></span>")
@@ -318,7 +318,7 @@ def tpl_claim_admin_notify(data):
     claimer_email = data.get("claimer_email", "")
     profile_name  = data.get("profile_name", "")
     username      = data.get("username", "")
-    admin_url     = f"{APP_URL}/#/admin/creators"
+    admin_url     = f"{APP_URL}/admin/creators"
     return {
         "subject": f"New profile claim: @{username} — action required",
         "html": layout(f"""
@@ -337,7 +337,7 @@ def tpl_claim_admin_notify(data):
 def tpl_claim_approved(data):
     creator_name = data.get("creator_name", "Creator")
     username     = data.get("username", "")
-    profile_url  = f"{APP_URL}/#/investor/{username}"
+    profile_url  = f"{APP_URL}/investor/{username}"
     return {
         "subject": f"Your profile @{username} is live! 🎉",
         "html": layout(f"""

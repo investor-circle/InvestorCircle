@@ -20,7 +20,7 @@ import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 
 // Public investor profile — the same shareable profile the web app exposes
-// at #/investor/:username, including the server-computed performance summary
+// at /investor/:username, including the server-computed performance summary
 // (live / realized) and the investor's ICI score.
 //
 // Performance numbers come from the API and are never recomputed here. The

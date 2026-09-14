@@ -34,7 +34,7 @@ export { setupIncomplete } from "../utils/setup";
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 // Read from the web rather than copied into the app: it is a legal document
 // that has to match word for word, and a second copy would drift.
-const PRIVACY_URL = `${WEB_ORIGIN}/#/privacy`;
+const PRIVACY_URL = `${WEB_ORIGIN}/privacy`;
 
 export default function SetupGate({ profile, patchProfile }) {
   const [username, setUsername] = useState(profile?.username || "");

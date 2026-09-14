@@ -13,15 +13,17 @@
  * The problem: expo-router ALSO subscribes to the exact same native "url"
  * event on its own (see node_modules/expo-router/build/link/linking.js
  * `subscribe`), independently of _layout.js, and tries to resolve every
- * incoming URL into an in-app ROUTE via path matching. None of our real
- * links are path-based — a password reset link is a bare root URL with only
- * query params, and every shareable web URL (`#/investor/username`, etc.) is
- * a HashRouter URL whose actual route lives in the fragment, invisible to
- * path matching — so expo-router's own resolution never lands on anything
- * meaningful. Left alone, it still ACTS: on every incoming URL (cold start
- * via its own getInitialURL, or a live "url" event while already running) it
- * dispatches its own navigation for whatever an empty/unmatched path
- * resolves to, racing _layout.js's own handling.
+ * incoming URL into an in-app ROUTE via path matching. A password reset link
+ * is a bare root URL with only query params, which resolves to nothing
+ * meaningful either way. Shareable web URLs are now real paths
+ * (`/investor/username`, etc., not the old `#/investor/username` hash
+ * form) — which is worse, not better, for leaving expo-router's own
+ * resolution enabled: `/investor/username` can coincide with this app's own
+ * file-based route (app/investor/[username].js) and get a DIFFERENT
+ * navigation dispatched than the one _layout.js's deliberate handling would
+ * produce. Left alone, it still ACTS: on every incoming URL (cold start via
+ * its own getInitialURL, or a live "url" event while already running) it
+ * dispatches its own navigation, racing _layout.js's own handling.
  *
  * On a cold start our own effect usually wins that race (nothing is mounted
  * yet for expo-router to dispatch INTO). On a WARM start — the app already

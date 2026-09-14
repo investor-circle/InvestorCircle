@@ -170,7 +170,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   const [joiningCircle, setJoiningCircle] = useState(null);
 
   // Public URL — defined early so it's always in scope for both shells
-  const profileUrl = `${window.location.origin}${window.location.pathname}#/investor/${username}`;
+  const profileUrl = `${window.location.origin}/investor/${username}`;
   const copyLink   = () => navigator.clipboard.writeText(profileUrl)
     .then(()=>{ setCopied(true); setTimeout(()=>setCopied(false), 2000); });
 
@@ -1556,7 +1556,7 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
                 {unStatus==='checking'?'Checking…':unStatus==='available'?`✓ @${unInput} is available`
                  :unStatus==='taken'?'Username already taken — try another'
                  :unStatus==='invalid'?'5–20 lowercase letters, numbers or _'
-                 :`Your profile will be at /#/investor/${unInput||'username'}`}
+                 :`Your profile will be at /investor/${unInput||'username'}`}
               </div>
             </div>
 

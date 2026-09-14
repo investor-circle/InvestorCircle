@@ -102,7 +102,7 @@ export default function SecurityTabs({ symbol, ideas }) {
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {inv.author_username ? (
-                    <a href={`https://myinvestorcircle.com/#/investor/${encodeURIComponent(inv.author_username)}`} style={{ fontWeight: 700 }}>
+                    <a href={`https://myinvestorcircle.com/investor/${encodeURIComponent(inv.author_username)}`} style={{ fontWeight: 700 }}>
                       {inv.author_name || inv.author_username}
                     </a>
                   ) : (

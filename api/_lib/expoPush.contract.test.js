@@ -30,7 +30,7 @@ const asTapResponse = (message) => ({
 
 describe("push payload contract: server -> device tap", () => {
   it("a notification the server builds opens the URL it was given", () => {
-    const url = "https://myinvestorcircle.com/#/investor/alice/reco/42";
+    const url = "https://myinvestorcircle.com/investor/alice/reco/42";
     const [message] = buildExpoMessages(["ExponentPushToken[a]"], {
       title: "New idea from Alice",
       body: "Alice shared an idea with you",
@@ -52,7 +52,7 @@ describe("push payload contract: server -> device tap", () => {
     const [message] = buildExpoMessages(["ExponentPushToken[a]"], {
       title: "New idea",
       body: "Someone shared an idea",
-      url: "https://myinvestorcircle.com/#/reco/42",
+      url: "https://myinvestorcircle.com/reco/42",
     });
     expect(message.title).not.toMatch(/https?:/);
     expect(message.body).not.toMatch(/https?:/);

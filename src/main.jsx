@@ -1,21 +1,23 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { HashRouter } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./AuthContext";
 import App from "./App.jsx";
 import "./index.css";
 
-// HashRouter (not BrowserRouter): the app deploys as a static SPA to GitHub
-// Pages with no server-side rewrite/404 fallback, so only the hash portion
-// of the URL is guaranteed to survive a hard refresh or a directly-opened
-// link. This is also the existing convention (#/investor/username deep
-// links predate this router).
+// BrowserRouter (not HashRouter): the app is now assured to deploy behind
+// Vercel (see vercel.json's catch-all rewrite to /index.html), which can
+// give every route a real path with a server-side SPA-fallback rewrite —
+// something GitHub Pages, the original host, could not do, which is why
+// HashRouter was chosen originally. Real paths mean in-app URLs (e.g.
+// /security/RELIANCE, /connections) are shareable and don't carry the
+// dated-looking # that a fragment-based router requires.
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <HashRouter>
+    <BrowserRouter>
       <AuthProvider>
         <App />
       </AuthProvider>
-    </HashRouter>
+    </BrowserRouter>
   </React.StrictMode>
 );

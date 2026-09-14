@@ -36,7 +36,7 @@ mobile/
 
 - **Expo + Expo Router**: current standard for new Expo apps — file-based
   routing gives deep linking and universal links close to free, which the
-  product needs for `myinvestorcircle.com/#/investor/{username}`-style
+  product needs for `myinvestorcircle.com/investor/{username}`-style
   shareable links.
 - **Firebase JS SDK (not `@react-native-firebase`)**: the web app already
   uses the Firebase JS SDK; reusing it here means one Firebase project,

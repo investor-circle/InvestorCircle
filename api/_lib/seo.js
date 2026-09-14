@@ -239,7 +239,7 @@ async function ideaPage(id) {
   );
   const canonical = `${SITE}/idea/${encodeURIComponent(idea.id)}`;
   const appUrl = idea.author_username
-    ? `/#/investor/${encodeURIComponent(idea.author_username)}/idea/${encodeURIComponent(idea.id)}`
+    ? `/investor/${encodeURIComponent(idea.author_username)}/idea/${encodeURIComponent(idea.id)}`
     : '/';
 
   return shell({

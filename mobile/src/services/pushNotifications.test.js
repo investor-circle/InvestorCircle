@@ -108,14 +108,14 @@ describe("urlFromNotification — the contract with api/_lib/expoPush.js", () =>
     // buildExpoMessages() puts the deep link at data.url; a tap arrives
     // wrapped in response.notification.request.content.data.
     const response = {
-      notification: { request: { content: { data: { url: "https://x/#/investor/a/reco/9", tag: "reco" } } } },
+      notification: { request: { content: { data: { url: "https://x/investor/a/reco/9", tag: "reco" } } } },
     };
-    expect(load().urlFromNotification(response)).toBe("https://x/#/investor/a/reco/9");
+    expect(load().urlFromNotification(response)).toBe("https://x/investor/a/reco/9");
   });
 
   it("also reads a bare notification object", () => {
-    const notification = { request: { content: { data: { url: "https://x/#/circles" } } } };
-    expect(load().urlFromNotification(notification)).toBe("https://x/#/circles");
+    const notification = { request: { content: { data: { url: "https://x/circles" } } } };
+    expect(load().urlFromNotification(notification)).toBe("https://x/circles");
   });
 
   it("returns null when there is no url, rather than navigating somewhere wrong", () => {

@@ -691,7 +691,7 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
               )}
               <div style={{ fontSize: 12, color: "#8a8daa", marginTop: 5, lineHeight: 1.5 }}>
                 This creates your <strong>permanent public profile link</strong> — e.g.{" "}
-                <span style={{ fontFamily: "monospace", fontSize: 11 }}>myinvestorcircle.app/#/investor/<em>yourname</em></span>.
+                <span style={{ fontFamily: "monospace", fontSize: 11 }}>myinvestorcircle.com/investor/<em>yourname</em></span>.
                 Choose wisely — it cannot be changed once set.
               </div>
             </div>

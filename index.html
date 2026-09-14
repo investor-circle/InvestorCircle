@@ -5,12 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <!--
-      Every route here is a HashRouter fragment (#/investor/…, #/about), and a
-      fragment is never sent to the server — so crawlers collapse the entire
-      site onto this one URL. The canonical states that explicitly, and folds
-      in the query-string variants we hand out (referral ?ref=CODE, password
-      reset ?mode=resetPassword) which would otherwise each be indexed as a
-      separate page with identical content.
+      This one static file is served for every route the plain SPA shell
+      owns (real paths now, via BrowserRouter + vercel.json's catch-all
+      rewrite — not HashRouter fragments) — none of them get their own
+      server-rendered HTML, so there is nothing here to give each a distinct
+      canonical. The few routes that DO need to be indexed as their own page
+      (/stock/:symbol, /security/:symbol, /idea/:id, /search) are served by
+      separate, real HTML generators (api/_lib/seo.js, web-public/) with
+      their own canonical tags — this one only applies to what's left:
+      authenticated app screens and profiles (deliberately excluded from the
+      index — see robots.txt). Also folds in the query-string variants we
+      hand out (referral ?ref=CODE, password reset ?mode=resetPassword)
+      which would otherwise each be indexed as a separate page with
+      identical content.
     -->
     <link rel="canonical" href="https://myinvestorcircle.com/" />
     <meta name="description" content="My Investor Circle is a private investing community to discover, share and discuss investment ideas with other investors, advisors and research professionals." />

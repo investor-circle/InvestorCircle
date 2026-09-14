@@ -43,7 +43,7 @@ import {
 import { getCircleIdeas as dbGetCircleIdeas } from "../../services/api/recommendationsApi";
 import { Avatar, ConvBadge, RetBadge, SmallAnchoredPopover, TypeBadge } from "../../components/common";
 import { fmtDate, initialsOf, recoStats } from "../../utils/format";
-import { gotoUserProfile, gotoCircle } from "../../utils/navigation";
+import { gotoUserProfile, gotoCircle, openReco } from "../../utils/navigation";
 import { useIsMobile } from "../../hooks/index";
 
 /** Circles = the product-facing rename of the pre-existing Group concept.
@@ -164,7 +164,7 @@ export function GroupsSection({ groups, setGroups, contacts, configs, recsReceiv
          without scrolling sideways. Tapping the card still expands the
          same members/invite-link section the desktop table's row does. */
       <div>{rows.map(g=>{ const open=expanded===g.id; const iAmAdmin=g.my_role==="admin"; const isPublic=g.circle_type==="public";
-        const inviteLink = g.slug ? `${window.location.origin}${window.location.pathname}#/circle/${g.slug}` : null;
+        const inviteLink = g.slug ? `${window.location.origin}/circle/${g.slug}` : null;
         const memberCount = (g.members||[]).filter(m=>m.status==="active").length;
         return (
           <div key={g.id} className="card" style={{padding:"12px 14px",marginBottom:8}}>
@@ -208,7 +208,7 @@ export function GroupsSection({ groups, setGroups, contacts, configs, recsReceiv
         <th>Circle</th><th>Type</th><th>Created on</th><th>Members</th><th>My role</th><th style={{textAlign:"right"}}>Actions</th>
       </tr></thead>
       <tbody>{rows.map(g=>{ const open=expanded===g.id; const iAmAdmin=g.my_role==="admin"; const isPublic=g.circle_type==="public";
-        const inviteLink = g.slug ? `${window.location.origin}${window.location.pathname}#/circle/${g.slug}` : null;
+        const inviteLink = g.slug ? `${window.location.origin}/circle/${g.slug}` : null;
         return (<React.Fragment key={g.id}>
           <tr className="hoverable" style={{cursor:"pointer"}} onClick={()=>setExpanded(open?null:g.id)}>
             <td><span className="nowrap"><span className="av" style={{width:28,height:28,background:g.color,fontSize:12,marginRight:8,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:8}}><Layers size={13}/></span>
@@ -441,7 +441,7 @@ export function JoinRequestsModal({ group, onClose, onReviewed }) {
 }
 
 /* ── CirclePage — dedicated, shareable page for a single Circle ────────────
-   Route: #/circle/:slug (optionally ?invite=<code>). Works for a logged-out
+   Route: /circle/:slug (optionally ?invite=<code>). Works for a logged-out
    visitor (e.g. opening a WhatsApp-shared link) — the backend enforces that
    private circles never reveal details to non-members (see
    api/_lib/handlers/groups.js action=by-slug). */
@@ -464,7 +464,7 @@ function CircleSharePopover({ circle, anchorEl, onClose }) {
     return () => document.removeEventListener('mousedown', h);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const link = `${window.location.origin}${window.location.pathname}#/circle/${circle.slug}`;
+  const link = `${window.location.origin}/circle/${circle.slug}`;
   const waText = encodeURIComponent(`Join "${circle.name}" on myInvestorCircle:\n${link}`);
   const copyLink = () => navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => { setCopied(false); onClose(); }, 1600); });
 
@@ -826,8 +826,7 @@ export function CirclePage({ slug, inviteCode, highlightIdeaId, autoOpenRequests
                 border: isHighlighted ? '1.5px solid var(--accent)' : '1px solid var(--line)',
                 borderRadius:10,cursor:'pointer',transition:'background .3s, border-color .3s'}}
               onClick={()=>{
-                const dest = idea.recommender_username ? `#/investor/${idea.recommender_username}/idea/${idea.id}` : null;
-                if (dest) window.location.hash = dest;
+                if (idea.recommender_username) openReco(idea.recommender_username, idea.id);
               }}>
               <Avatar f={{name:idea.recommender_name,avatarUrl:idea.recommender_avatar_url,color:idea.recommender_avatar_color,initials:initialsOf(idea.recommender_name||"?")}} size={34}/>
               <div style={{flex:1,minWidth:0}}>

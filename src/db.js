@@ -866,7 +866,7 @@ export async function getTickerRecos(ticker) {
 }
 
 // Unauthenticated counterpart to getTickerRecos, for a signed-out visitor on
-// the Stock Insights page (#/security/:ticker). Backed by the same
+// the Stock Insights page (/security/:ticker). Backed by the same
 // is_public-filtered public-ideas.js handler that api/seo.js's /stock/:symbol
 // page uses — see CLAUDE.md's "public-ideas.js is the only place public idea
 // data is queried" rule. Field names are adapted to match what

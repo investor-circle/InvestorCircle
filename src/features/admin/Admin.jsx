@@ -1556,7 +1556,7 @@ export function CreateCreatorModal({ onClose, onCreated }) {
         <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>First name *</label><input className="inp" value={firstName} onChange={e=>setFirstName(e.target.value)} placeholder="Varun" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
         <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Last name</label><input className="inp" value={lastName} onChange={e=>setLastName(e.target.value)} placeholder="Rawat" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/></div>
       </div>
-      <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Username * (used in profile URL)</label><input className="inp" value={username} onChange={e=>setUsername(e.target.value.replace(/[^a-z0-9_]/gi,'').toLowerCase())} placeholder="varunrawat" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/><div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>Profile will be at /#/investor/{username||'username'}</div></div>
+      <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Username * (used in profile URL)</label><input className="inp" value={username} onChange={e=>setUsername(e.target.value.replace(/[^a-z0-9_]/gi,'').toLowerCase())} placeholder="varunrawat" style={{width:'100%',marginTop:4,boxSizing:'border-box'}}/><div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>Profile will be at /investor/{username||'username'}</div></div>
       <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Bio (optional)</label><textarea className="inp" value={bio} onChange={e=>setBio(e.target.value)} placeholder="Brief description of the creator's investment style…" rows={3} style={{width:'100%',marginTop:4,resize:'vertical',boxSizing:'border-box'}}/></div>
       <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Registration type</label>
         <select className="inp" value={regStatus} onChange={e=>setRegStatus(e.target.value)} style={{width:'100%',marginTop:4}}>
@@ -2077,7 +2077,7 @@ export function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
                     <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Submitted {new Date(req.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</div>
                   </div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                    <button className="btn btn-ghost btn-sm" onClick={()=>window.open(`/#/investor/${req.profile_username}`,'_blank')} title="View profile"><Globe size={13}/> View</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>window.open(`/investor/${req.profile_username}`,'_blank')} title="View profile"><Globe size={13}/> View</button>
                   </div>
                 </div>
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
@@ -2132,7 +2132,7 @@ export function AdminCreators({ ME, claimRequests=[], onClaimAction }) {
                 >
                   <Plus size={12}/> Seed ideas
                 </button>
-                <button className="btn btn-ghost btn-sm" onClick={()=>window.open(`/#/investor/${p.username}`,'_blank')} title="View profile"><Globe size={12}/> View</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>window.open(`/investor/${p.username}`,'_blank')} title="View profile"><Globe size={12}/> View</button>
                 <button className="btn btn-ghost btn-sm" onClick={()=>deleteProfile(p.id)} style={{color:'var(--loss)'}} title="Delete"><Trash2 size={12}/></button>
               </div>
             </div>

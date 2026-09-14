@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { getPublicTickerIdeas } from "./db";
 
 // getPublicTickerIdeas is the signed-out data path for the Stock Insights
-// page (#/security/:ticker) — it must adapt public-ideas.js's by-symbol
+// page (/security/:ticker) — it must adapt public-ideas.js's by-symbol
 // response into the same field shape getTickerRecos already returns, so
 // SecurityIntelligencePage's rendering logic runs unmodified against either
 // source. That adaptation is the one thing worth pinning here.

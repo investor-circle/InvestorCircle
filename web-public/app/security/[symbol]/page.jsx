@@ -41,7 +41,6 @@ export default async function SecurityPage({ params }) {
   const { name, sector, summary, ideas } = data;
   const sym = data.symbol;
   const canonical = `https://myinvestorcircle.com/security/${encodeURIComponent(sym)}`;
-  const appUrl = `https://myinvestorcircle.com/#/security/${encodeURIComponent(sym)}`;
 
   const ld = jsonLd({
     '@context': 'https://schema.org',
@@ -72,10 +71,16 @@ export default async function SecurityPage({ params }) {
 
       <SecurityTabs symbol={sym} name={name} ideas={ideas} />
 
+      {/* No separate "open in the app" link here (unlike the idea page's,
+          which points at a different, non-proxied /investor/:username URL):
+          /security/:symbol is itself proxied to this app (see the main
+          project's vercel.json), so a fresh link to this exact path — with
+          or without a #  — would just reload this same page, not the main
+          app's authenticated Stock Insights view. That view lives at this
+          same path too, but is only reachable by a signed-in user already
+          running the app (client-side navigation, never a fresh request),
+          so Gate's sign-in link above is the only meaningful CTA left. */}
       <Gate line={`Sign in to see Your Circle's take on ${sym}, post your own view, or track this stock.`} />
-      <p style={{ marginTop: 20 }}>
-        <a href={appUrl}>Open {sym} in the full myInvestorCircle app →</a>
-      </p>
     </>
   );
 }

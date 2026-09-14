@@ -22,15 +22,44 @@ verified against the actual code rather than trusted blindly.
   (see "Phase 5 architecture" below). `src/services/` holds client helpers
   (CAS import, market data, PAN import, price fetching, notify, and the
   `services/api/**` frontend service layer).
-- **Routing**: `react-router-dom`'s `HashRouter` (see `src/main.jsx`). The app
-  is a static SPA on GitHub Pages with no server-side rewrite/404 fallback, so
-  only the hash portion of a URL survives a hard refresh or a directly-opened
-  link — path-based (`BrowserRouter`) routing would 404 on refresh. Major
-  sections have real, shareable, refreshable URLs (`#/connections`,
-  `#/recommendations`, `#/portfolio`, `#/sharing`, `#/admin/users`, etc. — see
-  `INVESTOR_PATH_TO_PAGE` / `ADMIN_PATH_TO_PAGE` in `App.jsx`), alongside the
-  pre-existing `#/investor/:username` and `#/investor/:username/reco/:id`
-  public profile/recommendation deep links.
+- **Routing**: `react-router-dom`'s `BrowserRouter` (see `src/main.jsx`) —
+  switched from `HashRouter` once Vercel (which can serve a real SPA-fallback
+  rewrite) became the assured host, rather than GitHub Pages (which cannot;
+  see Deployment below). `vercel.json`'s catch-all rewrite
+  (`{"source": "/(.*)", "destination": "/index.html"}`, placed AFTER every
+  more-specific rewrite so those still take priority) is what makes a hard
+  refresh or a directly-opened link to any app path work — Vercel serves an
+  actual static file (or a Serverless Function under `api/`) via filesystem
+  match first, and only falls through to this rewrite for a path that isn't
+  one, so it doesn't swallow assets or API routes. Major sections have real,
+  shareable, refreshable URLs (`/connections`, `/recommendations`,
+  `/portfolio`, `/sharing`, `/admin/users`, etc. — see `INVESTOR_PATH_TO_PAGE`
+  / `ADMIN_PATH_TO_PAGE` in `App.jsx`), alongside the pre-existing
+  `/investor/:username`, `/investor/:username/idea/:id` and `/circle/:slug`
+  public profile/idea/circle deep links and the `/security/:ticker` Stock
+  Insights deep link (see "Public, crawlable pages" below for why that one is
+  more involved).
+  - **The standalone-route mechanism** (public profile / circle / standalone
+    Stock Insights — reached before or outside the authenticated app shell,
+    e.g. a shared link opened signed-out) is NOT handled via react-router's
+    own `<Routes>`/`useLocation()` — it's a hand-rolled `pagePath` state in
+    `App.jsx`, deliberately decoupled from react-router's own Location.
+    `setPage()`/`openSecurity()`'s ordinary in-app section navigation calls
+    react-router's `navigate()`, which updates the address bar and
+    react-router's own `Location` but must NOT trip the standalone-route
+    matches (`circleMatch`/`publicMatch`/`securityMatch`) — otherwise a
+    signed-in user's ticker click would drop them out of the app shell. The
+    standalone routes instead move via `goToPath()` (a raw
+    `window.history.pushState` + `setPagePath`, bypassing `navigate()`
+    entirely) or, from outside `App.jsx` (e.g. `src/utils/navigation.js`'s
+    `openProfile`/`gotoCircle`/`openReco`, called from all over the feature
+    files), via a small registered-callback bridge
+    (`registerGoToPath`/`goHome`) since that plain, component-free module
+    can't reach `App.jsx`'s own state setter directly. This mirrors the
+    pre-existing `pageHash`/`hashchange` mechanism this replaced almost
+    exactly — `navigate()` never fired `hashchange` under `HashRouter`
+    either, for the same underlying reason (it goes through history
+    push/replaceState, not a raw `location.hash` assignment).
 - **Backend**: Vercel serverless functions in `api/`, mixed Node.js and Python
   3.9. Used for email (Resend), push notifications, price proxying, CAS PDF
   parsing, and Firebase-Admin-based password reset.
@@ -44,9 +73,17 @@ verified against the actual code rather than trusted blindly.
   sync live in `src/AuthContext.jsx`; login/signup/reset UI in `src/LoginPage.jsx`.
   Password reset is server-mediated via `api/reset.py` using the Firebase Admin
   SDK.
-- **Deployment**: Frontend deploys to GitHub Pages via
-  `.github/workflows/deploy.yml` on push to `main`; backend functions deploy to
-  Vercel. `public/CNAME` pins the custom domain — do not remove it.
+- **Deployment**: The custom domain (`myinvestorcircle.com`) now points at
+  Vercel, which serves both the frontend (static `dist/` build, via
+  `vercel.json`) and the backend functions in `api/` — Vercel is the assured,
+  live host this session's `BrowserRouter` switch depends on.
+  `.github/workflows/deploy.yml` still deploys the same frontend build to
+  GitHub Pages on push to `main` (left running deliberately, per explicit
+  instruction, rather than torn out), but that deployment is no longer
+  reachable at the custom domain and is not the canonical way anyone reaches
+  the app — treat it as unused infrastructure, not a second production
+  target, unless told otherwise. `public/CNAME` still pins the custom domain
+  on the GitHub Pages side — do not remove it.
 
 ## Phase 5 architecture (feature-oriented frontend)
 
@@ -256,15 +293,19 @@ modules. These are now durable conventions, not a one-time cleanup:
   `https://myinvestorcircle.com` with `autoVerify: true` and no path
   restriction — required so referral (`?ref=`) and password-reset
   (`?mode=resetPassword`) links, which arrive as a bare-root URL, open the
-  app automatically. Because the web is a `HashRouter` SPA, every route
-  (`/#/privacy` included) is indistinguishable from the bare root at the
-  Android intent-filter level (fragments aren't visible to path matching),
-  so the OS can't tell "a real deep link" apart from "a page the app can't
-  render" and sometimes hands the outgoing Custom Tab navigation straight
-  back to the app. The app already has a client-side loop guard for this
-  (`app/_layout.js`'s `handle()`) that falls back to copying the link to
-  the clipboard with an explanatory alert rather than looping forever —
-  that is the current, deliberately-JS-only mitigation.
+  app automatically. This was originally because the web was a `HashRouter`
+  SPA, where every route (`/#/privacy` included) was indistinguishable from
+  the bare root at the Android intent-filter level (fragments aren't visible
+  to path matching) — the web has since switched to `BrowserRouter` (real
+  paths, see Routing above), so `/privacy` IS now a distinguishable path in
+  principle, but the intent filter itself still claims the whole domain with
+  no path restriction, so the OS still can't tell "a real deep link" apart
+  from "a page the app can't render" until that native config is actually
+  narrowed (see below) — the web-side change alone does not fix this. The
+  app already has a client-side loop guard for this (`app/_layout.js`'s
+  `handle()`) that falls back to copying the link to the clipboard with an
+  explanatory alert rather than looping forever — that is the current,
+  deliberately-JS-only mitigation.
   - The **Privacy Policy** entry is hidden from the Profile menu for now
     (`app/profile.js`) since it's the one link a user is likely to tap
     expecting it to just work; the login-consent screen and `SetupGate`
@@ -275,9 +316,15 @@ modules. These are now durable conventions, not a one-time cleanup:
     requires a native rebuild (not OTA-shippable) and changes app-wide
     deep-link behavior (referral/reset links might show Android's app-picker
     instead of auto-opening), so it needs explicit sign-off before
-    implementing, not just a build slot. Tackle this the next time a native
-    build is already planned for other reasons; re-enable the Profile menu
-    entry once it's fixed.
+    implementing, not just a build slot. The `BrowserRouter` switch makes
+    this fix more tractable than before (paths are now real and
+    distinguishable — the intent filter could plausibly be scoped to just
+    `/investor/*`, `/circle/*`, `/security/*` etc. and let everything else,
+    `/privacy` included, fall through to a normal browser), but the filter
+    itself hasn't been touched — do that scoping as part of implementing this
+    fix, not before. Tackle this the next time a native build is already
+    planned for other reasons; re-enable the Profile menu entry once it's
+    fixed.
 
 ## Mobile native changes already merged, queued for the next build
 
@@ -313,9 +360,21 @@ through `api/data.js` as `resource=seo` (see `vercel.json`'s rewrite).
 `/security/:symbol`, `/idea/:id` and `/search` are served by `web-public/` —
 a separate SSR Next.js app, deployed as its own Vercel project, proxied in
 from `vercel.json` — see `web-public/README.md`. Everything else on the
-site is still the untouched `HashRouter` app; these exist because neither
-Googlebot's indexing nor WhatsApp's link-preview card runs the app's
-JavaScript.
+site is the plain `BrowserRouter` SPA (`index.html` + client-side rendering,
+no server-rendered content); these exist because neither Googlebot's
+indexing nor WhatsApp's link-preview card runs the app's JavaScript.
+
+`/security/:symbol` in particular is a real path BOTH `web-public/` (for a
+fresh/crawler hit — vercel.json's rewrite always wins on a full navigation)
+AND the main app (for a signed-in user already running the app, reached
+purely via client-side navigation, never a fresh request) can render — see
+the standalone-route mechanism note under Routing above. There is
+deliberately no other URL for "the interactive version of this exact page";
+`web-public/`'s own "Open in the app" style CTAs point at sign-in
+(`https://myinvestorcircle.com/`) instead, since a fresh link to
+`/security/:symbol` itself just reloads `web-public/` again. `/idea/:id`
+doesn't have this wrinkle — its own "Open in the app" link points at the
+author's `/investor/:username/idea/:id`, a path this project never proxies.
 
 - **`api/_lib/handlers/public-ideas.js` is the only place public idea data
   is queried.** Every statement in it filters `is_public = true`, and
@@ -350,11 +409,15 @@ JavaScript.
   cover the same ground (`/security/:symbol` with the full Stock Insights
   experience), and this stops them being indexed as duplicate content.
   `/stock/:symbol` itself still resolves; it is not retired.
-- **Member profiles are deliberately not served here.** No route renders
-  one, `public/robots.txt` disallows `/investor/`, and profiles exist only
-  as hash routes, which are not separate URLs to a crawler. That is a
-  product decision (ideas are indexable, people are not) — revisit it
-  explicitly rather than by adding a route.
+- **Member profiles are deliberately not served here.** No route in this
+  file's sense renders one — `/investor/:username` is a real path now
+  (`BrowserRouter`, not a hash route, so it IS a separate URL to a crawler in
+  principle), served by the plain SPA shell via the standalone-route
+  mechanism, with no server-rendered content of its own. `public/robots.txt`
+  disallowing `/investor/` is what actually keeps it out of the index — see
+  that file's own comment. That is a product decision (ideas are indexable,
+  people are not) — revisit it explicitly rather than by adding real
+  server-rendered content at that path.
 - **Edge caching is load-bearing, not an optimisation.** `/stock/:symbol`
   sets `s-maxage`/`stale-while-revalidate` so a crawler working through the
   sitemap does not spend Vercel "Fast Origin Transfer" on every hit — the

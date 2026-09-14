@@ -32,10 +32,17 @@ no matter what the app itself shows a real visitor.
 - **No authentication.** A visitor here is always anonymous — there is no
   Firebase session to check across origins. "Your Circle" (connections/
   tracked investors) is a signed-in-only concept and simply doesn't apply;
-  every tab shows the Community view only. A prominent "Open in
-  myInvestorCircle" link takes a visitor into the real app
-  (`https://myinvestorcircle.com/#/security/:symbol`), where the full
-  signed-in experience (Your Circle, ICI scores, AI Summary) lives.
+  every tab shows the Community view only. A "Sign in to myInvestorCircle"
+  link (Gate.jsx) is the only CTA into the real app — `/security/:symbol`
+  and `/idea/:id` are both real paths on the main app's own domain now too
+  (BrowserRouter, not HashRouter), but `/security/:symbol` is itself
+  proxied to THIS app (see the main project's vercel.json), so there is no
+  separate URL a fresh link could point at for "the interactive version of
+  this exact page" — only a signed-in user already running the main app can
+  reach it, via client-side navigation. The idea page's "Open this idea in
+  the app" link still works as a distinct destination since it points at
+  the author's `/investor/:username/idea/:id`, a path this project never
+  proxies.
 - **No ICI investor scores.** `investor-ici-batch` requires a verified
   Firebase token server-side (`requireUid`) — correctly, since it's a
   per-viewer batch computation, not public data. Omitted here rather than

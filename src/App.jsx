@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
@@ -127,6 +127,7 @@ import { VAPID_PUBLIC_KEY } from "./services/notify";
 import { STYLES } from "./styles/globalStyles";
 import { initialsOf } from "./utils/format";
 import { loadInstruments } from "./utils/instruments";
+import { registerGoToPath } from "./utils/navigation";
 
 /* ============================================================
    InvestorCircle — social space for investors.
@@ -142,11 +143,13 @@ import { loadInstruments } from "./utils/instruments";
    ============================================================ */
 
 /* ── URL routing for the major app sections (Phase 5 foundation) ──────────────
-   Investor profile (#/investor/:username) and recommendation post
-   (#/investor/:username/idea/:id) URLs are handled separately below via the
-   pre-existing pageHash mechanism — deliberately left untouched.
+   Investor profile (/investor/:username), recommendation post
+   (/investor/:username/idea/:id), Circle (/circle/:slug) and standalone
+   Stock Insights (/security/:ticker) URLs are handled separately below via
+   the pagePath mechanism (a real, BrowserRouter path now — see main.jsx).
    These maps give the main navigation sections real, shareable, refreshable
-   URLs too, using the same hash-based scheme (see main.jsx for why). ────── */
+   URLs too, via the same react-router-dom Location the pagePath mechanism
+   reads. ────── */
 const INVESTOR_PATH_TO_PAGE = {
   "/": "home",
   "/portfolio": "portfolio",
@@ -212,11 +215,11 @@ export default function App() {
   const navigate = useNavigate();
   const routeLocation = useLocation();
   const [investorPage, setInvestorPage] = useState(() => {
-    const p = window.location.hash.replace(/^#/, "").split("?")[0] || "/";
+    const p = window.location.pathname || "/";
     return INVESTOR_PATH_TO_PAGE[p] || "home";
   });
   const [adminPage,    setAdminPage]    = useState(() => {
-    const p = window.location.hash.replace(/^#/, "").split("?")[0] || "/";
+    const p = window.location.pathname || "/";
     return ADMIN_PATH_TO_PAGE[p] || "users";
   });
   const [recoInit,     setRecoInit]     = useState(null);
@@ -228,7 +231,7 @@ export default function App() {
 
   // Keep investorPage/adminPage in sync with the URL: covers browser
   // back/forward, a directly-opened/refreshed section URL, and links typed
-  // or pasted in by hand. Profile/reco URLs (#/investor/...) are handled by
+  // or pasted in by hand. Profile/reco URLs (/investor/...) are handled by
   // the separate pageHash mechanism and intentionally excluded here.
   // NOTE: this must run unconditionally on every render (before any of the
   // early `if (...) return` guards below) — React requires hooks to be
@@ -277,46 +280,69 @@ export default function App() {
   const isMobile = useIsMobile();
   const [connectConfirm, setConnectConfirm] = useState(null); // { name, username } after auto-connect
 
-  // ── Hash routing — for public profile URLs (#/investor/username) ─────────────
-  const [pageHash, setPageHash] = useState(window.location.hash);
+  // ── Path routing — for public profile / circle / standalone security URLs ────
+  // pagePath is deliberately NOT derived from react-router's useLocation().
+  // navigate() (used below by setPage()/openSecurity() for ordinary in-app
+  // section navigation) must keep updating the address bar and routeLocation
+  // WITHOUT tripping the standalone-route matches just below — that's what
+  // lets a signed-in user's ticker click stay on the normal app shell instead
+  // of falling into the pre-auth-gate standalone Stock Insights branch (see
+  // that branch's comment). So pagePath only moves for: the initial URL,
+  // browser back/forward (popstate), and the explicit goToPath() calls the
+  // circle/profile/standalone-security transitions use below — mirroring the
+  // old hashchange-based pageHash state this replaced (navigate() under
+  // HashRouter used history pushState/replaceState internally too, which
+  // likewise never fired hashchange).
+  const [pagePath, setPagePath] = useState(() => window.location.pathname + window.location.search);
   useEffect(() => {
-    const h = () => setPageHash(window.location.hash);
-    window.addEventListener("hashchange", h);
-    return () => window.removeEventListener("hashchange", h);
+    const onPop = () => setPagePath(window.location.pathname + window.location.search);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
+  // Pushes a standalone-route path directly via the History API, bypassing
+  // react-router's navigate() — see the note above for why.
+  const goToPath = useCallback((path) => {
+    window.history.pushState(null, '', path);
+    setPagePath(path);
+  }, []);
+  // src/utils/navigation.js (openProfile/gotoCircle/openReco) is plain,
+  // component-free code called from all over the app, so it can't call this
+  // component's own setPagePath — it goes through goToPath via this
+  // registration instead, the same way it used to rely on window.location.hash
+  // assignment (which pageHash's hashchange listener picked up for free; a
+  // raw pushState fires no equivalent browser event).
+  useEffect(() => { registerGoToPath(goToPath); }, [goToPath]);
 
-  // Circle URLs (#/circle/...) still get their history entry replaced with
+  // Circle URLs (/circle/...) still get their history entry replaced with
   // the clean base URL once loaded — unlike investor profiles below, a
   // Circle's shareable link is the dedicated Circle page's own Share
   // button (copy link / WhatsApp), not the address bar, so there's no
   // product reason to keep it visible there. Stripping it also fixes a
-  // real bug: without stripping, window.location.hash stays set to this
-  // exact value after Close, so re-opening the SAME circle later sets an
-  // identical hash — which the browser does not fire a hashchange event
-  // for — leaving the page stuck until a full reload. Stripping it here
-  // means the next "Open" always assigns a hash that differs from the
-  // (now-empty) current one. We keep pageHash in React state so the page
-  // still renders correctly regardless.
+  // real bug: without stripping, re-opening the SAME circle later would
+  // navigate to an identical path, which react-router treats as a no-op
+  // (no new history entry, no Location change) — leaving the page stuck
+  // until a full reload. Stripping it here (via a raw replaceState, not
+  // navigate()) means the next "Open" always assigns a path that differs
+  // from the (now-clean) current one. We keep pagePath in React state so
+  // the page still renders correctly regardless.
   //
-  // Investor profile URLs (#/investor/...) are DELIBERATELY left in the
+  // Investor profile URLs (/investor/...) are DELIBERATELY left in the
   // address bar — the whole point of a public profile is that its link is
   // directly shareable, so the browser URL must show the real
-  // #/investor/username (or .../idea/id) link no matter how the user got
+  // /investor/username (or .../idea/id) link no matter how the user got
   // there (search, Discovery, a Circle's member list, a notification,
-  // etc.). To avoid reintroducing the identical-hash-is-a-no-op bug this
-  // pattern has elsewhere, every exit from a profile page clears
-  // window.location.hash directly (not just React state) — see the
-  // onBack/onRequestConnect handlers below — so the address bar and
-  // pageHash never drift out of sync.
+  // etc.). Every exit from a profile page navigates away via navigate()
+  // (not a raw history call) — see the onBack/onRequestConnect handlers
+  // below — so the address bar and pagePath never drift out of sync.
   useEffect(() => {
-    if (pageHash.startsWith('#/circle/')) {
+    if (pagePath.startsWith('/circle/')) {
       window.history.replaceState(
-        { _micProfileHash: pageHash },
+        { _micProfilePath: pagePath },
         '',
-        window.location.pathname + window.location.search
+        '/'
       );
     }
-  }, [pageHash]);
+  }, [pagePath]);
 
   // AUTO-REDIRECT: Redirect users in ADMIN VIEW away from stale profile URLs.
   //
@@ -334,10 +360,10 @@ export default function App() {
 
   useEffect(() => {
     if (authLoading || !user) return;               // wait for auth; only logged-in
-    if (!pageHash.startsWith('#/investor/')) return;
+    if (!pagePath.startsWith('/investor/')) return;
     if (_profileCameFromThisSite) return;           // intentional same-site nav — allow
     if (!userIsAdmin || !viewAsAdmin) return;        // investor-view users — always allow
-    window.location.hash = '';                      // admin-view + stale URL → go to admin panel (also keeps the address bar in sync with pageHash — see the profile-URL note above)
+    goToPath('/');                                    // admin-view + stale URL → go to admin panel (also keeps the address bar in sync with pagePath — see the profile-URL note above)
   }, [authLoading, user?.uid, userIsAdmin, viewAsAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Post-login/signup: auto-send connection request if user came from a public profile ─
@@ -375,7 +401,7 @@ export default function App() {
       .then(circle => {
         if (!circle || circle.is_owner || circle.is_member) return;
         return dbRequestJoinCircle(circle.id, pendingInvite || null).then(() => {
-          window.location.hash = `#/circle/${pendingSlug}`;
+          goToPath(`/circle/${pendingSlug}`);
         });
       })
       .catch(console.warn);
@@ -428,12 +454,12 @@ export default function App() {
     setAdminPage('users');
 
     if (!user) {
-      // Logout: also clear the profile hash so the next page-load starts clean.
-      // We read the current hash directly (not from stale closure) to be reliable.
-      const currentHash = window.location.hash || pageHash;
-      if (currentHash.startsWith('#/investor/')) {
-        setPageHash('');
-        window.history.replaceState({}, '', window.location.pathname + window.location.search);
+      // Logout: also clear the profile path so the next page-load starts clean.
+      // We read the current path directly (not from stale closure) to be reliable.
+      const currentPath = window.location.pathname.startsWith('/investor/') ? window.location.pathname : pagePath;
+      if (currentPath.startsWith('/investor/')) {
+        setPagePath('');
+        window.history.replaceState({}, '', '/');
       }
       sessionStorage.removeItem('pending_connect_username');
       sessionStorage.removeItem('pending_join_circle_slug');
@@ -524,8 +550,7 @@ export default function App() {
     // claim_token and oobCode already read synchronously — just clean the URL
     if (ref) localStorage.setItem('mic_ref', ref.toLowerCase().trim());
     if (ref || params.get('claim_token') || params.get('oobCode')) {
-      const clean = window.location.pathname + window.location.hash;
-      window.history.replaceState({}, '', clean);
+      window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
 
@@ -657,14 +682,14 @@ export default function App() {
 
   // Handle deep-link navigation messages sent by the service worker when a
   // push notification is clicked and the app tab is already open.
-  // sw.js sends: { type: 'MIC_NAVIGATE', url: 'https://myinvestorcircle.com/#/investor/...' }
+  // sw.js sends: { type: 'MIC_NAVIGATE', url: 'https://myinvestorcircle.com/investor/...' }
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
     const onMessage = (event) => {
       if (event.data?.type !== 'MIC_NAVIGATE') return;
       try {
         const url = new URL(event.data.url);
-        if (url.hash) window.location.hash = url.hash;  // e.g. #/investor/ankur/idea/42
+        if (url.pathname && url.pathname !== '/') goToPath(url.pathname + url.search); // e.g. /investor/ankur/idea/42
       } catch { /* malformed URL — ignore */ }
     };
     navigator.serviceWorker.addEventListener('message', onMessage);
@@ -1008,11 +1033,11 @@ export default function App() {
   const [secInsightsFrom, setSecInsightsFrom] = useState('home');
 
   // ── Circle route — no auth required (shareable, works from an invite link) ──
-  // Matches: #/circle/slug  (optionally ?invite=<code> appended by an invite link)
-  const circleMatch = pageHash.match(/^#\/circle\/([a-z0-9-]+)/i);
+  // Matches: /circle/slug  (optionally ?invite=<code> appended by an invite link)
+  const circleMatch = pagePath.match(/^\/circle\/([a-z0-9-]+)/i);
   if (circleMatch && !authLoading) {
     const circleSlug = circleMatch[1];
-    const circleQuery = new URLSearchParams(pageHash.split('?')[1] || '');
+    const circleQuery = new URLSearchParams(pagePath.split('?')[1] || '');
     return (
       <div className="app"><style>{STYLES}</style>
         <ProfileErrorBoundary>
@@ -1023,8 +1048,8 @@ export default function App() {
               highlightIdeaId={circleQuery.get('highlight')}
               autoOpenRequests={circleQuery.get('requests')==='1'}
               viewerUser={user}
-              onBack={()=>setPageHash('')}
-              onNavigateProfile={(uname)=>{ if(uname) window.location.hash = `#/investor/${uname}`; }}
+              onBack={()=>setPagePath('')}
+              onNavigateProfile={(uname)=>{ if(uname) goToPath(`/investor/${uname}`); }}
             />
           </div>
         </ProfileErrorBoundary>
@@ -1033,18 +1058,18 @@ export default function App() {
   }
 
   // ── Public profile route — no auth required ────────────────────────────────
-  // Matches: #/investor/username  OR  #/investor/username/idea/ideaId
+  // Matches: /investor/username  OR  /investor/username/idea/ideaId
   // "reco" is the old spelling of that segment and is still accepted: links
   // using it were shared to WhatsApp, e-mail and push notifications before the
   // rename and must keep resolving. Only "idea" is generated now.
-  const publicMatch = pageHash.match(/^#\/investor\/([a-z0-9_]+)(?:\/(?:idea|reco)\/([a-zA-Z0-9-]+))?/i);
+  const publicMatch = pagePath.match(/^\/investor\/([a-z0-9_]+)(?:\/(?:idea|reco)\/([a-zA-Z0-9-]+))?/i);
   if (publicMatch && !authLoading) {
     const pubUsername = publicMatch[1];
     const pubRecoId   = publicMatch[2] || null;
 
     // ── Dedicated Reco Post page ─────────────────────────────────────
     if (pubRecoId) {
-      const pubQuery = new URLSearchParams(pageHash.split('?')[1] || '');
+      const pubQuery = new URLSearchParams(pagePath.split('?')[1] || '');
       return (
         <div className="app"><style>{STYLES}</style>
           <RecoPostPage
@@ -1055,8 +1080,8 @@ export default function App() {
             ME={ME}
             contacts={contacts}
             groups={groups}
-            onBack={()=>{ window.location.hash = ''; }}
-            onNavigateProfile={()=>{ window.location.hash = `#/investor/${pubUsername}`; }}
+            onBack={()=>{ goToPath('/'); }}
+            onNavigateProfile={()=>{ goToPath(`/investor/${pubUsername}`); }}
           />
         </div>
       );
@@ -1064,7 +1089,7 @@ export default function App() {
 
     // ── Full public profile page ──────────────────────────────────────
     // Clicking your own name anywhere in the app (a comment, a contact
-    // card, a mention...) lands here too, via the same #/investor/username
+    // card, a mention...) lands here too, via the same /investor/username
     // route used for everyone else — without this check it rendered as if
     // you were looking at a stranger, Connect/Track/Subscribe buttons and
     // all. Only the separate "My track record" tab (isOwnProfile passed
@@ -1085,11 +1110,11 @@ export default function App() {
             mode="standalone"
             isOwnProfile={isViewingOwnProfile}
             patchProfile={isViewingOwnProfile ? patchProfile : undefined}
-            onBack={()=>{ window.location.hash = ''; }}
+            onBack={()=>{ goToPath('/'); }}
             onRequestConnect={async(targetId)=>{
               if (!user) {
                 sessionStorage.setItem("pending_connect_username", pubUsername);
-                window.location.hash = '';
+                goToPath('/');
                 return;
               }
               // Notification fan-out is server-side now — see handlePeopleConnect.
@@ -1105,7 +1130,7 @@ export default function App() {
   }
 
   // ── Stock Insights route — no auth required ──────────────────────────────────
-  // Matches: #/security/TICKER (optionally ?tab=timeline etc.)
+  // Matches: /security/TICKER (optionally ?tab=timeline etc.)
   // Same "one component, nullable viewer" pattern as the public profile route
   // above: SecurityIntelligencePage already degrades correctly for a null
   // viewerUser (empty Your Circle, soft sign-in prompts on the Consensus/
@@ -1115,13 +1140,17 @@ export default function App() {
   //
   // In-app navigation (clicking a ticker from Home/Portfolio/Market Insights)
   // deliberately still uses the internal page==='sec_intel' state below, not
-  // this hash — changing that would drop signed-in users out of the app
-  // shell (sidebar/nav) on every ticker click, which nobody asked for. This
-  // route exists for shared/typed/crawled links, which is what's indexable.
-  const securityMatch = pageHash.match(/^#\/security\/([A-Za-z0-9.&_-]{1,24})/i);
+  // this route match — changing that would drop signed-in users out of the
+  // app shell (sidebar/nav) on every ticker click, which nobody asked for.
+  // This route exists for shared/typed/crawled links, which is what's
+  // indexable (and, once loaded, this route also serves in-app navigation:
+  // pagePath already reflects openSecurity()'s navigate() call below, so a
+  // signed-in user clicking a ticker never leaves this component either —
+  // the difference is purely which branch of this same render renders).
+  const securityMatch = pagePath.match(/^\/security\/([A-Za-z0-9.&_-]{1,24})/i);
   if (securityMatch && !authLoading) {
     const secTicker = decodeURIComponent(securityMatch[1]).toUpperCase();
-    const secQuery = new URLSearchParams(pageHash.split('?')[1] || '');
+    const secQuery = new URLSearchParams(pagePath.split('?')[1] || '');
     return (
       <div className="app"><style>{STYLES}</style>
         <SectionErrorBoundary label="Stock Insights">
@@ -1132,9 +1161,9 @@ export default function App() {
               me={ME}
               viewerUser={user}
               trackedIds={trackedCreatorIds}
-              onOpenSecurity={(t, n, tab) => { window.location.hash = `#/security/${encodeURIComponent(t)}${tab?`?tab=${tab}`:''}`; }}
-              onBack={()=>{ window.location.hash = ''; }}
-              onHome={()=>{ window.location.hash = ''; }}
+              onOpenSecurity={(t, n, tab) => { goToPath(`/security/${encodeURIComponent(t)}${tab?`?tab=${tab}`:''}`); }}
+              onBack={()=>{ goToPath('/'); }}
+              onHome={()=>{ goToPath('/'); }}
             />
           </div>
         </SectionErrorBoundary>
@@ -1219,7 +1248,7 @@ export default function App() {
     // path, with no concept of a per-ticker segment, so it drops the symbol
     // entirely. Overwrite it immediately (replace: true, so this doesn't add
     // a second back-button step) with the real deep link — the same
-    // #/security/:ticker route the standalone page uses, so in-app
+    // /security/:ticker route the standalone page uses, so in-app
     // navigation and a shared/typed link now agree.
     setPage('sec_intel');
     if (ticker) navigate(`/security/${encodeURIComponent(ticker)}`, { replace: true });
@@ -1429,7 +1458,7 @@ export default function App() {
                         <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',borderTop:i>0?'1px solid var(--line)':'none',transition:'background .1s'}}
                           onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
                           onMouseLeave={e=>e.currentTarget.style.background=''}
-                          onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); } }}>
+                          onClick={()=>{ if(u.username){ goToPath(`/investor/${u.username}`); setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); } }}>
                           <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.full_name||u.username}</div>
@@ -1562,18 +1591,18 @@ export default function App() {
 
                       if (recoId && username) {
                         // Best case: go directly to the specific reco
-                        window.location.hash = `#/investor/${username}/idea/${recoId}${highlight}`;
+                        goToPath(`/investor/${username}/idea/${recoId}${highlight}`);
                       } else if (n.from_user_id) {
                         // Look up username from from_user_id, then navigate
                         dbLookupUser('id', n.from_user_id)
                           .then(row => {
                             if (!row?.username) return;
-                            window.location.hash = recoId
-                              ? `#/investor/${row.username}/idea/${recoId}${highlight}`
-                              : `#/investor/${row.username}`;
+                            goToPath(recoId
+                              ? `/investor/${row.username}/idea/${recoId}${highlight}`
+                              : `/investor/${row.username}`);
                           }).catch(()=>{});
                       } else if (username) {
-                        window.location.hash = `#/investor/${username}`;
+                        goToPath(`/investor/${username}`);
                       }
                       return;
                     }
@@ -1582,7 +1611,7 @@ export default function App() {
                     const connTypes = ['connection_request','connection_accepted','connection_rejected'];
                     if (connTypes.includes(n.type) && n.from_user_id) {
                       dbLookupUser('id', n.from_user_id)
-                        .then(row => { if (row?.username) window.location.hash = `#/investor/${row.username}`; })
+                        .then(row => { if (row?.username) goToPath(`/investor/${row.username}`); })
                         .catch(()=>{});
                       return;
                     }
@@ -1600,14 +1629,14 @@ export default function App() {
                     // slug directly — set once, server-side, at delivery time).
                     if (n.type === 'circle_idea' && n.metadata?.groupSlug) {
                       const highlight = n.metadata?.recoId ? `?highlight=${encodeURIComponent(n.metadata.recoId)}` : '';
-                      window.location.hash = `#/circle/${n.metadata.groupSlug}${highlight}`;
+                      goToPath(`/circle/${n.metadata.groupSlug}${highlight}`);
                       return;
                     }
 
                     // Someone requested to join a Circle you own → the Circle
                     // page, with the Join requests panel opened straight away.
                     if (n.type === 'circle_join_request' && n.metadata?.groupSlug) {
-                      window.location.hash = `#/circle/${n.metadata.groupSlug}?requests=1`;
+                      goToPath(`/circle/${n.metadata.groupSlug}?requests=1`);
                     }
                   }}
                 />}
@@ -1720,7 +1749,7 @@ export default function App() {
                       const isPend = connections.some(c=>c.user_id===u.id&&c.status==='pending');
                       return (
                         <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid var(--line)':'none'}}
-                          onClick={()=>{ if(u.username){ window.location.hash=`#/investor/${u.username}`; setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); setShowMobileSearch(false); } }}>
+                          onClick={()=>{ if(u.username){ goToPath(`/investor/${u.username}`); setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); setShowMobileSearch(false); } }}>
                           <div className="av" style={{width:32,height:32,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontWeight:700,fontSize:13}}>{u.full_name||u.username}</div>
@@ -1855,7 +1884,7 @@ export default function App() {
                       <Globe size={36} color="var(--muted)" style={{marginBottom:14}}/>
                       <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>Set a username first</div>
                       <div className="muted small" style={{marginBottom:20}}>
-                        Your public profile URL uses your username (e.g. app/#/investor/yourname).
+                        Your public profile URL uses your username (e.g. app/investor/yourname).
                         Set one in your profile to enable the Track Record page.
                       </div>
                       <button className="btn btn-pri" onClick={()=>setProfileEditOpen(true)}>

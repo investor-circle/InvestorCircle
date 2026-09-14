@@ -44,7 +44,7 @@ export default async function IdeaPage({ params }) {
   const r = pct(idea.return_pct);
   const canonical = `https://myinvestorcircle.com/idea/${encodeURIComponent(idea.id)}`;
   const appUrl = idea.author_username
-    ? `https://myinvestorcircle.com/#/investor/${encodeURIComponent(idea.author_username)}/idea/${encodeURIComponent(idea.id)}`
+    ? `https://myinvestorcircle.com/investor/${encodeURIComponent(idea.author_username)}/idea/${encodeURIComponent(idea.id)}`
     : 'https://myinvestorcircle.com/';
 
   const ld = jsonLd({

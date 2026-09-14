@@ -46,7 +46,7 @@ import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, LinkSharePop
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
-import { fetchPublicProfileInfo, openProfile } from "../../utils/navigation";
+import { fetchPublicProfileInfo, openProfile, openReco, goHome } from "../../utils/navigation";
 import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
 import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, rankTrending } from "../../utils/trending";
 import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor } from "../../services/api/trackingApi";
@@ -62,7 +62,7 @@ const FRESH_WINDOW_MS = 48 * 60 * 60 * 1000;
 /* ─── Compact "daily briefing" card for a single fresh idea ─────────────
    Distinct from the full FeedCard: no % return, tighter layout, and the
    whole card is a real navigable link to the recommendation's dedicated,
-   shareable page (#/investor/:username/idea/:id — reused, not reinvented).
+   shareable page (/investor/:username/idea/:id — reused, not reinvented).
    Like / Bookmark / Mark-invested / Share all call the same handlers and
    API functions FeedCard uses; Comment is a lightweight entry point that
    opens the same detail page (where the comment thread lives). ── */
@@ -104,7 +104,7 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
   const goToDetail = async () => {
     let uname = username;
     if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
-    if (uname) window.location.hash = `#/investor/${uname}/idea/${r.id}`;
+    if (uname) openReco(uname, r.id);
   };
 
   // ── Mutation helpers — mirror FeedCard's react()/patch() so Like/Track/
@@ -336,7 +336,7 @@ function TrackedActivityRow({ item, contacts }) {
   const goToDetail = async () => {
     let uname = r.from_username || recommenderInfo?.username;
     if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
-    if (uname) window.location.hash = `#/investor/${uname}/idea/${r.id}`;
+    if (uname) openReco(uname, r.id);
   };
 
   const Icon = TRACKED_ACTIVITY_ICON[item.type] || Activity;
@@ -609,11 +609,11 @@ function WhatYouMissedCard({ item, tracked, toggleTrack }) {
   const [recommenderInfo, setRecommenderInfo] = useState(null);
   useEffect(() => { if (r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo); }, [r.from]);
 
-  // Same #/investor/:username/idea/:id deep link FreshIdeaCard already uses.
+  // Same /investor/:username/idea/:id deep link FreshIdeaCard already uses.
   const goToDetail = async () => {
     let uname = r.from_username || recommenderInfo?.username;
     if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
-    if (uname) window.location.hash = `#/investor/${uname}/idea/${r.id}`;
+    if (uname) openReco(uname, r.id);
   };
 
   const isGain = movement.direction === 'up';
@@ -717,11 +717,11 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
   const isBuy = (r.recommendation_type || r.recType || 'Buy') === 'Buy';
   const isTracked = tracked?.has(r.id);
 
-  // Same deep link every other Pulse card uses — #/investor/:username/idea/:id.
+  // Same deep link every other Pulse card uses — /investor/:username/idea/:id.
   const goToDetail = async () => {
     let uname = username;
     if (!uname && r.from) uname = (await fetchPublicProfileInfo(r.from))?.username;
-    if (uname) window.location.hash = `#/investor/${uname}/idea/${r.id}`;
+    if (uname) openReco(uname, r.id);
   };
 
   // Trending items come from the platform-wide public pool, so their local
@@ -1949,12 +1949,9 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   const [copied, setCopied] = useState(false);
   const shareBtnRef = useRef(null);
 
-  // The real, indexable, non-hash page for this ticker — NOT
-  // window.location.href, which here is the in-app #/security/:ticker
-  // route. That route only works for someone who already has the app
-  // loaded, and a search engine or WhatsApp's link-preview bot never sees
-  // anything after the '#' at all — so it's the wrong thing to hand
-  // someone sharing this stock onward. web-public/ (a separate SSR app,
+  // Built explicitly (not read off window.location.href) so it's always the
+  // canonical, indexable URL regardless of what tab/query state happens to
+  // be in the address bar right now. web-public/ (a separate SSR app,
   // proxied in at this same path by vercel.json) is what actually renders
   // at this URL for a signed-out visitor or a crawler.
   const shareUrl = ticker ? `https://myinvestorcircle.com/security/${encodeURIComponent(ticker)}` : null;
@@ -1966,7 +1963,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   };
 
   // viewerUser is undefined/null for a signed-out visitor reaching this page
-  // via #/security/:ticker (see App.jsx) — same "nullable viewer, one
+  // via /security/:ticker (see App.jsx) — same "nullable viewer, one
   // component" pattern as PublicProfilePage. "Your Circle" (renamed from "My
   // Circle" — the old name read as "everyone on myInvestorCircle" to some
   // users) is connections plus tracked investors; both are naturally empty
@@ -2308,7 +2305,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                   <div style={{padding:'14px 16px',background:'var(--surface-2)',borderRadius:10,border:'1px dashed var(--line)',textAlign:'center'}}>
                     <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>See how Your Circle is positioned</div>
                     <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Sign in to see what the people you're connected with and tracking think of {ticker}.</div>
-                    <button className="btn btn-pri btn-sm" onClick={()=>{window.location.hash='';}}>Sign in</button>
+                    <button className="btn btn-pri btn-sm" onClick={goHome}>Sign in</button>
                   </div>
                   <div>
                     <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
@@ -2338,7 +2335,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
             <div style={{display:'flex',flexDirection:'column',gap:10,padding:'10px'}}>
               {recos.map(r=>{
                 const inYourCircle = circleIds.has(r.from);
-                const goToReco = r.username ? ()=>{ window.location.hash = `#/investor/${r.username}/idea/${r.id}`; } : undefined;
+                const goToReco = r.username ? ()=>openReco(r.username, r.id) : undefined;
                 return (
                   <div key={r.id} onClick={goToReco} style={{border:'1px solid var(--line)',borderRadius:12,padding:'12px 14px',cursor:goToReco?'pointer':'default'}}>
                     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
@@ -2379,7 +2376,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                 <tbody>
                   {recos.map(r=>{
                     const inYourCircle = circleIds.has(r.from);
-                    const goToReco = r.username ? ()=>{ window.location.hash = `#/investor/${r.username}/idea/${r.id}`; } : undefined;
+                    const goToReco = r.username ? ()=>openReco(r.username, r.id) : undefined;
                     return (
                       <tr key={r.id} style={{borderBottom:'1px solid var(--line)',cursor:goToReco?'pointer':'default'}} onClick={goToReco}
                         onMouseEnter={goToReco?(e)=>{e.currentTarget.style.background='var(--surface-2)';}:undefined}
@@ -2435,7 +2432,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
               <div className="card-body" style={{padding:'14px 16px',textAlign:'center'}}>
                 <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>See who in Your Circle is invested in {ticker}</div>
                 <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Sign in to see which of your connections and tracked investors have shared a view on {ticker}.</div>
-                <button className="btn btn-pri btn-sm" onClick={()=>{window.location.hash='';}}>Sign in</button>
+                <button className="btn btn-pri btn-sm" onClick={goHome}>Sign in</button>
               </div>
             </div>
           )}
@@ -2451,7 +2448,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                     const iciScore = ici?.score;
                     const iciBand  = ici?.band;
                     const bandColor = iciBand==='Strong'?'var(--gain)':iciBand==='Good'?'var(--accent)':iciBand==='Building'?'#f59e0b':'var(--muted)';
-                    const profileUrl = r.username ? `/#/investor/${r.username}` : null;
+                    const profileUrl = r.username ? `/investor/${r.username}` : null;
                     return (
                       <div key={r.from} style={{
                         display:'flex', alignItems:'center', gap:12, padding:'12px 18px',
@@ -2459,7 +2456,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                       }}>
                         {/* Avatar */}
                         <div className="av" style={{width:40,height:40,fontSize:14,flexShrink:0,background:'var(--grad)',cursor:profileUrl?'pointer':'default'}}
-                          onClick={()=>profileUrl&&(window.location.hash=profileUrl)}>
+                          onClick={()=>r.username&&openProfile(r.username)}>
                           {initialsOf(r.full_name||r.username||'?')}
                         </div>
 
@@ -2469,7 +2466,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                             style={{fontWeight:700,fontSize:14,cursor:profileUrl?'pointer':'default',
                               color:profileUrl?'var(--accent-ink)':'var(--ink)',
                               textDecoration:profileUrl?'underline':'none',textDecorationColor:'rgba(109,93,245,.3)'}}
-                            onClick={()=>profileUrl&&(window.location.hash=profileUrl)}
+                            onClick={()=>r.username&&openProfile(r.username)}
                             title={profileUrl?`View ${r.full_name||r.username}'s profile`:undefined}
                           >
                             {r.full_name||r.username||'Anonymous'}
