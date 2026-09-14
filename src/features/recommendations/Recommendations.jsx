@@ -63,7 +63,7 @@ import {
   setExitSignal as dbSetExit,
   updateDelivery
 } from "../../services/api/recommendationsApi";
-import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, IdeaDisclaimer, InstrumentSearch, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
 import { CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, SECTOR_EMOJI, THESIS_EMOJIS, THESIS_MAX_CHARS, THESIS_MAX_IMAGES, THESIS_MAX_MB, TODAY } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
@@ -2281,58 +2281,6 @@ function fallbackCopyLink(text, onDone) {
   } catch (_) { /* give up silently — the URL is still visible on-screen to copy by hand */ }
 }
 
-/* Small share popover for RecoPostPage's own Share button — just the public
-   link (visible + copy, with a robust fallback) and WhatsApp, since this
-   standalone page (reachable by logged-out viewers too) doesn't have the
-   viewer's Circles/contacts loaded the way IdeaSharePopover does. */
-function RecoLinkSharePopover({ url, anchorEl, copied, onCopy, onClose }) {
-  const isMobile = useIsMobile();
-  const [pos, setPos] = useState(null);
-  const popRef = useRef(null);
-
-  useEffect(() => {
-    if (!isMobile && anchorEl) {
-      const rect = anchorEl.getBoundingClientRect();
-      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
-    }
-    const h = (e) => { if (popRef.current && !popRef.current.contains(e.target) && e.target !== anchorEl) onClose(); };
-    setTimeout(() => document.addEventListener('mousedown', h), 0);
-    return () => document.removeEventListener('mousedown', h);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const waMsg = encodeURIComponent(`Check out this idea on My Investor Circle:\n${url}`);
-
-  const content = (
-    <>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Share2 size={15} color="var(--accent)" /> Share this idea
-      </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button className="btn btn-pri btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={onCopy}>{copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}</button>
-        <a href={`https://wa.me/?text=${waMsg}`} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}><span style={{ fontSize: 14 }}>💬</span> WhatsApp</a>
-      </div>
-    </>
-  );
-
-  if (isMobile) return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={onClose}>
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)' }}/>
-      <div ref={popRef} style={{ position: 'relative', background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '20px 20px 28px', boxShadow: '0 -8px 40px rgba(0,0,0,.28)' }} onClick={e => e.stopPropagation()}>
-        <div style={{ width: 36, height: 4, background: 'var(--line)', borderRadius: 2, margin: '0 auto 18px' }}/>
-        {content}
-      </div>
-    </div>,
-    document.body
-  );
-
-  if (!pos) return null;
-  return createPortal(
-    <div ref={popRef} style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,.18)', padding: '16px 18px', minWidth: 280, maxWidth: 340, fontFamily: 'var(--font)' }} onClick={e => e.stopPropagation()}>
-      {content}
-    </div>,
-    document.body
-  );
-}
 
 /* ─── RecoPostPage — dedicated shareable post view for a single recommendation ── */
 
@@ -2647,7 +2595,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
                   onClose={()=>setShareOpen(false)}
                 />
               ) : (
-                <RecoLinkSharePopover url={recoUrl} anchorEl={shareBtnRef.current} copied={copied} onCopy={copyLink} onClose={()=>setShareOpen(false)}/>
+                <LinkSharePopover url={recoUrl} title="Share this idea" message={`Check out this idea on My Investor Circle:\n${recoUrl}`} anchorEl={shareBtnRef.current} copied={copied} onCopy={copyLink} onClose={()=>setShareOpen(false)}/>
               ))}
             </div>
             {/* Bookmark */}

@@ -42,7 +42,7 @@ import {
   trackReco as dbTrackReco,
   getMyTrackedRecos as dbGetMyTrackedRecos
 } from "../../services/api/engagementApi";
-import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
+import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
@@ -1945,6 +1945,25 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   const [aiLoading, setAiLoading] = useState(false);
   const [investorIcis, setInvestorIcis] = useState({}); // uid → {score,band}
   const [searchOpen, setSearchOpen] = useState(false); // mobile: search starts collapsed to an icon
+  const [shareOpen, setShareOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const shareBtnRef = useRef(null);
+
+  // The real, indexable, non-hash page for this ticker — NOT
+  // window.location.href, which here is the in-app #/security/:ticker
+  // route. That route only works for someone who already has the app
+  // loaded, and a search engine or WhatsApp's link-preview bot never sees
+  // anything after the '#' at all — so it's the wrong thing to hand
+  // someone sharing this stock onward. web-public/ (a separate SSR app,
+  // proxied in at this same path by vercel.json) is what actually renders
+  // at this URL for a signed-out visitor or a crawler.
+  const shareUrl = ticker ? `https://myinvestorcircle.com/security/${encodeURIComponent(ticker)}` : null;
+  const copyShareLink = () => {
+    if (!shareUrl) return;
+    const done = () => { setCopied(true); setTimeout(()=>setCopied(false), 1600); };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(shareUrl).then(done).catch(()=>{});
+    else done();
+  };
 
   // viewerUser is undefined/null for a signed-out visitor reaching this page
   // via #/security/:ticker (see App.jsx) — same "nullable viewer, one
@@ -2154,6 +2173,25 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
         </div>
 
         {backHomeButtons}
+
+        {shareUrl && (
+          <div style={{flexShrink:0}}>
+            <button ref={shareBtnRef} className="btn btn-ghost btn-sm" onClick={()=>setShareOpen(v=>!v)}>
+              <Share2 size={13}/> Share
+            </button>
+            {shareOpen && (
+              <LinkSharePopover
+                url={shareUrl}
+                title={`Share ${ticker}`}
+                message={`Check out ${ticker}${name?` (${name})`:''} on My Investor Circle:\n${shareUrl}`}
+                anchorEl={shareBtnRef.current}
+                copied={copied}
+                onCopy={copyShareLink}
+                onClose={()=>setShareOpen(false)}
+              />
+            )}
+          </div>
+        )}
 
         {/* ── Switch-security search — compact, tucked into the header's empty space.
              On mobile there's no spare width, so it starts collapsed to an icon.
