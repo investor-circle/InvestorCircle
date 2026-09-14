@@ -1214,7 +1214,15 @@ export default function App() {
   const openSecurity = (ticker, name, tab) => {
     if (page !== 'sec_intel') setSecInsightsFrom(page);
     setSecurityTicker({ ticker, name, tab });
+    // setPage('sec_intel') below navigates to the bare '/security' path via
+    // INVESTOR_PAGE_TO_PATH — that table only maps a page name to a static
+    // path, with no concept of a per-ticker segment, so it drops the symbol
+    // entirely. Overwrite it immediately (replace: true, so this doesn't add
+    // a second back-button step) with the real deep link — the same
+    // #/security/:ticker route the standalone page uses, so in-app
+    // navigation and a shared/typed link now agree.
     setPage('sec_intel');
+    if (ticker) navigate(`/security/${encodeURIComponent(ticker)}`, { replace: true });
   };
   const page    = isInv ? investorPage : adminPage;
   const setPage = isInv
