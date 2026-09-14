@@ -8,6 +8,12 @@
  * aggregates them. Profile pages are absent for a different reason: they are
  * not indexed at all (see public/robots.txt).
  *
+ * Stock URLs point at /security/:symbol (web-public/, a separate SSR Next.js
+ * app), not /stock/:symbol (api/seo.js) — the latter still resolves and is
+ * not retired, but its own canonical tag now defers to /security/:symbol, so
+ * listing /stock/:symbol here too would submit the same content twice under
+ * two URLs.
+ *
  * The symbol list comes from public-ideas' `symbols` action, which returns
  * tickers and counts and nothing else — no author, no thesis — so the sitemap
  * is not itself worth scraping.
@@ -47,7 +53,7 @@ export default async function handler(req, res) {
     `  <url>\n    <loc>${SITE}/</loc>\n    <changefreq>weekly</changefreq>\n    <priority>1.0</priority>\n  </url>`,
     ...symbols.map((s) => {
       const last = iso(s.last_posted);
-      return `  <url>\n    <loc>${SITE}/stock/${encodeURIComponent(escXml(s.symbol))}</loc>${
+      return `  <url>\n    <loc>${SITE}/security/${encodeURIComponent(escXml(s.symbol))}</loc>${
         last ? `\n    <lastmod>${last}</lastmod>` : ''
       }\n    <changefreq>weekly</changefreq>\n  </url>`;
     }),

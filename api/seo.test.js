@@ -102,8 +102,17 @@ describe("seo — the share card", () => {
     const res = await get({ page: "stock", symbol: "RELIANCE" });
     expect(res.body).toMatch(/<meta property="og:title" content="RELIANCE — 3 investor ideas/);
     expect(res.body).toMatch(/<meta property="og:description" content="3 published ideas on Reliance Industries/);
-    expect(res.body).toContain('<link rel="canonical" href="https://myinvestorcircle.com/stock/RELIANCE">');
     expect(res.body).toContain("Investor ideas on Reliance Industries");
+  });
+
+  it("points the stock page's canonical at /security/:symbol, not its own URL", async () => {
+    // /security/:symbol (a separate SSR app, web-public/) now covers the same
+    // ground with the real Stock Insights experience; this page stays live
+    // (not retired) but defers to it as the authoritative URL, so the two
+    // are never independently indexed as duplicate content.
+    const res = await get({ page: "stock", symbol: "RELIANCE" });
+    expect(res.body).toContain('<link rel="canonical" href="https://myinvestorcircle.com/security/RELIANCE">');
+    expect(res.body).toContain('<meta property="og:url" content="https://myinvestorcircle.com/security/RELIANCE">');
   });
 
   it("points the canonical at the clean URL", async () => {

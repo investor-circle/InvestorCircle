@@ -4,9 +4,11 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/stock/:symbol", "destination": "/api/seo?page=stock&symbol=:symbol" },
-    { "source": "/idea/:id", "destination": "/api/seo?page=idea&id=:id" },
-    { "source": "/search", "destination": "/api/seo?page=search" },
-    { "source": "/sitemap.xml", "destination": "/api/sitemap" }
+    { "source": "/sitemap.xml", "destination": "/api/sitemap" },
+
+    { "source": "/security/:symbol", "destination": "https://investorcircle-public.vercel.app/security/:symbol" },
+    { "source": "/idea/:id", "destination": "https://investorcircle-public.vercel.app/idea/:id" },
+    { "source": "/search", "destination": "https://investorcircle-public.vercel.app/search" }
   ],
   "headers": [
     {

@@ -262,7 +262,16 @@ async function stockPage(symbol) {
     `${summary.idea_count} published idea${summary.idea_count === 1 ? '' : 's'} on ${name} (${sym}) from ${summary.contributor_count} member${summary.contributor_count === 1 ? '' : 's'}, each with entry price, target and outcome on the record.`,
     200
   );
-  const canonical = `${SITE}/stock/${encodeURIComponent(sym)}`;
+  // Canonical (and therefore og:url / JSON-LD url, which shell() derives
+  // from this same value) points at /security/:symbol, NOT this page's own
+  // /stock/:symbol URL. /security/:symbol (web-public/, a separate SSR
+  // Next.js app — see its README.md) now covers the same ground with the
+  // real Stock Insights experience rather than this simplified template,
+  // and having both independently indexable at their own URLs would be
+  // duplicate content. This page is deliberately left otherwise unchanged
+  // and still resolves — it is not being retired yet — this one line just
+  // tells Google which of the two is authoritative in the meantime.
+  const canonical = `${SITE}/security/${encodeURIComponent(sym)}`;
 
   return shell({
     title, description, canonical,
