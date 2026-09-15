@@ -23,6 +23,9 @@ export default defineConfig({
     // scripts/** likewise: the build step that publishes assetlinks.json
     // decides whether a link shared from the mobile app opens the app at all,
     // and it fails silently when it is wrong.
-    include: ["src/**/*.test.{js,jsx}", "api/**/*.test.js", "scripts/**/*.test.js"],
+    //
+    // Root-level *.test.js covers middleware.js: Vercel Edge Middleware must
+    // live at the project root, so its test does too.
+    include: ["src/**/*.test.{js,jsx}", "api/**/*.test.js", "scripts/**/*.test.js", "*.test.js"],
   },
 });

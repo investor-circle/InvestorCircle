@@ -80,7 +80,10 @@ export default async function SecurityPage({ params }) {
           same path too, but is only reachable by a signed-in user already
           running the app (client-side navigation, never a fresh request),
           so Gate's sign-in link above is the only meaningful CTA left. */}
-      <Gate line={`Sign in to see Your Circle's take on ${sym}, post your own view, or track this stock.`} />
+      <Gate
+        line={`Sign in to see Your Circle's take on ${sym}, post your own view, or track this stock.`}
+        next={`/security/${encodeURIComponent(sym)}`}
+      />
     </>
   );
 }

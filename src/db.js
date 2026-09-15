@@ -893,6 +893,27 @@ export async function getPublicTickerIdeas(ticker) {
   }
 }
 
+// Resolves the bare /idea/:id share-link shape (used for public sharing —
+// see Recommendations.jsx's IdeaSharePopover and web-public/) to its
+// author's username, so App.jsx's standalone-route mechanism can render
+// the same RecoPostPage the /investor/:username/idea/:id shape already
+// uses — that route needs the username up front and a bare id link
+// doesn't carry one. Same unauthenticated, is_public-filtered endpoint as
+// getPublicTickerIdeas above. Returns null (not throwing) for "not found or
+// private" — API_data.js's action=idea deliberately returns the same 404
+// for both, so a bare link can't be used to probe which ids exist.
+export async function getPublicIdeaAuthor(id) {
+  if (!id) return null;
+  try {
+    const res = await fetch(`${API_BASE}/data?resource=public-ideas&action=idea&id=${encodeURIComponent(id)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.idea?.author_username || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 export async function getInvestorIciBatch(uids) {
   const api = await callApi('/data?resource=lookups', { method: 'POST', body: { action: 'investor-ici-batch', uids } });
   return api.ok ? (api.data.stats || []) : [];

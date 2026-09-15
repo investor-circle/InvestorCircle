@@ -364,17 +364,48 @@ site is the plain `BrowserRouter` SPA (`index.html` + client-side rendering,
 no server-rendered content); these exist because neither Googlebot's
 indexing nor WhatsApp's link-preview card runs the app's JavaScript.
 
-`/security/:symbol` in particular is a real path BOTH `web-public/` (for a
-fresh/crawler hit — vercel.json's rewrite always wins on a full navigation)
-AND the main app (for a signed-in user already running the app, reached
-purely via client-side navigation, never a fresh request) can render — see
-the standalone-route mechanism note under Routing above. There is
-deliberately no other URL for "the interactive version of this exact page";
-`web-public/`'s own "Open in the app" style CTAs point at sign-in
-(`https://myinvestorcircle.com/`) instead, since a fresh link to
-`/security/:symbol` itself just reloads `web-public/` again. `/idea/:id`
-doesn't have this wrinkle — its own "Open in the app" link points at the
-author's `/investor/:username/idea/:id`, a path this project never proxies.
+`/security/:symbol` and `/idea/:id` are both real paths BOTH `web-public/`
+AND the main app can render at the exact same URL — which one actually
+responds to a given request is decided by `/middleware.js` (Vercel Edge
+Middleware), not by `vercel.json`'s rewrite alone:
+
+- **No routing-token cookie** (a crawler, WhatsApp's link-preview fetcher, a
+  signed-out stranger, or an expired/absent cookie): `vercel.json`'s
+  existing unconditional rewrite to `web-public/` applies, completely
+  unchanged from before this cookie mechanism existed. This is the vast
+  majority of traffic to these two paths and is untouched by any of this.
+- **A valid routing-token cookie** (a signed-in visitor's own browser,
+  minted right after login): the middleware rewrites the request to
+  `/index.html` instead — the main app boots, resolves its own real
+  Firebase auth state exactly as it does for every other page, and renders
+  the actual authenticated view at the exact URL requested (no redirect to
+  Home/Pulse) via the standalone-route mechanism under Routing above —
+  `/security/:symbol` was already handled there; `/idea/:id` additionally
+  resolves its author via `getPublicIdeaAuthor` (`src/db.js`) since that
+  bare shape carries no username the standalone route can key off directly.
+
+**The routing-token cookie is not an authentication mechanism** — worth
+repeating precisely because it looks like one. It decides ONLY which of the
+two apps above renders a request. `api/_lib/auth.js`'s `requireUid`/
+`requireAdmin` — verifying the real Firebase ID token — remain the sole
+source of truth for identity everywhere else, and never accept this token;
+`api/_lib/handlers/session.test.js` asserts `auth.js` has zero references to
+it. Mechanically: `api/_lib/handlers/session.js` mints a short-lived (15
+min), HMAC-signed `{uid, exp}` token (`api/_lib/routingToken.js`) right
+after login (`src/AuthContext.jsx`, refreshed periodically while signed in,
+cleared on logout); `/middleware.js` verifies the signature and expiry
+using Web Crypto (`crypto.subtle`) — no Node `crypto`, no firebase-admin, no
+database call, because a per-request DB lookup here would be exactly the
+per-page-view cost this design exists to avoid. The verification scheme is
+deliberately duplicated (not imported) between the two files since they run
+in different runtimes (Node vs. Vercel's Edge Runtime) — `middleware.test.js`
+proves the two independently-implemented halves actually agree. A signed-out
+visitor's own path back in is preserved too: `web-public/`'s `Gate`
+component carries `?next=<exact path>` on its sign-in link, and
+`src/App.jsx` reads it back after a successful login/signup and navigates
+there instead of defaulting to Home — validated same-site-only by
+`isSameSitePath` (`src/utils/navigation.js`) so this can't become an open
+redirect.
 
 - **`api/_lib/handlers/public-ideas.js` is the only place public idea data
   is queried.** Every statement in it filters `is_public = true`, and
