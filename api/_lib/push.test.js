@@ -150,7 +150,7 @@ describe("web push is unaffected by the mobile transport", () => {
     expect(JSON.parse(payload)).toEqual({
       title: "💡 New idea in your circle",
       body: "Alice Kumar posted a new idea",
-      url: "https://myinvestorcircle.com/#/investor/alice",
+      url: "https://myinvestorcircle.com/investor/alice",
       tag: "contact_recommendation",
     });
   });
@@ -187,7 +187,7 @@ describe("mobile delivery", () => {
     const sent = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(sent[0].to).toBe("ExponentPushToken[a]");
     // The deep link the client asked for, resolved against our own origin.
-    expect(sent[0].data.url).toBe("https://myinvestorcircle.com/#/investor/alice/reco/9");
+    expect(sent[0].data.url).toBe("https://myinvestorcircle.com/investor/alice/reco/9");
     expect(res.statusCode).toBe(200);
     expect(res.body.expo).toEqual({ sent: 1, total: 1 });
   });
@@ -300,7 +300,7 @@ describe("the caller cannot choose what the notification says", () => {
     const payload = JSON.parse(sendNotification.mock.calls[0][1]);
     expect(payload.title).toBe("💡 New idea in your circle");
     expect(payload.body).toBe("Alice Kumar posted a new idea");
-    expect(payload.url).toBe("https://myinvestorcircle.com/#/investor/alice");
+    expect(payload.url).toBe("https://myinvestorcircle.com/investor/alice");
   });
 
   it("names the sender from the database, not from the request", async () => {
@@ -333,7 +333,7 @@ describe("the caller cannot choose what the notification says", () => {
     webRows = [WEB_SUB];
     await call({ ...PAYLOAD, deepLink: "/investor/alice/reco/12" });
     expect(JSON.parse(sendNotification.mock.calls[0][1]).url).toBe(
-      "https://myinvestorcircle.com/#/investor/alice/reco/12"
+      "https://myinvestorcircle.com/investor/alice/reco/12"
     );
   });
 

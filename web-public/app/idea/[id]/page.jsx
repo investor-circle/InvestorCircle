@@ -44,7 +44,7 @@ export default async function IdeaPage({ params }) {
   const r = pct(idea.return_pct);
   const canonical = `https://myinvestorcircle.com/idea/${encodeURIComponent(idea.id)}`;
   const appUrl = idea.author_username
-    ? `https://myinvestorcircle.com/#/investor/${encodeURIComponent(idea.author_username)}/idea/${encodeURIComponent(idea.id)}`
+    ? `https://myinvestorcircle.com/investor/${encodeURIComponent(idea.author_username)}/idea/${encodeURIComponent(idea.id)}`
     : 'https://myinvestorcircle.com/';
 
   const ld = jsonLd({
@@ -70,7 +70,10 @@ export default async function IdeaPage({ params }) {
       <div style={{ marginTop: 20 }}>
         <IdeaCard idea={idea} full headingTag="h2" />
       </div>
-      <Gate line="Sign in to follow this member, track this idea, or add your own view." />
+      <Gate
+        line="Sign in to follow this member, track this idea, or add your own view."
+        next={`/idea/${encodeURIComponent(idea.id)}`}
+      />
       <p style={{ marginTop: 20 }}>
         <a href={appUrl}>Open this idea in the app →</a>
         {idea.ticker && <> · <a href={`/security/${encodeURIComponent(idea.ticker)}`}>All ideas on {idea.ticker} →</a></>}

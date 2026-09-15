@@ -21,7 +21,7 @@ describe("recoUrl", () => {
   });
 
   it("builds the same shareable URL the web hands out", () => {
-    expect(recoUrl("asha", "123")).toBe("https://myinvestorcircle.com/#/investor/asha/idea/123");
+    expect(recoUrl("asha", "123")).toBe("https://myinvestorcircle.com/investor/asha/idea/123");
   });
 
   it("returns nothing when the author's username is unknown", () => {
@@ -36,13 +36,13 @@ describe("recoUrl", () => {
   });
 
   it("escapes values rather than interpolating them raw", () => {
-    expect(recoUrl("a b", "1/2")).toBe("https://myinvestorcircle.com/#/investor/a%20b/idea/1%2F2");
+    expect(recoUrl("a b", "1/2")).toBe("https://myinvestorcircle.com/investor/a%20b/idea/1%2F2");
   });
 });
 
 describe("profileUrl", () => {
   it("points at the website and matches the web's profile route", () => {
-    expect(profileUrl("asha")).toBe("https://myinvestorcircle.com/#/investor/asha");
+    expect(profileUrl("asha")).toBe("https://myinvestorcircle.com/investor/asha");
   });
 });
 
@@ -50,7 +50,7 @@ describe("circleUrl", () => {
   it("builds the invite link by SLUG, as the web's gotoCircle does", () => {
     // Not the group id: the app's own Circle route takes an id, the shared
     // link takes a slug, and following one built from an id finds nothing.
-    expect(circleUrl("value-investors")).toBe("https://myinvestorcircle.com/#/circle/value-investors");
+    expect(circleUrl("value-investors")).toBe("https://myinvestorcircle.com/circle/value-investors");
   });
 });
 
@@ -80,6 +80,6 @@ describe("WEB_ORIGIN", () => {
 
   it("carries no trailing slash, so the built paths have exactly one", () => {
     expect(WEB_ORIGIN.endsWith("/")).toBe(false);
-    expect(recoUrl("asha", "1")).not.toContain("//#/");
+    expect(recoUrl("asha", "1")).not.toContain("//investor/");
   });
 });

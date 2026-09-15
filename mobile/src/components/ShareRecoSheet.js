@@ -13,7 +13,7 @@ import { colors, fonts } from "../theme/colors";
  * Bottom-sheet for sharing an idea onward: forward it to connections/Circles
  * through the server's forward action, or hand the public link to the OS
  * share sheet. The public link is the SAME shareable URL the web app uses
- * (#/investor/:username/reco/:id) so a shared link opens the same page
+ * (/investor/:username/reco/:id) so a shared link opens the same page
  * regardless of which client sent it.
  */
 export default function ShareRecoSheet({ visible, reco, onClose }) {

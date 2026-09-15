@@ -36,13 +36,13 @@ describe("isExpoPushToken", () => {
 });
 
 describe("buildExpoMessages", () => {
-  const payload = { title: "New idea", body: "Someone shared an idea", url: "https://x/#/reco/9", tag: "reco" };
+  const payload = { title: "New idea", body: "Someone shared an idea", url: "https://x/reco/9", tag: "reco" };
 
   it("carries the deep-link url in data, where the app reads it", () => {
     const [msg] = buildExpoMessages(["ExponentPushToken[a]"], payload);
     expect(msg.to).toBe("ExponentPushToken[a]");
     expect(msg.title).toBe("New idea");
-    expect(msg.data.url).toBe("https://x/#/reco/9");
+    expect(msg.data.url).toBe("https://x/reco/9");
   });
 
   it("applies the same defaults the web payload uses", () => {

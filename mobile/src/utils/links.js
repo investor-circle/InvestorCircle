@@ -23,7 +23,7 @@ export const WEB_ORIGIN = process.env.EXPO_PUBLIC_WEB_ORIGIN || "https://myinves
  * The canonical public URL for one idea, or null when there isn't one.
  *
  * An idea's public page hangs off its AUTHOR'S username — the web app routes
- * `#/investor/:username/idea/:id` (it still accepts the old `/reco/:id`
+ * `/investor/:username/idea/:id` (it still accepts the old `/reco/:id`
  * spelling too, for links sent before the rename, but only generates `idea`
  * now — this helper matches that). A username-less link is not a shorter
  * link, it is a broken one: it would open correctly in the app (whose parser
@@ -36,12 +36,12 @@ export const WEB_ORIGIN = process.env.EXPO_PUBLIC_WEB_ORIGIN || "https://myinves
  */
 export function recoUrl(username, recoId) {
   if (!username || !recoId) return null;
-  return `${WEB_ORIGIN}/#/investor/${encodeURIComponent(username)}/idea/${encodeURIComponent(recoId)}`;
+  return `${WEB_ORIGIN}/investor/${encodeURIComponent(username)}/idea/${encodeURIComponent(recoId)}`;
 }
 
 /** The invite URL for one Circle, by slug — the link the web hands out. */
 export function circleUrl(slug) {
-  return `${WEB_ORIGIN}/#/circle/${encodeURIComponent(slug)}`;
+  return `${WEB_ORIGIN}/circle/${encodeURIComponent(slug)}`;
 }
 
 /**
@@ -57,5 +57,5 @@ export function inviteUrl(username) {
 
 /** The canonical public URL for one member's profile. */
 export function profileUrl(username) {
-  return `${WEB_ORIGIN}/#/investor/${encodeURIComponent(username)}`;
+  return `${WEB_ORIGIN}/investor/${encodeURIComponent(username)}`;
 }

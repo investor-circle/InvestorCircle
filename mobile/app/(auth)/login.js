@@ -40,7 +40,7 @@ const TABS = [
 // second copy would quietly drift out of date. A Custom Tab, not
 // Linking.openURL: Android would route our own https link straight back into
 // this app (see the intent filter in app.json).
-const PRIVACY_URL = `${WEB_ORIGIN}/#/privacy`;
+const PRIVACY_URL = `${WEB_ORIGIN}/privacy`;
 const openPrivacy = () => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {});
 
 function Consent({ checked, onToggle, children }) {

@@ -557,12 +557,12 @@ const STORE_URL = import.meta.env.VITE_ANDROID_STORE_URL || "";
 const APP_SCHEME = "myinvestorcircle";
 
 /**
- * Translate the page's own hash route into the app's custom-scheme URL.
+ * Translate the page's own route into the app's custom-scheme URL.
  * The app's parser accepts exactly these shapes (mobile/src/utils/deepLinks.js),
  * so whatever a person is looking at is what opens.
  */
-export function appSchemeUrl(hash = window.location.hash) {
-  const route = String(hash || "").replace(/^#/, "");
+export function appSchemeUrl(path = window.location.pathname + window.location.search) {
+  const route = String(path || "");
   return route.startsWith("/") ? `${APP_SCHEME}:/${route}` : null;
 }
 
@@ -609,13 +609,12 @@ export function OpenInAppBanner() {
  * plumbing — pass `title` and `message` to make the copy fit whatever is
  * being shared; the copy/WhatsApp mechanics never change.
  *
- * `url` must be the real, absolute, non-hash URL when one exists (e.g.
- * https://myinvestorcircle.com/security/RELIANCE, not a #/... in-app
- * route) — that is the whole point of this component existing separately
- * from just reading window.location: a #/... URL only works for someone
- * who already has the app loaded, and is invisible to Google/WhatsApp's
- * own link-preview crawler, so it is the wrong thing to hand someone to
- * share onward.
+ * `url` must be the real, absolute URL when one exists (e.g.
+ * https://myinvestorcircle.com/security/RELIANCE) — that is the whole point
+ * of this component existing separately from just reading window.location:
+ * a bare relative in-app path only resolves for someone who already has the
+ * app loaded, and is invisible to Google/WhatsApp's own link-preview
+ * crawler, so it is the wrong thing to hand someone to share onward.
  */
 export function LinkSharePopover({ url, title = 'Share', message, anchorEl, copied, onCopy, onClose }) {
   const isMobile = useIsMobile();

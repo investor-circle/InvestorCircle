@@ -110,6 +110,53 @@ describe("public-ideas — the private-idea guarantee", () => {
   });
 });
 
+describe("public-ideas — thesis sanitization", () => {
+  // r.thesis can be a JSON-encoded rich payload written by ThesisEditor
+  // (src/features/recommendations/Recommendations.jsx):
+  // {"__v":"1","text":"...","images":["data:image/jpeg;base64,..."]}. None of
+  // this handler's consumers (web-public, api/_lib/seo.js) can parse that
+  // shape, so a raw pass-through leaks JSON syntax and base64 image data
+  // straight into public HTML, WhatsApp previews and JSON-LD — this is the
+  // exact bug reported against /security and /idea pages.
+  const richThesis = JSON.stringify({
+    __v: "1",
+    text: "Strong quarter.\n\nDon't miss this.",
+    images: ["data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/deadbeef"],
+  });
+
+  it("resolves a rich JSON thesis to its plain text, dropping images", async () => {
+    rows = [{ ...ideaRow, thesis: richThesis }];
+    const res = await get({ action: "idea", id: "i1" });
+    expect(res.body.idea.thesis).toBe("Strong quarter.\n\nDon't miss this.");
+    expect(JSON.stringify(res.body)).not.toContain("base64");
+    expect(JSON.stringify(res.body)).not.toContain("__v");
+  });
+
+  it("passes a legacy plain-text thesis through unchanged", async () => {
+    rows = [{ ...ideaRow, thesis: "Plain legacy thesis text." }];
+    const res = await get({ action: "idea", id: "i1" });
+    expect(res.body.idea.thesis).toBe("Plain legacy thesis text.");
+  });
+
+  it("treats the '—' placeholder as no thesis", async () => {
+    rows = [{ ...ideaRow, thesis: "—" }];
+    const res = await get({ action: "idea", id: "i1" });
+    expect(res.body.idea.thesis).toBeNull();
+  });
+
+  it("sanitizes thesis on every idea returned by by-symbol and search", async () => {
+    rows = [{ ...ideaRow, thesis: richThesis, idea_count: 1, contributor_count: 1, closed_count: 0 }];
+    const bySymbolRes = await get({ action: "by-symbol", symbol: "RELIANCE" });
+    expect(bySymbolRes.body.ideas[0].thesis).toBe("Strong quarter.\n\nDon't miss this.");
+    expect(JSON.stringify(bySymbolRes.body)).not.toContain("base64");
+
+    rows = [{ ...ideaRow, thesis: richThesis }];
+    const searchRes = await get({ action: "search", q: "reliance" });
+    expect(searchRes.body.ideas[0].thesis).toBe("Strong quarter.\n\nDon't miss this.");
+    expect(JSON.stringify(searchRes.body)).not.toContain("base64");
+  });
+});
+
 describe("public-ideas — input handling", () => {
   it("rejects a symbol that is not a symbol, before querying", async () => {
     for (const symbol of ["'; DROP TABLE ic_recommendations; --", "a".repeat(40), "RELI ANCE", ""]) {

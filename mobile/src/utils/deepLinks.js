@@ -1,15 +1,18 @@
 /**
  * Deep-link parsing.
  *
- * The web app is a HashRouter SPA, so its shareable URLs put the route in the
- * fragment: https://myinvestorcircle.com/#/investor/:username/reco/:id.
- * Android intent filters match scheme/host/path only — the fragment is not a
- * path, so expo-router would route such a link to "/" and silently drop the
- * target. Hence we parse it ourselves and navigate deliberately.
+ * The web app now serves real paths — https://myinvestorcircle.com/investor/
+ * :username/reco/:id — but links shared before that change put the route in
+ * the fragment instead (…/#/investor/:username/reco/:id), and those old
+ * links are still out there in WhatsApp threads, old emails and old push
+ * notifications, so both forms must keep resolving here. Android intent
+ * filters match scheme/host/path only — a fragment is not a path, so
+ * expo-router would route a hash-form link to "/" and silently drop the
+ * target regardless. Hence we parse it ourselves and navigate deliberately.
  *
- * Handles the hash form, the equivalent bare-path form, and the app's own
- * custom scheme (myinvestorcircle://…). Pure and side-effect free so it can
- * be unit tested.
+ * Handles both the bare-path form (current) and the hash form (legacy), plus
+ * the app's own custom scheme (myinvestorcircle://…). Pure and side-effect
+ * free so it can be unit tested.
  *
  * @returns {{path: string, username?: string} | null}
  */
@@ -71,7 +74,7 @@ export function parseDeepLink(url) {
   }
 
   // /circle/:slug — an invite link. These always carry a SLUG (the web's
-  // gotoCircle hands out `#/circle/:slug`), whereas the app's own Circle
+  // gotoCircle hands out `/circle/:slug`), whereas the app's own Circle
   // route takes a group id, so following one used to open a screen that
   // looked up a Circle whose "id" was really a slug and found nothing.
   if (parts[0] === "circle" && parts[1] && parts[1] !== "new" && parts[1] !== "manage") {
@@ -85,7 +88,7 @@ export function parseDeepLink(url) {
   // The web calls this route /market and the page "Market Insights"; the app
   // uses the same path so a shared link lands on the same thing.
   if (parts[0] === "market") return { path: "/market" };
-  // The web calls your own scorecard #/track-record; same name here.
+  // The web calls your own scorecard /track-record; same name here.
   if (parts[0] === "track-record") return { path: "/track-record" };
 
   return null;

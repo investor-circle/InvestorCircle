@@ -251,7 +251,7 @@ async function notifyComment({ recoId, userId, commenterName, commentText }) {
 
   if (ownerEmail) {
     const recoUrl = ownerUsername
-      ? `https://myinvestorcircle.com/#/investor/${ownerUsername}/reco/${recoId}`
+      ? `https://myinvestorcircle.com/investor/${ownerUsername}/reco/${recoId}`
       : `https://myinvestorcircle.com`;
     sendEmail('reco_comment', {
       to_email:       ownerEmail,

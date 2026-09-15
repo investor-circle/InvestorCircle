@@ -26,7 +26,7 @@
 - Send/accept/reject connection requests; manage groups
 - Post a recommendation (Buy/Sell, public or circle-only) with price, thesis, conviction, target
 - Receive recommendations in a scored feed; mark as invested; track performance
-- View any user's public Track Record page (`/#/investor/{username}`)
+- View any user's public Track Record page (`/investor/{username}`)
 - Exit a recommendation (triggers notifications to all recipients)
 - Admin: create users, seed recommendations, manage creators/instruments/config
 
@@ -140,7 +140,7 @@ InvestorCircle-main/
 ---
 
 **Feature:** Public Track Record + ICI Score  
-**Purpose:** Every user with a username gets a public profile at `/#/investor/{username}` showing their full recommendation history, scorecard, and computed ICI credibility score  
+**Purpose:** Every user with a username gets a public profile at `/investor/{username}` showing their full recommendation history, scorecard, and computed ICI credibility score  
 **Location:** `src/db.js` (`getPublicProfile`, `computeIci`), `App.jsx` `PublicProfilePage` (~line 5645), `App.jsx` `RecoPostPage` (~line 5241)  
 **Dependencies:** `ic_recommendations` (is_public=true rows only); ICI is pure JS calculation — no separate DB table
 
@@ -319,7 +319,7 @@ Browser (GitHub Pages)
 | 4525–4822 | `MakeRecoModal` — new recommendation creation form |
 | 4823–4975 | `Sharing` — sharing preferences UI |
 | 4976–5239 | Public profile UI helpers (ICI donut, score boxes, badges, popovers) |
-| 5241–5644 | `RecoPostPage` — standalone public reco page (`/#/investor/u/reco/id`) |
+| 5241–5644 | `RecoPostPage` — standalone public reco page (`/investor/u/reco/id`) |
 | 5645–6953 | `PublicProfilePage` — full public track record page |
 | 6954–7163 | `ProfileEditModal`, `ProfileModal` |
 | 7164–7277 | `InvestedToggle`, `RecoComments` |
@@ -360,7 +360,7 @@ Browser (GitHub Pages)
 8. **`push_subscriptions` table** — must exist in Neon before push notifications work (not in the committed migrations; run `migration_push.sql` separately)
 9. **Vercel env vars** — `VAPID_PRIVATE_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `RESEND_API_KEY`, `DATABASE_URL` (pooled); if any are missing, the corresponding API silently fails
 10. **`VITE_DATABASE_URL`** vs **`DATABASE_URL`** — frontend uses the non-pooled URL baked into the bundle; Vercel functions use the pooled URL as `DATABASE_URL`
-11. **Hash routing** (`window.location.hash`) — all internal navigation uses hash; push notification deep links depend on `#/investor/{username}/reco/{id}` format
+11. **BrowserRouter, real paths** (`src/main.jsx`) — swapped from HashRouter this session; App.jsx's standalone-route mechanism (public profile/circle/Stock Insights) now reads/writes `pagePath` (pathname+search) via `goToPath`/`navigation.js`'s bridge instead of `window.location.hash`. Push notification deep links now depend on `/investor/{username}/reco/{id}` format (old `#/...`-form links still parse via mobile's `deepLinks.js` for backward compatibility, but nothing generates them anymore)
 12. **Connection uniqueness** — bidirectional check in `sendConnectionRequest`; one row per pair
 13. **`recommendation_deliveries` unique constraint** — prevents duplicate deliveries when user is in multiple groups
 

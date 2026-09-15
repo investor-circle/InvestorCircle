@@ -866,7 +866,7 @@ export async function getTickerRecos(ticker) {
 }
 
 // Unauthenticated counterpart to getTickerRecos, for a signed-out visitor on
-// the Stock Insights page (#/security/:ticker). Backed by the same
+// the Stock Insights page (/security/:ticker). Backed by the same
 // is_public-filtered public-ideas.js handler that api/seo.js's /stock/:symbol
 // page uses — see CLAUDE.md's "public-ideas.js is the only place public idea
 // data is queried" rule. Field names are adapted to match what
@@ -890,6 +890,27 @@ export async function getPublicTickerIdeas(ticker) {
     }));
   } catch (_) {
     return [];
+  }
+}
+
+// Resolves the bare /idea/:id share-link shape (used for public sharing —
+// see Recommendations.jsx's IdeaSharePopover and web-public/) to its
+// author's username, so App.jsx's standalone-route mechanism can render
+// the same RecoPostPage the /investor/:username/idea/:id shape already
+// uses — that route needs the username up front and a bare id link
+// doesn't carry one. Same unauthenticated, is_public-filtered endpoint as
+// getPublicTickerIdeas above. Returns null (not throwing) for "not found or
+// private" — API_data.js's action=idea deliberately returns the same 404
+// for both, so a bare link can't be used to probe which ids exist.
+export async function getPublicIdeaAuthor(id) {
+  if (!id) return null;
+  try {
+    const res = await fetch(`${API_BASE}/data?resource=public-ideas&action=idea&id=${encodeURIComponent(id)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.idea?.author_username || null;
+  } catch (_) {
+    return null;
   }
 }
 

@@ -13,7 +13,7 @@ import { withBoundary } from "../../../src/components/ErrorBoundary";
  * A Circle opened from its shareable link.
  *
  * This is the destination of the invite links the web app hands out
- * (`#/circle/:slug`) and that the Manage screen can now share from the phone.
+ * (`/circle/:slug`) and that the Manage screen can now share from the phone.
  * Those links carry a SLUG; the app's own Circle route takes a group id, so
  * following one previously landed on a screen that tried to load a Circle
  * whose id was actually a slug and found nothing.

@@ -69,7 +69,7 @@ import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
 import { sendEmail, sendPush } from "../../services/notify";
 import { calcTargetDate, classColor, compressImage, fmt, fmtDate, fmtPct, getClosedInfo, getTargetDate, initialsOf, isExpired, parseThesis, ret, serializeThesis } from "../../utils/format";
-import { fetchPublicProfileInfo, goBackOrElse, gotoReco, gotoUserProfile, openProfile, openReco } from "../../utils/navigation";
+import { fetchPublicProfileInfo, goBackOrElse, goHome, gotoReco, gotoUserProfile, openProfile, openReco } from "../../utils/navigation";
 
 export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
     contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack, globalSearch }) {
@@ -1778,8 +1778,8 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
         if (isPublic && contacts?.length > 0) {
           const newRecoId = String(created?.id || '');
           const recoUrl   = newRecoId && me.username
-            ? `https://myinvestorcircle.com/#/investor/${me.username}/idea/${newRecoId}`
-            : `https://myinvestorcircle.com/#/investor/${me.username || ''}`;
+            ? `https://myinvestorcircle.com/investor/${me.username}/idea/${newRecoId}`
+            : `https://myinvestorcircle.com/investor/${me.username || ''}`;
 
           const meta = {
             ticker:               recoData.ticker,
@@ -2141,9 +2141,9 @@ export function IdeaSharePopover({ reco, username, contacts=[], groups=[], ancho
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
-  // Real, indexable /idea/:id (web-public/), not the in-app #/investor/...
-  // hash route — same reasoning as Stock Insights' Share button: nobody
-  // sharing onward should have to know to strip the '#'. Safe unconditionally
+  // Real, indexable /idea/:id (web-public/), not this page's own in-app
+  // /investor/.../idea/:id route — same reasoning as Stock Insights' Share
+  // button. Safe unconditionally
   // here because `username` (below) is only ever passed for a PUBLIC idea —
   // callers pass null for a private one, which already skips this link
   // entirely (see the "Public link unavailable" case further down).
@@ -2307,7 +2307,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
   const shareBtnRef = useRef(null);
 
   // Real, indexable /idea/:id (web-public/), not this page's own
-  // #/investor/.../idea/:id hash URL — safe unconditionally because this
+  // /investor/.../idea/:id in-app URL — safe unconditionally because this
   // page only ever loads public-profile data (see the useEffect below), so
   // it can never be showing a private idea in the first place.
   const recoUrl = `https://myinvestorcircle.com/idea/${encodeURIComponent(recoId)}`;
@@ -2339,7 +2339,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
     }).catch(() => {});
   }, [recoId, viewerUser?.uid]);
 
-  const requireLogin = () => { window.location.hash = ''; };
+  const requireLogin = () => { goHome(); };
 
   const handleLike = () => {
     if (!viewerUser) { requireLogin(); return; }

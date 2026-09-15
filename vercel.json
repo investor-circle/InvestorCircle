@@ -8,7 +8,9 @@
 
     { "source": "/security/:symbol", "destination": "https://investorcircle-public.vercel.app/security/:symbol" },
     { "source": "/idea/:id", "destination": "https://investorcircle-public.vercel.app/idea/:id" },
-    { "source": "/search", "destination": "https://investorcircle-public.vercel.app/search" }
+    { "source": "/search", "destination": "https://investorcircle-public.vercel.app/search" },
+
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
     {

@@ -90,11 +90,10 @@ const ORIGIN = 'https://myinvestorcircle.com';
  * attacker-chosen destination would be a phishing hop.
  */
 export function appUrl(deepLink, senderUsername) {
-  const fallback = senderUsername ? `${ORIGIN}/#/investor/${encodeURIComponent(senderUsername)}` : ORIGIN;
+  const fallback = senderUsername ? `${ORIGIN}/investor/${encodeURIComponent(senderUsername)}` : ORIGIN;
   if (typeof deepLink !== 'string' || !deepLink) return fallback;
-  // Only "/..." or "#/..." — never "//host", "http://…", or "javascript:".
-  const path = deepLink.startsWith('#/') ? deepLink.slice(1) : deepLink;
-  if (!path.startsWith('/') || path.startsWith('//')) return fallback;
-  if (/[\s<>"']/.test(path)) return fallback;
-  return `${ORIGIN}/#${path}`;
+  // Only "/..." — never "//host", "http://…", or "javascript:".
+  if (!deepLink.startsWith('/') || deepLink.startsWith('//')) return fallback;
+  if (/[\s<>"']/.test(deepLink)) return fallback;
+  return `${ORIGIN}${deepLink}`;
 }
