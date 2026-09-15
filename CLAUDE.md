@@ -407,6 +407,22 @@ there instead of defaulting to Home — validated same-site-only by
 `isSameSitePath` (`src/utils/navigation.js`) so this can't become an open
 redirect.
 
+**A cookie can only route a visitor to the app it actually reaches.** A link
+opened inside a chat/social app's own embedded browser (WhatsApp's included)
+runs in a cookie jar isolated from the visitor's real browser, so `mic_route`
+never arrives there even seconds after being set elsewhere — no server-side
+fix can hand a cookie across that sandbox boundary, and this is not a bug to
+chase further. `web-public/lib/inAppBrowser.js` detects known in-app-browser
+User-Agents (WhatsApp, Facebook, Instagram, LINE, WeChat) client-side, and
+`Gate.jsx` swaps to an "Open in browser →" CTA (`target="_blank"`, which
+these in-app browsers typically hand off to the real system browser) instead
+of a plain sign-in prompt. Deliberately client-side, not read from the
+request's `User-Agent` header server-side via `next/headers()`: `/idea/:id`
+and `/security/:symbol` set `revalidate` (ISR) because their edge cache is
+load-bearing (see below), and `headers()` would force the whole route
+dynamic for every visitor, crawlers included, just to serve the one in-app
+visitor this banner is for.
+
 - **`api/_lib/handlers/public-ideas.js` is the only place public idea data
   is queried.** Every statement in it filters `is_public = true`, and
   `public-ideas.test.js` reads the SQL each action emits and fails if one
