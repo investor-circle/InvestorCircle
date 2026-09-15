@@ -54,7 +54,7 @@ const STEPS = [
   {
     n: "03",
     title: "Your ICI score reflects all of it",
-    body: "Hit rate, median return, risk-adjusted performance and transparency — computed across your whole history, not your best week.",
+    body: "ICI — short for Investor Circle Credibility Index — blends hit rate, median return, risk-adjusted performance and transparency, computed across your whole history, not your best week.",
     icon: <><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></>,
   },
 ];
@@ -207,13 +207,13 @@ export default function LandingPage({ onSignIn, onCreateAccount }) {
               Invite-only
             </div>
             <h1 className="lp-h1" style={{marginTop:20}}>
-              Every idea on the record.<br/>
-              <span style={{color:'#5a49e6'}}>Including the ones that went wrong.</span>
+              Discover ideas worth following.<br/>
+              <span style={{color:'#5a49e6'}}>Build a circle you can verify.</span>
             </h1>
             <p style={{fontSize:18,lineHeight:1.75,color:'#565a78',margin:'22px 0 0',maxWidth:610,textWrap:'pretty'}}>
-              myInvestorCircle is a private circle where an investment idea is posted once and can never be edited or deleted.
-              No disappearing posts, no cherry-picked winners — just a history you can check before you decide whose judgement
-              to trust.
+              myInvestorCircle connects you with investors, idea authors and research-minded analysts who publish
+              real, timestamped ideas — entry, target, and how it actually turned out. Follow the ones whose
+              judgement holds up, and grow a circle built on evidence, not follower counts.
             </p>
             <div style={{display:'flex',flexWrap:'wrap',gap:10,marginTop:30}}>
               {["Ideas are permanent","Outcomes scored, not claimed","You choose who sees what"].map(t=>(
