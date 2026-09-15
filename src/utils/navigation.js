@@ -2,6 +2,25 @@ import {
   getProfileNavInfo as dbGetProfileNavInfo
 } from "../services/api/profileApi";
 
+/**
+ * True for a plain, same-site path like "/security/RELIANCE" or
+ * "/idea/42?highlightComment=9" — false for anything that could send a
+ * visitor somewhere other than this app: an absolute URL, a
+ * protocol-relative "//evil.example" (a bare path to the browser's eyes,
+ * but a full external origin once resolved), or a "javascript:" scheme.
+ *
+ * Used to validate the `next` destination App.jsx reads back from
+ * web-public's Gate (?next=<path> on the sign-in link) before ever handing
+ * it to goToPath() — without this check, that query param would be an
+ * open redirect: anyone could craft
+ * https://myinvestorcircle.com/?next=https://evil.example and use this
+ * app's own domain to send a signed-in visitor's browser somewhere else
+ * right after they authenticate.
+ */
+export function isSameSitePath(path) {
+  return typeof path === "string" && path.startsWith("/") && !path.startsWith("//");
+}
+
 export const _profileInfoCache = new Map(); // userId → { username, isSebiApproved }
 
 export function fetchPublicProfileInfo(userId) {

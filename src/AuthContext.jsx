@@ -19,6 +19,33 @@ const PROFILE_BLACKLIST_API  = `${API_BASE}/blacklist-check`;
 const PROFILE_SYNC_API       = `${API_BASE}/sync`;
 const PROFILE_UPDATE_API     = `${API_BASE}/update`;
 
+// Mints/clears the short-lived routing-token cookie /middleware.js checks
+// to decide whether a fresh hit on /security/:symbol or /idea/:id goes to
+// the main app or to web-public — see api/_lib/handlers/session.js and
+// /middleware.js for what this is and, just as importantly, what it is
+// NOT: it never authenticates anything, and its failure here is never
+// treated as a sign-in failure — a signed-in user just falls back to the
+// same (slower, still correct) web-public path a signed-out visitor
+// always gets if this call doesn't succeed.
+const SESSION_API = `${API_ORIGIN}/api/data?resource=session`;
+// Comfortably inside the server-side token TTL (15 minutes — see
+// api/_lib/handlers/session.js) so a long-running tab keeps a fresh token
+// rather than silently falling back to web-public mid-session.
+const ROUTING_TOKEN_REFRESH_MS = 10 * 60 * 1000;
+
+function mintRoutingCookie(idToken) {
+  if (!idToken) return;
+  fetch(`${SESSION_API}&action=mint`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${idToken}` },
+    credentials: 'same-origin',
+  }).catch(() => {});
+}
+
+function clearRoutingCookie() {
+  return fetch(`${SESSION_API}&action=clear`, { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+}
+
 export function AuthProvider({ children }) {
   const [user,        setUser]        = useState(null);
   const [profile,     setProfile]     = useState(null);
@@ -60,6 +87,7 @@ export function AuthProvider({ children }) {
         }
 
         setUser(firebaseUser);
+        mintRoutingCookie(idToken);
         const isAdminEmail = ADMIN_EMAILS.includes(firebaseUser.email?.toLowerCase());
         const fullName = firebaseUser.displayName || firebaseUser.email.split("@")[0];
         setRole(isAdminEmail ? "admin" : "investor");
@@ -139,11 +167,25 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
+  // Keep the routing-token cookie fresh for as long as this tab stays open
+  // and signed in — see the mintRoutingCookie call above and its own
+  // comment for why a short-lived, actively-refreshed token is the point,
+  // not an oversight.
+  useEffect(() => {
+    if (!user) return;
+    const iv = setInterval(async () => {
+      try {
+        mintRoutingCookie(await user.getIdToken());
+      } catch (_) { /* best-effort — see mintRoutingCookie */ }
+    }, ROUTING_TOKEN_REFRESH_MS);
+    return () => clearInterval(iv);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const login  = (email, password) => signInWithEmailAndPassword(auth, email, password);
   // onAuthStateChanged above handles profile create/sync for both new and
   // returning Google users identically — no separate signup path needed.
   const loginWithGoogle = () => signInWithPopup(auth, new GoogleAuthProvider());
-  const logout = () => signOut(auth);
+  const logout = () => { clearRoutingCookie(); return signOut(auth); };
 
   // Update first/last name in Neon and local profile state.
   const updateProfile = async (firstName, lastName) => {

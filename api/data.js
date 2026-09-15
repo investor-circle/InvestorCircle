@@ -54,6 +54,7 @@ import handleTracking from './_lib/handlers/tracking.js';
 import handlePricing from './_lib/handlers/pricing.js';
 import handleSeo from './_lib/seo.js';
 import handleSitemap from './_lib/sitemap.js';
+import handleSession from './_lib/handlers/session.js';
 
 const RESOURCES = {
   'connections':      { handler: handleConnections,     auth: 'user'  },
@@ -96,6 +97,13 @@ const RESOURCES = {
   // Vercel's Hobby-plan cap of 12 Serverless Functions — see api/_lib/seo.js.
   'seo':              { handler: handleSeo,              auth: 'none'  },
   'sitemap':          { handler: handleSitemap,           auth: 'none'  },
+  // Mints/clears the routing-token cookie middleware.js checks at the edge
+  // to decide whether /security/:symbol and /idea/:id go to the main app
+  // or to web-public. Registered 'none' because `clear` must work even with
+  // an already-invalid token; `mint` does its own optionalUid check — see
+  // api/_lib/handlers/session.js. This cookie is never itself an auth
+  // mechanism: requireUid/requireAdmin above never accept it.
+  'session':          { handler: handleSession,           auth: 'none'  },
 };
 
 export default async function handler(req, res) {

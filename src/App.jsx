@@ -79,7 +79,8 @@ import {
   getNetworkEngagementFeed as dbGetNetworkEngagementFeed,
   getPublicFeed as dbGetPublicFeed,
   getMyMadeRecos,
-  getMyReceivedRecos
+  getMyReceivedRecos,
+  getPublicIdeaAuthor as dbGetPublicIdeaAuthor
 } from "./services/api/recommendationsApi";
 import { ProfileErrorBoundary, SectionErrorBoundary } from "./components/common";
 import { CONTACT_COLORS, DEFAULT_CLASSES, HOLDINGS } from "./constants/app";
@@ -127,7 +128,7 @@ import { VAPID_PUBLIC_KEY } from "./services/notify";
 import { STYLES } from "./styles/globalStyles";
 import { initialsOf } from "./utils/format";
 import { loadInstruments } from "./utils/instruments";
-import { registerGoToPath } from "./utils/navigation";
+import { registerGoToPath, isSameSitePath } from "./utils/navigation";
 
 /* ============================================================
    InvestorCircle — social space for investors.
@@ -541,18 +542,45 @@ export default function App() {
     }
   };
 
-  // ── Capture referral + claim tokens from URL on first load ──────────────────
+  // ── Capture referral + claim tokens + a pending destination from URL on
+  // first load ──────────────────────────────────────────────────────────
   // claim_token and oobCode are both read synchronously in useState initialisers
   // below so their pages render on the first paint without a flash.
+  //
+  // `next` arrives the same way: web-public's Gate (Sign in to take part,
+  // on /security/:symbol, /idea/:id, /search) carries the exact page a
+  // signed-out visitor was looking at as ?next=<path> on this root URL —
+  // see web-public/components/Gate.jsx. Stashed in sessionStorage (a
+  // one-time intent for this visit, not a standing preference, same as the
+  // pending_connect_username/pending_join_circle_slug flows below) and
+  // consumed by the effect right after this one, once sign-in/signup
+  // actually completes.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get('ref');
+    const next = params.get('next');
     // claim_token and oobCode already read synchronously — just clean the URL
     if (ref) localStorage.setItem('mic_ref', ref.toLowerCase().trim());
-    if (ref || params.get('claim_token') || params.get('oobCode')) {
+    // Only ever a same-site path — never follow an absolute/external URL
+    // here, so this can't be turned into an open redirect (see
+    // isSameSitePath's own comment).
+    if (isSameSitePath(next)) {
+      sessionStorage.setItem('pending_next_path', next);
+    }
+    if (ref || next || params.get('claim_token') || params.get('oobCode')) {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
+
+  // ── Post-login/signup: resume the exact destination a signed-out visitor
+  // was sent to sign in from (see the capture effect above) ──────────────
+  useEffect(() => {
+    if (!user) return;
+    const pending = sessionStorage.getItem('pending_next_path');
+    if (!pending) return;
+    sessionStorage.removeItem('pending_next_path');
+    goToPath(pending);
+  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Password reset: oobCode from ?mode=resetPassword&oobCode=... ─────────────
   // Read synchronously so ResetPasswordPage renders on the first paint.
@@ -1032,6 +1060,30 @@ export default function App() {
   // navigation (openSecurity below), not derived after the fact.
   const [secInsightsFrom, setSecInsightsFrom] = useState('home');
 
+  // ── Bare /idea/:id route — no auth required ──────────────────────────────
+  // This is the shape public share links use (Recommendations.jsx's
+  // IdeaSharePopover, web-public/, mobile push/email links) — a fresh hit
+  // here goes to web-public by default; middleware.js only rewrites it to
+  // this app for a signed-in visitor's own browser (see /middleware.js).
+  // The standalone route below (/investor/:username/idea/:id) already
+  // renders RecoPostPage but needs a username up front, which a bare id
+  // link doesn't carry — so this resolves the author first, then renders
+  // the exact same page in place. No navigation, no change to the address
+  // bar: a signed-in visitor lands on the exact resource they clicked,
+  // never a fallback to Home.
+  const [bareIdeaResolved, setBareIdeaResolved] = useState(null); // null=loading, 'not-found', or {username}
+  const bareIdeaMatch = pagePath.match(/^\/idea\/([a-zA-Z0-9-]+)/i);
+  const bareIdeaId = bareIdeaMatch ? bareIdeaMatch[1] : null;
+  useEffect(() => {
+    if (!bareIdeaId) { setBareIdeaResolved(null); return; }
+    let cancelled = false;
+    setBareIdeaResolved(null);
+    dbGetPublicIdeaAuthor(bareIdeaId).then(username => {
+      if (!cancelled) setBareIdeaResolved(username ? { username } : 'not-found');
+    }).catch(() => { if (!cancelled) setBareIdeaResolved('not-found'); });
+    return () => { cancelled = true; };
+  }, [bareIdeaId]);
+
   // ── Circle route — no auth required (shareable, works from an invite link) ──
   // Matches: /circle/slug  (optionally ?invite=<code> appended by an invite link)
   const circleMatch = pagePath.match(/^\/circle\/([a-z0-9-]+)/i);
@@ -1072,17 +1124,19 @@ export default function App() {
       const pubQuery = new URLSearchParams(pagePath.split('?')[1] || '');
       return (
         <div className="app"><style>{STYLES}</style>
-          <RecoPostPage
-            username={pubUsername}
-            recoId={pubRecoId}
-            highlightCommentId={pubQuery.get('highlightComment')}
-            viewerUser={user}
-            ME={ME}
-            contacts={contacts}
-            groups={groups}
-            onBack={()=>{ goToPath('/'); }}
-            onNavigateProfile={()=>{ goToPath(`/investor/${pubUsername}`); }}
-          />
+          <ProfileErrorBoundary>
+            <RecoPostPage
+              username={pubUsername}
+              recoId={pubRecoId}
+              highlightCommentId={pubQuery.get('highlightComment')}
+              viewerUser={user}
+              ME={ME}
+              contacts={contacts}
+              groups={groups}
+              onBack={()=>{ goToPath('/'); }}
+              onNavigateProfile={()=>{ goToPath(`/investor/${pubUsername}`); }}
+            />
+          </ProfileErrorBoundary>
         </div>
       );
     }
@@ -1124,6 +1178,42 @@ export default function App() {
             }}
           />
           </React.Suspense>
+        </ProfileErrorBoundary>
+      </div>
+    );
+  }
+
+  // ── Bare /idea/:id route — no auth required ──────────────────────────────
+  // See the bareIdeaMatch/bareIdeaResolved state declared earlier (before
+  // the auth-gate hooks rule) for why this needs an async resolve step the
+  // /investor/:username/idea/:id route above doesn't.
+  if (bareIdeaMatch && !authLoading) {
+    if (bareIdeaResolved === null) return <AppLoadingScreen/>;
+    if (bareIdeaResolved === 'not-found') {
+      return (
+        <div className="app"><style>{STYLES}</style>
+          <ProfileErrorBoundary>
+            <div className="content" style={{maxWidth:900,margin:'0 auto',padding:isMobile?'16px 12px':'28px 24px',textAlign:'center'}}>
+              <h1>Not found</h1>
+              <p className="muted">This idea may be private, or it may not exist.</p>
+            </div>
+          </ProfileErrorBoundary>
+        </div>
+      );
+    }
+    return (
+      <div className="app"><style>{STYLES}</style>
+        <ProfileErrorBoundary>
+          <RecoPostPage
+            username={bareIdeaResolved.username}
+            recoId={bareIdeaId}
+            viewerUser={user}
+            ME={ME}
+            contacts={contacts}
+            groups={groups}
+            onBack={()=>{ goToPath('/'); }}
+            onNavigateProfile={()=>{ goToPath(`/investor/${bareIdeaResolved.username}`); }}
+          />
         </ProfileErrorBoundary>
       </div>
     );

@@ -30,7 +30,10 @@ export default async function SearchPage({ searchParams }) {
       <div className="idea-row" style={{ padding: 0, marginTop: ideas.length ? 20 : 0 }}>
         {ideas.map((idea) => <IdeaCard key={idea.id} idea={idea} />)}
       </div>
-      <Gate line="Sign in to post an idea, or to follow the members behind these." />
+      <Gate
+        line="Sign in to post an idea, or to follow the members behind these."
+        next={query ? `/search?q=${encodeURIComponent(query)}` : '/search'}
+      />
     </>
   );
 }
