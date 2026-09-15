@@ -1124,17 +1124,19 @@ export default function App() {
       const pubQuery = new URLSearchParams(pagePath.split('?')[1] || '');
       return (
         <div className="app"><style>{STYLES}</style>
-          <RecoPostPage
-            username={pubUsername}
-            recoId={pubRecoId}
-            highlightCommentId={pubQuery.get('highlightComment')}
-            viewerUser={user}
-            ME={ME}
-            contacts={contacts}
-            groups={groups}
-            onBack={()=>{ goToPath('/'); }}
-            onNavigateProfile={()=>{ goToPath(`/investor/${pubUsername}`); }}
-          />
+          <ProfileErrorBoundary>
+            <RecoPostPage
+              username={pubUsername}
+              recoId={pubRecoId}
+              highlightCommentId={pubQuery.get('highlightComment')}
+              viewerUser={user}
+              ME={ME}
+              contacts={contacts}
+              groups={groups}
+              onBack={()=>{ goToPath('/'); }}
+              onNavigateProfile={()=>{ goToPath(`/investor/${pubUsername}`); }}
+            />
+          </ProfileErrorBoundary>
         </div>
       );
     }
@@ -1201,16 +1203,18 @@ export default function App() {
     }
     return (
       <div className="app"><style>{STYLES}</style>
-        <RecoPostPage
-          username={bareIdeaResolved.username}
-          recoId={bareIdeaId}
-          viewerUser={user}
-          ME={ME}
-          contacts={contacts}
-          groups={groups}
-          onBack={()=>{ goToPath('/'); }}
-          onNavigateProfile={()=>{ goToPath(`/investor/${bareIdeaResolved.username}`); }}
-        />
+        <ProfileErrorBoundary>
+          <RecoPostPage
+            username={bareIdeaResolved.username}
+            recoId={bareIdeaId}
+            viewerUser={user}
+            ME={ME}
+            contacts={contacts}
+            groups={groups}
+            onBack={()=>{ goToPath('/'); }}
+            onNavigateProfile={()=>{ goToPath(`/investor/${bareIdeaResolved.username}`); }}
+          />
+        </ProfileErrorBoundary>
       </div>
     );
   }
