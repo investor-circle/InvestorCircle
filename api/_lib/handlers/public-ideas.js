@@ -46,6 +46,25 @@ import { sql } from '../auth.js';
 const SYMBOL_RE = /^[A-Za-z0-9.&_-]{1,24}$/;
 const MAX_LIMIT = 60;
 
+/* r.thesis is either legacy plain text or a JSON-encoded rich payload —
+   {"__v":"1","text":"...","images":["data:image/jpeg;base64,..."]} — written
+   by ThesisEditor/serializeThesis (src/features/recommendations/Recommendations.jsx).
+   Every consumer of this handler (web-public's IdeaCard/generateMetadata,
+   api/_lib/seo.js's /stock/:symbol page) treats `thesis` as plain display
+   text with no access to the app's parseThesis/ThesisRenderer, so the raw
+   JSON — base64 images included — must never leave here. Images are
+   dropped entirely: there is no public-page image story yet (see CLAUDE.md's
+   "Per-idea share IMAGES" deferred note), so exposing the data URI would
+   only ever be a bug, not a missing feature. */
+function plainThesisText(raw) {
+  if (!raw || raw === '—') return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.__v === '1') return parsed.text || null;
+  } catch {}
+  return String(raw);
+}
+
 const clampLimit = (raw, fallback) => {
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n) || n < 1) return fallback;
@@ -114,7 +133,8 @@ async function oneIdea(req, res) {
     LIMIT 1
   `;
   if (!rows[0]) { res.status(404).json({ error: 'not_found' }); return; }
-  res.status(200).json({ idea: rows[0] });
+  const idea = { ...rows[0], thesis: plainThesisText(rows[0].thesis) };
+  res.status(200).json({ idea });
 }
 
 /* Every public idea on one stock, plus the aggregate the hub page leads with. */
@@ -191,7 +211,7 @@ async function bySymbol(req, res) {
       first_posted:      s.first_posted || null,
       last_posted:       s.last_posted || null,
     },
-    ideas,
+    ideas: ideas.map(i => ({ ...i, thesis: plainThesisText(i.thesis) })),
   });
 }
 
@@ -248,7 +268,7 @@ async function search(req, res) {
       r.created_at DESC
     LIMIT ${limit}
   `;
-  res.status(200).json({ query: q, ideas });
+  res.status(200).json({ query: q, ideas: ideas.map(i => ({ ...i, thesis: plainThesisText(i.thesis) })) });
 }
 
 /* Distinct tickers with at least one public idea — the sitemap's source.
