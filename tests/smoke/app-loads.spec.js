@@ -53,18 +53,25 @@ test.describe("app shell", () => {
   });
 
   test("a Stock Insights deep link renders for a signed-out visitor, not a crash", async ({ page }) => {
-    // /security/:ticker is the indexable deep link into the existing Stock
-    // Insights page (SecurityIntelligencePage), reached with no signed-in
-    // viewer — same shape of check as the investor-profile route above: no
-    // live backend here, so the real assertion is that a signed-out render
-    // degrades to an empty state rather than throwing.
+    // /security/:ticker is a real path, but which app actually renders it
+    // for a signed-out visitor depends on SMOKE_BASE_URL: against a local
+    // `vite preview` build (no vercel.json rewrites applied), this hits the
+    // SPA's own SecurityIntelligencePage with no live backend, degrading to
+    // an empty state; against real production, vercel.json proxies this
+    // exact path to web-public, which renders a genuine, fully-populated
+    // SSR page from the real database (see CLAUDE.md's "Public, crawlable
+    // pages"). Those two pages don't share heading text (web-public's
+    // eyebrow shows the stock's sector instead of "Stock Insights" once one
+    // is set — see web-public/app/security/[symbol]/page.jsx), so the only
+    // assertion that holds for both is the one this test actually cares
+    // about: the page loads with real content and no thrown error, not a
+    // specific app's copy.
     const pageErrors = [];
     page.on("pageerror", (err) => pageErrors.push(err.message));
 
     await page.goto("/security/RELIANCE");
     await page.waitForTimeout(3000);
 
-    await expect(page.getByText("Stock Insights").first()).toBeVisible();
     await expect(page.getByText("RELIANCE").first()).toBeVisible();
 
     const bodyText = await page.locator("body").innerText();
