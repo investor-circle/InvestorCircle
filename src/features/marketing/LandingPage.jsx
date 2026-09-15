@@ -203,10 +203,7 @@ export default function LandingPage({ onSignIn, onCreateAccount }) {
         <div className="lp-glow"/>
         <div className="lp-wrap lp-herogrid">
           <div>
-            <div className="lp-chip" style={{background:'#eeecff',borderColor:'#dcd8fb',color:'#5a49e6',fontSize:12,fontWeight:700}}>
-              Invite-only
-            </div>
-            <h1 className="lp-h1" style={{marginTop:20}}>
+            <h1 className="lp-h1">
               Discover ideas worth following.<br/>
               <span style={{color:'#5a49e6'}}>Build a circle you can verify.</span>
             </h1>
@@ -216,7 +213,7 @@ export default function LandingPage({ onSignIn, onCreateAccount }) {
               judgement holds up, and grow a circle built on evidence, not follower counts.
             </p>
             <div style={{display:'flex',flexWrap:'wrap',gap:10,marginTop:30}}>
-              {["Ideas are permanent","Outcomes scored, not claimed","You choose who sees what"].map(t=>(
+              {["Ideas are permanent","Outcomes scored, not claimed","You choose who earns your trust"].map(t=>(
                 <div className="lp-chip" key={t}>
                   <Icon size={15} color="#15924e" width={2.2}><path d="M20 6 9 17l-5-5"/></Icon>{t}
                 </div>
