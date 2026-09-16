@@ -2646,14 +2646,14 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
           {reco?.ticker && (
             <button onClick={()=>openSecurity(reco.ticker)}
               style={{display:'flex', alignItems:'center', gap:9, width:'100%',
-                background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
+                background:'var(--accent-soft)', border:'1px solid var(--accent-line)', borderRadius:16,
                 padding:'14px 18px', marginBottom:14, cursor:'pointer', fontFamily:'var(--font)',
                 textAlign:'left'}}>
               <BarChart2 size={17} color="var(--accent-ink)"/>
-              <span style={{flex:1, fontSize:13.5, fontWeight:700}}>
+              <span style={{flex:1, fontSize:13.5, fontWeight:700, color:'var(--accent-ink)'}}>
                 What others think about {reco.ticker}
               </span>
-              <ChevronRight size={16} color="var(--muted)"/>
+              <ChevronRight size={16} color="var(--accent-ink)"/>
             </button>
           )}
 
