@@ -135,3 +135,16 @@ h3 { font-size: 17px; font-weight: 800; letter-spacing: -.3px; margin: 0; }
   .btn { padding: 13px 16px; font-size: 14px; }
   .gate .btn { margin-left: 0; width: 100%; }
 }
+
+/* Two nav buttons (Sign in + Create account) plus the wordmark don't fit a
+   phone-width viewport without wrapping onto two lines or overflowing —
+   confirmed at 375px (iPhone SE): "Create account" clipped past the screen
+   edge. Dropping the wordmark text (icon stays, still links home) frees
+   enough room for both buttons to render on one line at any phone width,
+   same "prioritize the working nav over the wordmark" tradeoff the main
+   app's own landing page nav already makes (LandingPage.jsx), there by
+   dropping a button instead since it only ever needs one. */
+@media (max-width: 480px) {
+  .navrow .brand { display: none; }
+  .navrow .btn { padding: 9px 12px; font-size: 13px; white-space: nowrap; }
+}
