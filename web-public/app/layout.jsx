@@ -1,5 +1,6 @@
 import './globals.css';
 import SignInLink from '../components/SignInLink';
+import SignUpLink from '../components/SignUpLink';
 
 export const metadata = {
   metadataBase: new URL('https://myinvestorcircle.com'),
@@ -7,10 +8,10 @@ export const metadata = {
 };
 
 // This is the visitor-facing header/footer shell for every page in this
-// app. It intentionally offers only "Sign in" / "Open in myInvestorCircle" —
-// this app never holds a session, so there is no personalized state to show
-// here. See README.md for why an anonymous visitor is the only visitor this
-// app ever renders for.
+// app. It intentionally offers only "Sign in" / "Create account" /
+// "Open in myInvestorCircle" — this app never holds a session, so there is
+// no personalized state to show here. See README.md for why an anonymous
+// visitor is the only visitor this app ever renders for.
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
@@ -31,6 +32,7 @@ export default function RootLayout({ children }) {
               <span className="brand">myInvestorCircle</span>
             </a>
             <SignInLink />
+            <SignUpLink />
           </div>
         </div>
         <div className="wrap" style={{ paddingTop: 30, paddingBottom: 30 }}>{children}</div>

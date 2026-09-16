@@ -547,14 +547,18 @@ export default function App() {
   // claim_token and oobCode are both read synchronously in useState initialisers
   // below so their pages render on the first paint without a flash.
   //
-  // `next` arrives the same way: web-public's Gate (Sign in to take part,
-  // on /security/:symbol, /idea/:id, /search) carries the exact page a
-  // signed-out visitor was looking at as ?next=<path> on this root URL —
-  // see web-public/components/Gate.jsx. Stashed in sessionStorage (a
-  // one-time intent for this visit, not a standing preference, same as the
+  // `next` arrives the same way: web-public's Gate/nav (Sign in to take
+  // part or Create account, on /security/:symbol, /idea/:id, /search)
+  // carries the exact page a signed-out visitor was looking at as
+  // ?next=<path> on this root URL — see web-public/components/Gate.jsx and
+  // SignUpLink.jsx. Stashed in sessionStorage (a one-time intent for this
+  // visit, not a standing preference, same as the
   // pending_connect_username/pending_join_circle_slug flows below) and
   // consumed by the effect right after this one, once sign-in/signup
-  // actually completes.
+  // actually completes. A `signup=1` alongside it (read synchronously into
+  // nextWantsSignup above, since which LoginPage tab to open must be known
+  // on first paint) rides the same window.history.replaceState cleanup
+  // below without needing its own handling here.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get('ref');
@@ -595,16 +599,23 @@ export default function App() {
   // hand over to LoginPage on that tab. See the auth gate further down.
   const [authView, setAuthView] = useState(null);
 
-  // A ?next=<path> arrival (web-public's Gate — "Sign in to take part" on
-  // /idea/:id, /security/:symbol, /search) means this visitor came here to
-  // sign in, not to read marketing copy — skip the landing page the same
-  // way a referral link or a public-profile "Join to connect" already do
-  // (see wantsFormDirectly below). Captured once into state, not read live
-  // from window.location.search on every render: the capture effect further
-  // down strips ?next= from the URL shortly after mount, and re-reading the
-  // (by-then-stripped) URL on a later render would flip this back off.
+  // A ?next=<path> arrival (web-public's Gate/nav — "Sign in to take part"
+  // or "Create account" on /idea/:id, /security/:symbol, /search) means
+  // this visitor came here to sign in or sign up, not to read marketing
+  // copy — skip the landing page the same way a referral link or a
+  // public-profile "Join to connect" already do (see wantsFormDirectly
+  // below). `signup=1` alongside it (web-public's "Create account" link —
+  // see SignUpLink.jsx there) means land on the signup tab specifically,
+  // not the default login one. Both captured once into state, not read
+  // live from window.location.search on every render: the capture effect
+  // further down strips ?next=/&signup= from the URL shortly after mount,
+  // and re-reading the (by-then-stripped) URL on a later render would flip
+  // these back off.
   const [cameFromNextParam] = useState(() =>
     isSameSitePath(new URLSearchParams(window.location.search).get('next'))
+  );
+  const [nextWantsSignup] = useState(() =>
+    new URLSearchParams(window.location.search).get('signup') === '1'
   );
 
   // Signing in consumes the choice, so a later sign-out lands back on the
@@ -1307,9 +1318,10 @@ export default function App() {
   // Three arrivals skip the landing page entirely and go straight to the form,
   // because they came here to do a specific thing: a referral link (?ref=, held
   // in mic_ref), a "Join to connect" from a public profile (held in
-  // pending_connect_username), and a "Sign in to take part" from a public
-  // idea/security/search page (?next=, held in cameFromNextParam above).
-  // Password reset never reaches here — resetOobCode returns above this.
+  // pending_connect_username), and a "Sign in to take part"/"Create account"
+  // from a public idea/security/search page (?next=, held in
+  // cameFromNextParam above — nextWantsSignup picks the tab). Password reset
+  // never reaches here — resetOobCode returns above this.
   if (!user) {
     const wantsFormDirectly =
       !!localStorage.getItem('mic_ref') ||
@@ -1317,10 +1329,11 @@ export default function App() {
       cameFromNextParam;
 
     if (wantsFormDirectly || authView) {
+      const wantsSignupTab = authView === 'signup' || (authView === null && nextWantsSignup);
       return (
         <SectionErrorBoundary label="Sign in">
           <LoginPage
-            initialTab={authView === 'signup' ? 'signup' : 'login'}
+            initialTab={wantsSignupTab ? 'signup' : 'login'}
             onBack={wantsFormDirectly ? null : () => setAuthView(null)}
           />
         </SectionErrorBoundary>
