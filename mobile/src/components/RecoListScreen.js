@@ -77,7 +77,7 @@ export default function RecoListScreen({ header, loader, subHeader, emptyTitle, 
   );
 
   const openTicker = useCallback(
-    (symbol) => router.push(`/ticker/${encodeURIComponent(symbol)}`),
+    (symbol) => router.push(`/security/${encodeURIComponent(symbol)}`),
     [router]
   );
 

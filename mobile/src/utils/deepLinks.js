@@ -68,9 +68,16 @@ export function parseDeepLink(url) {
 
   // /circle/:id and a few top-level screens, so links from notifications or
   // other clients land somewhere sensible rather than nowhere.
-  // /ticker/:symbol — market consensus for one security.
-  if (parts[0] === "ticker" && parts[1]) {
-    return { path: `/ticker/${encodeURIComponent(parts[1].toUpperCase())}` };
+  // /security/:ticker — market consensus for one security, the web's actual
+  // public URL shape (see App.jsx's securityMatch / CLAUDE.md's Public,
+  // crawlable pages). "ticker" was this app's own local route/URL name
+  // before it was aligned with the web's, and old links (WhatsApp, e-mail,
+  // push notifications sent before the rename) still use it — same
+  // "accept both spellings forever" precedent as idea/reco above. The
+  // in-app route is /security/[symbol] now, matching the web convention,
+  // not a leftover.
+  if ((parts[0] === "security" || parts[0] === "ticker") && parts[1]) {
+    return { path: `/security/${encodeURIComponent(parts[1].toUpperCase())}` };
   }
 
   // /circle/:slug — an invite link. These always carry a SLUG (the web's

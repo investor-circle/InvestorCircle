@@ -474,7 +474,7 @@ function RecoDetailScreen() {
           {reco?.ticker ? (
             <Pressable
               style={styles.consensusBtn}
-              onPress={() => router.push(`/ticker/${encodeURIComponent(String(reco.ticker).toUpperCase())}`)}
+              onPress={() => router.push(`/security/${encodeURIComponent(String(reco.ticker).toUpperCase())}`)}
             >
               <Ionicons name="stats-chart-outline" size={17} color={colors.accentInk} />
               <Text style={styles.consensusText}>

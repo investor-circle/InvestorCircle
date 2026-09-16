@@ -307,7 +307,7 @@ function PortfolioScreen() {
                           key={kind}
                           style={styles.signalCard}
                           onPress={() =>
-                            router.push(`/ticker/${encodeURIComponent(String(holding.sym).toUpperCase())}`)
+                            router.push(`/security/${encodeURIComponent(String(holding.sym).toUpperCase())}`)
                           }
                         >
                           <Text style={[styles.signalKind, { color: tint }]}>
@@ -411,7 +411,7 @@ function PortfolioScreen() {
             return (
               <Pressable
                 style={styles.card}
-                onPress={() => item.sym && router.push(`/ticker/${encodeURIComponent(String(item.sym).toUpperCase())}`)}
+                onPress={() => item.sym && router.push(`/security/${encodeURIComponent(String(item.sym).toUpperCase())}`)}
                 onLongPress={() => confirmDelete(item)}
                 delayLongPress={350}
                 android_ripple={{ color: colors.line }}

@@ -106,7 +106,7 @@ function MarketScreen() {
   // across channels, which is the whole point. The ticker screen is already
   // reported as a page_view by the central screen tracker in app/_layout.js.
   const openTicker = useCallback(
-    (ticker) => router.push(`/ticker/${encodeURIComponent(ticker)}`),
+    (ticker) => router.push(`/security/${encodeURIComponent(ticker)}`),
     [router]
   );
 

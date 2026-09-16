@@ -115,7 +115,7 @@ function SearchScreen() {
   const openStock = useCallback(
     (inst) => {
       Keyboard.dismiss();
-      router.push(`/ticker/${encodeURIComponent(String(inst.symbol).toUpperCase())}`);
+      router.push(`/security/${encodeURIComponent(String(inst.symbol).toUpperCase())}`);
     },
     [router]
   );
