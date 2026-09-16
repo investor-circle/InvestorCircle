@@ -86,6 +86,11 @@ export function openReco(username, recoId) {
   if (username && recoId) _goToPath(`/investor/${username}/idea/${recoId}`);
 }
 
+/** Navigate to a security's Stock Insights page by ticker (real path, no #). */
+export function openSecurity(ticker) {
+  if (ticker) _goToPath(`/security/${encodeURIComponent(ticker)}`);
+}
+
 /** Look up recommender username from userId then navigate to their reco's dedicated page. */
 export async function gotoReco(userId, recoId) {
   const info = await fetchPublicProfileInfo(userId);
