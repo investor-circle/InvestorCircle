@@ -407,6 +407,26 @@ there instead of defaulting to Home — validated same-site-only by
 `isSameSitePath` (`src/utils/navigation.js`) so this can't become an open
 redirect.
 
+**The mint/clear calls must be genuinely same-origin — this shipped broken
+once already.** `src/AuthContext.jsx`'s `mintRoutingCookie`/
+`clearRoutingCookie` call a bare relative path (`/api/data?resource=session`),
+deliberately NOT `API_ORIGIN` (`src/db.js`) the way every other API call in
+that file does. `API_ORIGIN` on the real custom domain resolves to a
+*different* origin (`https://investor-circle.vercel.app`, a holdover from
+the GitHub-Pages-hosted-frontend era — see its own comment in `db.js`) than
+the page the visitor is actually on (`myinvestorcircle.com`). A
+`credentials: 'same-origin'` fetch to a cross-origin URL is treated as
+`omit` by the browser: no cookie is sent, and — the part that actually broke
+this — no `Set-Cookie` response is stored either. The mint call originally
+used `API_ORIGIN`, which meant `mic_route` was silently never being set on
+`myinvestorcircle.com` for anyone, in any browser, in production — the
+entire routing-cookie mechanism was a no-op from the moment it shipped,
+including for a plain same-browser new tab with no in-app browser involved
+at all. `src/AuthContext.test.jsx` pins the mint/clear fetch URL as a bare
+relative path so this can't quietly come back; every other same-origin-
+dependent piece of this design (the cookie itself, `middleware.js` reading
+it) was already correct — only the URL used to set it was wrong.
+
 **A cookie can only route a visitor to the app it actually reaches.** A link
 opened inside a chat/social app's own embedded browser (WhatsApp's included)
 runs in a cookie jar isolated from the visitor's real browser, so `mic_route`
