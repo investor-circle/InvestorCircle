@@ -1,4 +1,5 @@
 import './globals.css';
+import SignInLink from '../components/SignInLink';
 
 export const metadata = {
   metadataBase: new URL('https://myinvestorcircle.com'),
@@ -29,7 +30,7 @@ export default function RootLayout({ children }) {
               <img src="https://myinvestorcircle.com/favicon.png" alt="" width={28} height={28} style={{ display: 'block' }} />
               <span className="brand">myInvestorCircle</span>
             </a>
-            <a className="btn btn-ghost" style={{ marginLeft: 'auto' }} href="https://myinvestorcircle.com/">Sign in</a>
+            <SignInLink />
           </div>
         </div>
         <div className="wrap" style={{ paddingTop: 30, paddingBottom: 30 }}>{children}</div>
