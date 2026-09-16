@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Share } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,6 +13,7 @@ import { primeAvatars } from "../../src/services/avatarCache";
 import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
+import { securityUrl } from "../../src/utils/links";
 
 /**
  * Market consensus for one ticker — "what does everyone think about INFY".
@@ -61,6 +62,22 @@ function TickerConsensusScreen() {
   const tint = consensusColor(cons, colors);
   const assetName = (recos || []).find((r) => r.asset_name)?.asset_name;
 
+  // Same shareable link the web's Stock Insights page hands out
+  // (SecurityIntelligencePage's shareUrl) — a recipient without the app lands
+  // on the same public page regardless of which client shared it.
+  const onShare = async () => {
+    const url = securityUrl(ticker);
+    if (!url) return;
+    try {
+      await Share.share({
+        message: `${assetName || ticker} on myInvestorCircle — ${url}`,
+        url,
+      });
+    } catch (_) {
+      /* user dismissed the OS sheet */
+    }
+  };
+
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
       <View style={styles.topbar}>
@@ -70,7 +87,9 @@ function TickerConsensusScreen() {
         <Text style={styles.topTitle} numberOfLines={1}>
           {ticker}
         </Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={onShare} hitSlop={10} style={{ width: 40, alignItems: "flex-end" }}>
+          <Ionicons name="share-social-outline" size={21} color={colors.accentInk} />
+        </Pressable>
       </View>
 
       {recos === null ? (

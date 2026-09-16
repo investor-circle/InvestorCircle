@@ -59,3 +59,8 @@ export function inviteUrl(username) {
 export function profileUrl(username) {
   return `${WEB_ORIGIN}/investor/${encodeURIComponent(username)}`;
 }
+
+/** The canonical public URL for one security's Stock Insights page. */
+export function securityUrl(ticker) {
+  return ticker ? `${WEB_ORIGIN}/security/${encodeURIComponent(ticker)}` : null;
+}

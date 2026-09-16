@@ -1,4 +1,4 @@
-import { recoUrl, profileUrl, circleUrl, inviteUrl, WEB_ORIGIN } from "./links";
+import { recoUrl, profileUrl, circleUrl, inviteUrl, securityUrl, WEB_ORIGIN } from "./links";
 import { API_ORIGIN } from "../services/api";
 import { parseReferral } from "./deepLinks";
 
@@ -43,6 +43,22 @@ describe("recoUrl", () => {
 describe("profileUrl", () => {
   it("points at the website and matches the web's profile route", () => {
     expect(profileUrl("asha")).toBe("https://myinvestorcircle.com/investor/asha");
+  });
+});
+
+describe("securityUrl", () => {
+  it("points at the website and matches the web's /security/:ticker route", () => {
+    expect(securityUrl("INFY")).toBe("https://myinvestorcircle.com/security/INFY");
+  });
+
+  it("returns nothing when there is no ticker", () => {
+    for (const missing of [null, undefined, ""]) {
+      expect(securityUrl(missing)).toBeNull();
+    }
+  });
+
+  it("escapes values rather than interpolating them raw", () => {
+    expect(securityUrl("a/b")).toBe("https://myinvestorcircle.com/security/a%2Fb");
   });
 });
 
