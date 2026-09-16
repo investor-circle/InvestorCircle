@@ -196,7 +196,7 @@ function FeedScreen() {
   );
 
   const openTicker = useCallback(
-    (symbol) => router.push(`/ticker/${encodeURIComponent(symbol)}`),
+    (symbol) => router.push(`/security/${encodeURIComponent(symbol)}`),
     [router]
   );
 

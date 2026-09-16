@@ -97,14 +97,24 @@ describe("parseDeepLink — things it must NOT route", () => {
 });
 
 describe("parseDeepLink — market consensus", () => {
-  it("routes a ticker link and upper-cases the symbol", () => {
+  it("routes a security link and upper-cases the symbol", () => {
     // The screen and the API both key on an upper-case ticker; a lower-case
     // link would otherwise fetch nothing and look like an empty security.
-    expect(parseDeepLink("https://myinvestorcircle.com/#/ticker/infy")).toEqual({ path: "/ticker/INFY" });
-    expect(parseDeepLink("myinvestorcircle://ticker/TCS")).toEqual({ path: "/ticker/TCS" });
+    expect(parseDeepLink("https://myinvestorcircle.com/#/security/infy")).toEqual({ path: "/security/INFY" });
+    expect(parseDeepLink("myinvestorcircle://security/TCS")).toEqual({ path: "/security/TCS" });
   });
 
-  it("does not route a bare /ticker with no symbol", () => {
+  // The segment used to be "ticker" — this app's own name before it was
+  // aligned with the web's "/security/:ticker". Links in that shape were
+  // already shared to WhatsApp, e-mail and push notifications, so they must
+  // keep resolving to the same screen forever, same as idea/reco above.
+  it("still routes the old /ticker/ spelling to the same place", () => {
+    expect(parseDeepLink("https://myinvestorcircle.com/#/ticker/infy")).toEqual({ path: "/security/INFY" });
+    expect(parseDeepLink("myinvestorcircle://ticker/TCS")).toEqual({ path: "/security/TCS" });
+  });
+
+  it("does not route a bare /security or /ticker with no symbol", () => {
+    expect(parseDeepLink("https://myinvestorcircle.com/#/security")).toBeNull();
     expect(parseDeepLink("https://myinvestorcircle.com/#/ticker")).toBeNull();
   });
 });
