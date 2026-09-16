@@ -1,5 +1,20 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { mintRoutingCookie, clearRoutingCookie } from "./AuthContext";
+
+const setPersistence = vi.fn(() => Promise.resolve());
+const signInWithEmailAndPassword = vi.fn(() => Promise.resolve({ user: { uid: "u1" } }));
+vi.mock("firebase/auth", () => ({
+  onAuthStateChanged: vi.fn(),
+  signInWithEmailAndPassword: (...args) => signInWithEmailAndPassword(...args),
+  signInWithPopup: vi.fn(),
+  GoogleAuthProvider: vi.fn(),
+  signOut: vi.fn(),
+  setPersistence: (...args) => setPersistence(...args),
+  browserLocalPersistence: "LOCAL",
+  browserSessionPersistence: "SESSION",
+}));
+vi.mock("./firebase", () => ({ auth: "fake-auth" }));
+
+import { mintRoutingCookie, clearRoutingCookie, login } from "./AuthContext";
 
 // The routing-token cookie (see api/_lib/handlers/session.js, middleware.js)
 // only works if the request that mints/clears it is genuinely same-origin —
@@ -42,5 +57,38 @@ describe("routing cookie mint/clear — same-origin only", () => {
     expect(url).toBe("/api/data?resource=session&action=clear");
     expect(url).not.toMatch(/^https?:\/\//);
     expect(opts).toMatchObject({ method: "POST", credentials: "same-origin" });
+  });
+});
+
+// "Remember me" controls session lifetime via Firebase Auth's own
+// persistence modes, never a homegrown credential store — no password is
+// saved either way. Defaulting rememberMe to true matters: without it, a
+// caller that forgets the third argument (or an older build of LoginPage.jsx
+// mid-rollout) would silently downgrade everyone to a session that vanishes
+// on browser close, which is a real behavior change nobody asked for.
+describe("login — persistence follows rememberMe", () => {
+  afterEach(() => { setPersistence.mockClear(); signInWithEmailAndPassword.mockClear(); });
+
+  it("uses LOCAL persistence (survives closing the browser) by default", async () => {
+    await login("a@b.com", "pw");
+    expect(setPersistence).toHaveBeenCalledWith("fake-auth", "LOCAL");
+  });
+
+  it("uses LOCAL persistence when rememberMe is explicitly true", async () => {
+    await login("a@b.com", "pw", true);
+    expect(setPersistence).toHaveBeenCalledWith("fake-auth", "LOCAL");
+  });
+
+  it("uses SESSION persistence (clears on browser close) when rememberMe is false", async () => {
+    await login("a@b.com", "pw", false);
+    expect(setPersistence).toHaveBeenCalledWith("fake-auth", "SESSION");
+  });
+
+  it("sets persistence before actually signing in", async () => {
+    const order = [];
+    setPersistence.mockImplementationOnce(() => { order.push("persistence"); return Promise.resolve(); });
+    signInWithEmailAndPassword.mockImplementationOnce(() => { order.push("signIn"); return Promise.resolve(); });
+    await login("a@b.com", "pw");
+    expect(order).toEqual(["persistence", "signIn"]);
   });
 });

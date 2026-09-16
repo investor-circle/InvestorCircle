@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "firebase/auth";
 import { auth } from "./firebase";
 import { API_ORIGIN } from "./db";
 
@@ -61,6 +61,22 @@ export function mintRoutingCookie(idToken) {
 
 export function clearRoutingCookie() {
   return fetch(`${SESSION_API}&action=clear`, { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+}
+
+// Exported (not just used inline in AuthProvider below) so
+// AuthContext.test.jsx can pin the persistence choice directly — a "remember
+// me" bug here is invisible until someone's session outlives (or doesn't
+// outlive) their expectation, which is not something a component-level test
+// would catch reliably. rememberMe defaults true, matching Firebase Auth's
+// own default (browserLocalPersistence — survives closing the browser) so
+// existing behavior doesn't change for a caller that doesn't pass it.
+// Unchecked, the session clears when the browser closes
+// (browserSessionPersistence) — the standard "not this device" choice for a
+// shared/public computer. Neither path stores the password anywhere; this
+// only controls how long the resulting Firebase session itself is kept.
+export function login(email, password, rememberMe = true) {
+  return setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence)
+    .then(() => signInWithEmailAndPassword(auth, email, password));
 }
 
 export function AuthProvider({ children }) {
@@ -198,7 +214,6 @@ export function AuthProvider({ children }) {
     return () => clearInterval(iv);
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const login  = (email, password) => signInWithEmailAndPassword(auth, email, password);
   // onAuthStateChanged above handles profile create/sync for both new and
   // returning Google users identically — no separate signup path needed.
   const loginWithGoogle = () => signInWithPopup(auth, new GoogleAuthProvider());
