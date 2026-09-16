@@ -27,8 +27,8 @@ export default function RootLayout({ children }) {
       <body>
         <div className="nav">
           <div className="wrap navrow">
-            <a href="https://myinvestorcircle.com/" style={{ display: 'flex', alignItems: 'center', gap: 9, color: 'inherit' }}>
-              <img src="https://myinvestorcircle.com/favicon.png" alt="" width={28} height={28} style={{ display: 'block' }} />
+            <a href="https://myinvestorcircle.com/" style={{ display: 'flex', alignItems: 'center', gap: 9, color: 'inherit', minWidth: 0 }}>
+              <img src="https://myinvestorcircle.com/favicon.png" alt="" width={34} height={34} style={{ display: 'block', flexShrink: 0 }} />
               <span className="brand">myInvestorCircle</span>
             </a>
             <SignInLink />
