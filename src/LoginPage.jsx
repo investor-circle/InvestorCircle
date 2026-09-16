@@ -365,19 +365,27 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
                      radial-gradient(600px 400px at 90% 105%, rgba(207,82,216,.28), transparent 55%)`,
       }}/>
 
-      {onBack && (
-        <button onClick={onBack} style={{
-          position: "absolute", top: 26, left: 32, display: "flex", alignItems: "center", gap: 7,
-          background: "none", border: "none", cursor: "pointer", padding: 8,
-          fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: "#8a8daa",
-        }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-          Back
-        </button>
-      )}
-
       <div style={{ width: "100%", maxWidth: 420, position: "relative" }}>
+
+        {/* Back — in normal flow (not position:absolute pinned to the
+            viewport) so it can never overlap the Brand block below it: an
+            absolutely-positioned Back sat at a fixed screen position while
+            this whole block is vertically centered, and centering content
+            taller than the viewport (the signup form easily is) pushed
+            Brand up into that same fixed spot. Being part of the flow here
+            means it always renders above Brand and scrolls with the rest
+            of the content, whatever the form's height. */}
+        {onBack && (
+          <button onClick={onBack} style={{
+            display: "flex", alignItems: "center", gap: 7, marginBottom: 14,
+            background: "none", border: "none", cursor: "pointer", padding: 8, marginLeft: -8,
+            fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: "#8a8daa",
+          }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            Back
+          </button>
+        )}
 
         {/* Brand */}
         <div style={{ marginBottom: 20 }}>
@@ -643,14 +651,14 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
                 <label style={label}>First name <span style={{ color: "#c53030" }}>*</span></label>
                 <input value={firstName} autoFocus
                   onChange={e => setFirstName(e.target.value)}
-                  placeholder="Ankur"
+                  placeholder="Rakesh"
                   style={inputStyle} onFocus={focusOn} onBlur={focusOff}/>
               </div>
               <div>
                 <label style={label}>Last name</label>
                 <input value={lastName}
                   onChange={e => setLastName(e.target.value)}
-                  placeholder="Gupta"
+                  placeholder="Jhunjhunwala"
                   style={inputStyle} onFocus={focusOn} onBlur={focusOff}/>
               </div>
             </div>
