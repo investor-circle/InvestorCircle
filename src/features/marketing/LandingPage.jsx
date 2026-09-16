@@ -130,6 +130,8 @@ const CSS = `
 .lp-nav{border-bottom:1px solid var(--lp-line);background:rgba(255,255,255,.86);backdrop-filter:blur(8px);
   position:sticky;top:0;z-index:5;}
 .lp-navrow{height:72px;display:flex;align-items:center;gap:32px;}
+.lp-brand{flex-shrink:0;}
+.lp-brandname{font-size:17px;font-weight:800;letter-spacing:-.3px;}
 .lp-navlinks{display:flex;align-items:center;gap:26px;margin-left:14px;}
 .lp-navlink{background:none;border:none;padding:0;cursor:pointer;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--lp-soft);}
 .lp-navlink:hover{color:var(--lp-accent-ink);}
@@ -154,25 +156,40 @@ const CSS = `
 @media (max-width:900px){
   .lp-wrap{padding-left:22px;padding-right:22px;}
   /* Wordmark (199px) + both nav buttons (164px) + gaps exceed the 346px of
-     content a 390px viewport allows, which pushed the whole page sideways.
-     The hero card sits immediately below the nav and carries both actions, so
-     the nav keeps only the short one and stays within the gutter. */
-  .lp-brandname{font-size:15.5px;}
-  .lp-nav .lp-btn-pri{display:none;}
-  .lp-navbtn{padding:13px 15px;font-size:13.5px;}
+     content a 390px viewport allows. Hiding the Create account button was
+     the original fix, but a first-time visitor landing on mobile is exactly
+     who most needs to see it — so instead the wordmark (.lp-brand) is
+     allowed to shrink below its content size and its text truncates with an
+     ellipsis if space is still tight, while both nav buttons keep their
+     full tappable size and text.  */
+  .lp-brand{flex-shrink:1;min-width:0;}
+  .lp-brandname{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
   .lp-sec{padding-top:52px;padding-bottom:52px;}
   .lp-h1{font-size:36px;letter-spacing:-1.4px;}
   .lp-h2{font-size:26px;letter-spacing:-.9px;}
   .lp-lede{font-size:15px;}
   .lp-navlinks{display:none;}
-  .lp-navrow{height:60px;gap:12px;}
+  .lp-navrow{height:60px;gap:8px;}
   .lp-herogrid{grid-template-columns:minmax(0,1fr);gap:26px;padding-top:38px;padding-bottom:44px;}
   .lp-grid3,.lp-grid2,.lp-proof{grid-template-columns:minmax(0,1fr);gap:14px;}
   .lp-btn{padding:14px 18px;font-size:15px;}
   .lp-btn-lg{padding:15px 22px;font-size:15px;}
+  /* .lp-navbtn is equal specificity to .lp-btn above and must come after it
+     to win the cascade — the nav's Sign in/Create account buttons need to
+     stay smaller than the hero's full-size CTA buttons to fit both on one
+     line next to the (already-shrinking) wordmark. */
+  .lp-navbtn{padding:9px 11px;font-size:12px;}
   .lp-social{width:44px;height:44px;}
   .lp-faqrow{padding:17px 18px;}
   .lp-dark{padding:22px 20px;}
+}
+
+/* Below ~340px even a heavily truncated wordmark is down to one or two
+   letters — not meaningfully more identifiable than the logo alone, so drop
+   the text and keep just the (still-linked-home) icon rather than render
+   something unreadable. */
+@media (max-width:340px){
+  .lp-brandname{display:none;}
 }
 `;
 
@@ -183,9 +200,9 @@ export default function LandingPage({ onSignIn, onCreateAccount }) {
 
       <div className="lp-nav">
         <div className="lp-wrap lp-navrow">
-          <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
-            <img src="/favicon.png" alt="" width={32} height={32} style={{display:'block'}}/>
-            <span className="lp-brandname" style={{fontSize:17,fontWeight:800,letterSpacing:'-.3px'}}>myInvestorCircle</span>
+          <div className="lp-brand" style={{display:'flex',alignItems:'center',gap:10}}>
+            <img src="/favicon.png" alt="" width={32} height={32} style={{display:'block',flexShrink:0}}/>
+            <span className="lp-brandname">myInvestorCircle</span>
           </div>
           <div className="lp-navlinks">
             <button className="lp-navlink" onClick={()=>document.getElementById('lp-how')?.scrollIntoView({behavior:'smooth'})}>How it works</button>

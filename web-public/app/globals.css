@@ -137,14 +137,27 @@ h3 { font-size: 17px; font-weight: 800; letter-spacing: -.3px; margin: 0; }
 }
 
 /* Two nav buttons (Sign in + Create account) plus the wordmark don't fit a
-   phone-width viewport without wrapping onto two lines or overflowing —
-   confirmed at 375px (iPhone SE): "Create account" clipped past the screen
-   edge. Dropping the wordmark text (icon stays, still links home) frees
-   enough room for both buttons to render on one line at any phone width,
-   same "prioritize the working nav over the wordmark" tradeoff the main
-   app's own landing page nav already makes (LandingPage.jsx), there by
-   dropping a button instead since it only ever needs one. */
+   phone-width viewport at full desktop size without wrapping onto two lines
+   or overflowing — confirmed at 375px (iPhone SE). Dropping the wordmark
+   entirely was tried first, but the brand name is what tells a cold visitor
+   whose page this is, so instead the logo link (the nav's first child) is
+   allowed to shrink below its content size, and the wordmark text itself
+   truncates with an ellipsis if it still doesn't fit — while both buttons
+   keep their full, tappable size and text at every width. */
+.navrow > a:first-child { min-width: 0; flex-shrink: 1; }
+.brand { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; min-width: 0; }
+
 @media (max-width: 480px) {
-  .navrow .brand { display: none; }
-  .navrow .btn { padding: 9px 12px; font-size: 13px; white-space: nowrap; }
+  .navrow { gap: 6px; }
+  .navrow .btn { padding: 8px 10px; font-size: 12px; white-space: nowrap; }
+  .brand { font-size: 13.5px; }
+}
+
+/* Below ~340px even a heavily truncated wordmark is down to one or two
+   letters — not meaningfully more identifiable than the logo alone, so drop
+   the text and keep just the (still-linked-home) icon rather than render
+   something unreadable. Same tradeoff, same threshold, as the main app's
+   own landing page nav (LandingPage.jsx). */
+@media (max-width: 340px) {
+  .brand { display: none; }
 }
