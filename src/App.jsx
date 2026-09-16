@@ -595,6 +595,18 @@ export default function App() {
   // hand over to LoginPage on that tab. See the auth gate further down.
   const [authView, setAuthView] = useState(null);
 
+  // A ?next=<path> arrival (web-public's Gate — "Sign in to take part" on
+  // /idea/:id, /security/:symbol, /search) means this visitor came here to
+  // sign in, not to read marketing copy — skip the landing page the same
+  // way a referral link or a public-profile "Join to connect" already do
+  // (see wantsFormDirectly below). Captured once into state, not read live
+  // from window.location.search on every render: the capture effect further
+  // down strips ?next= from the URL shortly after mount, and re-reading the
+  // (by-then-stripped) URL on a later render would flip this back off.
+  const [cameFromNextParam] = useState(() =>
+    isSameSitePath(new URLSearchParams(window.location.search).get('next'))
+  );
+
   // Signing in consumes the choice, so a later sign-out lands back on the
   // landing page instead of dropping straight into the form it came from.
   useEffect(() => { if (user) setAuthView(null); }, [user]);
@@ -1292,15 +1304,17 @@ export default function App() {
   );
 
   // ── Signed out: public landing page, with LoginPage one click away ──────────
-  // Two arrivals skip the landing page entirely and go straight to the form,
+  // Three arrivals skip the landing page entirely and go straight to the form,
   // because they came here to do a specific thing: a referral link (?ref=, held
-  // in mic_ref) and a "Join to connect" from a public profile (held in
-  // pending_connect_username). Password reset never reaches here — resetOobCode
-  // returns above this.
+  // in mic_ref), a "Join to connect" from a public profile (held in
+  // pending_connect_username), and a "Sign in to take part" from a public
+  // idea/security/search page (?next=, held in cameFromNextParam above).
+  // Password reset never reaches here — resetOobCode returns above this.
   if (!user) {
     const wantsFormDirectly =
       !!localStorage.getItem('mic_ref') ||
-      !!sessionStorage.getItem('pending_connect_username');
+      !!sessionStorage.getItem('pending_connect_username') ||
+      cameFromNextParam;
 
     if (wantsFormDirectly || authView) {
       return (
