@@ -118,6 +118,14 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
   // ── Login fields ────────────────────────────────────────────────────────────
   const [loginEmail,    setLoginEmail]    = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  // Checked by default so existing behavior (stay signed in across browser
+  // restarts — Firebase Auth's own default persistence) doesn't regress for
+  // anyone who never looks at this checkbox. Unchecking it is the opt-in for
+  // a shared/public device: the session then clears when the browser closes,
+  // via Firebase's own setPersistence() (AuthContext's login()) rather than
+  // anything homegrown — no password or credential is ever stored by us
+  // either way, checked or not.
+  const [rememberMe,    setRememberMe]    = useState(true);
 
   // ── Sign up fields ──────────────────────────────────────────────────────────
   // Phase 5.5 (revised): username and consent are mandatory again. Consent is
@@ -140,7 +148,7 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
     if (!loginEmail.trim() || !loginPassword) return;
     setBusy(true); setErr("");
     try {
-      await login(loginEmail.trim(), loginPassword);
+      await login(loginEmail.trim(), loginPassword, rememberMe);
       track('login', { method: 'email' });
       // onAuthStateChanged in AuthContext handles everything after this
     } catch (e) {
@@ -477,6 +485,7 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
               <div style={{ position: "relative" }}>
                 <input
                   type={showPw ? "text" : "password"} value={linkPassword} autoFocus
+                  autoComplete="current-password"
                   onChange={e => setLinkPassword(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && handleLinkGoogleAccount()}
                   placeholder="••••••••"
@@ -532,17 +541,19 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
             <div style={field}>
               <label style={label}>Email address</label>
               <input type="email" value={loginEmail} autoFocus
+                autoComplete="username"
                 onChange={e => setLoginEmail(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && handleLogin()}
                 placeholder="you@example.com"
                 style={inputStyle} onFocus={focusOn} onBlur={focusOff}/>
             </div>
 
-            <div style={{ marginBottom: 20 }}>
+            <div style={{ marginBottom: 14 }}>
               <label style={label}>Password</label>
               <div style={{ position: "relative" }}>
                 <input
                   type={showPw ? "text" : "password"} value={loginPassword}
+                  autoComplete="current-password"
                   onChange={e => setLoginPassword(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && handleLogin()}
                   placeholder="••••••••"
@@ -553,6 +564,16 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
                 </button>
               </div>
             </div>
+
+            <label style={{
+              display: "flex", alignItems: "center", gap: 8, marginBottom: 20,
+              fontSize: 13, color: "#565a78", cursor: "pointer", userSelect: "none",
+            }}>
+              <input type="checkbox" checked={rememberMe}
+                onChange={e => setRememberMe(e.target.checked)}
+                style={{ width: 15, height: 15, cursor: "pointer", accentColor: "#6d5df5" }}/>
+              Remember me on this device
+            </label>
 
             {err && <ErrorBox msg={err}/>}
 
@@ -610,6 +631,7 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
                   <input
                     type="email"
                     value={forgotEmail}
+                    autoComplete="username"
                     onChange={e => { setForgotEmail(e.target.value); setErr(""); }}
                     onKeyDown={e => e.key === "Enter" && handleForgot()}
                     placeholder="you@example.com"
@@ -707,6 +729,7 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
             <div style={field}>
               <label style={label}>Email address <span style={{ color: "#c53030" }}>*</span></label>
               <input type="email" value={signupEmail}
+                autoComplete="username"
                 onChange={e => setSignupEmail(e.target.value)}
                 placeholder="you@example.com"
                 style={inputStyle} onFocus={focusOn} onBlur={focusOff}/>
@@ -716,6 +739,7 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
               <label style={label}>Password <span style={{ color: "#c53030" }}>*</span></label>
               <div style={{ position: "relative" }}>
                 <input type={showPw ? "text" : "password"} value={signupPassword}
+                  autoComplete="new-password"
                   onChange={e => setSignupPassword(e.target.value)}
                   placeholder="At least 6 characters"
                   maxLength={25}
@@ -752,6 +776,7 @@ export default function LoginPage({ initialTab = null, onBack = null }) {
               <label style={label}>Confirm password <span style={{ color: "#c53030" }}>*</span></label>
               <div style={{ position: "relative" }}>
                 <input type={showCpw ? "text" : "password"} value={confirmPassword}
+                  autoComplete="new-password"
                   onChange={e => setConfirmPassword(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && beginSignup()}
                   placeholder="••••••••"
