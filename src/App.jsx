@@ -449,7 +449,6 @@ export default function App() {
     setTrackedCreatorIds(new Set());
     setClaimRequests([]);
     setHasPendingClaim(false);
-    setSecurityTicker(null);
     setFeedLoading(true);      // next user's data hasn't loaded yet either
     setInvestorPage('home');   // new user always starts at home
     setAdminPage('users');
@@ -1076,13 +1075,6 @@ export default function App() {
     return () => clearInterval(iv);
   }, [user?.uid]);
 
-  // securityTicker must be here — before ANY conditional return — Rules of Hooks
-  const [securityTicker, setSecurityTicker] = useState(null);
-  // Which page Stock Insights was opened from, so its Back button returns
-  // there instead of always landing on Home — captured at the moment of
-  // navigation (openSecurity below), not derived after the fact.
-  const [secInsightsFrom, setSecInsightsFrom] = useState('home');
-
   // ── Bare /idea/:id route — no auth required ──────────────────────────────
   // This is the shape public share links use (Recommendations.jsx's
   // IdeaSharePopover, web-public/, mobile push/email links) — a fresh hit
@@ -1252,14 +1244,13 @@ export default function App() {
   // signed-out visitor/crawler, without a second page to keep in sync.
   //
   // In-app navigation (clicking a ticker from Home/Portfolio/Market Insights)
-  // deliberately still uses the internal page==='sec_intel' state below, not
-  // this route match — changing that would drop signed-in users out of the
-  // app shell (sidebar/nav) on every ticker click, which nobody asked for.
-  // This route exists for shared/typed/crawled links, which is what's
-  // indexable (and, once loaded, this route also serves in-app navigation:
-  // pagePath already reflects openSecurity()'s navigate() call below, so a
-  // signed-in user clicking a ticker never leaves this component either —
-  // the difference is purely which branch of this same render renders).
+  // also goes through this same route now via openSecurity()'s goToPath()
+  // call below, exactly like an idea post's standalone page — a signed-in
+  // user opening a specific ticker gets this full-width render (its own
+  // back/home/share controls, no app-shell header alongside them) instead of
+  // the app shell's sidebar/nav. The app-shell page==='sec_intel' state
+  // (below) still exists for the Stock Insights section's own browse/search
+  // landing, reached via the sidebar with no ticker in the URL.
   const securityMatch = pagePath.match(/^\/security\/([A-Za-z0-9.&_-]{1,24})/i);
   if (securityMatch && !authLoading) {
     const secTicker = decodeURIComponent(securityMatch[1]).toUpperCase();
@@ -1356,20 +1347,23 @@ export default function App() {
   // (isInv itself is computed earlier, above the auth-gate early returns —
   // see the useEffect that keeps investorPage/adminPage synced with the URL.)
   const newRecs = recsReceived.filter(r=>!r.invested && !r.hidden).length;
-  // page + setPage — setPage also closes the mobile nav drawer for investors
+  // A specific ticker goes through the same standalone /security/:ticker
+  // route (goToPath) that a shared/typed link uses — see the "Stock
+  // Insights route" branch above — rather than the app-shell page==='sec_intel'
+  // state. That branch already renders SecurityIntelligencePage full-width
+  // with its own back/home/share controls and no viewer-nullability special
+  // casing needed, so routing every ticker open through it (instead of only
+  // direct URL loads) means a click from Home/Portfolio/Market Insights gets
+  // the same full-space page instead of duplicating the app's own header
+  // alongside the page's own — the same tradeoff idea posts already make via
+  // goToPath elsewhere in this file. Falling back to the plain section page
+  // covers the no-ticker case (shouldn't happen in practice — every call site
+  // passes one — but matches the old guard).
   const openSecurity = (ticker, name, tab) => {
-    if (page !== 'sec_intel') setSecInsightsFrom(page);
-    setSecurityTicker({ ticker, name, tab });
-    // setPage('sec_intel') below navigates to the bare '/security' path via
-    // INVESTOR_PAGE_TO_PATH — that table only maps a page name to a static
-    // path, with no concept of a per-ticker segment, so it drops the symbol
-    // entirely. Overwrite it immediately (replace: true, so this doesn't add
-    // a second back-button step) with the real deep link — the same
-    // /security/:ticker route the standalone page uses, so in-app
-    // navigation and a shared/typed link now agree.
+    if (ticker) { goToPath(`/security/${encodeURIComponent(ticker)}${tab ? `?tab=${tab}` : ''}`); return; }
     setPage('sec_intel');
-    if (ticker) navigate(`/security/${encodeURIComponent(ticker)}`, { replace: true });
   };
+  // page + setPage — setPage also closes the mobile nav drawer for investors
   const page    = isInv ? investorPage : adminPage;
   const setPage = isInv
     ? (p) => { setInvestorPage(p); setNavOpen(false); track('page_view', { page_name: p });
@@ -1930,7 +1924,10 @@ export default function App() {
             {isInv && showDiscover && <SectionErrorBoundary label="Discover"><DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/></SectionErrorBoundary>}
             {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><React.Suspense fallback={<div className="empty">Loading Portfolio…</div>}><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} onOpenSecurity={openSecurity} setPage={setPage}/></React.Suspense></SectionErrorBoundary>}
             {isInv && page==="market_intel" && <SectionErrorBoundary label="Market Insights"><MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
-            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={securityTicker} contacts={contacts} me={ME} viewerUser={user} trackedIds={trackedCreatorIds} onOpenSecurity={openSecurity} onBack={()=>setPage(secInsightsFrom)} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
+            {/* No ticker in scope here — openSecurity() now routes any specific ticker straight to
+                the standalone /security/:ticker page (see its own definition above), so this branch
+                only ever renders the section's browse/search landing. */}
+            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={null} contacts={contacts} me={ME} viewerUser={user} trackedIds={trackedCreatorIds} onOpenSecurity={openSecurity} onBack={()=>setPage('home')} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
             {isInv && page==="discover"     && <SectionErrorBoundary label="Discover People"><DiscoverPeoplePage ME={ME}/></SectionErrorBoundary>}
             {isInv && page==="network"   && <SectionErrorBoundary label="Network"><Network
                 connections={connections} setConnections={setConnections}

@@ -40,23 +40,30 @@ verified against the actual code rather than trusted blindly.
   Insights deep link (see "Public, crawlable pages" below for why that one is
   more involved).
   - **The standalone-route mechanism** (public profile / circle / standalone
-    Stock Insights — reached before or outside the authenticated app shell,
-    e.g. a shared link opened signed-out) is NOT handled via react-router's
-    own `<Routes>`/`useLocation()` — it's a hand-rolled `pagePath` state in
-    `App.jsx`, deliberately decoupled from react-router's own Location.
-    `setPage()`/`openSecurity()`'s ordinary in-app section navigation calls
-    react-router's `navigate()`, which updates the address bar and
-    react-router's own `Location` but must NOT trip the standalone-route
-    matches (`circleMatch`/`publicMatch`/`securityMatch`) — otherwise a
-    signed-in user's ticker click would drop them out of the app shell. The
+    Stock Insights / idea posts — reached before or outside the authenticated
+    app shell, e.g. a shared link opened signed-out) is NOT handled via
+    react-router's own `<Routes>`/`useLocation()` — it's a hand-rolled
+    `pagePath` state in `App.jsx`, deliberately decoupled from react-router's
+    own Location. `setPage()`'s ordinary in-app section navigation (Home,
+    Portfolio, Market Insights, the Stock Insights section's own browse/search
+    landing, etc.) calls react-router's `navigate()`, which updates the
+    address bar and react-router's own Location but must NOT trip the
+    standalone-route matches (`circleMatch`/`publicMatch`/`securityMatch`) —
+    otherwise a section click would drop the user out of the app shell. The
     standalone routes instead move via `goToPath()` (a raw
     `window.history.pushState` + `setPagePath`, bypassing `navigate()`
     entirely) or, from outside `App.jsx` (e.g. `src/utils/navigation.js`'s
     `openProfile`/`gotoCircle`/`openReco`, called from all over the feature
     files), via a small registered-callback bridge
     (`registerGoToPath`/`goHome`) since that plain, component-free module
-    can't reach `App.jsx`'s own state setter directly. This mirrors the
-    pre-existing `pageHash`/`hashchange` mechanism this replaced almost
+    can't reach `App.jsx`'s own state setter directly. `openSecurity()`
+    (opening a specific ticker's Stock Insights page) is one of these
+    `goToPath()` callers too, not a `setPage()`/`navigate()` one — a ticker
+    click deliberately does leave the app shell, the same tradeoff an idea
+    post's own link already makes, so the ticker page renders full-width with
+    its own back/home/share controls instead of duplicating the app's header
+    alongside them. This mirrors the pre-existing `pageHash`/`hashchange`
+    mechanism this replaced almost
     exactly — `navigate()` never fired `hashchange` under `HashRouter`
     either, for the same underlying reason (it goes through history
     push/replaceState, not a raw `location.hash` assignment).
