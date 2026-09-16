@@ -27,13 +27,30 @@ const PROFILE_UPDATE_API     = `${API_BASE}/update`;
 // treated as a sign-in failure — a signed-in user just falls back to the
 // same (slower, still correct) web-public path a signed-out visitor
 // always gets if this call doesn't succeed.
-const SESSION_API = `${API_ORIGIN}/api/data?resource=session`;
+//
+// Deliberately NOT API_ORIGIN (unlike every other API_BASE above): a
+// cookie is scoped to whichever origin actually answers the request, and
+// API_ORIGIN on the real custom domain resolves to a DIFFERENT origin
+// (https://investor-circle.vercel.app — see its own comment in db.js, a
+// holdover from the GitHub-Pages-hosted-frontend era) than the page the
+// visitor is actually on (myinvestorcircle.com). A same-origin-scoped
+// fetch (`credentials: 'same-origin'`, correct below) to a cross-origin
+// URL is treated as `omit` by the browser — no cookie is sent OR stored,
+// so this cookie was silently never being set on myinvestorcircle.com at
+// all, for anyone, regardless of browser. A relative path always resolves
+// against the page's own origin, whatever that is (production custom
+// domain, a Vercel Preview's own *.vercel.app URL, or localhost), which
+// is exactly what a same-origin-only cookie needs.
+const SESSION_API = `/api/data?resource=session`;
 // Comfortably inside the server-side token TTL (15 minutes — see
 // api/_lib/handlers/session.js) so a long-running tab keeps a fresh token
 // rather than silently falling back to web-public mid-session.
 const ROUTING_TOKEN_REFRESH_MS = 10 * 60 * 1000;
 
-function mintRoutingCookie(idToken) {
+// Exported only so AuthContext.test.jsx can pin the fetch URL as
+// same-origin — the exact class of bug this function shipped with once
+// already (see SESSION_API's own comment).
+export function mintRoutingCookie(idToken) {
   if (!idToken) return;
   fetch(`${SESSION_API}&action=mint`, {
     method: 'POST',
@@ -42,7 +59,7 @@ function mintRoutingCookie(idToken) {
   }).catch(() => {});
 }
 
-function clearRoutingCookie() {
+export function clearRoutingCookie() {
   return fetch(`${SESSION_API}&action=clear`, { method: 'POST', credentials: 'same-origin' }).catch(() => {});
 }
 
