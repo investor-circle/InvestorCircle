@@ -32,7 +32,8 @@ import {
   ArrowLeft,
   Link,
   Home,
-  Image as ImageIcon
+  Image as ImageIcon,
+  BarChart2
 } from "lucide-react";
 import { getPreviousClose, getTodayClose, sourceName } from "../../services/marketData";
 import { getDailyPrices, byTicker, priceKey } from "../../services/api/pricingApi";
@@ -69,7 +70,7 @@ import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
 import { sendEmail, sendPush } from "../../services/notify";
 import { calcTargetDate, classColor, compressImage, fmt, fmtDate, fmtPct, getClosedInfo, getTargetDate, initialsOf, isExpired, parseThesis, ret, serializeThesis } from "../../utils/format";
-import { fetchPublicProfileInfo, goBackOrElse, goHome, gotoReco, gotoUserProfile, openProfile, openReco } from "../../utils/navigation";
+import { fetchPublicProfileInfo, goBackOrElse, goHome, gotoReco, gotoUserProfile, openProfile, openReco, openSecurity } from "../../utils/navigation";
 
 export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
     contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack, globalSearch }) {
@@ -2629,6 +2630,33 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
             )}
           </div>
 
+          {/* ── Stock Insights CTA — same "what does everyone else think about
+              this security" jump-off the mobile app already offers from its
+              own idea detail screen (see mobile/app/reco/[id].js's
+              consensusBtn); web had no equivalent way to reach the ticker's
+              own page from here. Offered for any idea with a ticker and
+              regardless of sign-in — SecurityIntelligencePage already
+              degrades correctly for a signed-out viewer, same as this page
+              does. openSecurity() is the plain navigation.js bridge (like
+              openReco/openProfile above), not App.jsx's own onOpenSecurity
+              prop — this standalone page isn't rendered from a branch that
+              threads that prop down, so it goes through the same
+              component-free goToPath() mechanism the rest of this page's
+              navigation already uses. */}
+          {reco?.ticker && (
+            <button onClick={()=>openSecurity(reco.ticker)}
+              style={{display:'flex', alignItems:'center', gap:9, width:'100%',
+                background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
+                padding:'14px 18px', marginBottom:14, cursor:'pointer', fontFamily:'var(--font)',
+                textAlign:'left'}}>
+              <BarChart2 size={17} color="var(--accent-ink)"/>
+              <span style={{flex:1, fontSize:13.5, fontWeight:700}}>
+                What others think about {reco.ticker}
+              </span>
+              <ChevronRight size={16} color="var(--muted)"/>
+            </button>
+          )}
+
           {/* ── Sign-in nudge (non-members) ── */}
           {!viewerUser && (
             <div style={{background:'rgba(109,93,245,.07)', border:'1px solid rgba(109,93,245,.25)',
@@ -2882,7 +2910,7 @@ export function RecoComments({ recoId, me, highlightCommentId }) {
               const isHighlighted = String(c.id)===String(highlightCommentId);
               return (
               <div key={c.id} id={`comment-${c.id}`} style={{display:'flex',gap:9,marginBottom:12}}>
-                <div className="av" style={{width:28,height:28,background:'var(--accent)',fontSize:10,flexShrink:0}}>{initialsOf(c.user_name||'?')}</div>
+                <div className="av" style={{width:28,height:28,background:'var(--accent)',fontSize:10,flexShrink:0}}>{initialsOf(c.userName||'?')}</div>
                 <div style={{flex:1}}>
                   <div style={{display:'flex',alignItems:'baseline',gap:7,marginBottom:2}}>
                     <span style={{fontSize:12,fontWeight:700}}>{c.userName||'User'}</span>
