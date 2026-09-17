@@ -1,5 +1,6 @@
 import IdeaCard from '../../../components/IdeaCard';
 import { computeConsensus, consensusStrengthColor } from '../../../lib/consensus';
+import { money, day } from '../../../lib/format';
 
 // Deliberately NOT a tab switcher that hides inactive panels: an earlier
 // version of this component used client-side state to show only one
@@ -14,15 +15,55 @@ import { computeConsensus, consensusStrengthColor } from '../../../lib/consensus
 // href="#history">`) that jump to a section. That works with zero
 // JavaScript at all: no client component, no hydration dependency for the
 // one thing that matters most here.
-const SECTIONS = [
+const BASE_SECTIONS = [
   { id: 'consensus', label: 'Consensus' },
   { id: 'history', label: 'Idea History' },
   { id: 'investors', label: 'Investors' },
   { id: 'stats', label: 'Stats' },
 ];
 
-export default function SecurityTabs({ symbol, ideas }) {
+const CONVICTION_ORDER = ['Low', 'Medium', 'High'];
+const HORIZON_ORDER = ['<3m', '6m', '12m', '>2Y'];
+
+// Counts idea[field] by its existing value only — no bucketing/inference,
+// since conviction and horizon are both small fixed enums the poster picked
+// from (see src/constants/app.js HORIZONS, and the Conviction <select> in
+// Recommendations.jsx), not free text this would have to guess at.
+function countByField(ideas, field) {
+  const counts = {};
+  for (const idea of ideas) {
+    const v = idea[field];
+    if (!v) continue;
+    counts[v] = (counts[v] || 0) + 1;
+  }
+  return counts;
+}
+
+// Min–max across ideas that actually have this price field set. Returns
+// null (renders nothing) rather than a range built from a partial subset
+// presented as if it covered every idea — the caller shows the coverage
+// count alongside so a range from 2 of 5 ideas never reads as "the" range.
+function priceRange(ideas, field) {
+  const vals = ideas
+    .map((i) => Number(i[field]))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  if (!vals.length) return null;
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  return { min, max, count: vals.length };
+}
+
+function formatRange(range) {
+  if (!range) return null;
+  return range.min === range.max ? money(range.min) : `${money(range.min)}–${money(range.max)}`;
+}
+
+export default function SecurityTabs({ symbol, ideas, summary, related = [] }) {
   const community = computeConsensus(ideas);
+  const convictionCounts = countByField(ideas, 'conviction');
+  const horizonCounts = countByField(ideas, 'horizon');
+  const entryRange = priceRange(ideas, 'reco_price');
+  const targetRange = priceRange(ideas, 'target_price');
 
   const investorMap = {};
   for (const idea of ideas) {
@@ -45,44 +86,68 @@ export default function SecurityTabs({ symbol, ideas }) {
   const closedCount = ideas.filter((i) => i.status === 'Closed').length;
   const expiredCount = ideas.filter((i) => i.status === 'Expired').length;
 
+  const sections = related.length ? [...BASE_SECTIONS, { id: 'related', label: 'Related' }] : BASE_SECTIONS;
+
   return (
     <div>
-      <p className="lede" style={{ marginTop: 4, marginBottom: 0 }}>
-        {investors.length} {investors.length === 1 ? 'person has' : 'people have'} shared their view{investors.length === 1 ? '' : 's'} on {symbol} —{' '}
-        {activeInvestorCount} {activeInvestorCount === 1 ? 'is' : 'are'} still active.
-      </p>
-
       <nav className="tabs" aria-label="Jump to section">
-        {SECTIONS.map((s) => (
+        {sections.map((s) => (
           <a key={s.id} href={`#${s.id}`} className="tab-btn">{s.label}</a>
         ))}
       </nav>
 
       <section id="consensus" aria-label="Consensus">
+        <h2 style={{ marginTop: 4 }}>Community Consensus</h2>
         <div className="card">
-          <div className="card-head">Community consensus</div>
           <div className="pad">
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
               <span style={{ fontWeight: 700 }}>{community.label}</span>
-              <span style={{ fontWeight: 700, color: consensusStrengthColor(community) }}>{community.strength}/100</span>
+              <span className="meta">
+                {community.bull} Buy · {community.bear} Sell out of {community.total} idea{community.total === 1 ? '' : 's'}
+              </span>
             </div>
-            <div style={{ height: 8, borderRadius: 6, overflow: 'hidden', background: 'var(--line)' }}>
-              <div style={{ height: '100%', width: `${community.strength}%`, background: consensusStrengthColor(community) }} />
+            <div className="dist-bar">
+              {community.bullPct > 0 && <div className="seg-buy" style={{ width: `${community.bullPct}%` }} />}
+              {community.bearPct > 0 && <div className="seg-sell" style={{ width: `${community.bearPct}%` }} />}
             </div>
-            <div className="meta" style={{ marginTop: 8 }}>
-              {community.bull} buy · {community.bear} sell out of {community.total} idea{community.total === 1 ? '' : 's'}
-            </div>
-            <p className="meta" style={{ marginTop: 14, lineHeight: 1.7 }}>
-              This is the Community view — every public idea on {symbol}. &quot;Your Circle&quot; (just the people
-              you&apos;re connected with or tracking) is a signed-in view — open this page in the app to see it.
-            </p>
+
+            {(CONVICTION_ORDER.some((k) => convictionCounts[k]) || HORIZON_ORDER.some((k) => horizonCounts[k])) && (
+              <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
+                {CONVICTION_ORDER.some((k) => convictionCounts[k]) && (
+                  <div>
+                    <div className="meta">Conviction</div>
+                    <div className="badge-row">
+                      {CONVICTION_ORDER.filter((k) => convictionCounts[k]).map((k) => (
+                        <span className="tag" key={k}>{k} · {convictionCounts[k]}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {HORIZON_ORDER.some((k) => horizonCounts[k]) && (
+                  <div>
+                    <div className="meta">Horizon</div>
+                    <div className="badge-row">
+                      {HORIZON_ORDER.filter((k) => horizonCounts[k]).map((k) => (
+                        <span className="tag" key={k}>{k} · {horizonCounts[k]}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </section>
 
       <section id="history" aria-label="Idea History">
         <h2 style={{ marginTop: 4 }}>Idea History on {symbol}</h2>
-        <p className="meta" style={{ marginTop: -6, marginBottom: 14 }}>Immutable — every idea here is permanent, however it turned out.</p>
+        <p className="meta" style={{ marginTop: -6, marginBottom: 14 }}>
+          Immutable — every idea here is permanent, however it turned out.
+          {(entryRange || targetRange) && ' '}
+          {entryRange && `Entry ${formatRange(entryRange)} (${entryRange.count} of ${ideas.length} ideas)`}
+          {entryRange && targetRange && ' · '}
+          {targetRange && `Target ${formatRange(targetRange)} (${targetRange.count} of ${ideas.length} ideas)`}
+        </p>
         <div className="idea-row" style={{ padding: 0 }}>
           {ideas.map((idea) => <IdeaCard key={idea.id} idea={idea} />)}
         </div>
@@ -90,6 +155,9 @@ export default function SecurityTabs({ symbol, ideas }) {
 
       <section id="investors" aria-label="Investors">
         <h2 style={{ marginTop: 4 }}>Investors covering {symbol}</h2>
+        <p className="meta" style={{ marginTop: -10, marginBottom: 10 }}>
+          {investors.length} {investors.length === 1 ? 'person has' : 'people have'} shared their view{investors.length === 1 ? '' : 's'} on {symbol} — {activeInvestorCount} {activeInvestorCount === 1 ? 'is' : 'are'} still active.
+        </p>
         <div className="card">
           <div className="card-body" style={{ padding: 0 }}>
             {investors.map((inv, i) => (
@@ -127,6 +195,9 @@ export default function SecurityTabs({ symbol, ideas }) {
           <div className="stat"><div className="k">CLOSED</div><div className="v">{closedCount}</div></div>
           <div className="stat"><div className="k">EXPIRED</div><div className="v">{expiredCount}</div></div>
         </div>
+        {summary?.last_posted && (
+          <p className="meta" style={{ marginTop: -10, marginBottom: 16 }}>Latest activity {day(summary.last_posted)}</p>
+        )}
         {months.length > 0 && (
           <div className="card">
             <div className="card-head">Idea activity by month</div>
@@ -142,6 +213,35 @@ export default function SecurityTabs({ symbol, ideas }) {
           </div>
         )}
       </section>
+
+      {related.length > 0 && (
+        <section id="related" aria-label="Related Securities">
+          <h2 style={{ marginTop: 4 }}>Related Securities</h2>
+          <p className="meta" style={{ marginTop: -10, marginBottom: 10 }}>
+            Other stocks in the same sector with public ideas.
+          </p>
+          <div className="card">
+            <div className="card-body" style={{ padding: 0 }}>
+              {related.map((r, i) => (
+                <a
+                  key={r.symbol}
+                  href={`/security/${encodeURIComponent(r.symbol)}`}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', color: 'inherit',
+                    borderBottom: i < related.length - 1 ? '1px solid var(--line)' : 'none',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700 }}>{r.name || r.symbol}</div>
+                    <div className="meta">{r.symbol}</div>
+                  </div>
+                  <span className="tag">{r.idea_count} idea{Number(r.idea_count) === 1 ? '' : 's'}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

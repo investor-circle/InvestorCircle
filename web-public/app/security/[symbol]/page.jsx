@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation';
-import { getSecurityByTicker } from '../../../lib/api';
-import { jsonLd, day } from '../../../lib/format';
+import { getSecurityByTicker, getRelatedSecurities } from '../../../lib/api';
+import { jsonLd } from '../../../lib/format';
+import { computeConsensus } from '../../../lib/consensus';
 import Gate from '../../../components/Gate';
+import Breadcrumbs from '../../../components/Breadcrumbs';
 import SecurityTabs from './SecurityTabs';
 
 export const revalidate = 120;
@@ -33,16 +35,34 @@ export async function generateMetadata({ params }) {
   };
 }
 
+// Idea `status` (Active/Closed/Expired) the same way SecurityTabs derives it,
+// needed here too for the above-the-fold summary strip. Duplicated rather
+// than lifted into a shared prop so this page and SecurityTabs each derive
+// independently from the same `ideas` array — the existing pattern in this
+// file (SecurityTabs already computes its own consensus/investor/month
+// breakdowns the same way).
+function countByStatus(ideas) {
+  return ideas.reduce(
+    (acc, i) => { acc[i.status] = (acc[i.status] || 0) + 1; return acc; },
+    { Active: 0, Closed: 0, Expired: 0 }
+  );
+}
+
 export default async function SecurityPage({ params }) {
   const { symbol } = await params;
-  const data = await getSecurityByTicker(symbol);
+  const [data, related] = await Promise.all([
+    getSecurityByTicker(symbol),
+    getRelatedSecurities(symbol),
+  ]);
   if (!data || !data.summary?.idea_count) notFound();
 
   const { name, sector, summary, ideas } = data;
   const sym = data.symbol;
   const canonical = `https://myinvestorcircle.com/security/${encodeURIComponent(sym)}`;
+  const consensus = computeConsensus(ideas);
+  const statusCounts = countByStatus(ideas);
 
-  const ld = jsonLd({
+  const collectionLd = jsonLd({
     '@context': 'https://schema.org',
     '@type': 'CollectionPage',
     name: `Stock Insights on ${name} (${sym})`,
@@ -51,35 +71,50 @@ export default async function SecurityPage({ params }) {
     isPartOf: { '@type': 'WebSite', name: 'My Investor Circle', url: 'https://myinvestorcircle.com/' },
   });
 
+  const breadcrumbItems = [
+    { label: 'Home', href: 'https://myinvestorcircle.com/' },
+    { label: 'Stock Insights', href: 'https://myinvestorcircle.com/search' },
+    { label: sym },
+  ];
+  const breadcrumbLd = jsonLd({
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: breadcrumbItems.map((item, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: item.label,
+      item: item.href || canonical,
+    })),
+  });
+
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: ld }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: collectionLd }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: breadcrumbLd }} />
+
+      <Breadcrumbs items={breadcrumbItems} />
+
       <div className="eyebrow">{sector || 'Stock Insights'}</div>
-      <h1>{name}</h1>
+      <h1>{name} ({sym}) — Investor Ideas &amp; Community Sentiment</h1>
       <p className="lede">
-        {summary.idea_count} {summary.idea_count === 1 ? 'person has' : 'people have'} shared their view{summary.idea_count === 1 ? '' : 's'} on{' '}
-        <strong>{sym}</strong> from {summary.contributor_count} member{summary.contributor_count === 1 ? '' : 's'} —{' '}
-        {summary.closed_count} of {summary.idea_count} idea{summary.idea_count === 1 ? ' is' : 's are'} now closed. Every idea here is
-        permanent: entry, target and outcome stay on the record whichever way it went.
+        {summary.idea_count} public idea{summary.idea_count === 1 ? '' : 's'} on {name} from{' '}
+        {summary.contributor_count} member{summary.contributor_count === 1 ? '' : 's'}.
       </p>
-      <div className="stats" style={{ marginTop: 20, marginBottom: 10 }}>
+
+      <div className="badge-row">
+        {sector && <span className="tag">{sector}</span>}
+        <span className="tag tag-buy">{consensus.bull} Buy</span>
+        {consensus.bear > 0 && <span className="tag tag-sell">{consensus.bear} Sell</span>}
+      </div>
+      <div className="stats" style={{ marginTop: 10, marginBottom: 10 }}>
         <div className="stat"><div className="k">IDEAS</div><div className="v">{summary.idea_count}</div></div>
         <div className="stat"><div className="k">MEMBERS</div><div className="v">{summary.contributor_count}</div></div>
-        <div className="stat"><div className="k">CLOSED</div><div className="v">{summary.closed_count}</div></div>
-        <div className="stat"><div className="k">LATEST</div><div className="v" style={{ fontSize: 13.5 }}>{day(summary.last_posted)}</div></div>
+        <div className="stat"><div className="k">ACTIVE</div><div className="v">{statusCounts.Active}</div></div>
+        <div className="stat"><div className="k">CLOSED</div><div className="v">{statusCounts.Closed}</div></div>
       </div>
 
-      <SecurityTabs symbol={sym} name={name} ideas={ideas} />
+      <SecurityTabs symbol={sym} ideas={ideas} summary={summary} related={related} />
 
-      {/* No separate "open in the app" link here (unlike the idea page's,
-          which points at a different, non-proxied /investor/:username URL):
-          /security/:symbol is itself proxied to this app (see the main
-          project's vercel.json), so a fresh link to this exact path — with
-          or without a #  — would just reload this same page, not the main
-          app's authenticated Stock Insights view. That view lives at this
-          same path too, but is only reachable by a signed-in user already
-          running the app (client-side navigation, never a fresh request),
-          so Gate's sign-in link above is the only meaningful CTA left. */}
       <Gate
         line={`Sign in to see Your Circle's take on ${sym}, post your own view, or track this stock.`}
         next={`/security/${encodeURIComponent(sym)}`}

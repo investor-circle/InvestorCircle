@@ -48,6 +48,7 @@ describe("public-ideas — the private-idea guarantee", () => {
     { action: "by-symbol", symbol: "RELIANCE" },
     { action: "search", q: "reliance" },
     { action: "symbols" },
+    { action: "related", symbol: "RELIANCE" },
   ];
 
   it("filters is_public = true in EVERY statement it runs, for every action", async () => {
@@ -154,6 +155,24 @@ describe("public-ideas — thesis sanitization", () => {
     const searchRes = await get({ action: "search", q: "reliance" });
     expect(searchRes.body.ideas[0].thesis).toBe("Strong quarter.\n\nDon't miss this.");
     expect(JSON.stringify(searchRes.body)).not.toContain("base64");
+  });
+});
+
+describe("public-ideas — related securities", () => {
+  it("rejects a symbol that is not a symbol, before querying", async () => {
+    sqlCalls.length = 0;
+    const res = await get({ action: "related", symbol: "'; DROP TABLE x; --" });
+    expect(res.statusCode).toBe(400);
+    expect(sqlCalls.length).toBe(0);
+  });
+
+  it("returns the sector-mates a single query resolves, excluding the queried symbol itself", async () => {
+    rows = [{ symbol: "TCS", name: "Tata Consultancy Services", idea_count: 3 }];
+    const res = await get({ action: "related", symbol: "RELIANCE" });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ symbol: "RELIANCE", related: rows });
+    expect(sqlCalls.length).toBe(1);
+    expect(sqlCalls[0].text.replace(/\s+/g, " ")).toContain('UPPER(r.ticker) <> ?');
   });
 });
 

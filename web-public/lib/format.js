@@ -27,6 +27,21 @@ export const clip = (s, n) => {
   return t.length <= n ? t : t.slice(0, n - 1).trimEnd() + '…';
 };
 
+// Splits thesis text into a short preview and the remainder, for a
+// concise-preview-plus-"Read more" UI. Unlike clip(), this never drops any
+// characters — preview + rest reconstructs the full text — because the
+// remainder still has to land in the server-rendered HTML (inside a native
+// <details>), not be discarded for visual reasons. Cuts at the last space at
+// or before `n`, so words don't get split mid-token; falls back to a hard
+// cut only when there's no reasonable space to break on (e.g. one long URL).
+export const splitPreview = (s, n) => {
+  const t = String(s ?? '');
+  if (t.length <= n) return { preview: t, rest: '' };
+  let cut = t.lastIndexOf(' ', n);
+  if (cut < n * 0.6) cut = n;
+  return { preview: t.slice(0, cut).trimEnd(), rest: t.slice(cut).trimStart() };
+};
+
 // JSON-LD sits inside <script>, where the HTML parser looks for "</script>"
 // before anything else — the escaping that matters here stops a thesis
 // containing that string from closing the block early. Copied verbatim from

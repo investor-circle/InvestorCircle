@@ -35,6 +35,13 @@
  *   -> 200 { query, ideas: [...] }
  * GET ?resource=public-ideas&action=symbols
  *   -> 200 { symbols: [{ symbol, idea_count, last_posted }] }   (sitemap)
+ * GET ?resource=public-ideas&action=related&symbol=<ticker>
+ *   -> 200 { symbol, related: [{ symbol, name, idea_count }] }
+ *   Other tickers sharing this one's sector, for /security/:symbol's
+ *   "Related Securities" links. Sector comes from the SAME ic_recommendations
+ *   rows this file already reads — not a new data source, just a query
+ *   nobody had written yet. Empty (never fabricated) when the symbol has no
+ *   sector on record or no sector-mates with a public idea.
  */
 
 import { sql } from '../auth.js';
@@ -81,6 +88,7 @@ export default async function handlePublicIdeas(req, res) {
     if (action === 'by-symbol') return await bySymbol(req, res);
     if (action === 'search')    return await search(req, res);
     if (action === 'symbols')   return await symbols(req, res);
+    if (action === 'related')   return await related(req, res);
     res.status(400).json({ error: 'Unknown or missing action' });
   } catch (err) {
     console.error('[public-ideas]', action, err);
@@ -286,4 +294,33 @@ async function symbols(_req, res) {
     ORDER BY MAX(r.created_at) DESC
   `;
   res.status(200).json({ symbols: rows });
+}
+
+/* Other tickers with a public idea in the same sector as `symbol` — the
+   /security/:symbol "Related Securities" list. Sector is resolved from
+   ic_recommendations itself (MAX() over that ticker's own public rows), not
+   trusted from the caller, so this can't be used to probe sector values for
+   a ticker with no public ideas. A null/unset sector correctly yields no
+   rows (NULL = NULL is never true in SQL) rather than matching every other
+   ticker with a null sector. */
+async function related(req, res) {
+  const symbol = String(req.query?.symbol || '').trim().toUpperCase();
+  if (!SYMBOL_RE.test(symbol)) { res.status(400).json({ error: 'invalid symbol' }); return; }
+  const limit = clampLimit(req.query?.limit, 6);
+
+  const rows = await sql`
+    SELECT UPPER(r.ticker) AS symbol, MAX(r.asset_name) AS name, COUNT(*) AS idea_count
+    FROM ic_recommendations r
+    WHERE r.is_public = true
+      AND r.ticker IS NOT NULL AND r.ticker <> ''
+      AND UPPER(r.ticker) <> ${symbol}
+      AND r.sector = (
+        SELECT MAX(r2.sector) FROM ic_recommendations r2
+        WHERE UPPER(r2.ticker) = ${symbol} AND r2.is_public = true
+      )
+    GROUP BY UPPER(r.ticker)
+    ORDER BY COUNT(*) DESC, MAX(r.created_at) DESC
+    LIMIT ${limit}
+  `;
+  res.status(200).json({ symbol, related: rows });
 }

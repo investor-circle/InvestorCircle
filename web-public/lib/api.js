@@ -38,3 +38,8 @@ export async function searchIdeas(q) {
   const { ok, data } = await getJson(`/api/data?resource=public-ideas&action=search&q=${encodeURIComponent(q.trim())}`);
   return ok ? data : { query: q, ideas: [] };
 }
+
+export async function getRelatedSecurities(symbol) {
+  const { ok, data } = await getJson(`/api/data?resource=public-ideas&action=related&symbol=${encodeURIComponent(symbol)}`);
+  return ok ? (data.related || []) : [];
+}
