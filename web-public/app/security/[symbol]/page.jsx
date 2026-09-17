@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getSecurityByTicker, getRelatedSecurities } from '../../../lib/api';
-import { jsonLd } from '../../../lib/format';
+import { jsonLd, ideaStatusSummary } from '../../../lib/format';
 import { computeConsensus } from '../../../lib/consensus';
 import Gate from '../../../components/Gate';
 import Breadcrumbs from '../../../components/Breadcrumbs';
@@ -16,7 +16,7 @@ export async function generateMetadata({ params }) {
   const { name, summary } = data;
   const sym = data.symbol;
   const title = `${sym} — Stock Insights: ${summary.idea_count} investor idea${summary.idea_count === 1 ? '' : 's'} | My Investor Circle`;
-  const description = `${summary.idea_count} published idea${summary.idea_count === 1 ? '' : 's'} on ${name} (${sym}) from ${summary.contributor_count} member${summary.contributor_count === 1 ? '' : 's'}, each with entry price, target and outcome on the record.`.slice(0, 200);
+  const description = `${summary.idea_count} published idea${summary.idea_count === 1 ? '' : 's'} on ${name} (${sym}) from ${summary.contributor_count} investor${summary.contributor_count === 1 ? '' : 's'}, each with entry price, target and outcome on the record.`.slice(0, 200);
   const canonical = `https://myinvestorcircle.com/security/${encodeURIComponent(sym)}`;
 
   return {
@@ -66,7 +66,7 @@ export default async function SecurityPage({ params }) {
     '@context': 'https://schema.org',
     '@type': 'CollectionPage',
     name: `Stock Insights on ${name} (${sym})`,
-    description: `${summary.idea_count} published ideas on ${name} from ${summary.contributor_count} members.`,
+    description: `${summary.idea_count} published ideas on ${name} from ${summary.contributor_count} investors.`,
     url: canonical,
     isPartOf: { '@type': 'WebSite', name: 'My Investor Circle', url: 'https://myinvestorcircle.com/' },
   });
@@ -98,7 +98,8 @@ export default async function SecurityPage({ params }) {
       <h1>{name} ({sym}) — Investor Ideas &amp; Community Sentiment</h1>
       <p className="lede">
         {summary.idea_count} public idea{summary.idea_count === 1 ? '' : 's'} on {name} from{' '}
-        {summary.contributor_count} member{summary.contributor_count === 1 ? '' : 's'}.
+        {summary.contributor_count} investor{summary.contributor_count === 1 ? '' : 's'}.{' '}
+        {ideaStatusSummary(statusCounts.Active, statusCounts.Closed, statusCounts.Expired)}
       </p>
 
       <div className="badge-row">
@@ -108,7 +109,7 @@ export default async function SecurityPage({ params }) {
       </div>
       <div className="stats" style={{ marginTop: 10, marginBottom: 10 }}>
         <div className="stat"><div className="k">IDEAS</div><div className="v">{summary.idea_count}</div></div>
-        <div className="stat"><div className="k">MEMBERS</div><div className="v">{summary.contributor_count}</div></div>
+        <div className="stat"><div className="k">INVESTORS</div><div className="v">{summary.contributor_count}</div></div>
         <div className="stat"><div className="k">ACTIVE</div><div className="v">{statusCounts.Active}</div></div>
         <div className="stat"><div className="k">CLOSED</div><div className="v">{statusCounts.Closed}</div></div>
       </div>

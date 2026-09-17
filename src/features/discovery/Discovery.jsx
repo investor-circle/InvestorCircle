@@ -45,7 +45,7 @@ import {
 import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
-import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, initialsOf, scoreFeedRec } from "../../utils/format";
+import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, ideaStatusSummary, initialsOf, scoreFeedRec } from "../../utils/format";
 import { fetchPublicProfileInfo, openProfile, openReco, goHome } from "../../utils/navigation";
 import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
 import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, rankTrending } from "../../utils/trending";
@@ -2154,6 +2154,15 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   // both data paths.
   const activeInvestorCount = investors.filter(r=>r.status==='Active').length;
 
+  // Idea-level status mix (distinct from activeInvestorCount above, which is
+  // per-investor: each person's most recent call). This counts every idea on
+  // {ticker}, for the summary strip below — the signed-in equivalent of the
+  // one already shown on the public /security/:symbol page.
+  const ideaActiveCount  = recos.filter(r=>r.status==='Active').length;
+  const ideaClosedCount  = recos.filter(r=>r.status==='Closed').length;
+  const ideaExpiredCount = recos.filter(r=>r.status==='Expired').length;
+  const securitySector   = recos[0]?.sector || '';
+
   return (
     <>
       <div className="page-head" style={{display:'block'}}>
@@ -2228,6 +2237,30 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
           </div>
         )}
       </div>
+
+      {/* ── Compact summary strip — sector/Buy-Sell/idea-status at a glance,
+           before the tabs. The signed-out /security/:symbol page (web-public)
+           already has this; the signed-in view only had the single page-sub
+           line above with nothing quantifying idea/investor counts or the
+           active/closed mix before a reader hits the tab content. ── */}
+      {!loading && recos.length > 0 && (
+        <div style={{marginTop:16}}>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+            {securitySector && <span className="pill">{securitySector}</span>}
+            <span className="pill gain">{community.bull} Buy</span>
+            {community.bear > 0 && <span className="pill loss">{community.bear} Sell</span>}
+          </div>
+          <div className="statgrid">
+            <div className="stat"><div className="v">{recos.length}</div><div className="l">Ideas</div></div>
+            <div className="stat"><div className="v">{investors.length}</div><div className="l">Investors</div></div>
+            <div className="stat"><div className="v">{ideaActiveCount}</div><div className="l">Active</div></div>
+            <div className="stat"><div className="v">{ideaClosedCount}</div><div className="l">Closed</div></div>
+          </div>
+          <div style={{fontSize:13,color:'var(--ink-soft)',marginTop:10}}>
+            {ideaStatusSummary(ideaActiveCount, ideaClosedCount, ideaExpiredCount)}
+          </div>
+        </div>
+      )}
 
       {/* ── Tabs — segmented control, styled to be unmistakably a multi-tab bar ── */}
       <div style={{

@@ -49,6 +49,30 @@ export const splitPreview = (s, n) => {
 export const jsonLd = (obj) =>
   JSON.stringify(obj).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 
+// One-line factual status mix for a set of ideas on a security — e.g.
+// "4 ideas are active, while 1 is closed." Each non-zero bucket gets its own
+// clause; a bucket at zero is omitted entirely rather than stated as "0 are
+// closed". Singular/plural agreement ("1 idea is" vs "4 ideas are") is
+// derived from the count, never hardcoded. Duplicated verbatim in the main
+// repo's src/utils/format.js (a separate deployable project, no shared build
+// step) — keep the two copies in sync, same as computeConsensus in
+// lib/consensus.js.
+export function ideaStatusSummary(active = 0, closed = 0, expired = 0) {
+  const buckets = [
+    { n: active, label: 'active' },
+    { n: closed, label: 'closed' },
+    { n: expired, label: 'expired' },
+  ].filter((b) => b.n > 0);
+  if (!buckets.length) return '';
+  const clauses = buckets.map((b, i) => {
+    const be = b.n === 1 ? 'is' : 'are';
+    return i === 0 ? `${b.n} idea${b.n === 1 ? '' : 's'} ${be} ${b.label}` : `${b.n} ${be} ${b.label}`;
+  });
+  if (clauses.length === 1) return `${clauses[0]}.`;
+  if (clauses.length === 2) return `${clauses[0]}, while ${clauses[1]}.`;
+  return `${clauses.slice(0, -1).join(', ')}, and ${clauses[clauses.length - 1]}.`;
+}
+
 export const statusColors = (status) =>
   ({
     Active: { bg: '#dbeafe', fg: '#1d4ed8' },
