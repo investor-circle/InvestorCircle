@@ -82,8 +82,9 @@ export default function SecurityTabs({ symbol, ideas, summary, related = [] }) {
     else byMonth[mo].sell++;
   }
   const months = Object.values(byMonth).sort((a, b) => a.mo.localeCompare(b.mo));
-  const activeCount = ideas.filter((i) => i.status === 'Active').length;
-  const closedCount = ideas.filter((i) => i.status === 'Closed').length;
+  // Active/closed already shown above the fold (page.jsx's stat strip) —
+  // only expired isn't broken out there, so that's the one count still
+  // computed here (see the Statistics section below).
   const expiredCount = ideas.filter((i) => i.status === 'Expired').length;
 
   const sections = related.length ? [...BASE_SECTIONS, { id: 'related', label: 'Related' }] : BASE_SECTIONS;
@@ -100,11 +101,11 @@ export default function SecurityTabs({ symbol, ideas, summary, related = [] }) {
         <h2 style={{ marginTop: 4 }}>Community Consensus</h2>
         <div className="card">
           <div className="pad">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+            {/* Raw Buy/Sell counts already shown above the fold (the badge
+                row under the H1) — not repeated here, just the label and
+                the same distribution as a bar. */}
+            <div style={{ marginBottom: 6 }}>
               <span style={{ fontWeight: 700 }}>{community.label}</span>
-              <span className="meta">
-                {community.bull} Buy · {community.bear} Sell out of {community.total} idea{community.total === 1 ? '' : 's'}
-              </span>
             </div>
             <div className="dist-bar">
               {community.bullPct > 0 && <div className="seg-buy" style={{ width: `${community.bullPct}%` }} />}
@@ -189,14 +190,16 @@ export default function SecurityTabs({ symbol, ideas, summary, related = [] }) {
 
       <section id="stats" aria-label="Statistics">
         <h2 style={{ marginTop: 4 }}>Statistics</h2>
-        <div className="stats" style={{ marginTop: 4, marginBottom: 16 }}>
-          <div className="stat"><div className="k">TOTAL IDEAS</div><div className="v">{ideas.length}</div></div>
-          <div className="stat"><div className="k">ACTIVE</div><div className="v">{activeCount}</div></div>
-          <div className="stat"><div className="k">CLOSED</div><div className="v">{closedCount}</div></div>
-          <div className="stat"><div className="k">EXPIRED</div><div className="v">{expiredCount}</div></div>
-        </div>
-        {summary?.last_posted && (
-          <p className="meta" style={{ marginTop: -10, marginBottom: 16 }}>Latest activity {day(summary.last_posted)}</p>
+        {/* Total/active/closed already shown above the fold — this section
+            only adds what isn't stated anywhere else: expired ideas (a
+            third status the top strip doesn't break out) and the monthly
+            activity below. */}
+        {(summary?.last_posted || expiredCount > 0) && (
+          <p className="meta" style={{ marginTop: -10, marginBottom: 16 }}>
+            {summary?.last_posted && `Latest activity ${day(summary.last_posted)}`}
+            {summary?.last_posted && expiredCount > 0 && ' · '}
+            {expiredCount > 0 && `${expiredCount} expired`}
+          </p>
         )}
         {months.length > 0 && (
           <div className="card">

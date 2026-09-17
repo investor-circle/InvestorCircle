@@ -102,16 +102,18 @@ export default async function SecurityPage({ params }) {
         {ideaStatusSummary(statusCounts.Active, statusCounts.Closed, statusCounts.Expired)}
       </p>
 
+      {/* Sector isn't repeated here — it's already the eyebrow directly
+          above the H1, and this page had it in both spots at first. */}
       <div className="badge-row">
-        {sector && <span className="tag">{sector}</span>}
         <span className="tag tag-buy">{consensus.bull} Buy</span>
         {consensus.bear > 0 && <span className="tag tag-sell">{consensus.bear} Sell</span>}
       </div>
+      {/* Active/closed aren't repeated as tiles here — the sentence above
+          (via ideaStatusSummary) already states them; these two tiles are
+          what it doesn't cover. */}
       <div className="stats" style={{ marginTop: 10, marginBottom: 10 }}>
         <div className="stat"><div className="k">IDEAS</div><div className="v">{summary.idea_count}</div></div>
         <div className="stat"><div className="k">INVESTORS</div><div className="v">{summary.contributor_count}</div></div>
-        <div className="stat"><div className="k">ACTIVE</div><div className="v">{statusCounts.Active}</div></div>
-        <div className="stat"><div className="k">CLOSED</div><div className="v">{statusCounts.Closed}</div></div>
       </div>
 
       <SecurityTabs symbol={sym} ideas={ideas} summary={summary} related={related} />

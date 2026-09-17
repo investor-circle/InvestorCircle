@@ -2569,39 +2569,42 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                 ))}
               </div>
 
-              {/* Monthly recommendation trend — SVG sparkline */}
+              {/* Idea activity by month — a plain row per month (same pattern
+                  as the public /security/:symbol page's month list) rather
+                  than the SVG bar chart this replaces: fixed-width tick
+                  labels and stacked bars kept overlapping/illegible once a
+                  ticker had more than a handful of months, or a month with a
+                  small count next to one with a large one. A row list has no
+                  such failure mode at any data shape. This SPA has more
+                  horizontal room than that mobile-first page, though, so
+                  each row adds a slim proportional bar (green=buy/red=sell,
+                  scaled to the busiest month) rather than being text-only —
+                  a quick visual comparison across months without the SVG's
+                  label-collision problem. */}
               {stats.months.length>0&&(
                 <div className="card">
                   <div className="card-head"><Target size={15}/> Idea Activity by Month</div>
-                  <div className="card-body" style={{padding:'16px 20px'}}>
+                  <div className="card-body" style={{padding:'14px 20px',display:'flex',flexDirection:'column',gap:10}}>
                     {(()=>{
-                      const maxVal = Math.max(...stats.months.map(m=>m.buy+m.sell), 1);
-                      const W = 560, H = 90, pad = 32, barW = Math.min(28, (W-2*pad)/Math.max(stats.months.length,1)-4);
-                      const xStep = (W-2*pad) / Math.max(stats.months.length, 1);
-                      return (
-                        <svg viewBox={`0 0 ${W} ${H+40}`} style={{width:'100%',maxWidth:W,display:'block'}}>
-                          {stats.months.map((m,i)=>{
-                            const x  = pad + i*xStep;
-                            const bH = (m.buy/maxVal)*(H-10);
-                            const sH = (m.sell/maxVal)*(H-10);
-                            return (
-                              <g key={m.mo}>
-                                <rect x={x} y={H-bH} width={barW} height={bH} rx={3} fill="var(--gain)" opacity={.8}/>
-                                <rect x={x} y={H-bH-sH} width={barW} height={sH} rx={3} fill="var(--loss)" opacity={.8}/>
-                                <text x={x+barW/2} y={H+14} textAnchor="middle" fontSize={8} fill="var(--muted)">
-                                  {m.mo.slice(5)}
-                                </text>
-                                {(m.buy+m.sell)>0&&<text x={x+barW/2} y={H-bH-sH-4} textAnchor="middle" fontSize={9} fill="var(--ink)" fontWeight={700}>{m.buy+m.sell}</text>}
-                              </g>
-                            );
-                          })}
-                          {/* Legend */}
-                          <rect x={W-90} y={2} width={10} height={10} rx={2} fill="var(--gain)" opacity={.8}/>
-                          <text x={W-76} y={11} fontSize={9} fill="var(--muted)">Buy</text>
-                          <rect x={W-50} y={2} width={10} height={10} rx={2} fill="var(--loss)" opacity={.8}/>
-                          <text x={W-36} y={11} fontSize={9} fill="var(--muted)">Sell</text>
-                        </svg>
-                      );
+                      const maxTotal = Math.max(...stats.months.map(m=>m.buy+m.sell), 1);
+                      return stats.months.map(m=>{
+                        const buyPct  = (m.buy/maxTotal)*100;
+                        const sellPct = (m.sell/maxTotal)*100;
+                        const label = new Date(`${m.mo}-01`).toLocaleDateString('en-IN',{month:'short',year:'numeric'});
+                        return (
+                          <div key={m.mo} style={{display:'flex',alignItems:'center',gap:14}}>
+                            <div style={{width:72,flexShrink:0,fontSize:12.5,color:'var(--muted)',fontWeight:600}}>{label}</div>
+                            <div style={{flex:1,height:8,borderRadius:6,overflow:'hidden',background:'var(--line)',display:'flex'}}>
+                              {buyPct>0 && <div style={{width:`${buyPct}%`,background:'var(--gain)'}}/>}
+                              {sellPct>0 && <div style={{width:`${sellPct}%`,background:'var(--loss)'}}/>}
+                            </div>
+                            <div style={{width:120,flexShrink:0,textAlign:'right',fontSize:12.5}}>
+                              <span style={{color:'var(--gain)',fontWeight:700}}>{m.buy} buy</span>
+                              {m.sell>0 && <span style={{color:'var(--loss)',fontWeight:700,marginLeft:6}}>{m.sell} sell</span>}
+                            </div>
+                          </div>
+                        );
+                      });
                     })()}
                   </div>
                 </div>
