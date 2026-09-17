@@ -12,7 +12,14 @@ const PREVIEW_CHARS = 220;
 // the rest. Both halves are plain server-rendered text nodes — nothing is
 // removed from the HTML and nothing is hidden behind client-side JS, so the
 // full thesis stays crawlable/indexable whether or not a reader expands it.
-export default function IdeaCard({ idea, full = false, headingTag: Heading = 'h3' }) {
+//
+// `linkTicker` makes the ticker heading a real <a href="/security/:symbol">
+// — opt-in (default off) and used only by the /search results page. The
+// security page's own Idea History already IS that ticker's page (a
+// self-link there would be pointless), and the idea page already has an
+// explicit "All ideas on {ticker} →" link, so leaving this off by default
+// keeps both of those exactly as they were.
+export default function IdeaCard({ idea, full = false, headingTag: Heading = 'h3', linkTicker = false }) {
   const r = pct(idea.return_pct);
   const up = Number(idea.return_pct) >= 0;
   const author = idea.author_name || idea.author_username || 'A member';
@@ -22,7 +29,13 @@ export default function IdeaCard({ idea, full = false, headingTag: Heading = 'h3
     <div className="card">
       <div className="pad">
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-          <Heading>{idea.ticker}</Heading>
+          <Heading>
+            {linkTicker && idea.ticker ? (
+              <a href={`/security/${encodeURIComponent(idea.ticker)}`} title={`${idea.ticker} — investor ideas & community sentiment`}>
+                {idea.ticker}
+              </a>
+            ) : idea.ticker}
+          </Heading>
           {idea.asset_name && <span className="meta">{idea.asset_name}</span>}
           <span className={`tag ${idea.recommendation_type === 'Buy' ? 'tag-buy' : 'tag-sell'}`}>
             {idea.recommendation_type === 'Buy' ? 'BUY' : 'SELL'}

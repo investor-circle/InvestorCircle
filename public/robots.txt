@@ -12,6 +12,10 @@ Allow: /
 
 # Not indexable, and not to be crawled.
 Disallow: /investor/
-Disallow: /search
+
+# /search itself is crawlable (its own <meta name="robots"> is
+# noindex,follow — see web-public/app/search/page.jsx) so its outbound
+# links to /security/:symbol and /idea/:id get followed without the search
+# results page itself being indexed as a destination.
 
 Sitemap: https://myinvestorcircle.com/sitemap.xml

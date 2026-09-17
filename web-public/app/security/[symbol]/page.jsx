@@ -71,9 +71,15 @@ export default async function SecurityPage({ params }) {
     isPartOf: { '@type': 'WebSite', name: 'My Investor Circle', url: 'https://myinvestorcircle.com/' },
   });
 
+  // "Stock Insights" points at /search?q={symbol}, not bare /search — bare
+  // /search has no query, so it renders zero results and (now that it's
+  // crawlable) would be a dead end for anything following this link.
+  // /search?q={symbol} at least resolves to this same ticker's own public
+  // ideas, keeping the round trip (this page -> /search -> /security/:symbol)
+  // genuinely non-empty rather than just technically crawlable.
   const breadcrumbItems = [
     { label: 'Home', href: 'https://myinvestorcircle.com/' },
-    { label: 'Stock Insights', href: 'https://myinvestorcircle.com/search' },
+    { label: 'Stock Insights', href: `https://myinvestorcircle.com/search?q=${encodeURIComponent(sym)}` },
     { label: sym },
   ];
   const breadcrumbLd = jsonLd({
