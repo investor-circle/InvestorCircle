@@ -156,8 +156,14 @@ export default function SecurityTabs({ symbol, ideas, summary, related = [] }) {
 
       <section id="investors" aria-label="Investors">
         <h2 style={{ marginTop: 4 }}>Investors covering {symbol}</h2>
+        {/* "Currently active on their latest call" is deliberately spelled
+            out — this counts INVESTORS (each one's most recent idea on
+            {symbol}), not ideas, so it won't generally match the idea-level
+            active/closed count already stated above the fold. Leaving that
+            unstated read like the same number repeated, when it's actually
+            a different measure. */}
         <p className="meta" style={{ marginTop: -10, marginBottom: 10 }}>
-          {investors.length} {investors.length === 1 ? 'person has' : 'people have'} shared their view{investors.length === 1 ? '' : 's'} on {symbol} — {activeInvestorCount} {activeInvestorCount === 1 ? 'is' : 'are'} still active.
+          {investors.length} investor{investors.length === 1 ? '' : 's'} {investors.length === 1 ? 'has' : 'have'} posted on {symbol} — {activeInvestorCount} {activeInvestorCount === 1 ? 'is' : 'are'} currently active on their latest call.
         </p>
         <div className="card">
           <div className="card-body" style={{ padding: 0 }}>

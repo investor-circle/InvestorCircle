@@ -95,7 +95,11 @@ export default async function SecurityPage({ params }) {
       <Breadcrumbs items={breadcrumbItems} />
 
       <div className="eyebrow">{sector || 'Stock Insights'}</div>
-      <h1>{name} ({sym}) — Investor Ideas &amp; Community Sentiment</h1>
+      {/* Some instruments' display name IS the ticker (BSE, the exchange
+          itself, being the clearest example) — "BSE (BSE) — ..." repeats
+          the same four letters twice in a row for no reason. Only add the
+          parenthetical when it actually adds information. */}
+      <h1>{name}{name.trim().toUpperCase() !== sym.toUpperCase() ? ` (${sym})` : ''} — Investor Ideas &amp; Community Sentiment</h1>
       <p className="lede">
         {summary.idea_count} public idea{summary.idea_count === 1 ? '' : 's'} on {name} from{' '}
         {summary.contributor_count} investor{summary.contributor_count === 1 ? '' : 's'}.{' '}

@@ -48,7 +48,10 @@ export default function IdeaCard({ idea, full = false, headingTag: Heading = 'h3
               <p className="thesis">{preview}</p>
               {rest && (
                 <details className="thesis-more">
-                  <summary>Read more</summary>
+                  <summary>
+                    <span className="when-closed">Read more</span>
+                    <span className="when-open">Show less</span>
+                  </summary>
                   <p className="thesis">{rest}</p>
                 </details>
               )}

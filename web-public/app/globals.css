@@ -92,6 +92,12 @@ h3 { font-size: 17px; font-weight: 800; letter-spacing: -.3px; margin: 0; }
 }
 .thesis-more summary::-webkit-details-marker { display: none; }
 .thesis-more[open] summary { margin-bottom: 2px; }
+/* "Read more"/"Show less" swap on the [open] state — pure CSS, no JS: both
+   labels are always in the HTML (never removed for a crawler), only one is
+   ever visually shown. */
+.thesis-more .when-open { display: none; }
+.thesis-more[open] .when-closed { display: none; }
+.thesis-more[open] .when-open { display: inline; }
 .thesis-more p.thesis { margin-top: 6px; }
 
 .gate {
