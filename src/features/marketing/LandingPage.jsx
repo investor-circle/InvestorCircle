@@ -149,6 +149,8 @@ const CSS = `
   border:1px solid var(--lp-line);color:var(--lp-muted);display:flex;align-items:center;justify-content:center;
   text-decoration:none;transition:.15s;}
 .lp-social:hover{color:var(--lp-accent-ink);border-color:var(--lp-accent-line);}
+.lp-footlink{color:var(--lp-accent-ink);font-weight:700;text-decoration:none;}
+.lp-footlink:hover{color:var(--lp-accent);}
 .lp-faqrow{padding:19px 24px;border-bottom:1px solid var(--lp-line);}
 .lp-faqrow:last-child{border-bottom:none;}
 .lp-dark{border-radius:16px;background:var(--lp-dark);padding:26px 24px;box-shadow:0 14px 36px rgba(10,11,24,.22);}
@@ -480,6 +482,12 @@ export default function LandingPage({ onSignIn, onCreateAccount }) {
           <div style={{display:'flex',gap:8,alignItems:'center',fontSize:12.5,color:'#8d90ad',flexWrap:'wrap',justifyContent:'center'}}>
             <span>© {new Date().getFullYear()} My Investor Circle</span>
           </div>
+          {/* Real navigation, not an onClick — the one place in this
+              client-rendered landing page that links to actual public
+              content (/search, which fans out to public Stock Insights
+              pages) rather than scrolling within the page or toggling the
+              sign-in form. */}
+          <a href="/search" className="lp-footlink" style={{fontSize:12.5}}>Explore Stock Insights →</a>
           <div style={{fontSize:12.5,lineHeight:1.75,color:'#565a78',maxWidth:720,textAlign:'center'}}>
             My Investor Circle is a technology platform where members share their own investment ideas and build public track
             records. We do not provide personalised investment advice or recommend any securities. Unless explicitly shown on a
