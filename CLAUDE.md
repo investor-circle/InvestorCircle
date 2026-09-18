@@ -360,27 +360,28 @@ Remove an entry once a build that includes it has actually shipped.
   toggle and the lock itself stay invisible on a device with nothing
   enrolled (no biometric, no PIN/pattern) — see `isAppLockAvailable()`.
 
-## Public, crawlable pages (`/stock`, `/security`, `/idea`, `/search`)
+## Public, crawlable pages (`/stock`, `/security`, `/idea`, `/search`, `/`)
 
 `/stock/:symbol` is server-rendered HTML by `api/_lib/seo.js`, dispatched
 through `api/data.js` as `resource=seo` (see `vercel.json`'s rewrite).
-`/security/:symbol`, `/idea/:id` and `/search` are served by `web-public/` —
-a separate SSR Next.js app, deployed as its own Vercel project, proxied in
-from `vercel.json` — see `web-public/README.md`. Everything else on the
-site is the plain `BrowserRouter` SPA (`index.html` + client-side rendering,
-no server-rendered content); these exist because neither Googlebot's
-indexing nor WhatsApp's link-preview card runs the app's JavaScript.
+`/security/:symbol`, `/idea/:id`, `/search`, and (for an anonymous visitor —
+see below) the homepage `/` are served by `web-public/` — a separate SSR
+Next.js app, deployed as its own Vercel project, proxied in from
+`vercel.json` — see `web-public/README.md`. Everything else on the site is
+the plain `BrowserRouter` SPA (`index.html` + client-side rendering, no
+server-rendered content); these exist because neither Googlebot's indexing
+nor WhatsApp's link-preview card runs the app's JavaScript.
 
-`/security/:symbol` and `/idea/:id` are both real paths BOTH `web-public/`
-AND the main app can render at the exact same URL — which one actually
-responds to a given request is decided by `/middleware.js` (Vercel Edge
-Middleware), not by `vercel.json`'s rewrite alone:
+`/security/:symbol`, `/idea/:id`, and `/` are all real paths BOTH
+`web-public/` AND the main app can render at the exact same URL — which one
+actually responds to a given request is decided by `/middleware.js` (Vercel
+Edge Middleware), not by `vercel.json`'s rewrite alone:
 
 - **No routing-token cookie** (a crawler, WhatsApp's link-preview fetcher, a
   signed-out stranger, or an expired/absent cookie): `vercel.json`'s
   existing unconditional rewrite to `web-public/` applies, completely
   unchanged from before this cookie mechanism existed. This is the vast
-  majority of traffic to these two paths and is untouched by any of this.
+  majority of traffic to these paths and is untouched by any of this.
 - **A valid routing-token cookie** (a signed-in visitor's own browser,
   minted right after login): the middleware rewrites the request to
   `/index.html` instead — the main app boots, resolves its own real
@@ -389,7 +390,18 @@ Middleware), not by `vercel.json`'s rewrite alone:
   Home/Pulse) via the standalone-route mechanism under Routing above —
   `/security/:symbol` was already handled there; `/idea/:id` additionally
   resolves its author via `getPublicIdeaAuthor` (`src/db.js`) since that
-  bare shape carries no username the standalone route can key off directly.
+  bare shape carries no username the standalone route can key off directly;
+  `/` simply renders the normal authenticated app shell (Home Feed), same
+  as any other signed-in load of `/`.
+- **`/` only, one more check ahead of the cookie**: any of `?ref=`,
+  `?next=`, `?signup=`, `?claim_token=`, `?oobCode=`, or `?mode=` present on
+  the request always sends it to `/index.html`, regardless of cookie state —
+  a referral link, the "sign in to take part"/"create account" hop from
+  `web-public/`'s own homepage, the creator-claim flow, or a Firebase auth
+  action link (password reset, email verification, ...) all need the SPA,
+  not the anonymous marketing page, even from a browser with no cookie at
+  all. `/security/:symbol` and `/idea/:id` don't need this check — a shared
+  link to either never carries these params.
 
 **The routing-token cookie is not an authentication mechanism** — worth
 repeating precisely because it looks like one. It decides ONLY which of the
@@ -397,15 +409,28 @@ two apps above renders a request. `api/_lib/auth.js`'s `requireUid`/
 `requireAdmin` — verifying the real Firebase ID token — remain the sole
 source of truth for identity everywhere else, and never accept this token;
 `api/_lib/handlers/session.test.js` asserts `auth.js` has zero references to
-it. Mechanically: `api/_lib/handlers/session.js` mints a short-lived (15
-min), HMAC-signed `{uid, exp}` token (`api/_lib/routingToken.js`) right
-after login (`src/AuthContext.jsx`, refreshed periodically while signed in,
-cleared on logout); `/middleware.js` verifies the signature and expiry
-using Web Crypto (`crypto.subtle`) — no Node `crypto`, no firebase-admin, no
-database call, because a per-request DB lookup here would be exactly the
-per-page-view cost this design exists to avoid. The verification scheme is
-deliberately duplicated (not imported) between the two files since they run
-in different runtimes (Node vs. Vercel's Edge Runtime) — `middleware.test.js`
+it. Mechanically: `api/_lib/handlers/session.js` mints an HMAC-signed
+`{uid, exp}` token (`api/_lib/routingToken.js`), TTL 7 days, right after
+login (`src/AuthContext.jsx`); `/middleware.js` verifies the signature and
+expiry using Web Crypto (`crypto.subtle`) — no Node `crypto`, no
+firebase-admin, no database call, because a per-request DB lookup here
+would be exactly the per-page-view cost this design exists to avoid — and,
+because there's no revocation check either, a longer TTL costs nothing in
+*authorization* exposure (the token still can't grant access to anything;
+its only failure mode at any TTL is "the wrong UI renders briefly"). TTL was
+15 minutes until homepage routing (below) made that too short — "/" is this
+app's most common "returning after being away" entry point, not just a
+continuously-open tab. Refreshed opportunistically, not just periodically:
+once whenever `onAuthStateChanged` resolves a user (covers both a fresh
+sign-in and Firebase restoring a persisted session on startup), on a
+6-hour background interval as a safety net, and — the part that actually
+matters at a multi-day TTL — on `visibilitychange`-to-visible and a bfcache
+`pageshow` (`event.persisted`), so a tab that was merely backgrounded or
+restored from history, not reloaded, still re-mints; all four share one
+60-second throttle so a burst of triggers (rapid tab-switching) can't spam
+the endpoint. Cleared on logout. The verification scheme is deliberately
+duplicated (not imported) between the two files since they run in
+different runtimes (Node vs. Vercel's Edge Runtime) — `middleware.test.js`
 proves the two independently-implemented halves actually agree. A signed-out
 visitor's own path back in is preserved too: `web-public/`'s `Gate`
 component carries `?next=<exact path>` on its sign-in link, and

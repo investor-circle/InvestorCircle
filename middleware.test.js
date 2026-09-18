@@ -116,3 +116,59 @@ describe("middleware — the actual exported request handler", () => {
     }
   });
 });
+
+// Stage 3: "/" joins /security/:symbol and /idea/:id in the matcher. Same
+// cookie-gated decision, plus one new wrinkle — bypass query params — that
+// those two routes don't need (a shared /security or /idea link never
+// carries a signup/reset/referral flow the way a raw homepage hit does).
+describe("middleware — homepage (\"/\") routing", () => {
+  const mkRequest = (path, cookieHeader) =>
+    new Request(`https://myinvestorcircle.com${path}`, {
+      headers: cookieHeader ? { cookie: cookieHeader } : {},
+    });
+
+  it("does not rewrite bare \"/\" with no cookie (falls through to web-public's SSR homepage)", async () => {
+    const middleware = (await import("./middleware.js")).default;
+    const res = await middleware(mkRequest("/", undefined));
+    expect(res.headers.get("x-middleware-rewrite")).toBeFalsy();
+  });
+
+  it("rewrites \"/\" to /index.html when a valid routing cookie is present", async () => {
+    const { mintRoutingToken } = await import("./api/_lib/routingToken.js");
+    const middleware = (await import("./middleware.js")).default;
+    const token = mintRoutingToken("uid123", 900);
+    const res = await middleware(mkRequest("/", `mic_route=${token}`));
+    expect(res.headers.get("x-middleware-rewrite")).toMatch(/\/index\.html$/);
+  });
+
+  it("does not rewrite \"/\" with an expired or tampered cookie", async () => {
+    const { mintRoutingToken } = await import("./api/_lib/routingToken.js");
+    const middleware = (await import("./middleware.js")).default;
+    const expired = mintRoutingToken("uid123", -60);
+    expect((await middleware(mkRequest("/", `mic_route=${expired}`))).headers.get("x-middleware-rewrite")).toBeFalsy();
+    expect((await middleware(mkRequest("/", "mic_route=garbage-not-a-real-token"))).headers.get("x-middleware-rewrite")).toBeFalsy();
+  });
+
+  it.each(["ref", "next", "signup", "claim_token", "oobCode", "mode"])(
+    "always rewrites \"/\" to /index.html when ?%s= is present, even with no cookie at all",
+    async (param) => {
+      const middleware = (await import("./middleware.js")).default;
+      const res = await middleware(mkRequest(`/?${param}=anything`, undefined));
+      expect(res.headers.get("x-middleware-rewrite")).toMatch(/\/index\.html$/);
+    }
+  );
+
+  it("bypass params win even over an expired/invalid cookie", async () => {
+    const middleware = (await import("./middleware.js")).default;
+    const res = await middleware(mkRequest("/?mode=resetPassword&oobCode=abc123", "mic_route=garbage"));
+    expect(res.headers.get("x-middleware-rewrite")).toMatch(/\/index\.html$/);
+  });
+
+  it("does not apply the bypass-param check to /security or /idea (only \"/\" needs it)", async () => {
+    const middleware = (await import("./middleware.js")).default;
+    // A stray ?next= on a security page (not a real link this app generates)
+    // must not accidentally force it to the SPA — only "/" gets that check.
+    const res = await middleware(mkRequest("/security/RELIANCE?next=/somewhere", undefined));
+    expect(res.headers.get("x-middleware-rewrite")).toBeFalsy();
+  });
+});

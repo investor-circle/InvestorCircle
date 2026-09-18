@@ -14,7 +14,7 @@ vi.mock("../auth.js", async () => {
   return { ...actual, optionalUid: vi.fn(async () => uidToReturn) };
 });
 
-const { default: handleSession, ROUTING_COOKIE_NAME } = await import("./session.js");
+const { default: handleSession, ROUTING_COOKIE_NAME, ROUTING_TOKEN_TTL_SECONDS } = await import("./session.js");
 const { mintRoutingToken } = await import("../routingToken.js");
 
 const mkRes = () => ({
@@ -50,6 +50,18 @@ describe("handleSession — mint", () => {
     expect(cookie).toContain(`${ROUTING_COOKIE_NAME}=`);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");
+  });
+
+  it("mints with the 7-day TTL, not the old 15-minute one", async () => {
+    // Locks in the deliberate change (see session.js's own comment for why):
+    // "/" is now homepage-routed too, and 15 minutes only covered a
+    // continuously-open tab, not "back after being away for a day or two."
+    expect(ROUTING_TOKEN_TTL_SECONDS).toBe(7 * 24 * 60 * 60);
+    uidToReturn = "uid123";
+    const res = mkRes();
+    await handleSession({ query: { action: "mint" } }, res);
+    expect(res.body.expiresIn).toBe(7 * 24 * 60 * 60);
+    expect(res.headers["Set-Cookie"]).toContain(`Max-Age=${7 * 24 * 60 * 60}`);
   });
 
   it("ties the minted token to the caller's own uid, not a client-supplied one", async () => {

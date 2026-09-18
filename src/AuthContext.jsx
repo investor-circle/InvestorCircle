@@ -19,9 +19,9 @@ const PROFILE_BLACKLIST_API  = `${API_BASE}/blacklist-check`;
 const PROFILE_SYNC_API       = `${API_BASE}/sync`;
 const PROFILE_UPDATE_API     = `${API_BASE}/update`;
 
-// Mints/clears the short-lived routing-token cookie /middleware.js checks
-// to decide whether a fresh hit on /security/:symbol or /idea/:id goes to
-// the main app or to web-public — see api/_lib/handlers/session.js and
+// Mints/clears the routing-token cookie /middleware.js checks to decide
+// whether a fresh hit on /security/:symbol, /idea/:id, or "/" goes to the
+// main app or to web-public — see api/_lib/handlers/session.js and
 // /middleware.js for what this is and, just as importantly, what it is
 // NOT: it never authenticates anything, and its failure here is never
 // treated as a sign-in failure — a signed-in user just falls back to the
@@ -42,10 +42,21 @@ const PROFILE_UPDATE_API     = `${API_BASE}/update`;
 // domain, a Vercel Preview's own *.vercel.app URL, or localhost), which
 // is exactly what a same-origin-only cookie needs.
 const SESSION_API = `/api/data?resource=session`;
-// Comfortably inside the server-side token TTL (15 minutes — see
+// Comfortably inside the server-side token TTL (7 days — see
 // api/_lib/handlers/session.js) so a long-running tab keeps a fresh token
-// rather than silently falling back to web-public mid-session.
-const ROUTING_TOKEN_REFRESH_MS = 10 * 60 * 1000;
+// rather than silently falling back to web-public mid-session. This is now
+// a background safety net, not the primary freshness mechanism — see the
+// visibilitychange/pageshow listeners below, which are what actually keep
+// an intermittently-used tab fresh; this interval only matters for a tab
+// left open and untouched (no tab-switch, no minimize, nothing to fire
+// those) for the interval's full duration. Was 10 minutes when the TTL was
+// 15 — kept comfortably shorter than the new 7-day TTL without polling
+// anywhere near as often as that short-TTL era required.
+const ROUTING_TOKEN_REFRESH_MS = 6 * 60 * 60 * 1000;
+// Shared across every refresh trigger (interval, visibilitychange,
+// pageshow) so a burst of them firing close together — e.g. rapid tab
+// switching — mints at most once per window instead of once per event.
+const ROUTING_TOKEN_REFRESH_MIN_GAP_MS = 60 * 1000;
 
 // Exported only so AuthContext.test.jsx can pin the fetch URL as
 // same-origin — the exact class of bug this function shipped with once
@@ -201,17 +212,46 @@ export function AuthProvider({ children }) {
   }, []);
 
   // Keep the routing-token cookie fresh for as long as this tab stays open
-  // and signed in — see the mintRoutingCookie call above and its own
-  // comment for why a short-lived, actively-refreshed token is the point,
-  // not an oversight.
+  // and signed in — see the mintRoutingCookie call above (fired once,
+  // immediately, whenever onAuthStateChanged resolves to a user — covering
+  // both a fresh sign-in and Firebase restoring a persisted session on
+  // startup) and its own comment for why an actively-refreshed token is the
+  // point, not an oversight.
+  //
+  // Three triggers keep it fresh from here on, all sharing one throttle
+  // (lastRefreshAtRef) so they can't pile up into redundant requests:
+  //   - the interval below, a background safety net for a tab left open
+  //     and genuinely untouched;
+  //   - visibilitychange -> visible, for "switched back to this tab" (the
+  //     normal case: another tab, another app, screen was off);
+  //   - pageshow, specifically for bfcache restores (event.persisted) —
+  //     Chrome/Safari can restore a whole page, DOM and JS heap included,
+  //     from an in-memory snapshot on back/forward navigation without
+  //     re-running any mount effect, so nothing above would otherwise fire.
   useEffect(() => {
     if (!user) return;
-    const iv = setInterval(async () => {
+
+    const lastRefreshAtRef = { current: 0 };
+    const refresh = async () => {
+      const now = Date.now();
+      if (now - lastRefreshAtRef.current < ROUTING_TOKEN_REFRESH_MIN_GAP_MS) return;
+      lastRefreshAtRef.current = now;
       try {
         mintRoutingCookie(await user.getIdToken());
       } catch (_) { /* best-effort — see mintRoutingCookie */ }
-    }, ROUTING_TOKEN_REFRESH_MS);
-    return () => clearInterval(iv);
+    };
+
+    const iv = setInterval(refresh, ROUTING_TOKEN_REFRESH_MS);
+    const onVisibilityChange = () => { if (document.visibilityState === 'visible') refresh(); };
+    const onPageShow = (event) => { if (event.persisted) refresh(); };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pageshow', onPageShow);
+
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pageshow', onPageShow);
+    };
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // onAuthStateChanged above handles profile create/sync for both new and
