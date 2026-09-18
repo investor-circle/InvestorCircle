@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { RecoPostPage } from "./Recommendations.jsx";
+import { RecoPostPage } from "./RecommendationsPages.jsx";
 import { registerGoToPath } from "../../utils/navigation";
 
 vi.mock("../../services/api/profileApi", () => ({

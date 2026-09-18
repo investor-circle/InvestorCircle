@@ -27,8 +27,8 @@ import {
 } from "../../services/api/recommendationsApi";
 import { getDailyPrices, byTicker, priceKey } from "../../services/api/pricingApi";
 import { ConsensusBar, InstrumentSearch, SmallAnchoredPopover, SortTh, StrengthDot } from "../../components/common";
-import { SecurityQuickPanel } from "../discovery/Discovery";
-import { PanPullModal } from "../recommendations/Recommendations";
+import { SecurityQuickPanel } from "../discovery/MarketInsights";
+import { PanPullModal } from "../recommendations/RecommendationsPages";
 import { useIsMobile } from "../../hooks/index";
 import { computeConsensus } from "../../utils/format";
 

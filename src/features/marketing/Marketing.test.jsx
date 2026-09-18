@@ -1,7 +1,8 @@
 import React from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { SocialLinks, SiteFooter, ContactPage } from "./Marketing.jsx";
+import { SocialLinks, SiteFooter } from "./Marketing.jsx";
+import { ContactPage } from "./MarketingPages.jsx";
 import { SOCIAL_LINKS } from "../../constants/app";
 
 // ContactPage uses useIsMobile (src/hooks/index.js), which reads
