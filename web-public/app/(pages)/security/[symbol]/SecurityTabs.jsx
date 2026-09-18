@@ -1,6 +1,6 @@
-import IdeaCard from '../../../components/IdeaCard';
-import { computeConsensus, consensusStrengthColor } from '../../../lib/consensus';
-import { money, day } from '../../../lib/format';
+import IdeaCard from '../../../../components/IdeaCard';
+import { computeConsensus, consensusStrengthColor } from '../../../../lib/consensus';
+import { money, day } from '../../../../lib/format';
 
 // Deliberately NOT a tab switcher that hides inactive panels: an earlier
 // version of this component used client-side state to show only one
