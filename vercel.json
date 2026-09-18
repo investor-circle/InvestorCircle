@@ -11,6 +11,8 @@
     { "source": "/search", "destination": "https://investorcircle-public.vercel.app/search" },
     { "source": "/", "destination": "https://investorcircle-public.vercel.app/" },
 
+    { "source": "/_wpub-static/:path+", "destination": "https://investorcircle-public.vercel.app/_wpub-static/:path+" },
+
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
