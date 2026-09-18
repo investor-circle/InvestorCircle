@@ -1,5 +1,6 @@
 import './globals.css';
 import { Plus_Jakarta_Sans, Fraunces } from 'next/font/google';
+import AssetOriginPreconnect from '../components/AssetOriginPreconnect.jsx';
 
 // next/font self-hosts these (served from this app's own origin at build
 // time, not a fonts.googleapis.com/fonts.gstatic.com round trip) and injects
@@ -41,6 +42,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${plusJakarta.className} ${fraunces.className}`}>
       <head>
+        <AssetOriginPreconnect />
         <link rel="icon" type="image/png" href="https://myinvestorcircle.com/favicon.png" />
       </head>
       <body>{children}</body>
