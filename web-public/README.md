@@ -2,12 +2,12 @@
 
 The SSR + hydration app for myInvestorCircle's public, indexable, shareable
 surfaces: **Stock Insights** (`/security/:symbol`), **an idea**
-(`/idea/:id`), and **search** (`/search`). This exists because the main app
-(`/` and everything under it) is a client-side-only React SPA
-(`react-router-dom`'s `HashRouter`, statically hosted) — a crawler or a
-link-preview bot (WhatsApp, Slack, Twitter) never executes its JavaScript,
-so nothing at a `#/...` URL can ever be indexed or produce a link preview,
-no matter what the app itself shows a real visitor.
+(`/idea/:id`), **search** (`/search`), and **the homepage** (`/`, for a
+signed-out/anonymous visitor only — see "Homepage routing" below). This
+exists because the rest of the main app is a client-side-only React SPA —
+a crawler or a link-preview bot (WhatsApp, Slack, Twitter) never executes
+its JavaScript, so nothing rendered only by that SPA can ever be indexed or
+produce a link preview, no matter what the app itself shows a real visitor.
 
 ## Why a separate project, not a folder inside the main build
 
@@ -51,10 +51,23 @@ no matter what the app itself shows a real visitor.
   app with no real backend logic behind it and no SEO/share value — deferred
   rather than ported, to keep this app's first version scoped to what
   indexability and link-sharing actually need.
-- **No homepage.** `/` stays the SPA for now (referral links, password-reset
-  links, and the mobile app's Android intent filters all target the bare
-  domain — SSR-ing it is a separate, deliberate decision, not bundled into
-  this change).
+
+## Homepage routing (`/`)
+
+Unlike `/security/:symbol`/`/idea/:id`/`/search`, `/` is not unconditionally
+proxied here — a signed-in returning user needs to land back in the SPA's
+Home Feed, not this page. The main project's `/middleware.js` decides,
+before its own `vercel.json` rewrite is ever reached: a valid `mic_route`
+routing-hint cookie, or any of a short list of auth/deep-link query params
+(`ref`, `next`, `signup`, `claim_token`, `oobCode`, `mode`) present on the
+request, sends it to the SPA (`/index.html`) instead; everything else
+(the common case — a new/anonymous visitor, a crawler, a link-preview bot)
+reaches this page. `mic_route` is never authentication — see
+`api/_lib/routingToken.js` and `/middleware.js`'s own header comments in
+the main project for the full reasoning. This page itself stays exactly as
+anonymous as every other route here — no Firebase, no session check, real
+`<a href>` links (not a client-side redirect) for "Sign in"/"Create
+account" (see `app/page.jsx`).
 
 ## Local development
 

@@ -1,9 +1,9 @@
 import { notFound } from 'next/navigation';
-import { getSecurityByTicker, getRelatedSecurities, getDailyPrice } from '../../../lib/api';
-import { jsonLd, ideaStatusSummary, money, pct, day } from '../../../lib/format';
-import { computeConsensus } from '../../../lib/consensus';
-import Gate from '../../../components/Gate';
-import Breadcrumbs from '../../../components/Breadcrumbs';
+import { getSecurityByTicker, getRelatedSecurities, getDailyPrice } from '../../../../lib/api';
+import { jsonLd, ideaStatusSummary, money, pct, day } from '../../../../lib/format';
+import { computeConsensus } from '../../../../lib/consensus';
+import Gate from '../../../../components/Gate';
+import Breadcrumbs from '../../../../components/Breadcrumbs';
 import SecurityTabs from './SecurityTabs';
 
 export const revalidate = 120;

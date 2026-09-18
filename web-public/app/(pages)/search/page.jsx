@@ -1,6 +1,6 @@
-import { searchIdeas } from '../../lib/api';
-import IdeaCard from '../../components/IdeaCard';
-import Gate from '../../components/Gate';
+import { searchIdeas } from '../../../lib/api';
+import IdeaCard from '../../../components/IdeaCard';
+import Gate from '../../../components/Gate';
 
 export const revalidate = 60;
 

@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation';
-import { getIdea } from '../../../lib/api';
-import { jsonLd, day, pct } from '../../../lib/format';
-import IdeaCard from '../../../components/IdeaCard';
-import Gate from '../../../components/Gate';
+import { getIdea } from '../../../../lib/api';
+import { jsonLd, day, pct } from '../../../../lib/format';
+import IdeaCard from '../../../../components/IdeaCard';
+import Gate from '../../../../components/Gate';
 
 export const revalidate = 120;
 

@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import React from "react";
+import { render, waitFor, act } from "@testing-library/react";
 
 const setPersistence = vi.fn(() => Promise.resolve());
 const signInWithEmailAndPassword = vi.fn(() => Promise.resolve({ user: { uid: "u1" } }));
+let onAuthStateChangedCallback = null;
+const onAuthStateChanged = vi.fn((_auth, cb) => { onAuthStateChangedCallback = cb; return () => {}; });
 vi.mock("firebase/auth", () => ({
-  onAuthStateChanged: vi.fn(),
+  onAuthStateChanged: (...args) => onAuthStateChanged(...args),
   signInWithEmailAndPassword: (...args) => signInWithEmailAndPassword(...args),
   signInWithPopup: vi.fn(),
   GoogleAuthProvider: vi.fn(),
@@ -14,7 +18,7 @@ vi.mock("firebase/auth", () => ({
 }));
 vi.mock("./firebase", () => ({ auth: "fake-auth" }));
 
-import { mintRoutingCookie, clearRoutingCookie, login } from "./AuthContext";
+import { mintRoutingCookie, clearRoutingCookie, login, AuthProvider } from "./AuthContext";
 
 // The routing-token cookie (see api/_lib/handlers/session.js, middleware.js)
 // only works if the request that mints/clears it is genuinely same-origin —
@@ -90,5 +94,140 @@ describe("login — persistence follows rememberMe", () => {
     signInWithEmailAndPassword.mockImplementationOnce(() => { order.push("signIn"); return Promise.resolve(); });
     await login("a@b.com", "pw");
     expect(order).toEqual(["persistence", "signIn"]);
+  });
+});
+
+// Stage 3 / freshness work: the routing cookie's TTL moved from 15 minutes
+// to 7 days (see api/_lib/handlers/session.js), so it now needs to stay
+// fresh across gaps far longer than a single continuously-open tab —
+// covered by refreshing whenever the user meaningfully returns to the tab
+// (visibilitychange -> visible, pageshow for bfcache restores), not just a
+// background interval. These tests render the real AuthProvider and drive
+// Firebase's onAuthStateChanged callback directly (captured via the
+// firebase/auth mock above), since the behavior under test lives in an
+// effect that only runs while a signed-in `user` is set.
+function setFetchMock() {
+  const mintCalls = [];
+  global.fetch = vi.fn((url) => {
+    if (String(url).includes("action=mint")) { mintCalls.push(url); return Promise.resolve({ ok: true, json: async () => ({}) }); }
+    // Blacklist/profile-me/profile-sync calls: respond not-ok so
+    // AuthProvider falls through to its local fallback profile shape —
+    // irrelevant to what these tests assert on.
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  });
+  return mintCalls;
+}
+
+const fakeUser = {
+  uid: "uid-fresh-test",
+  email: "fresh@example.com",
+  displayName: "Fresh Test",
+  photoURL: null,
+  getIdToken: vi.fn(async () => "fake-id-token"),
+};
+
+async function signIn() {
+  await act(async () => { await onAuthStateChangedCallback(fakeUser); });
+}
+
+describe("routing-cookie refresh triggers — visibilitychange, pageshow, throttle", () => {
+  const originalFetch = global.fetch;
+  const originalVisibilityState = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState");
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    onAuthStateChangedCallback = null;
+    if (originalVisibilityState) Object.defineProperty(document, "visibilityState", originalVisibilityState);
+    vi.useRealTimers();
+  });
+
+  function setVisibility(state) {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+  }
+
+  it("mints once on sign-in (session establishment), via the existing onAuthStateChanged path", async () => {
+    const mintCalls = setFetchMock();
+    render(<AuthProvider><div/></AuthProvider>);
+    await signIn();
+    await waitFor(() => expect(mintCalls.length).toBeGreaterThanOrEqual(1));
+  });
+
+  it("refreshes when the tab becomes visible again", async () => {
+    const mintCalls = setFetchMock();
+    setVisibility("hidden");
+    render(<AuthProvider><div/></AuthProvider>);
+    await signIn();
+    const countAfterSignIn = mintCalls.length;
+
+    setVisibility("visible");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await waitFor(() => expect(mintCalls.length).toBeGreaterThan(countAfterSignIn));
+  });
+
+  it("does not refresh on visibilitychange when the tab is becoming hidden, only when becoming visible", async () => {
+    const mintCalls = setFetchMock();
+    render(<AuthProvider><div/></AuthProvider>);
+    await signIn();
+    const countAfterSignIn = mintCalls.length;
+
+    setVisibility("hidden");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(mintCalls.length).toBe(countAfterSignIn);
+  });
+
+  it("refreshes on a bfcache restore (pageshow with persisted:true)", async () => {
+    const mintCalls = setFetchMock();
+    render(<AuthProvider><div/></AuthProvider>);
+    await signIn();
+    const countAfterSignIn = mintCalls.length;
+
+    const pageshow = new Event("pageshow");
+    Object.defineProperty(pageshow, "persisted", { value: true });
+    await act(async () => { window.dispatchEvent(pageshow); });
+    await waitFor(() => expect(mintCalls.length).toBeGreaterThan(countAfterSignIn));
+  });
+
+  it("ignores a plain (non-bfcache) pageshow — persisted:false", async () => {
+    const mintCalls = setFetchMock();
+    render(<AuthProvider><div/></AuthProvider>);
+    await signIn();
+    const countAfterSignIn = mintCalls.length;
+
+    const pageshow = new Event("pageshow");
+    Object.defineProperty(pageshow, "persisted", { value: false });
+    await act(async () => { window.dispatchEvent(pageshow); });
+    expect(mintCalls.length).toBe(countAfterSignIn);
+  });
+
+  it("throttles a burst of refresh triggers to at most one mint call", async () => {
+    const mintCalls = setFetchMock();
+    render(<AuthProvider><div/></AuthProvider>);
+    await signIn();
+    const countAfterSignIn = mintCalls.length;
+
+    // Rapid tab-switching: several visibilitychange/pageshow events fire in
+    // quick succession — should collapse to at most one additional mint.
+    for (let i = 0; i < 5; i++) {
+      setVisibility("visible");
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    }
+    await waitFor(() => expect(mintCalls.length).toBeGreaterThan(countAfterSignIn));
+    expect(mintCalls.length).toBe(countAfterSignIn + 1);
+  });
+
+  it("clears the routing cookie on logout, however it was last refreshed", async () => {
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: async () => ({}) }));
+    const { useAuth } = await import("./AuthContext");
+    let ctx;
+    function Consumer() { ctx = useAuth(); return null; }
+    render(<AuthProvider><Consumer/></AuthProvider>);
+    await signIn();
+    global.fetch.mockClear();
+    await act(async () => { await ctx.logout(); });
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/data?resource=session&action=clear",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 });
