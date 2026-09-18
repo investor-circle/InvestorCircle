@@ -28,7 +28,7 @@ export default async function SearchPage({ searchParams }) {
       </form>
       {query && !ideas.length && <p className="lede">No public ideas match &quot;{query}&quot; yet.</p>}
       <div className="idea-row" style={{ padding: 0, marginTop: ideas.length ? 20 : 0 }}>
-        {ideas.map((idea) => <IdeaCard key={idea.id} idea={idea} />)}
+        {ideas.map((idea) => <IdeaCard key={idea.id} idea={idea} linkTicker />)}
       </div>
       <Gate
         line="Sign in to post an idea, or to follow the members behind these."

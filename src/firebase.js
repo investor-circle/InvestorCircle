@@ -14,7 +14,6 @@
 
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getAnalytics, logEvent as _logEvent } from "firebase/analytics";
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -35,19 +34,34 @@ export const auth = getAuth(firebaseApp);
 export const secondaryApp = initializeApp(firebaseConfig, "secondary");
 export const secondaryAuth = getAuth(secondaryApp);
 
-// Analytics — only initialised when measurementId is present (not in dev without it).
-// Use the exported `track` helper rather than calling logEvent directly.
-let _analytics = null;
-try {
-  if (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID) {
-    _analytics = getAnalytics(firebaseApp);
+// Analytics — only initialised when measurementId is present (not in dev
+// without it), and loaded via a dynamic import rather than a static one:
+// firebase/analytics has no bearing on auth-state resolution or on
+// rendering LandingPage/Home Feed, so it shouldn't be part of the eager
+// vendor-firebase chunk every visitor downloads before first paint. This
+// keeps the same "never crash the app for analytics" guarantee — a failed
+// or slow-to-arrive analytics module just means `track()` no-ops a little
+// longer, exactly as it already no-ops when measurementId is absent.
+let _analyticsPromise = null;
+function loadAnalytics() {
+  if (!import.meta.env.VITE_FIREBASE_MEASUREMENT_ID) return null;
+  if (!_analyticsPromise) {
+    _analyticsPromise = import("firebase/analytics")
+      .then(({ getAnalytics }) => getAnalytics(firebaseApp))
+      .catch(() => null); // analytics unavailable in this environment
   }
-} catch { /* analytics unavailable in this environment */ }
+  return _analyticsPromise;
+}
 
-export const analytics = _analytics;
-
-/** Safe logEvent wrapper — no-ops silently if analytics is not initialised. */
+/** Safe logEvent wrapper — no-ops silently if analytics is not available. */
 export const track = (eventName, params = {}) => {
-  if (!_analytics) return;
-  try { _logEvent(_analytics, eventName, params); } catch { /* never crash for analytics */ }
+  const analyticsPromise = loadAnalytics();
+  if (!analyticsPromise) return;
+  analyticsPromise.then(async (analyticsInstance) => {
+    if (!analyticsInstance) return;
+    try {
+      const { logEvent } = await import("firebase/analytics");
+      logEvent(analyticsInstance, eventName, params);
+    } catch { /* never crash for analytics */ }
+  });
 };

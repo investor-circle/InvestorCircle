@@ -8,6 +8,20 @@
  *     including the PRECOMPUTED previous-trading-day close and daily change.
  *     One indexed query, no provider call, no aggregation.
  *
+ *   GET ?resource=pricing&action=public-daily&symbol=A   (auth: none)
+ *     The unauthenticated, single-symbol counterpart to `daily` — backs the
+ *     daily price-movement display on the public /security/:symbol page
+ *     (web-public/) and the signed-out path through Discovery.jsx's Stock
+ *     Insights view, same "public/`getX`Public" split already used for
+ *     ideas (public-ideas.js's by-symbol vs this file's own `daily`, and
+ *     db.js's getPublicTickerIdeas vs getTickerRecos). Reuses getDailyPrices
+ *     verbatim — the fields it returns (close/prevClose/change/date/source)
+ *     are already the exact non-sensitive shape shown to a signed-in user
+ *     today; this doesn't loosen or change what data exists, only who can
+ *     read it for one ticker at a time. The batch `daily` action stays
+ *     exactly as authenticated as before — this is a new, separate action,
+ *     not a weakened version of it.
+ *
  * ── Who writes the data this reads ───────────────────────────────────────
  * scripts/stamp-prices.js — the nightly GitHub Actions batch (9pm IST,
  * weekdays) — is the SOLE writer of both `instrument_daily_prices` and the
@@ -126,6 +140,16 @@ export default async function handler(req, res) {
       const raw = req.query?.tickers ?? body.tickers ?? '';
       const list = Array.isArray(raw) ? raw : String(raw).split(',');
       res.status(200).json({ prices: await getDailyPrices(list) });
+      return;
+    }
+
+    // Deliberately UNAUTHENTICATED — see the header comment. One symbol at a
+    // time (not a batch like `daily`), matching how the public pages that
+    // call this only ever need the one ticker they're already showing.
+    if (action === 'public-daily') {
+      const symbol = String(req.query?.symbol || body.symbol || '');
+      const [price] = await getDailyPrices([symbol]);
+      res.status(200).json({ price: price || null });
       return;
     }
 

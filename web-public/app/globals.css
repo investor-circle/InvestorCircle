@@ -85,10 +85,20 @@ h3 { font-size: 17px; font-weight: 800; letter-spacing: -.3px; margin: 0; }
 .gain { color: var(--gain); }
 .loss { color: var(--loss); }
 .meta { font-size: 12.5px; color: var(--muted); }
-.thesis { font-size: 14.5px; line-height: 1.8; color: var(--soft); margin-top: 10px; }
-.thesis.clamped {
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+.thesis { font-size: 14.5px; line-height: 1.8; color: var(--soft); margin-top: 10px; white-space: pre-line; }
+.thesis-more summary {
+  cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--accent-ink); list-style: none;
+  margin-top: 6px; display: inline-block;
 }
+.thesis-more summary::-webkit-details-marker { display: none; }
+.thesis-more[open] summary { margin-bottom: 2px; }
+/* "Read more"/"Show less" swap on the [open] state — pure CSS, no JS: both
+   labels are always in the HTML (never removed for a crawler), only one is
+   ever visually shown. */
+.thesis-more .when-open { display: none; }
+.thesis-more[open] .when-closed { display: none; }
+.thesis-more[open] .when-open { display: inline; }
+.thesis-more p.thesis { margin-top: 6px; }
 
 .gate {
   margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: var(--dark); color: #a7abc6;
@@ -117,6 +127,17 @@ h3 { font-size: 17px; font-weight: 800; letter-spacing: -.3px; margin: 0; }
 
 .idea-row { display: flex; flex-direction: column; gap: 10px; padding: 10px; }
 .idea-row-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+
+.crumbs { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--accent-ink); }
+.crumbs .sep { margin: 0 6px; color: var(--line2); }
+
+.badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+.dist-bar { height: 8px; border-radius: 6px; overflow: hidden; background: var(--line); display: flex; }
+.dist-bar .seg-buy { background: var(--gain); height: 100%; }
+.dist-bar .seg-sell { background: var(--loss); height: 100%; }
 
 .foot {
   border-top: 1px solid var(--line); background: var(--surface); margin-top: 34px; padding: 28px 0;

@@ -83,12 +83,14 @@ const RESOURCES = {
   'claim-profile':    { handler: handleClaimProfile,     auth: 'none'  },
   'admin-config':     { handler: handleAdminConfig,      auth: 'admin' },
   'lookups':          { handler: handleLookups,          auth: 'none'  },
-  // pricing (Phase 9 instrument daily-price layer) is now READ-ONLY: its one
-  // action, `daily`, is a normal authenticated user read and calls
-  // requireUid() itself, which is why it stays registered as 'none' here.
-  // (The former `collect` write action and its Vercel Cron were retired —
-  // scripts/stamp-prices.js is the sole price writer.) See
-  // api/_lib/handlers/pricing.js.
+  // pricing (Phase 9 instrument daily-price layer) is now READ-ONLY and has
+  // mixed auth needs like groups/claim-profile/lookups above: `daily` (the
+  // batch read used inside the app) calls requireUid() itself; `public-daily`
+  // (one symbol, backing the public /security/:symbol price display) is
+  // deliberately unauthenticated. Both live in the same handler, which is
+  // why this stays registered as 'none' here. (The former `collect` write
+  // action and its Vercel Cron were retired — scripts/stamp-prices.js is the
+  // sole price writer.) See api/_lib/handlers/pricing.js.
   'pricing':          { handler: handlePricing,          auth: 'none'  },
   // seo/sitemap serve the server-rendered public pages (/stock/:symbol,
   // /sitemap.xml — see vercel.json's rewrites) and, like everything else

@@ -30,7 +30,6 @@ import {
 } from "lucide-react";
 import { useAuth } from "./AuthContext";
 import { track } from "./firebase";
-import LoginPage from "./LoginPage";
 import {
   getAllUsersAdmin as dbGetAllUsersAdmin
 } from "./services/api/adminApi";
@@ -114,15 +113,44 @@ const profileModule = () => import("./features/profile/Profile");
 const ClaimProfilePage = React.lazy(() => profileModule().then(m => ({ default: m.ClaimProfilePage })));
 const ProfileEditModal = React.lazy(() => profileModule().then(m => ({ default: m.ProfileEditModal })));
 const PublicProfilePage = React.lazy(() => profileModule().then(m => ({ default: m.PublicProfilePage })));
-import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
-import { InviteModal, Network } from "./features/connections/Connections";
-import { CirclePage } from "./features/groups/Groups";
-import { HomeFeed, MarketIntelligencePage, SecurityIntelligencePage } from "./features/discovery/Discovery";
-import { DiscoverModal, DiscoverPeoplePage, OnboardingGate } from "./features/onboarding/Onboarding";
-import { AboutPage, ContactPage, PrivacyPolicyPage, SiteFooter } from "./features/marketing/Marketing";
+
+// ── Bootstrap/perf architecture ─────────────────────────────────────────────
+// Everything below is React.lazy-loaded for the same reason Admin/Portfolio/
+// Sharing/Profile already are: none of it is needed to render LandingPage
+// (signed-out) or HomeFeed (signed-in) — only to navigate to a specific
+// section, open a specific modal, or (LoginPage/ResetPasswordPage) actually
+// sign in. HomeFeed itself (from the now-trimmed Discovery.jsx) and SiteFooter
+// (from the now-trimmed Marketing.jsx) stay eagerly imported below, along
+// with LandingPage, since those ARE needed for first render. See each
+// feature file's own header comment for why it was split this way.
+const LoginPage = React.lazy(() => import("./LoginPage"));
+const resetPasswordModule = () => import("./features/auth/ResetPasswordPage");
+const ResetPasswordPage = React.lazy(() => resetPasswordModule().then(m => ({ default: m.ResetPasswordPage })));
+const connectionsModule = () => import("./features/connections/Connections");
+const InviteModal = React.lazy(() => connectionsModule().then(m => ({ default: m.InviteModal })));
+const Network = React.lazy(() => connectionsModule().then(m => ({ default: m.Network })));
+const groupsModule = () => import("./features/groups/Groups");
+const CirclePage = React.lazy(() => groupsModule().then(m => ({ default: m.CirclePage })));
+import { HomeFeed } from "./features/discovery/Discovery";
+const marketInsightsModule = () => import("./features/discovery/MarketInsights");
+const MarketIntelligencePage = React.lazy(() => marketInsightsModule().then(m => ({ default: m.MarketIntelligencePage })));
+const stockInsightsModule = () => import("./features/discovery/StockInsights");
+const SecurityIntelligencePage = React.lazy(() => stockInsightsModule().then(m => ({ default: m.SecurityIntelligencePage })));
+const onboardingModule = () => import("./features/onboarding/Onboarding");
+const DiscoverModal = React.lazy(() => onboardingModule().then(m => ({ default: m.DiscoverModal })));
+const DiscoverPeoplePage = React.lazy(() => onboardingModule().then(m => ({ default: m.DiscoverPeoplePage })));
+const OnboardingGate = React.lazy(() => onboardingModule().then(m => ({ default: m.OnboardingGate })));
+import { SiteFooter } from "./features/marketing/Marketing";
+const marketingPagesModule = () => import("./features/marketing/MarketingPages");
+const AboutPage = React.lazy(() => marketingPagesModule().then(m => ({ default: m.AboutPage })));
+const ContactPage = React.lazy(() => marketingPagesModule().then(m => ({ default: m.ContactPage })));
+const PrivacyPolicyPage = React.lazy(() => marketingPagesModule().then(m => ({ default: m.PrivacyPolicyPage })));
 import LandingPage from "./features/marketing/LandingPage";
-import { NotificationPanel } from "./features/notifications/NotificationPanel";
-import { RecoPostPage, Recommendations } from "./features/recommendations/Recommendations";
+const notificationsModule = () => import("./features/notifications/NotificationPanel");
+const NotificationPanel = React.lazy(() => notificationsModule().then(m => ({ default: m.NotificationPanel })));
+const recommendationsPagesModule = () => import("./features/recommendations/RecommendationsPages");
+const Recommendations = React.lazy(() => recommendationsPagesModule().then(m => ({ default: m.Recommendations })));
+const RecoPostPage = React.lazy(() => recommendationsPagesModule().then(m => ({ default: m.RecoPostPage })));
 import { useIsMobile } from "./hooks/index";
 import { VAPID_PUBLIC_KEY } from "./services/notify";
 import { STYLES } from "./styles/globalStyles";
@@ -1109,6 +1137,7 @@ export default function App() {
       <div className="app"><style>{STYLES}</style>
         <ProfileErrorBoundary>
           <div className="content" style={{maxWidth:900,margin:'0 auto',padding:isMobile?'16px 12px':'28px 24px'}}>
+            <React.Suspense fallback={<AppLoadingScreen/>}>
             <CirclePage
               slug={circleSlug}
               inviteCode={circleQuery.get('invite')}
@@ -1118,6 +1147,7 @@ export default function App() {
               onBack={()=>setPagePath('')}
               onNavigateProfile={(uname)=>{ if(uname) goToPath(`/investor/${uname}`); }}
             />
+            </React.Suspense>
           </div>
         </ProfileErrorBoundary>
       </div>
@@ -1140,6 +1170,7 @@ export default function App() {
       return (
         <div className="app"><style>{STYLES}</style>
           <ProfileErrorBoundary>
+            <React.Suspense fallback={<AppLoadingScreen/>}>
             <RecoPostPage
               username={pubUsername}
               recoId={pubRecoId}
@@ -1151,6 +1182,7 @@ export default function App() {
               onBack={()=>{ goToPath('/'); }}
               onNavigateProfile={()=>{ goToPath(`/investor/${pubUsername}`); }}
             />
+            </React.Suspense>
           </ProfileErrorBoundary>
         </div>
       );
@@ -1219,6 +1251,7 @@ export default function App() {
     return (
       <div className="app"><style>{STYLES}</style>
         <ProfileErrorBoundary>
+          <React.Suspense fallback={<AppLoadingScreen/>}>
           <RecoPostPage
             username={bareIdeaResolved.username}
             recoId={bareIdeaId}
@@ -1229,6 +1262,7 @@ export default function App() {
             onBack={()=>{ goToPath('/'); }}
             onNavigateProfile={()=>{ goToPath(`/investor/${bareIdeaResolved.username}`); }}
           />
+          </React.Suspense>
         </ProfileErrorBoundary>
       </div>
     );
@@ -1259,6 +1293,7 @@ export default function App() {
       <div className="app"><style>{STYLES}</style>
         <SectionErrorBoundary label="Stock Insights">
           <div className="content" style={{maxWidth:1100,margin:'0 auto',padding:isMobile?'16px 12px':'28px 24px'}}>
+            <React.Suspense fallback={<AppLoadingScreen/>}>
             <SecurityIntelligencePage
               securityTicker={{ ticker: secTicker, tab: secQuery.get('tab') || undefined }}
               contacts={contacts}
@@ -1269,6 +1304,7 @@ export default function App() {
               onBack={()=>{ goToPath('/'); }}
               onHome={()=>{ goToPath('/'); }}
             />
+            </React.Suspense>
           </div>
         </SectionErrorBoundary>
       </div>
@@ -1299,10 +1335,12 @@ export default function App() {
 
   // ── Password reset page ─────────────────────────────────────────────────────
   if (resetOobCode) return (
-    <ResetPasswordPage
-      oobCode={resetOobCode}
-      onDone={() => setResetOobCode(null)}
-    />
+    <React.Suspense fallback={<AppLoadingScreen/>}>
+      <ResetPasswordPage
+        oobCode={resetOobCode}
+        onDone={() => setResetOobCode(null)}
+      />
+    </React.Suspense>
   );
 
   // ── Signed out: public landing page, with LoginPage one click away ──────────
@@ -1323,10 +1361,12 @@ export default function App() {
       const wantsSignupTab = authView === 'signup' || (authView === null && nextWantsSignup);
       return (
         <SectionErrorBoundary label="Sign in">
+          <React.Suspense fallback={<AppLoadingScreen/>}>
           <LoginPage
             initialTab={wantsSignupTab ? 'signup' : 'login'}
             onBack={wantsFormDirectly ? null : () => setAuthView(null)}
           />
+          </React.Suspense>
         </SectionErrorBoundary>
       );
     }
@@ -1653,7 +1693,7 @@ export default function App() {
                   <Bell size={18}/>
                   {unreadCount>0 && <span style={{position:"absolute",top:0,right:0,background:"var(--accent)",color:"#fff",borderRadius:"50%",fontSize:10,fontWeight:800,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{unreadCount>9?"9+":unreadCount}</span>}
                 </button>
-                {notifOpen && <NotificationPanel
+                {notifOpen && <React.Suspense fallback={null}><NotificationPanel
                   notifications={notifications}
                   myId={ME.id}
                   onAccept={async (n) => {
@@ -1750,7 +1790,7 @@ export default function App() {
                       goToPath(`/circle/${n.metadata.groupSlug}?requests=1`);
                     }
                   }}
-                />}
+                /></React.Suspense>}
               </div>
               <div ref={profileRef} style={{position:"relative"}}>
                 <button
@@ -1920,24 +1960,24 @@ export default function App() {
               </div>
             )}
             {isInv && page==="home"      && <SectionErrorBoundary label="Home feed"><HomeFeed isMobile={isMobile} setPage={setPage} setRecoInit={setRecoInit} recsReceived={recsReceived} setRecsReceived={setRecsReceived} configs={configs} holdings={holdings} contacts={contacts} me={ME} assetClasses={assetClasses} setAssetClasses={setAssetClasses} groups={groups} recsMade={recsMade} setRecsMade={setRecsMade} tracked={tracked} toggleTrack={toggleTrack} effectiveFeedConfig={effectiveFeedConfig} networkEngagementRecos={networkEngagementRecos} setNetworkEngagementRecos={setNetworkEngagementRecos} publicFeedRecos={publicFeedRecos} setPublicFeedRecos={setPublicFeedRecos} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} globalSearch={globalSearch} connections={connections} onPeopleConnect={handlePeopleConnect} onShowInvite={()=>setShowInvite(true)} onOpenSecurity={openSecurity} feedLoading={feedLoading} trackedCreatorIds={trackedCreatorIds} setTrackedCreatorIds={setTrackedCreatorIds} initTab={homeInitTab} onInitTabConsumed={()=>setHomeInitTab(null)}/></SectionErrorBoundary>}
-            {isInv && showInvite && <SectionErrorBoundary label="Invite"><InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/></SectionErrorBoundary>}
-            {isInv && showDiscover && <SectionErrorBoundary label="Discover"><DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/></SectionErrorBoundary>}
+            {isInv && showInvite && <SectionErrorBoundary label="Invite"><React.Suspense fallback={null}><InviteModal username={ME?.username} referralCount={referralCount} onClose={()=>setShowInvite(false)}/></React.Suspense></SectionErrorBoundary>}
+            {isInv && showDiscover && <SectionErrorBoundary label="Discover"><React.Suspense fallback={null}><DiscoverModal ME={ME} onClose={()=>setShowDiscover(false)} onDiscoverMore={()=>{ setShowDiscover(false); setPage('discover'); }}/></React.Suspense></SectionErrorBoundary>}
             {isInv && page==="portfolio"    && <SectionErrorBoundary label="Portfolio"><React.Suspense fallback={<div className="empty">Loading Portfolio…</div>}><PortfolioIntelligencePage holdings={holdings} setHoldings={setHoldings} contacts={contacts} me={ME} onOpenSecurity={openSecurity} setPage={setPage}/></React.Suspense></SectionErrorBoundary>}
-            {isInv && page==="market_intel" && <SectionErrorBoundary label="Market Insights"><MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></SectionErrorBoundary>}
+            {isInv && page==="market_intel" && <SectionErrorBoundary label="Market Insights"><React.Suspense fallback={<div className="empty">Loading…</div>}><MarketIntelligencePage contacts={contacts} me={ME} onOpenSecurity={openSecurity}/></React.Suspense></SectionErrorBoundary>}
             {/* No ticker in scope here — openSecurity() now routes any specific ticker straight to
                 the standalone /security/:ticker page (see its own definition above), so this branch
                 only ever renders the section's browse/search landing. */}
-            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><SecurityIntelligencePage securityTicker={null} contacts={contacts} me={ME} viewerUser={user} trackedIds={trackedCreatorIds} onOpenSecurity={openSecurity} onBack={()=>setPage('home')} onHome={()=>setPage('home')}/></SectionErrorBoundary>}
-            {isInv && page==="discover"     && <SectionErrorBoundary label="Discover People"><DiscoverPeoplePage ME={ME}/></SectionErrorBoundary>}
-            {isInv && page==="network"   && <SectionErrorBoundary label="Network"><Network
+            {isInv && page==="sec_intel"    && <SectionErrorBoundary label="Stock Insights"><React.Suspense fallback={<div className="empty">Loading…</div>}><SecurityIntelligencePage securityTicker={null} contacts={contacts} me={ME} viewerUser={user} trackedIds={trackedCreatorIds} onOpenSecurity={openSecurity} onBack={()=>setPage('home')} onHome={()=>setPage('home')}/></React.Suspense></SectionErrorBoundary>}
+            {isInv && page==="discover"     && <SectionErrorBoundary label="Discover People"><React.Suspense fallback={<div className="empty">Loading…</div>}><DiscoverPeoplePage ME={ME}/></React.Suspense></SectionErrorBoundary>}
+            {isInv && page==="network"   && <SectionErrorBoundary label="Network"><React.Suspense fallback={<div className="empty">Loading…</div>}><Network
                 connections={connections} setConnections={setConnections}
                 groups={groups} setGroups={setGroups}
                 configs={configs}
                 recsReceived={recsReceived} me={ME} setPage={setPage}
                 onOpenRecos={(f)=>{ setRecoInit(f); setInvestorPage("recs"); }}
                 initTab={networkInitTab} onInitTabConsumed={()=>setNetworkInitTab(null)}
-                trackingCounts={trackingCounts} onTrackingCountsChange={setTrackingCounts}/></SectionErrorBoundary>}
-            {isInv && page==="recs"      && <SectionErrorBoundary label="Ideas"><Recommendations
+                trackingCounts={trackingCounts} onTrackingCountsChange={setTrackingCounts}/></React.Suspense></SectionErrorBoundary>}
+            {isInv && page==="recs"      && <SectionErrorBoundary label="Ideas"><React.Suspense fallback={<div className="empty">Loading…</div>}><Recommendations
                 recsReceived={recsReceived} setRecsReceived={setRecsReceived}
                 recsMade={recsMade} setRecsMade={setRecsMade}
                 contacts={contacts} groups={groups}
@@ -1945,11 +1985,11 @@ export default function App() {
                 initFilter={recoInit} holdings={holdings} me={ME}
                 tracked={tracked} toggleTrack={toggleTrack}
                 globalSearch={globalSearch}
-                onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/></SectionErrorBoundary>}
+                onReload={async()=>{ setRecsReceived(await getMyReceivedRecos(ME.id)); setRecsMade(await getMyMadeRecos(ME.id)); }}/></React.Suspense></SectionErrorBoundary>}
             {isInv && page==="sharing"     && <SectionErrorBoundary label="Sharing"><React.Suspense fallback={<div className="empty">Loading…</div>}><Sharing myId={ME.id} feedConfigOptions={feedConfigOptions} userFeedPrefs={userFeedPrefs} setUserFeedPrefs={setUserFeedPrefs} effectiveFeedConfig={effectiveFeedConfig} setEffectiveFeedConfig={setEffectiveFeedConfig}/></React.Suspense></SectionErrorBoundary>}
-            {isInv && page==="about"        && <SectionErrorBoundary label="About"><AboutPage/></SectionErrorBoundary>}
-            {isInv && page==="contact"      && <SectionErrorBoundary label="Contact"><ContactPage setPage={setPage}/></SectionErrorBoundary>}
-            {isInv && page==="privacy"      && <SectionErrorBoundary label="Privacy Policy"><PrivacyPolicyPage/></SectionErrorBoundary>}
+            {isInv && page==="about"        && <SectionErrorBoundary label="About"><React.Suspense fallback={<div className="empty">Loading…</div>}><AboutPage/></React.Suspense></SectionErrorBoundary>}
+            {isInv && page==="contact"      && <SectionErrorBoundary label="Contact"><React.Suspense fallback={<div className="empty">Loading…</div>}><ContactPage setPage={setPage}/></React.Suspense></SectionErrorBoundary>}
+            {isInv && page==="privacy"      && <SectionErrorBoundary label="Privacy Policy"><React.Suspense fallback={<div className="empty">Loading…</div>}><PrivacyPolicyPage/></React.Suspense></SectionErrorBoundary>}
             {isInv && page==="trackrecord" && (
               ME.username
                 ? <ProfileErrorBoundary key={ME.username}>
@@ -2046,7 +2086,7 @@ export default function App() {
           both portal overlays gated purely on server-persisted profile state,
           so a user who drops off mid-setup resumes exactly where they left
           off on next login. See features/onboarding/Onboarding.jsx. ── */}
-      {isInv && <SectionErrorBoundary label="Onboarding"><OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={setPage}/></SectionErrorBoundary>}
+      {isInv && <SectionErrorBoundary label="Onboarding"><React.Suspense fallback={null}><OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={setPage}/></React.Suspense></SectionErrorBoundary>}
     </div>
   );
 }

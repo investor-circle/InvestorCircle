@@ -53,4 +53,15 @@ describe("LandingPage", () => {
     const { container } = render(<LandingPage {...noop} />);
     expect(container.textContent).toMatch(/do not provide/i);
   });
+
+  it("links to /search as a real <a href>, not an onClick handler", () => {
+    // getByRole('link', ...) only matches a real <a href> exposed with the
+    // link ARIA role — a <div onClick> or <button onClick> (like every other
+    // interactive element on this page) would not satisfy this query, so
+    // this also proves it isn't one of those.
+    const { getByRole } = render(<LandingPage {...noop} />);
+    const link = getByRole("link", { name: /explore stock insights/i });
+    expect(link.tagName).toBe("A");
+    expect(link.getAttribute("href")).toBe("/search");
+  });
 });

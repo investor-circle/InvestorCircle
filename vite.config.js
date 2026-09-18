@@ -28,7 +28,11 @@ export default defineConfig({
         // the browser serves it from cache instead of re-downloading it.
         manualChunks: {
           "vendor-react": ["react", "react-dom", "react-router-dom"],
-          "vendor-firebase": ["firebase/app", "firebase/auth", "firebase/analytics"],
+          // firebase/analytics is deliberately NOT listed here — src/firebase.js
+          // loads it via a dynamic import() so it lands in its own
+          // separately-fetched chunk, not merged into this eagerly
+          // modulepreloaded one. It plays no part in auth-state resolution.
+          "vendor-firebase": ["firebase/app", "firebase/auth"],
         },
       },
     },
