@@ -51,7 +51,7 @@ import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMiss
 import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, rankTrending } from "../../utils/trending";
 import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor } from "../../services/api/trackingApi";
 import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
-import { getDailyPrices, byTicker, priceKey } from "../../services/api/pricingApi";
+import { getDailyPrices, getPublicDailyPrice, byTicker, priceKey } from "../../services/api/pricingApi";
 
 // A recommendation counts as "fresh" while it's inside this window — same
 // created_at ordering the rest of the feed already uses (r.date), just
@@ -2020,6 +2020,22 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
       .catch(()=>setLoading(false));
   },[ticker, signedIn]);
 
+  // Daily price movement for the security itself (distinct from each idea's
+  // own return_pct below, which is anchored to that idea's entry price, not
+  // yesterday's close). Nightly-batch EOD snapshot — see pricingApi.js —
+  // never a live quote. Signed-in uses the batch-shaped authenticated read
+  // (one ticker in the array); signed-out uses the single-symbol public
+  // counterpart, same split as fetchRecos above.
+  const [dailyPrice, setDailyPrice] = useState(null);
+  useEffect(()=>{
+    if (!ticker) { setDailyPrice(null); return; }
+    let cancelled = false;
+    const fetchPrice = signedIn
+      ? getDailyPrices([ticker]).then(rows=>rows[0] || null)
+      : getPublicDailyPrice(ticker);
+    fetchPrice.then(p=>{ if (!cancelled) setDailyPrice(p); }).catch(()=>{});
+    return ()=>{ cancelled = true; };
+  },[ticker, signedIn]);
 
   // stats useMemo hoisted above early return to comply with React Rules of Hooks.
   // (hooks must be called in the same order on every render; early returns violate this)
@@ -2245,6 +2261,22 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
            active/closed mix before a reader hits the tab content. ── */}
       {!loading && recos.length > 0 && (
         <div style={{marginTop:16}}>
+          {/* Nightly-batch EOD snapshot, never live/intraday — the visible
+              "as of" date is deliberate, not just a hover title, so this
+              can't read as a real-time quote it isn't. Distinct from each
+              idea's own return% below (anchored to that idea's own entry
+              price, not yesterday's close). */}
+          {dailyPrice && (
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:10}}>
+              <span className="pill" style={dailyPrice.changePct!=null?{color:dailyPrice.changePct>0?'var(--gain)':dailyPrice.changePct<0?'var(--loss)':undefined}:undefined}>
+                ₹{Number(dailyPrice.close).toLocaleString('en-IN')}
+                {dailyPrice.changePct!=null && ` ${dailyPrice.changePct>=0?'+':''}${Number(dailyPrice.changePct).toFixed(1)}%`}
+              </span>
+              <span style={{fontSize:12,color:'var(--muted)'}}>
+                as of {dailyPrice.date?new Date(dailyPrice.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'}
+              </span>
+            </div>
+          )}
           <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
             {securitySector && <span className="pill">{securitySector}</span>}
             <span className="pill gain">{community.bull} Buy</span>
@@ -2389,6 +2421,11 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',fontSize:12,color:'var(--muted)'}}>
                       <span>{r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'}</span>
                       {r.reco_price&&<span>· Entry ₹{Number(r.reco_price).toLocaleString('en-IN')}</span>}
+                      {r.return_pct!=null&&(
+                        <span style={{fontWeight:700,color:Number(r.return_pct)>=0?'var(--gain)':'var(--loss)'}}>
+                          · {Number(r.return_pct)>=0?'+':''}{Number(r.return_pct).toFixed(1)}%
+                        </span>
+                      )}
                       <ConvBadge level={r.conviction}/>
                       <StatusBadge2 status={r.status||'Active'}/>
                     </div>
@@ -2401,7 +2438,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
               <table style={{width:'100%',borderCollapse:'collapse'}}>
                 <thead>
                   <tr style={{borderBottom:'2px solid var(--line)'}}>
-                    {['Investor','Type','Date','Entry Price','Conviction','Status'].map((h,i)=>(
+                    {['Investor','Type','Date','Entry Price','Return','Conviction','Status'].map((h,i)=>(
                       <th key={i} style={{padding:'10px 14px',textAlign:i===0?'left':'center',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'var(--muted)'}}>{h}</th>
                     ))}
                   </tr>
@@ -2438,6 +2475,10 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                         </td>
                         <td style={{padding:'12px 14px',textAlign:'center',fontSize:13,fontWeight:600}}>
                           {r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'}
+                        </td>
+                        <td style={{padding:'12px 14px',textAlign:'center',fontSize:13,fontWeight:700,
+                          color:r.return_pct!=null?(Number(r.return_pct)>=0?'var(--gain)':'var(--loss)'):'var(--muted)'}}>
+                          {r.return_pct!=null?`${Number(r.return_pct)>=0?'+':''}${Number(r.return_pct).toFixed(1)}%`:'—'}
                         </td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}><ConvBadge level={r.conviction}/></td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}>

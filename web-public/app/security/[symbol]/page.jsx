@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
-import { getSecurityByTicker, getRelatedSecurities } from '../../../lib/api';
-import { jsonLd, ideaStatusSummary } from '../../../lib/format';
+import { getSecurityByTicker, getRelatedSecurities, getDailyPrice } from '../../../lib/api';
+import { jsonLd, ideaStatusSummary, money, pct, day } from '../../../lib/format';
 import { computeConsensus } from '../../../lib/consensus';
 import Gate from '../../../components/Gate';
 import Breadcrumbs from '../../../components/Breadcrumbs';
@@ -50,9 +50,10 @@ function countByStatus(ideas) {
 
 export default async function SecurityPage({ params }) {
   const { symbol } = await params;
-  const [data, related] = await Promise.all([
+  const [data, related, dailyPrice] = await Promise.all([
     getSecurityByTicker(symbol),
     getRelatedSecurities(symbol),
+    getDailyPrice(symbol),
   ]);
   if (!data || !data.summary?.idea_count) notFound();
 
@@ -111,6 +112,21 @@ export default async function SecurityPage({ params }) {
         {summary.contributor_count} investor{summary.contributor_count === 1 ? '' : 's'}.{' '}
         {ideaStatusSummary(statusCounts.Active, statusCounts.Closed, statusCounts.Expired)}
       </p>
+
+      {/* Nightly-batch EOD data, never live/intraday — the visible "as of"
+          date is deliberate, not just a hover title, so this can't read as
+          a real-time quote it isn't. */}
+      {dailyPrice && (
+        <div className="badge-row" style={{ alignItems: 'center' }}>
+          <span
+            className="tag"
+            style={dailyPrice.changePct != null ? { color: dailyPrice.changePct > 0 ? 'var(--gain)' : dailyPrice.changePct < 0 ? 'var(--loss)' : undefined } : undefined}
+          >
+            {money(dailyPrice.close)}{dailyPrice.changePct != null && ` ${pct(dailyPrice.changePct)}`}
+          </span>
+          <span className="meta">as of {day(dailyPrice.date)}</span>
+        </div>
+      )}
 
       {/* Sector isn't repeated here — it's already the eyebrow directly
           above the H1, and this page had it in both spots at first. */}

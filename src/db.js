@@ -1086,6 +1086,25 @@ export async function getDailyPrices(tickers) {
   return api.ok ? (api.data.prices || []) : [];
 }
 
+// Unauthenticated counterpart to getDailyPrices, for a signed-out visitor on
+// the Stock Insights page (/security/:ticker) — same pattern as
+// getPublicTickerIdeas above (plain fetch against API_BASE, not callApi,
+// since there is no session to attach). One symbol only, matching the
+// server's own public-daily action. Returns null (not throwing) when there
+// is no stored snapshot for this instrument, same as a signed-in caller
+// getting back an empty array.
+export async function getPublicDailyPrice(ticker) {
+  if (!ticker) return null;
+  try {
+    const res = await fetch(`${API_BASE}/data?resource=pricing&action=public-daily&symbol=${encodeURIComponent(ticker)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.price || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /**
  * Key used to look up a price snapshot by ticker — includes asset class
  * because instrument identity is (symbol, asset_class), NOT symbol alone:
