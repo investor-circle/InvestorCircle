@@ -1,11 +1,18 @@
 # myinvestorcircle.com
 #
 # Public ideas and the stock pages that aggregate them are meant to be found.
-# Member PROFILES are not: that was a deliberate decision. Profiles are real
-# URLs now (/investor/name, served by the plain SPA shell — see index.html's
-# canonical-tag comment) rather than HashRouter fragments a crawler could
-# never see in the first place, which makes the rule below load-bearing, not
-# a defensive backup: it is the only thing keeping them out of the index.
+# Member PROFILES are not: that was a deliberate decision, revisited once
+# (see CLAUDE.md) to let a shared profile link render a correct preview card
+# (name, avatar, ICI score) — /investor/:username now has real
+# server-rendered content for a signed-out visitor or a link-preview bot
+# (web-public/app/(pages)/investor/[username]/, same middleware.js
+# cookie-routing scheme as /security/:symbol and /idea/:id), not just the
+# plain SPA shell index.html serves everyone else (see its own
+# canonical-tag comment). "Linkable" and "indexable" are different
+# decisions — only the first changed. The page's own generateMetadata also
+# sets robots: noindex as defense-in-depth, but the rule below remains the
+# load-bearing one: it's what actually keeps Googlebot from crawling the
+# path at all, not just declining to index what it finds.
 
 User-agent: *
 Allow: /
