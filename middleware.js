@@ -3,7 +3,8 @@
  * (api/_lib/routingToken.js, api/_lib/handlers/session.js) is actually
  * verified. Runs before vercel.json's rewrites resolve, for the paths that
  * are otherwise unconditionally proxied to the anonymous web-public app:
- * /security/:symbol, /idea/:id, and (Stage 3) the bare homepage "/".
+ * /security/:symbol, /idea/:id, /investor/:username, and (Stage 3) the bare
+ * homepage "/".
  *
  * What this decides: which app renders a FRESH request for one of those
  * paths — the main, authenticated app (valid cookie present) or web-public
@@ -65,7 +66,7 @@ const COOKIE_NAME = 'mic_route';
 const BYPASS_PARAMS = ['ref', 'next', 'signup', 'claim_token', 'oobCode', 'mode'];
 
 export const config = {
-  matcher: ['/', '/security/:symbol', '/idea/:id'],
+  matcher: ['/', '/security/:symbol', '/idea/:id', '/investor/:username'],
 };
 
 function base64urlToBytes(b64url) {

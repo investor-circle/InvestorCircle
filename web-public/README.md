@@ -1,13 +1,24 @@
 # investorcircle-public
 
-The SSR + hydration app for myInvestorCircle's public, indexable, shareable
-surfaces: **Stock Insights** (`/security/:symbol`), **an idea**
-(`/idea/:id`), **search** (`/search`), and **the homepage** (`/`, for a
-signed-out/anonymous visitor only — see "Homepage routing" below). This
-exists because the rest of the main app is a client-side-only React SPA —
-a crawler or a link-preview bot (WhatsApp, Slack, Twitter) never executes
-its JavaScript, so nothing rendered only by that SPA can ever be indexed or
-produce a link preview, no matter what the app itself shows a real visitor.
+The SSR + hydration app for myInvestorCircle's public, shareable surfaces:
+**Stock Insights** (`/security/:symbol`), **an idea** (`/idea/:id`), **an
+investor profile** (`/investor/:username` — see its own note below),
+**search** (`/search`), and **the homepage** (`/`, for a signed-out/
+anonymous visitor only — see "Homepage routing" below). This exists because
+the rest of the main app is a client-side-only React SPA — a crawler or a
+link-preview bot (WhatsApp, Slack, Twitter) never executes its JavaScript,
+so nothing rendered only by that SPA can ever be indexed or produce a link
+preview, no matter what the app itself shows a real visitor.
+
+**`/investor/:username` is deliberately not indexable, unlike the other
+routes here** — it exists purely so a shared profile link renders a correct
+preview card (avatar, ICI score, idea/tracking counts) instead of the
+generic site logo, and shows a much thinner page than the other routes
+here (no sector breakdown, best/worst picks, or idea list — those stay
+behind sign-in). `generateMetadata` sets `robots: noindex` and the main
+project's `public/robots.txt` still disallows `/investor/` — see
+`CLAUDE.md`'s "Member profiles are deliberately not *indexed*" for the full
+reasoning.
 
 ## Why a separate project, not a folder inside the main build
 
@@ -33,20 +44,28 @@ produce a link preview, no matter what the app itself shows a real visitor.
   Firebase session to check across origins. "Your Circle" (connections/
   tracked investors) is a signed-in-only concept and simply doesn't apply;
   every tab shows the Community view only. A "Sign in to myInvestorCircle"
-  link (Gate.jsx) is the only CTA into the real app — `/security/:symbol`
-  and `/idea/:id` are both real paths on the main app's own domain now too
-  (BrowserRouter, not HashRouter), but `/security/:symbol` is itself
-  proxied to THIS app (see the main project's vercel.json), so there is no
-  separate URL a fresh link could point at for "the interactive version of
-  this exact page" — only a signed-in user already running the main app can
-  reach it, via client-side navigation. The idea page's "Open this idea in
-  the app" link still works as a distinct destination since it points at
-  the author's `/investor/:username/idea/:id`, a path this project never
-  proxies.
-- **No ICI investor scores.** `investor-ici-batch` requires a verified
-  Firebase token server-side (`requireUid`) — correctly, since it's a
-  per-viewer batch computation, not public data. Omitted here rather than
-  weakened.
+  link (Gate.jsx) is the only CTA into the real app — `/security/:symbol`,
+  `/idea/:id` and `/investor/:username` are all real paths on the main
+  app's own domain too (BrowserRouter, not HashRouter), but each is itself
+  proxied to THIS app for a signed-out visitor (see the main project's
+  vercel.json), so there is no separate URL a fresh link could point at for
+  "the interactive version of this exact page" — only a signed-in user
+  already running the main app can reach it, via client-side navigation
+  (`/middleware.js`'s routing-token cookie check is what sends a signed-in
+  visitor's own browser to the SPA instead of here — see CLAUDE.md). The
+  idea page's "Open this idea in the app" link still works as a distinct
+  destination since it points at the author's
+  `/investor/:username/idea/:id` — the nested shape, which this project
+  never proxies (only the bare `/investor/:username` does).
+- **No ICI investor-SEARCH scores.** `investor-ici-batch` (the batched
+  lookup Discovery/Connections use to rank many investors at once) still
+  requires a verified Firebase token server-side (`requireUid`) —
+  correctly, since ranking against a signed-in viewer's own circle isn't
+  public data — and stays out of this app. A single public profile's own
+  ICI score is different: `/investor/:username` computes and shows it,
+  using `lib/ici.js`'s `computeIci` (a duplicate of `src/db.js`'s, same
+  reasoning as `computeConsensus`) against the already-public summary
+  fields `resource=public-profile` returns.
 - **No AI Summary tab.** It's a client-only simulated feature in the main
   app with no real backend logic behind it and no SEO/share value — deferred
   rather than ported, to keep this app's first version scoped to what
@@ -54,7 +73,7 @@ produce a link preview, no matter what the app itself shows a real visitor.
 
 ## Homepage routing (`/`)
 
-Unlike `/security/:symbol`/`/idea/:id`/`/search`, `/` is not unconditionally
+Unlike `/security/:symbol`/`/idea/:id`/`/investor/:username`/`/search`, `/` is not unconditionally
 proxied here — a signed-in returning user needs to land back in the SPA's
 Home Feed, not this page. The main project's `/middleware.js` decides,
 before its own `vercel.json` rewrite is ever reached: a valid `mic_route`
@@ -91,11 +110,12 @@ staging copy of the main app's API.
 2. Note the production URL Vercel assigns it (e.g.
    `https://investorcircle-public.vercel.app`, if you name the project
    `investorcircle-public` as suggested in `package.json`'s `name`).
-3. Back in the **main** project's `vercel.json`, update the three
-   `destination` values under the `/security/:symbol`, `/idea/:id` and
-   `/search` rewrites to that URL if it differs from the placeholder already
-   there — the rewrite makes it invisible to visitors (the address bar still
-   shows `myinvestorcircle.com/security/...`), it's proxying under the hood.
+3. Back in the **main** project's `vercel.json`, update the `destination`
+   values under the `/security/:symbol`, `/idea/:id`, `/investor/:username`
+   and `/search` rewrites (plus each route's own `opengraph-image` sub-path
+   rewrite) to that URL if it differs from the placeholder already there —
+   the rewrite makes it invisible to visitors (the address bar still shows
+   `myinvestorcircle.com/security/...`), it's proxying under the hood.
 4. This only actually reaches real users once `myinvestorcircle.com`
    resolves to Vercel at all — see the note in the main `vercel.json` and
    `CLAUDE.md`'s deployment section. Until then this is reachable at its own

@@ -70,3 +70,13 @@ export async function getDailyPrice(symbol) {
   const { ok, data } = await getJson(`/api/data?resource=pricing&action=public-daily&symbol=${encodeURIComponent(symbol)}`);
   return ok ? (data.price || null) : null;
 }
+
+// api/_lib/handlers/public-profile.js — deliberately unauthenticated by
+// design (same file the SPA's own signed-out /investor/:username view
+// already calls), and already excludes SEBI/consent/claim-token fields —
+// see that handler's own header comment. Used for both the thin public
+// profile page in this app and its opengraph-image.jsx (investor/[username]).
+export async function getPublicProfile(username) {
+  const { ok, data } = await getJson(`/api/data?resource=public-profile&username=${encodeURIComponent(username)}`);
+  return ok ? data : null;
+}
