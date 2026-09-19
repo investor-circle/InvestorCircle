@@ -286,6 +286,7 @@ async function symbols(_req, res) {
   const rows = await sql`
     SELECT
       UPPER(r.ticker)   AS symbol,
+      MAX(r.asset_name) AS name,
       COUNT(*)          AS idea_count,
       MAX(r.created_at) AS last_posted
     FROM ic_recommendations r

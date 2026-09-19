@@ -364,18 +364,26 @@ Remove an entry once a build that includes it has actually shipped.
 
 `/stock/:symbol` is server-rendered HTML by `api/_lib/seo.js`, dispatched
 through `api/data.js` as `resource=seo` (see `vercel.json`'s rewrite).
-`/security/:symbol`, `/idea/:id`, `/search`, and (for an anonymous visitor —
-see below) the homepage `/` are served by `web-public/` — a separate SSR
-Next.js app, deployed as its own Vercel project, proxied in from
-`vercel.json` — see `web-public/README.md`. Everything else on the site is
-the plain `BrowserRouter` SPA (`index.html` + client-side rendering, no
-server-rendered content); these exist because neither Googlebot's indexing
-nor WhatsApp's link-preview card runs the app's JavaScript.
+`/security/:symbol`, `/idea/:id`, `/investor/:username`, `/search`, and (for
+an anonymous visitor — see below) the homepage `/` are served by
+`web-public/` — a separate SSR Next.js app, deployed as its own Vercel
+project, proxied in from `vercel.json` — see `web-public/README.md`.
+Everything else on the site is the plain `BrowserRouter` SPA (`index.html` +
+client-side rendering, no server-rendered content); these exist because
+neither Googlebot's indexing nor WhatsApp's link-preview card runs the
+app's JavaScript. (`/investor/:username` is the one exception to
+"server-rendered because it should be indexed" — it's server-rendered
+purely so a shared link previews correctly; it stays deliberately out of
+the index — see below.)
 
-`/security/:symbol`, `/idea/:id`, and `/` are all real paths BOTH
-`web-public/` AND the main app can render at the exact same URL — which one
-actually responds to a given request is decided by `/middleware.js` (Vercel
-Edge Middleware), not by `vercel.json`'s rewrite alone:
+`/security/:symbol`, `/idea/:id`, `/investor/:username`, and `/` are all
+real paths BOTH `web-public/` AND the main app can render at the exact same
+URL — which one actually responds to a given request is decided by
+`/middleware.js` (Vercel Edge Middleware), not by `vercel.json`'s rewrite
+alone. (`/investor/:username`'s `web-public/` version is deliberately
+thinner than the others and stays out of the search index — see "Member
+profiles are deliberately not *indexed*" below — but is routed here the
+same way.)
 
 - **No routing-token cookie** (a crawler, WhatsApp's link-preview fetcher, a
   signed-out stranger, or an expired/absent cookie): `vercel.json`'s
@@ -391,8 +399,9 @@ Edge Middleware), not by `vercel.json`'s rewrite alone:
   `/security/:symbol` was already handled there; `/idea/:id` additionally
   resolves its author via `getPublicIdeaAuthor` (`src/db.js`) since that
   bare shape carries no username the standalone route can key off directly;
-  `/` simply renders the normal authenticated app shell (Home Feed), same
-  as any other signed-in load of `/`.
+  `/investor/:username` needs no such resolution (the username is already
+  in the URL); `/` simply renders the normal authenticated app shell (Home
+  Feed), same as any other signed-in load of `/`.
 - **`/` only, one more check ahead of the cookie**: any of `?ref=`,
   `?next=`, `?signup=`, `?claim_token=`, `?oobCode=`, or `?mode=` present on
   the request always sends it to `/index.html`, regardless of cookie state —
@@ -400,8 +409,8 @@ Edge Middleware), not by `vercel.json`'s rewrite alone:
   `web-public/`'s own homepage, the creator-claim flow, or a Firebase auth
   action link (password reset, email verification, ...) all need the SPA,
   not the anonymous marketing page, even from a browser with no cookie at
-  all. `/security/:symbol` and `/idea/:id` don't need this check — a shared
-  link to either never carries these params.
+  all. `/security/:symbol`, `/idea/:id` and `/investor/:username` don't need
+  this check — a shared link to any of them never carries these params.
 
 **The routing-token cookie is not an authentication mechanism** — worth
 repeating precisely because it looks like one. It decides ONLY which of the
@@ -508,15 +517,28 @@ visitor this banner is for.
   cover the same ground (`/security/:symbol` with the full Stock Insights
   experience), and this stops them being indexed as duplicate content.
   `/stock/:symbol` itself still resolves; it is not retired.
-- **Member profiles are deliberately not served here.** No route in this
-  file's sense renders one — `/investor/:username` is a real path now
-  (`BrowserRouter`, not a hash route, so it IS a separate URL to a crawler in
-  principle), served by the plain SPA shell via the standalone-route
-  mechanism, with no server-rendered content of its own. `public/robots.txt`
-  disallowing `/investor/` is what actually keeps it out of the index — see
-  that file's own comment. That is a product decision (ideas are indexable,
-  people are not) — revisit it explicitly rather than by adding real
-  server-rendered content at that path.
+- **Member profiles are deliberately not *indexed*, but ARE now served
+  here** (revisited from the original "not served here at all" — see the
+  git history on this bullet and `public/robots.txt`'s own comment for the
+  reasoning). `web-public/app/(pages)/investor/[username]/` renders a
+  deliberately thin public profile (avatar, name, ICI score, idea/tracking/
+  connection counts, a "Sign in for the full picture" `<Gate>`) — NOT the
+  full profile (`src/features/profile/Profile.jsx`'s sector breakdown,
+  best/worst picks, full idea list all stay behind sign-in), plus a
+  per-profile `opengraph-image.jsx` so a shared profile link's WhatsApp/
+  social preview shows that member's own avatar and stats instead of the
+  generic site logo. `/investor/:username` was added to `middleware.js`'s
+  cookie-routing `matcher` (same mechanism as `/security/:symbol` and
+  `/idea/:id` — see "Public, crawlable pages" above) so a signed-in
+  visitor's own browser still gets the full authenticated SPA profile via
+  the standalone-route mechanism, not this thin page. `generateMetadata`
+  sets `robots: { index: false }` and `public/robots.txt` still disallows
+  `/investor/` — **indexable and linkable are different decisions; only
+  linkable changed.** The underlying data (`api/_lib/handlers/
+  public-profile.js`, `resource=public-profile`) was already unauthenticated
+  by design and already excludes SEBI/consent/claim-token fields; nothing
+  about that handler changed, this only added a second, server-rendered
+  caller of it.
 - **Edge caching is load-bearing, not an optimisation.** `/stock/:symbol`
   sets `s-maxage`/`stale-while-revalidate` so a crawler working through the
   sitemap does not spend Vercel "Fast Origin Transfer" on every hit — the

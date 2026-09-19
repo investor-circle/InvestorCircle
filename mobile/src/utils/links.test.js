@@ -15,28 +15,29 @@ jest.mock("../services/api", () => ({ API_ORIGIN: "https://investor-circle.verce
 
 describe("recoUrl", () => {
   it("points at the website, never the API host", () => {
-    const url = recoUrl("asha", "123");
+    const url = recoUrl("123");
     expect(url.startsWith("https://myinvestorcircle.com/")).toBe(true);
     expect(url).not.toContain(API_ORIGIN);
   });
 
-  it("builds the same shareable URL the web hands out", () => {
-    expect(recoUrl("asha", "123")).toBe("https://myinvestorcircle.com/investor/asha/idea/123");
+  it("builds the bare, id-only URL — the one the web-public SSR app actually serves", () => {
+    // NOT /investor/:username/idea/:id — that nested shape is the web app's
+    // own in-app navigational URL, not its public share link (see the web
+    // app's own RecoPostPage, which builds this exact bare form for its
+    // "Share this idea" button). The nested shape gets no server-rendered
+    // content — no title, description, or preview image — for anyone
+    // without the app installed.
+    expect(recoUrl("123")).toBe("https://myinvestorcircle.com/idea/123");
   });
 
-  it("returns nothing when the author's username is unknown", () => {
-    // An idea's public page hangs off the author's username; the web has no
-    // id-only route. A "shorter" link would open in the app and land everyone
-    // WITHOUT the app on the home feed — and almost everyone a link is sent
-    // to does not have the app. The caller says so instead of sending one.
+  it("returns nothing without an id", () => {
     for (const missing of [null, undefined, ""]) {
-      expect(recoUrl(missing, "123")).toBeNull();
+      expect(recoUrl(missing)).toBeNull();
     }
-    expect(recoUrl("asha", "")).toBeNull();
   });
 
   it("escapes values rather than interpolating them raw", () => {
-    expect(recoUrl("a b", "1/2")).toBe("https://myinvestorcircle.com/investor/a%20b/idea/1%2F2");
+    expect(recoUrl("1/2")).toBe("https://myinvestorcircle.com/idea/1%2F2");
   });
 });
 
@@ -96,6 +97,6 @@ describe("WEB_ORIGIN", () => {
 
   it("carries no trailing slash, so the built paths have exactly one", () => {
     expect(WEB_ORIGIN.endsWith("/")).toBe(false);
-    expect(recoUrl("asha", "1")).not.toContain("//investor/");
+    expect(recoUrl("1")).not.toContain("//idea/");
   });
 });

@@ -1,5 +1,7 @@
 import LandingPageContent from '../components/LandingPageContent.jsx';
+import TickerTypeahead from '../components/TickerTypeahead.jsx';
 import { jsonLd } from '../lib/format';
+import { getPublicSymbols } from '../lib/api';
 
 /**
  * The real, server-rendered public homepage — Stage 2 of the homepage-SSR
@@ -33,9 +35,12 @@ import { jsonLd } from '../lib/format';
  * architecture proposal for the full reasoning.
  */
 
-// Purely static content — no per-request data — so Next.js prerenders this
-// once at build time and serves it from cache; no `revalidate`/dynamic
-// data fetching needed here, unlike /security/:symbol or /idea/:id.
+// Was purely static content prerendered once at build time; now fetches the
+// public symbols list (for TickerTypeahead below) the same ISR-revalidated
+// way /security/:symbol and /idea/:id already do, so a newly-posted idea's
+// ticker becomes searchable here within the same window, not only at the
+// next full deploy.
+export const revalidate = 120;
 
 const TITLE = 'My Investor Circle | Discover & Share Investment Ideas';
 const DESCRIPTION = 'My Investor Circle is a private investing community to discover, share and discuss investment ideas with other investors, advisors and research professionals.';
@@ -118,7 +123,8 @@ function CreateAccountAnchor(props) {
   return <a href="https://myinvestorcircle.com/?next=/&signup=1" {...props} />;
 }
 
-export default function Home() {
+export default async function Home() {
+  const symbols = await getPublicSymbols();
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(STRUCTURED_DATA) }} />
@@ -126,6 +132,7 @@ export default function Home() {
         signInCTA={(props) => <SignInAnchor {...props} />}
         createAccountCTA={(props) => <CreateAccountAnchor {...props} />}
         socialLinks={SOCIAL_LINKS}
+        searchBox={<TickerTypeahead symbols={symbols} variant="lp" />}
       />
     </>
   );

@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
-import { getSecurityByTicker, getRelatedSecurities, getDailyPrice } from '../../../../lib/api';
+import { getSecurityByTicker, getRelatedSecurities, getDailyPrice, getPublicSymbols } from '../../../../lib/api';
+import TickerTypeahead from '../../../../components/TickerTypeahead';
 import { jsonLd, ideaStatusSummary, money, pct, day } from '../../../../lib/format';
 import { computeConsensus } from '../../../../lib/consensus';
 import Gate from '../../../../components/Gate';
@@ -29,7 +30,10 @@ export async function generateMetadata({ params }) {
       url: canonical,
       title,
       description,
-      images: [{ url: 'https://myinvestorcircle.com/og-image.png', width: 1200, height: 630 }],
+      // No `images` here — opengraph-image.jsx in this same route segment
+      // (a per-ticker generated PNG, see its own header comment) supplies
+      // it via Next's file-convention metadata instead. Setting a static
+      // one here too would just add a second, redundant og:image.
     },
     twitter: { card: 'summary_large_image' },
   };
@@ -50,10 +54,11 @@ function countByStatus(ideas) {
 
 export default async function SecurityPage({ params }) {
   const { symbol } = await params;
-  const [data, related, dailyPrice] = await Promise.all([
+  const [data, related, dailyPrice, symbols] = await Promise.all([
     getSecurityByTicker(symbol),
     getRelatedSecurities(symbol),
     getDailyPrice(symbol),
+    getPublicSymbols(),
   ]);
   if (!data || !data.summary?.idea_count) notFound();
 
@@ -100,6 +105,10 @@ export default async function SecurityPage({ params }) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: breadcrumbLd }} />
 
       <Breadcrumbs items={breadcrumbItems} />
+
+      {/* Lets a visitor discover OTHER public stock pages, not just this
+          one — see TickerTypeahead.jsx's own header comment. */}
+      <TickerTypeahead symbols={symbols} />
 
       <div className="eyebrow">{sector || 'Stock Insights'}</div>
       {/* Some instruments' display name IS the ticker (BSE, the exchange

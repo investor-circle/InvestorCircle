@@ -63,6 +63,26 @@ describe("isValidRoutingToken — interop with the real minter", () => {
   });
 });
 
+describe("config.matcher", () => {
+  // The middleware() function itself has no path-based branching beyond the
+  // "/" bypass-params check below — it treats every request it's actually
+  // invoked with the same way (valid cookie -> rewrite, else -> next()).
+  // Which requests reach it at all is decided by Vercel's platform-level
+  // dispatch reading this exported config, BEFORE the function runs — not
+  // something a direct middleware() call in a test can exercise, so this
+  // just pins the config itself: that /investor/:username is actually
+  // listed (the PR that added it easy to get wrong silently, since nothing
+  // else here would fail if it were missing — every /investor/:username
+  // request would just always fall through to web-public's thin profile,
+  // even for a signed-in visitor with a valid cookie).
+  it("includes /investor/:username alongside /security/:symbol and /idea/:id", async () => {
+    const { config } = await import("./middleware.js");
+    expect(config.matcher).toEqual(
+      expect.arrayContaining(["/", "/security/:symbol", "/idea/:id", "/investor/:username"])
+    );
+  });
+});
+
 describe("middleware — the actual exported request handler", () => {
   const mkRequest = (path, cookieHeader) =>
     new Request(`https://myinvestorcircle.com${path}`, {
@@ -85,6 +105,21 @@ describe("middleware — the actual exported request handler", () => {
     const res = await middleware(mkRequest("/security/RELIANCE", undefined));
     expect(res.headers.get("x-middleware-rewrite")).toBeFalsy();
   });
+
+  it("rewrites /investor/:username to /index.html when a valid routing cookie is present", async () => {
+    const { mintRoutingToken } = await import("./api/_lib/routingToken.js");
+    const middleware = (await import("./middleware.js")).default;
+    const token = mintRoutingToken("uid123", 900);
+    const res = await middleware(mkRequest("/investor/asha", `mic_route=${token}`));
+    expect(res.headers.get("x-middleware-rewrite")).toContain("/index.html");
+  });
+
+  it("does not rewrite /investor/:username (falls through to web-public's thin profile) with no cookie", async () => {
+    const middleware = (await import("./middleware.js")).default;
+    const res = await middleware(mkRequest("/investor/asha", undefined));
+    expect(res.headers.get("x-middleware-rewrite")).toBeFalsy();
+  });
+
 
   it("does not rewrite with a garbage cookie value", async () => {
     const middleware = (await import("./middleware.js")).default;
@@ -110,7 +145,7 @@ describe("middleware — the actual exported request handler", () => {
     // untouched, still-/security/RELIANCE-or-/idea/42 address bar. This
     // test locks in that the middleware itself never rewrites the visible
     // URL, only which document is served at it.
-    for (const path of ["/security/RELIANCE", "/idea/42"]) {
+    for (const path of ["/security/RELIANCE", "/idea/42", "/investor/asha"]) {
       const res = await middleware(mkRequest(path, `mic_route=${token}`));
       expect(res.headers.get("x-middleware-rewrite")).toMatch(/\/index\.html$/);
     }

@@ -18,14 +18,31 @@
 const API_BASE = process.env.PUBLIC_API_BASE || 'https://myinvestorcircle.com';
 
 async function getJson(path) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    // Public data changes when someone posts/closes an idea, not every
-    // second — a short revalidate window keeps this from hammering the
-    // main API on every crawl hit while still catching same-day changes.
-    next: { revalidate: 120 },
-  });
-  if (!res.ok) return { ok: false, status: res.status, data: null };
-  return { ok: true, status: res.status, data: await res.json() };
+  // Every caller below degrades gracefully via `ok ? data.x : fallback` —
+  // that only actually holds if this function itself never throws. A
+  // non-2xx response was already handled below, but a network-level
+  // failure (timeout, DNS, connection reset) makes `fetch` itself reject,
+  // and a malformed body makes `res.json()` reject — neither was caught,
+  // so either one propagated straight out of getJson() into whichever page
+  // called it. That went unnoticed while every caller was a page that
+  // already had other content to fall back to; it stopped being harmless
+  // once the homepage (previously pure static, zero runtime dependency)
+  // started awaiting getPublicSymbols() directly with nothing above it to
+  // catch a rejection and no app/error.jsx in this project to catch one
+  // either — a transient API hiccup would have taken down the entire
+  // homepage, not just degraded its search suggestions.
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      // Public data changes when someone posts/closes an idea, not every
+      // second — a short revalidate window keeps this from hammering the
+      // main API on every crawl hit while still catching same-day changes.
+      next: { revalidate: 120 },
+    });
+    if (!res.ok) return { ok: false, status: res.status, data: null };
+    return { ok: true, status: res.status, data: await res.json() };
+  } catch (_) {
+    return { ok: false, status: null, data: null };
+  }
 }
 
 export async function getSecurityByTicker(symbol) {
@@ -49,10 +66,34 @@ export async function getRelatedSecurities(symbol) {
   return ok ? (data.related || []) : [];
 }
 
+// Every ticker with at least one public idea — backs the ticker-typeahead
+// search box (TickerTypeahead.jsx). Deliberately NOT the authenticated app's
+// instruments-list (api/_lib/handlers/lookups.js's instruments-list action
+// calls requireUid — a signed-out visitor here has no Firebase token to
+// send). This action was already public and already scoped to exactly the
+// tickers that actually have a reachable /security/:symbol page (unlike the
+// full instrument master list, which includes tickers with zero public
+// ideas — those 404 at /security/:symbol today, so suggesting them would be
+// a dead end).
+export async function getPublicSymbols() {
+  const { ok, data } = await getJson(`/api/data?resource=public-ideas&action=symbols`);
+  return ok ? (data.symbols || []) : [];
+}
+
 // Nightly-batch EOD snapshot (never live/intraday — see pricing.js's own
 // header comment on where this is written). null when the instrument has no
 // stored snapshot, same as every other "graceful degradation" path here.
 export async function getDailyPrice(symbol) {
   const { ok, data } = await getJson(`/api/data?resource=pricing&action=public-daily&symbol=${encodeURIComponent(symbol)}`);
   return ok ? (data.price || null) : null;
+}
+
+// api/_lib/handlers/public-profile.js — deliberately unauthenticated by
+// design (same file the SPA's own signed-out /investor/:username view
+// already calls), and already excludes SEBI/consent/claim-token fields —
+// see that handler's own header comment. Used for both the thin public
+// profile page in this app and its opengraph-image.jsx (investor/[username]).
+export async function getPublicProfile(username) {
+  const { ok, data } = await getJson(`/api/data?resource=public-profile&username=${encodeURIComponent(username)}`);
+  return ok ? data : null;
 }

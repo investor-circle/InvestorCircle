@@ -22,21 +22,26 @@ export const WEB_ORIGIN = process.env.EXPO_PUBLIC_WEB_ORIGIN || "https://myinves
 /**
  * The canonical public URL for one idea, or null when there isn't one.
  *
- * An idea's public page hangs off its AUTHOR'S username — the web app routes
- * `/investor/:username/idea/:id` (it still accepts the old `/reco/:id`
- * spelling too, for links sent before the rename, but only generates `idea`
- * now — this helper matches that). A username-less link is not a shorter
- * link, it is a broken one: it would open correctly in the app (whose parser
- * accepts both spellings) and land a recipient without the app on the home
- * feed. Since almost everyone a link is sent to does not have the app, that
- * is the wrong half to get right.
+ * Bare `/idea/:id` — NOT the nested `/investor/:username/idea/:id` shape
+ * this used to build. That nested form is the web app's own in-app
+ * navigational URL, not its public share link: web-public/ (the SSR app
+ * behind /idea/:id, /security/:symbol, /investor/:username — see the main
+ * repo's CLAUDE.md "Public, crawlable pages") only proxies the bare shape,
+ * so a nested link opened by someone without the app got no server-rendered
+ * content at all — no title, no description, and (since the main repo added
+ * per-idea opengraph-image.jsx) no preview image either, just the SPA shell.
+ * The bare shape needs no username (api/_lib/handlers/public-ideas.js's
+ * `idea` action looks an idea up by id alone), so this now takes just the
+ * id — see ShareRecoSheet.js and announceReco.js, both simplified along
+ * with this since neither needs to resolve a username anymore either.
  *
- * Hence null rather than a best-effort URL — the caller says the idea has no
- * public page rather than handing someone a link that quietly goes nowhere.
+ * Still null rather than a best-effort URL for an id-less idea — the caller
+ * says there's no public page rather than handing someone a link that
+ * quietly goes nowhere.
  */
-export function recoUrl(username, recoId) {
-  if (!username || !recoId) return null;
-  return `${WEB_ORIGIN}/investor/${encodeURIComponent(username)}/idea/${encodeURIComponent(recoId)}`;
+export function recoUrl(recoId) {
+  if (!recoId) return null;
+  return `${WEB_ORIGIN}/idea/${encodeURIComponent(recoId)}`;
 }
 
 /** The invite URL for one Circle, by slug — the link the web hands out. */
