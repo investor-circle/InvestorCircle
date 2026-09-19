@@ -30,7 +30,10 @@ export async function generateMetadata({ params }) {
       url: canonical,
       title,
       description,
-      images: [{ url: 'https://myinvestorcircle.com/og-image.png', width: 1200, height: 630 }],
+      // No `images` here — opengraph-image.jsx in this same route segment
+      // (a per-ticker generated PNG, see its own header comment) supplies
+      // it via Next's file-convention metadata instead. Setting a static
+      // one here too would just add a second, redundant og:image.
     },
     twitter: { card: 'summary_large_image' },
   };

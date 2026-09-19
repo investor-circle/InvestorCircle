@@ -25,6 +25,9 @@
     { "src": "^/security/([^/]+)$", "dest": "https://investorcircle-public.vercel.app/security/$1" },
     { "src": "^/idea/([^/]+)$", "dest": "https://investorcircle-public.vercel.app/idea/$1" },
     { "src": "^/search$", "dest": "https://investorcircle-public.vercel.app/search" },
+
+    { "src": "^/security/([^/]+)/(opengraph-image[^/]*)$", "dest": "https://investorcircle-public.vercel.app/security/$1/$2" },
+    { "src": "^/idea/([^/]+)/(opengraph-image[^/]*)$", "dest": "https://investorcircle-public.vercel.app/idea/$1/$2" },
     {
       "src": "^/$",
       "missing": [
