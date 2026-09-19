@@ -2,12 +2,11 @@ import { notFound } from 'next/navigation';
 import { getPublicProfile } from '../../../../lib/api';
 import { computeIci } from '../../../../lib/ici';
 import { jsonLd, day } from '../../../../lib/format';
+import { initialsOf } from '../../../../lib/avatar';
 import Gate from '../../../../components/Gate';
 import Breadcrumbs from '../../../../components/Breadcrumbs';
 
 export const revalidate = 120;
-
-const initialsOf = (name) => name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
 const displayName = (profile) =>
   [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.full_name || profile.username;

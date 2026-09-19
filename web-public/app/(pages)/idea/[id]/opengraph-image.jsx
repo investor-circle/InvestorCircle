@@ -1,5 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { getIdea } from '../../../../lib/api';
+import { initialsOf } from '../../../../lib/avatar';
+import { Brand, FallbackCard } from '../../../../components/OgBrand';
 
 export const alt = 'An investment idea on My Investor Circle';
 export const size = { width: 1200, height: 630 };
@@ -19,17 +21,12 @@ function clip(s, n) {
   return t.length <= n ? t : t.slice(0, n - 1).trimEnd() + '…';
 }
 
-// Duplicated from src/utils/format.js's initialsOf (separate deployable
-// project, no shared build step — same rationale as computeConsensus in
-// lib/consensus.js).
-const initialsOf = (name) => name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-
 export default async function Image({ params }) {
   const { id } = await params;
   const idea = await getIdea(id);
 
   if (!idea) {
-    return new ImageResponse(<FallbackCard />, size);
+    return new ImageResponse(<FallbackCard message="An investor idea on My Investor Circle" />, size);
   }
 
   const author = idea.author_name || idea.author_username || 'A member';
@@ -116,32 +113,6 @@ function Author({ name, avatarUrl, color }) {
         </div>
       )}
       <div style={{ display: 'flex', fontSize: 20, color: '#c9c8e0' }}>{name}</div>
-    </div>
-  );
-}
-
-function Brand() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-      <div style={{
-        width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'linear-gradient(135deg, #6d5df5 0%, #9a55ee 55%, #cf52d8 100%)', fontSize: 15, fontWeight: 800, color: '#fff',
-      }}>
-        mic
-      </div>
-      <div style={{ display: 'flex', fontSize: 21, fontWeight: 700, color: '#c9c8e0' }}>myInvestorCircle</div>
-    </div>
-  );
-}
-
-function FallbackCard() {
-  return (
-    <div style={{
-      width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 18,
-      background: 'linear-gradient(135deg, #0a0b18 0%, #14152e 55%, #1d1032 100%)', fontFamily: 'sans-serif',
-    }}>
-      <Brand />
-      <div style={{ display: 'flex', fontSize: 26, color: '#c9c8e0' }}>An investor idea on My Investor Circle</div>
     </div>
   );
 }

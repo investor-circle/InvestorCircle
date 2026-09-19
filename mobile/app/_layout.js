@@ -130,6 +130,20 @@ function RootNavigator() {
   // config other flows (referrals, password reset) depend on.
   const lastExternalLinkRef = useRef({ url: null, at: 0 });
 
+  // Read inside handle() below instead of closing over `user` directly, so
+  // that effect's own deps can stay [router] — depending on `user` there
+  // would re-subscribe (and re-run Linking.getInitialURL(), and re-run
+  // handle() against that SAME original launch URL) on every sign-in/
+  // sign-out transition, not just once. Harmless for a referral code
+  // (rememberReferral already dedupes), but a password-reset link would
+  // re-fire router.replace("/reset-password…") on a later, unrelated auth
+  // transition, and an unhandled external link could reopen its browser
+  // tab a second time past the loop-guard's short window.
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   // Whether the app has finished asking the OS what URL (if any) launched
   // it. The redirect-to-login effect below MUST wait for this before it
   // forces a signed-out user onto "/(auth)/login" — Linking.getInitialURL()
@@ -171,7 +185,7 @@ function RootNavigator() {
       // start (app already running, signed out, a fresh link tapped) this
       // is the only place that ever sees it at all. Remembered here,
       // consumed by that same effect the moment sign-in completes.
-      if (!user && parseDeepLink(url)) {
+      if (!userRef.current && parseDeepLink(url)) {
         addLog("info", `deeplink: signed out — remembering ${url} for after sign-in`);
         rememberDeepLink(url);
         return;
@@ -225,11 +239,7 @@ function RootNavigator() {
       sub.remove();
       clearTimeout(timeout);
     };
-    // `user` is read (not just called) inside `handle` above, so it has to
-    // be a dependency — re-subscribing the listener on every sign-in/out is
-    // cheap and already this file's own pattern (see the deep-link effect
-    // below, which does the same for the same reason).
-  }, [router, user]);
+  }, [router]);
 
   // …and redeem it once there IS an account. Mirrors the web's post-login
   // effect (App.jsx calls processReferral there for the same reason). The

@@ -18,14 +18,31 @@
 const API_BASE = process.env.PUBLIC_API_BASE || 'https://myinvestorcircle.com';
 
 async function getJson(path) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    // Public data changes when someone posts/closes an idea, not every
-    // second — a short revalidate window keeps this from hammering the
-    // main API on every crawl hit while still catching same-day changes.
-    next: { revalidate: 120 },
-  });
-  if (!res.ok) return { ok: false, status: res.status, data: null };
-  return { ok: true, status: res.status, data: await res.json() };
+  // Every caller below degrades gracefully via `ok ? data.x : fallback` —
+  // that only actually holds if this function itself never throws. A
+  // non-2xx response was already handled below, but a network-level
+  // failure (timeout, DNS, connection reset) makes `fetch` itself reject,
+  // and a malformed body makes `res.json()` reject — neither was caught,
+  // so either one propagated straight out of getJson() into whichever page
+  // called it. That went unnoticed while every caller was a page that
+  // already had other content to fall back to; it stopped being harmless
+  // once the homepage (previously pure static, zero runtime dependency)
+  // started awaiting getPublicSymbols() directly with nothing above it to
+  // catch a rejection and no app/error.jsx in this project to catch one
+  // either — a transient API hiccup would have taken down the entire
+  // homepage, not just degraded its search suggestions.
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      // Public data changes when someone posts/closes an idea, not every
+      // second — a short revalidate window keeps this from hammering the
+      // main API on every crawl hit while still catching same-day changes.
+      next: { revalidate: 120 },
+    });
+    if (!res.ok) return { ok: false, status: res.status, data: null };
+    return { ok: true, status: res.status, data: await res.json() };
+  } catch (_) {
+    return { ok: false, status: null, data: null };
+  }
 }
 
 export async function getSecurityByTicker(symbol) {
