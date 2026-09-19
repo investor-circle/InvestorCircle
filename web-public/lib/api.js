@@ -49,6 +49,20 @@ export async function getRelatedSecurities(symbol) {
   return ok ? (data.related || []) : [];
 }
 
+// Every ticker with at least one public idea — backs the ticker-typeahead
+// search box (TickerTypeahead.jsx). Deliberately NOT the authenticated app's
+// instruments-list (api/_lib/handlers/lookups.js's instruments-list action
+// calls requireUid — a signed-out visitor here has no Firebase token to
+// send). This action was already public and already scoped to exactly the
+// tickers that actually have a reachable /security/:symbol page (unlike the
+// full instrument master list, which includes tickers with zero public
+// ideas — those 404 at /security/:symbol today, so suggesting them would be
+// a dead end).
+export async function getPublicSymbols() {
+  const { ok, data } = await getJson(`/api/data?resource=public-ideas&action=symbols`);
+  return ok ? (data.symbols || []) : [];
+}
+
 // Nightly-batch EOD snapshot (never live/intraday — see pricing.js's own
 // header comment on where this is written). null when the instrument has no
 // stored snapshot, same as every other "graceful degradation" path here.

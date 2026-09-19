@@ -183,6 +183,11 @@ html{scroll-behavior:smooth;}
 .lp-navlinks{display:flex;align-items:center;gap:26px;margin-left:14px;}
 .lp-navlink{background:none;border:none;padding:0;cursor:pointer;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--lp-soft);text-decoration:none;}
 .lp-navlink:hover{color:var(--lp-accent-ink);}
+.lp-searchrow{border-top:1px solid var(--lp-line);padding:12px 0;}
+.lp-searchbar{display:flex;gap:9px;max-width:560px;margin:0 auto;flex-wrap:wrap;}
+.lp-searchbar input{flex:1;min-width:200px;padding:11px 14px;border-radius:11px;border:1.5px solid var(--lp-line2);
+  font-size:14px;font-family:inherit;background:var(--lp-surface);color:var(--lp-ink);}
+.lp-searchbar input:focus{outline:none;border-color:var(--lp-accent-line);}
 .lp-hero{position:relative;overflow:hidden;}
 .lp-glow{position:absolute;inset:0;pointer-events:none;
   background:radial-gradient(760px 420px at 8% -18%,rgba(109,93,245,.16),transparent 60%),
@@ -243,7 +248,7 @@ html{scroll-behavior:smooth;}
 }
 `;
 
-export default function LandingPageContent({ signInCTA, createAccountCTA, socialLinks }) {
+export default function LandingPageContent({ signInCTA, createAccountCTA, socialLinks, searchBox }) {
   return (
     <div className="lp">
       <style>{CSS}</style>
@@ -263,6 +268,17 @@ export default function LandingPageContent({ signInCTA, createAccountCTA, social
             {signInCTA({ className: "lp-btn lp-btn-ghost lp-navbtn", children: "Sign in" })}
             {createAccountCTA({ className: "lp-btn lp-btn-pri lp-navbtn", children: "Create account" })}
           </div>
+        </div>
+        <div className="lp-wrap lp-searchrow">
+          {/* Supplied by each caller (render-prop, same pattern as
+              signInCTA/createAccountCTA above) — web-public passes a real
+              ticker-typeahead (TickerTypeahead.jsx); the SPA's own
+              signed-out landing page passes a plain GET-form fallback,
+              since it has no equivalent public API to call client-side
+              here without its own separate wiring. Either way, this lets a
+              visitor discover other public idea/security pages straight
+              from the homepage without ever signing in. */}
+          {searchBox}
         </div>
       </div>
 

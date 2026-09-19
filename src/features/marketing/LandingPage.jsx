@@ -23,6 +23,19 @@ export default function LandingPage({ onSignIn, onCreateAccount }) {
       signInCTA={(props) => <button onClick={onSignIn} {...props}/>}
       createAccountCTA={(props) => <button onClick={onCreateAccount} {...props}/>}
       socialLinks={SOCIAL_LINKS}
+      // Plain GET form, not the real ticker-typeahead web-public gets
+      // (TickerTypeahead.jsx there) — this view is reached rarely (a
+      // sign-out while already inside the SPA; almost every real anonymous
+      // visit now lands on web-public's SSR homepage instead, see
+      // middleware.js), so a working fallback here isn't worth wiring up
+      // its own instrument-fetching/routing logic for. Submitting still
+      // lands on the same public /search results page either way.
+      searchBox={
+        <form className="lp-searchbar" method="GET" action="/search">
+          <input type="search" name="q" placeholder="Search public ideas by ticker, company or thesis" aria-label="Search public investor ideas"/>
+          <button className="lp-btn lp-btn-ghost" type="submit">Search</button>
+        </form>
+      }
     />
   );
 }
