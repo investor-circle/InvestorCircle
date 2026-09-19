@@ -5,16 +5,16 @@ import { forwardRecommendation } from "../services/api/recommendationsApi";
 import { getMyConnections } from "../services/api/connectionsApi";
 import { getMyGroups } from "../services/api/groupsApi";
 import { recoUrl } from "../utils/links";
-import { getRecommenderUsername } from "../services/api/recommendationsApi";
 import { initialsOf } from "../utils/format";
 import { colors, fonts } from "../theme/colors";
 
 /**
  * Bottom-sheet for sharing an idea onward: forward it to connections/Circles
  * through the server's forward action, or hand the public link to the OS
- * share sheet. The public link is the SAME shareable URL the web app uses
- * (/investor/:username/reco/:id) so a shared link opens the same page
- * regardless of which client sent it.
+ * share sheet. The public link is the SAME shareable, server-rendered
+ * /idea/:id URL the web app's own "Share this idea" uses (RecoPostPage in
+ * src/features/recommendations/RecommendationsPages.jsx) — same page,
+ * same preview image, regardless of which client sent it.
  */
 export default function ShareRecoSheet({ visible, reco, onClose }) {
   const [connections, setConnections] = useState([]);
@@ -71,28 +71,11 @@ export default function ShareRecoSheet({ visible, reco, onClose }) {
     // and this used to point at the API host, so every link shared from the
     // app was a well-formed URL to the wrong place.
     //
-    // Only the public-feed payload carries the author's username, so for an
-    // idea reached any other way it is looked up. The lookup runs with the
-    // sharer's own token and they can obviously see this idea, so it resolves
-    // in practice; the empty case is an idea whose author has no username,
-    // which genuinely has no public page to link to.
-    let uname = reco?.from_username;
-    if (!uname) {
-      setMsg("Getting the link…");
-      try {
-        uname = await getRecommenderUsername(reco.id);
-      } catch (_) {
-        /* handled by the null check below */
-      }
-      if (!mounted.current) return;
-      setMsg("");
-    }
-    const url = recoUrl(uname, reco.id);
+    // No username lookup needed — recoUrl() now builds the bare, id-only
+    // /idea/:id shape (see its own comment in utils/links.js), which is the
+    // one that actually gets server-rendered content and a preview image.
+    const url = recoUrl(reco.id);
     if (!url) {
-      // Deliberately NOT a best-effort link. The web has no id-only route, so
-      // the alternative was a URL that opens in the app and lands everyone
-      // else on the home feed — and almost everyone a link is sent to does
-      // not have the app.
       setMsg("This idea doesn't have a public page to link to.");
       return;
     }

@@ -40,7 +40,10 @@ describe("announcePublicReco", () => {
     // Push carries only an in-app PATH — the origin is fixed server-side so a
     // notification cannot be pointed at another site.
     expect(sendPush.mock.calls[0][1].deepLink).toBe("/investor/asha/idea/r9");
-    expect(sendEmail.mock.calls[0][1].reco_url).toBe("https://myinvestorcircle.com/investor/asha/idea/r9");
+    // Bare /idea/:id — the shape that actually gets server-rendered content
+    // and a preview image, unlike the nested in-app path above (see
+    // recoUrl()'s own comment in utils/links.js).
+    expect(sendEmail.mock.calls[0][1].reco_url).toBe("https://myinvestorcircle.com/idea/r9");
   });
 
   it("sends no message text at all — the server composes it", () => {

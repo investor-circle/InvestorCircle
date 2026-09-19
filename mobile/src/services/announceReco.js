@@ -30,14 +30,12 @@ export function announcePublicReco({ reco, recoId, me, contacts }) {
   const username = me?.username || "";
   const deepLink = username ? `/investor/${username}/idea/${id}` : null;
   // The email still carries a full URL of its own; only push has its
-  // destination resolved server-side.
-  // One definition of what a public idea link looks like (services/api.js),
-  // rather than a second hand-built copy that can drift from the share
-  // sheet's — or from the host the site is actually served on.
-  // The author is the sender, and the setup gate guarantees they have a
-  // username, so this resolves in practice. The site root is the fallback
-  // rather than a malformed profile path, which is what this used to build.
-  const url = recoUrl(username, id) || WEB_ORIGIN;
+  // destination resolved server-side. Bare /idea/:id, same as the share
+  // sheet — see recoUrl()'s own comment in utils/links.js for why: it's the
+  // one shape that gets server-rendered content and a preview image, and it
+  // needs no username. The site root is the fallback for the (practically
+  // unreachable, since the setup gate guarantees a username) id-less case.
+  const url = recoUrl(id) || WEB_ORIGIN;
 
   // One server call for every contact, rather than one per contact.
   notifyPublicContacts(
