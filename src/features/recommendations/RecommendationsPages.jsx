@@ -69,7 +69,7 @@ import {
   setExitSignal as dbSetExit,
   updateDelivery
 } from "../../services/api/recommendationsApi";
-import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
+import { Avatar, ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
 import { CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, SECTOR_EMOJI, THESIS_EMOJIS, THESIS_MAX_CHARS, THESIS_MAX_IMAGES, THESIS_MAX_MB, TODAY } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
@@ -1504,6 +1504,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
     name:      ME?.name || viewerUser.displayName || 'Anonymous',
     firstName: ME?.firstName || '',
     lastName:  ME?.lastName  || '',
+    avatarUrl: ME?.avatarUrl || '',
   } : null;
 
   return (
@@ -1925,7 +1926,7 @@ export function RecoComments({ recoId, me, highlightCommentId }) {
       {/* Input */}
       {me?.id && (
         <div style={{display:'flex',gap:9,marginBottom:14,alignItems:'flex-start'}}>
-          <div className="av" style={{width:30,height:30,background:'var(--grad)',fontSize:11,flexShrink:0}}>{initialsOf(me.name||'?')}</div>
+          <Avatar f={{ avatarUrl: me.avatarUrl, name: me.name }} size={30}/>
           <div ref={wrapRef} style={{flex:1,display:'flex',gap:8,position:'relative'}}>
             <input ref={inputRef} value={text} onChange={onTextChange} placeholder="Add a comment… (@ to mention someone)"
               onKeyDown={e=>{
@@ -1968,7 +1969,7 @@ export function RecoComments({ recoId, me, highlightCommentId }) {
               const isHighlighted = String(c.id)===String(highlightCommentId);
               return (
               <div key={c.id} id={`comment-${c.id}`} style={{display:'flex',gap:9,marginBottom:12}}>
-                <div className="av" style={{width:28,height:28,background:'var(--accent)',fontSize:10,flexShrink:0}}>{initialsOf(c.userName||'?')}</div>
+                <Avatar f={{ avatarUrl: c.avatarUrl, name: c.userName, color: 'var(--accent)' }} size={28}/>
                 <div style={{flex:1}}>
                   <div style={{display:'flex',alignItems:'baseline',gap:7,marginBottom:2}}>
                     <span style={{fontSize:12,fontWeight:700}}>{c.userName||'User'}</span>

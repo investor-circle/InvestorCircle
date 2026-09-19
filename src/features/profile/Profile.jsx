@@ -23,7 +23,8 @@ import {
   Search,
   SlidersHorizontal,
   ArrowUpDown,
-  ChevronDown
+  ChevronDown,
+  ZoomIn
 } from "lucide-react";
 import {
   createUserWithEmailAndPassword,
@@ -56,7 +57,7 @@ import {
   getTrackingStatus as dbGetTrackingStatus
 } from "../../services/api/trackingApi";
 import { goBackOrElse, gotoCircle, openReco } from "../../utils/navigation";
-import { compressAvatarFile } from "../../utils/image";
+import { validateAvatarFile, loadImageFile, cropImageToDataUrl } from "../../utils/image";
 import {
   computeIci,
   forwardRecommendation as dbForwardReco
@@ -152,6 +153,116 @@ function ProfileSharePopover({ profileUrl, displayName, anchorEl, onClose }) {
   );
 }
 
+/* ── AvatarCropModal — interactive pan/zoom crop before an avatar upload,
+   the web equivalent of the mobile app's native `allowsEditing: true` photo-
+   picker step (see mobile/src/services/avatarImage.js). The web previously
+   had no interactive step at all — compressAvatarFile() silently took a
+   fixed centre-square crop with no user control. Drag to pan, slider to
+   zoom; the circular mask mirrors how the cropped image is actually
+   displayed everywhere in the app. Dependency-free (canvas + Pointer
+   Events) rather than pulling in a cropper library for one screen. ── */
+function AvatarCropModal({ file, onCancel, onSave }) {
+  const VIEWPORT = 260;
+  const [img,     setImg]     = useState(null);
+  const [err,     setErr]     = useState('');
+  const [zoom,    setZoom]    = useState(1);
+  const [offset,  setOffset]  = useState({ x: 0, y: 0 });
+  const [saving,  setSaving]  = useState(false);
+  const dragRef = useRef(null); // { startX, startY, startOffX, startOffY }
+
+  useEffect(() => {
+    try { validateAvatarFile(file); } catch (e) { setErr(e.message); return; }
+    let cancelled = false;
+    loadImageFile(file).then(im => { if (!cancelled) setImg(im); }).catch(e => setErr(e.message));
+    return () => { cancelled = true; };
+  }, [file]);
+
+  const baseScale = img ? VIEWPORT / Math.min(img.naturalWidth, img.naturalHeight) : 1;
+  const scale = baseScale * zoom;
+  const dispW = img ? img.naturalWidth * scale : 0;
+  const dispH = img ? img.naturalHeight * scale : 0;
+  const maxX = Math.max(0, (dispW - VIEWPORT) / 2);
+  const maxY = Math.max(0, (dispH - VIEWPORT) / 2);
+  const clampOffset = (o, mx, my) => ({ x: Math.min(mx, Math.max(-mx, o.x)), y: Math.min(my, Math.max(-my, o.y)) });
+
+  const onZoomChange = (z) => {
+    setZoom(z);
+    const newScale = baseScale * z;
+    const nMaxX = Math.max(0, (img.naturalWidth * newScale - VIEWPORT) / 2);
+    const nMaxY = Math.max(0, (img.naturalHeight * newScale - VIEWPORT) / 2);
+    setOffset(o => clampOffset(o, nMaxX, nMaxY));
+  };
+
+  const onPointerDown = (e) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startOffX: offset.x, startOffY: offset.y };
+  };
+  const onPointerMove = (e) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    setOffset(clampOffset({ x: dragRef.current.startOffX + dx, y: dragRef.current.startOffY + dy }, maxX, maxY));
+  };
+  const onPointerUp = () => { dragRef.current = null; };
+
+  const handleSave = async () => {
+    if (!img) return;
+    setSaving(true);
+    try {
+      const imgLeftViewport = VIEWPORT / 2 - dispW / 2 + offset.x;
+      const imgTopViewport  = VIEWPORT / 2 - dispH / 2 + offset.y;
+      const sSideRaw = VIEWPORT / scale;
+      const sx = Math.min(Math.max(0, -imgLeftViewport / scale), img.naturalWidth  - sSideRaw);
+      const sy = Math.min(Math.max(0, -imgTopViewport  / scale), img.naturalHeight - sSideRaw);
+      const dataUrl = await cropImageToDataUrl(img, { sx, sy, sSide: sSideRaw });
+      onSave(dataUrl);
+    } catch (e) {
+      setErr(e.message || 'Could not process image');
+      setSaving(false);
+    }
+  };
+
+  return createPortal(
+    <div style={{position:'fixed',inset:0,background:'rgba(13,14,30,.75)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1100,padding:20}} onClick={onCancel}>
+      <div style={{width:'100%',maxWidth:340,background:'#16182a',borderRadius:20,border:'1px solid rgba(255,255,255,.1)',boxShadow:'0 24px 80px rgba(0,0,0,.6)',padding:'20px 22px 22px',textAlign:'center'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:16,fontWeight:800,color:'#fff',marginBottom:4}}>Adjust your photo</div>
+        <div style={{fontSize:12,color:'rgba(255,255,255,.45)',marginBottom:16}}>Drag to reposition, use the slider to zoom</div>
+        {err ? (
+          <div style={{fontSize:13,color:'#fca5b5',padding:'24px 8px'}}>{err}</div>
+        ) : !img ? (
+          <div style={{padding:'40px 0'}}><Loader size={22} className="spin" color="#a78bfa"/></div>
+        ) : (<>
+          <div
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            style={{width:VIEWPORT,height:VIEWPORT,borderRadius:'50%',overflow:'hidden',position:'relative',margin:'0 auto 16px',background:'#000',cursor:dragRef.current?'grabbing':'grab',touchAction:'none',boxShadow:'0 0 0 2000px rgba(0,0,0,.55)'}}>
+            <img src={img.src} draggable={false} alt=""
+              style={{position:'absolute',left:'50%',top:'50%',width:dispW,height:dispH,maxWidth:'none',
+                transform:`translate(-50%,-50%) translate(${offset.x}px, ${offset.y}px)`,userSelect:'none',pointerEvents:'none'}}/>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
+            <ZoomIn size={14} color="rgba(255,255,255,.4)" style={{flexShrink:0}}/>
+            <input type="range" min={1} max={3} step={0.01} value={zoom} onChange={e=>onZoomChange(Number(e.target.value))} style={{flex:1}}/>
+          </div>
+        </>)}
+        <div style={{display:'flex',gap:10,justifyContent:'center'}}>
+          <button onClick={onCancel} style={{padding:'10px 20px',borderRadius:10,fontWeight:700,fontSize:13,cursor:'pointer',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontFamily:'var(--font)'}}>
+            Cancel
+          </button>
+          {!err && (
+            <button className="btn btn-pri" disabled={!img||saving} onClick={handleSave} style={{padding:'10px 22px',fontSize:13}}>
+              {saving?<><Loader size={13} className="spin"/> Saving…</>:<><Check size={13}/> Use this photo</>}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export function PublicProfilePage({ username, recoId, viewerUser, viewerConnections, viewerIsAdmin=false, viewerForClaim=false, onClaimClick=null, mode, isOwnProfile, patchProfile, onBack, onRequestConnect, contacts=[], groups=[] }) {
   const isMobile = useIsMobile();
   const [data,        setData]        = useState(null);
@@ -160,7 +271,6 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   const [recTab,      setRecTab]      = useState('All');
   const [connecting,  setConnecting]  = useState(false);
   const [connected,   setConnected]   = useState(false);
-  const [copied,      setCopied]      = useState(false);
   const [shareOpen,   setShareOpen]   = useState(false);
   const shareBtnRef = useRef(null);
   const expandedRef = useRef(null);
@@ -171,14 +281,17 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
 
   // Public URL — defined early so it's always in scope for both shells
   const profileUrl = `${window.location.origin}/investor/${username}`;
-  const copyLink   = () => navigator.clipboard.writeText(profileUrl)
-    .then(()=>{ setCopied(true); setTimeout(()=>setCopied(false), 2000); });
 
   // Profile editing state — covers all editable fields
   const [editing,          setEditing]          = useState(false);
   const [editFirstName,    setEditFirstName]    = useState('');
   const [editLastName,     setEditLastName]     = useState('');
   const [editAvatarColor,  setEditAvatarColor]  = useState('');
+  const [editAvatarUrl,    setEditAvatarUrl]    = useState('');
+  const [avatarBusy,       setAvatarBusy]       = useState(false);
+  const [avatarErr,        setAvatarErr]        = useState('');
+  const [cropFile,         setCropFile]         = useState(null);
+  const avatarInputRef = useRef(null);
   const [editBio,          setEditBio]          = useState('');
   const [editSocials,      setEditSocials]      = useState({ twitter:'', linkedin:'', telegram:'', instagram:'' });
   const [editRegStatus,    setEditRegStatus]    = useState('self_directed');
@@ -252,6 +365,8 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
     setEditFirstName(p.first_name||'');
     setEditLastName(p.last_name||'');
     setEditAvatarColor(p.avatar_color||'');
+    setEditAvatarUrl(p.avatar_url||'');
+    setAvatarErr('');
     setEditBio(p.bio||'');
     setEditSocials({ twitter:p.twitter_url||'', linkedin:p.linkedin_url||'', telegram:p.telegram_url||'', instagram:p.instagram_url||'' });
     setEditRegStatus(p.registration_status||'self_directed');
@@ -310,6 +425,33 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
       // Keep the modal open on failure — silently closing it here was the bug:
       // the form looked like it saved, but the write never reached the server.
     }
+  };
+
+  // Avatar upload — deliberately independent of Save changes (same pattern
+  // as ProfileEditModal): selecting a file opens the crop modal, and a
+  // confirmed crop uploads immediately rather than waiting on the rest of
+  // the form. Updates both the local `data.profile` (this page's own render)
+  // and the shared profile via patchProfile (topbar avatar etc.).
+  const handleAvatarFile = (file) => {
+    if (!file) return;
+    setAvatarErr('');
+    try { validateAvatarFile(file); } catch (e) { setAvatarErr(e.message); return; }
+    setCropFile(file);
+  };
+
+  const handleCroppedAvatar = async (dataUrl) => {
+    setCropFile(null);
+    setAvatarErr(''); setAvatarBusy(true);
+    try {
+      const saved = await dbUploadAvatar(dataUrl);
+      const url = saved || dataUrl;
+      setEditAvatarUrl(url);
+      setData(d => ({ ...d, profile: { ...d.profile, avatar_url: url } }));
+      patchProfile?.({ avatar_url: url });
+    } catch (e) {
+      setAvatarErr(e.message || 'Could not upload image');
+    }
+    setAvatarBusy(false);
   };
 
   // A Google-only account has no password to reauthenticate with, and its
@@ -811,9 +953,36 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
               </div>
 
               <div style={{padding:'24px'}}>
+                {/* Profile picture */}
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Profile picture</div>
+                <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:22}}>
+                  {editAvatarUrl
+                    ? <img src={editAvatarUrl} alt="" style={{width:56,height:56,borderRadius:16,objectFit:'cover',flexShrink:0}}/>
+                    : <div style={{width:56,height:56,borderRadius:16,flexShrink:0,background:editAvatarColor||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,fontWeight:900,color:'#fff'}}>
+                        {initialsOf(`${editFirstName} ${editLastName}`.trim()||username||'?')}
+                      </div>}
+                  <div>
+                    {/* No `accept` restriction — see the matching comment in
+                        ProfileEditModal's own file input. */}
+                    <input ref={avatarInputRef} type="file" style={{display:'none'}}
+                      onChange={e=>handleAvatarFile(e.target.files?.[0])}/>
+                    <button onClick={()=>avatarInputRef.current?.click()} disabled={avatarBusy}
+                      style={{padding:'8px 14px',borderRadius:9,background:'rgba(255,255,255,.08)',
+                        border:'1px solid rgba(255,255,255,.15)',color:'#fff',fontSize:12,fontWeight:700,
+                        cursor:avatarBusy?'wait':'pointer',fontFamily:'var(--font)'}}>
+                      {avatarBusy ? 'Uploading…' : editAvatarUrl ? 'Change photo' : 'Upload photo'}
+                    </button>
+                    <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginTop:6}}>JPG or PNG, under 8MB</div>
+                    {avatarErr && <div style={{fontSize:11,color:'#f87171',marginTop:4}}>{avatarErr}</div>}
+                  </div>
+                </div>
+                {cropFile && (
+                  <AvatarCropModal file={cropFile} onCancel={()=>setCropFile(null)} onSave={handleCroppedAvatar}/>
+                )}
+
                 {/* Avatar color */}
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Avatar colour</div>
-                <div style={{display:'flex',gap:8,marginBottom:22}}>
+                <div style={{display:'flex',gap:8,marginBottom:22,flexWrap:'wrap'}}>
                   {['#6d5df5','#cf52d8','#15924e','#0ea5b7','#d97706','#e11d48','#2563eb','#64748b'].map(c=>(
                     <div key={c} onClick={()=>setEditAvatarColor(c)} style={{width:32,height:32,borderRadius:9,background:c,cursor:'pointer',border:editAvatarColor===c?'2px solid #fff':'2px solid transparent',boxSizing:'border-box',transition:'.1s',boxShadow:editAvatarColor===c?`0 0 12px ${c}88`:''}}/>
                   ))}
@@ -822,7 +991,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
 
                 {/* Name */}
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Name</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10,marginBottom:20}}>
                   {[{val:editFirstName,set:setEditFirstName,ph:'First name'},{val:editLastName,set:setEditLastName,ph:'Last name'}].map((f,i)=>(
                     <input key={i} value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.ph}
                       style={{background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',borderRadius:9,padding:'10px 13px',fontSize:14,color:'#fff',fontFamily:'var(--font)',outline:'none',boxSizing:'border-box',width:'100%'}}/>
@@ -833,10 +1002,10 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                     a plain field save — Firebase requires re-authentication
                     plus a confirmation link to the new address, so it's its
                     own inline flow below rather than part of Save changes. */}
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:changingEmail?12:20}}>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10,marginBottom:changingEmail?12:20}}>
                   <div>
                     <div style={{fontSize:11,color:'rgba(255,255,255,.35)',marginBottom:6,display:'flex',alignItems:'center',gap:4,fontWeight:600}}><Lock size={10}/>Username <span style={{fontWeight:400,fontSize:10}}>(cannot be changed)</span></div>
-                    <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',borderRadius:9,padding:'10px 13px',fontSize:13,color:'rgba(255,255,255,.4)',fontFamily:'inherit'}}>@{username}</div>
+                    <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',borderRadius:9,padding:'10px 13px',fontSize:13,color:'rgba(255,255,255,.4)',fontFamily:'inherit',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>@{username}</div>
                   </div>
                   <div>
                     <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginBottom:6,fontWeight:600}}>Email</div>
@@ -885,7 +1054,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
 
                 {/* Social links */}
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Social profile links</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10,marginBottom:20}}>
                   {[
                     {key:'twitter',label:'Twitter / X',ph:'https://twitter.com/username'},
                     {key:'linkedin',label:'LinkedIn',ph:'https://linkedin.com/in/username'},
@@ -921,13 +1090,13 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                   <div style={{background:'rgba(251,191,36,.08)',border:'1px solid rgba(251,191,36,.2)',borderRadius:10,padding:'12px 14px',marginBottom:16,fontSize:13,color:'#fbbf24',lineHeight:1.6}}>
                     {sebiVerifyMsg || 'Your SEBI registration details will be reviewed by our team within 2–3 business days.'}
                   </div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10,marginBottom:20}}>
                     {[
                       {label:'SEBI Registration Number',ph:editRegStatus==='sebi_ra'?'INH000XXXXXX':'INA000XXXXXX',val:editSebiNum,set:setEditSebiNum},
                       {label:'Registration Valid Till',ph:'',val:editSebiTill,set:setEditSebiTill,type:'date'},
                       {label:'Firm / Employer Name (optional)',ph:'e.g. XYZ Securities',val:editSebiFirm,set:setEditSebiFirm},
                     ].map((f,i)=>(
-                      <div key={i} style={i===2?{gridColumn:'1/span 2'}:{}}>
+                      <div key={i} style={i===2&&!isMobile?{gridColumn:'1/span 2'}:{}}>
                         <div style={{fontSize:11,color:'rgba(255,255,255,.4)',marginBottom:6,fontWeight:600}}>{f.label}</div>
                         <input type={f.type||'text'} value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.ph}
                           style={{width:'100%',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',borderRadius:9,padding:'10px 13px',fontSize:13,color:'#fff',fontFamily:'var(--font)',outline:'none',boxSizing:'border-box',colorScheme:'dark'}}/>
@@ -1309,11 +1478,19 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
       <div><div className="eyebrow">Track Record</div><div className="page-title">Public Investment Record</div></div>
       <div style={{display:'flex',gap:8}}>
         {data&&<>
-          <button className="btn btn-soft btn-sm" onClick={copyLink}>{copied?<><Check size={14}/> Copied!</>:<><Copy size={14}/> Copy link</>}</button>
+          <button ref={shareBtnRef} className="btn btn-soft btn-sm" onClick={()=>setShareOpen(true)}><Share2 size={14}/> Share</button>
           <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm"><ExternalLink size={14}/> Open public URL</a>
         </>}
       </div>
     </div>
+    {shareOpen && (
+      <ProfileSharePopover
+        profileUrl={profileUrl}
+        displayName={data?.profile?.full_name || username}
+        anchorEl={shareBtnRef.current}
+        onClose={()=>setShareOpen(false)}
+      />
+    )}
     {renderContent()}
   </>);
 }
@@ -1330,6 +1507,7 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
   const [avatarUrl,    setAvatarUrl]    = useState(profile?.avatar_url || '');
   const [avatarBusy,   setAvatarBusy]   = useState(false);
   const [avatarErr,    setAvatarErr]    = useState('');
+  const [cropFile,     setCropFile]     = useState(null);
   const avatarInputRef = useRef(null);
   const [bio,          setBio]          = useState(profile?.bio || '');
   const [socials,      setSocials]      = useState({
@@ -1391,14 +1569,22 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
     return () => clearTimeout(t);
   }, [unInput]);
 
-  const handleAvatarFile = async (file) => {
+  // File selection just opens the crop modal; the actual upload happens in
+  // handleCroppedAvatar once the user confirms a crop (see AvatarCropModal).
+  const handleAvatarFile = (file) => {
     if (!file) return;
+    setAvatarErr('');
+    try { validateAvatarFile(file); } catch (e) { setAvatarErr(e.message); return; }
+    setCropFile(file);
+  };
+
+  const handleCroppedAvatar = async (dataUrl) => {
+    setCropFile(null);
     setAvatarErr(''); setAvatarBusy(true);
     try {
-      const compressed = await compressAvatarFile(file);
-      const saved = await dbUploadAvatar(compressed);
-      setAvatarUrl(saved || compressed);
-      patchProfile?.({ avatar_url: saved || compressed });
+      const saved = await dbUploadAvatar(dataUrl);
+      setAvatarUrl(saved || dataUrl);
+      patchProfile?.({ avatar_url: saved || dataUrl });
     } catch (e) {
       setAvatarErr(e.message || 'Could not upload image');
     }
@@ -1598,7 +1784,13 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
                       {initialsOf(`${firstName} ${lastName}`.trim()||'?')}
                     </div>}
                 <div>
-                  <input ref={avatarInputRef} type="file" accept="image/*" style={{display:'none'}}
+                  {/* No `accept` restriction: on Android, an accept value that
+                      resolves to image-only MIME types makes Chrome launch its
+                      cut-down Photo Picker (recent photos only, no folders/
+                      albums) instead of the full system file chooser. Real
+                      type-checking already happens in handleAvatarFile via
+                      validateAvatarFile(), so this is safe to leave open. */}
+                  <input ref={avatarInputRef} type="file" style={{display:'none'}}
                     onChange={e=>handleAvatarFile(e.target.files?.[0])}/>
                   <button onClick={()=>avatarInputRef.current?.click()} disabled={avatarBusy}
                     style={{padding:'8px 14px',borderRadius:9,background:'rgba(255,255,255,.08)',
@@ -1611,6 +1803,13 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
                 </div>
               </div>
             </div>
+          )}
+          {cropFile && (
+            <AvatarCropModal
+              file={cropFile}
+              onCancel={()=>setCropFile(null)}
+              onSave={handleCroppedAvatar}
+            />
           )}
 
           {/* Avatar colour */}
