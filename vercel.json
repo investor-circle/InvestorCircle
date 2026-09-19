@@ -2,32 +2,35 @@
   "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "rewrites": [
-    { "source": "/stock/:symbol", "destination": "/api/data?resource=seo&page=stock&symbol=:symbol" },
-    { "source": "/sitemap.xml", "destination": "/api/data?resource=sitemap" },
 
-    { "source": "/security/:symbol", "destination": "https://investorcircle-public.vercel.app/security/:symbol" },
-    { "source": "/idea/:id", "destination": "https://investorcircle-public.vercel.app/idea/:id" },
-    { "source": "/search", "destination": "https://investorcircle-public.vercel.app/search" },
-    { "source": "/", "destination": "https://investorcircle-public.vercel.app/" },
-
-    { "source": "/_wpub-static/:path+", "destination": "https://investorcircle-public.vercel.app/_wpub-static/:path+" },
-
-    { "source": "/(.*)", "destination": "/index.html" }
-  ],
-  "headers": [
+  "routes": [
     {
-      "source": "/api/(data|price|push|cas|email|reset|profile)(.*)",
+      "src": "^/api/(data|price|push|cas|email|reset|profile)(.*)$",
       "missing": [
         { "type": "query", "key": "resource", "value": "seo" },
         { "type": "query", "key": "resource", "value": "sitemap" }
       ],
-      "headers": [
-        { "key": "Access-Control-Allow-Origin",  "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" },
-        { "key": "Cache-Control",                "value": "s-maxage=0, no-cache" }
-      ]
-    }
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Cache-Control": "s-maxage=0, no-cache"
+      },
+      "continue": true
+    },
+
+    { "src": "^/stock/([^/]+)$", "dest": "/api/data?resource=seo&page=stock&symbol=$1" },
+    { "src": "^/sitemap\\.xml$", "dest": "/api/data?resource=sitemap" },
+
+    { "src": "^/security/([^/]+)$", "dest": "https://investorcircle-public.vercel.app/security/$1" },
+    { "src": "^/idea/([^/]+)$", "dest": "https://investorcircle-public.vercel.app/idea/$1" },
+    { "src": "^/search$", "dest": "https://investorcircle-public.vercel.app/search" },
+    { "src": "^/$", "dest": "https://investorcircle-public.vercel.app/" },
+
+    { "src": "^/_wpub-static/(.+)$", "dest": "https://investorcircle-public.vercel.app/_wpub-static/$1" },
+
+    { "handle": "filesystem" },
+
+    { "src": "^/(.*)$", "dest": "/index.html" }
   ]
 }
