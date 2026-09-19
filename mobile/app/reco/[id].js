@@ -16,7 +16,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import RecoCard from "../../src/components/RecoCard";
 import { getReco } from "../../src/utils/recoStore";
-import { getPublicFeed } from "../../src/services/api/recommendationsApi";
+import { getPublicFeed, getMyMadeRecos, getMyReceivedRecos } from "../../src/services/api/recommendationsApi";
 import { mapPublicReco } from "../../src/utils/feed";
 import { fmt, fmtDate } from "../../src/utils/format";
 import { getTodayClose, sourceName } from "../../src/services/marketData";
@@ -77,7 +77,7 @@ function renderCommentBody(text, mentions, onPressMention) {
 function RecoDetailScreen() {
   const { id, username, highlightComment } = useLocalSearchParams();
   const router = useRouter();
-  const { profile, user } = useAuth();
+  const { profile, user, authLoading } = useAuth();
   // Normally handed over in memory from the list — instant, no refetch. On a
   // cold deep link there is no hand-off, so fall back to looking the idea up
   // in the public feed (see resolve effect below).
@@ -125,24 +125,83 @@ function RecoDetailScreen() {
     };
   }, [id]);
 
-  // Cold deep link: try to find the idea among the public recos. There is no
-  // single-reco endpoint, so a non-public idea genuinely can't be resolved
-  // this way — in that case we say so and offer the author's profile rather
-  // than pretending to load forever.
+  // Cold deep link: the reco store had nothing (no in-app hand-off), so
+  // resolve it from scratch. There is no single-reco endpoint, so this tries
+  // every source the viewer could legitimately see the idea through:
+  //
+  //  - a signed-in viewer's OWN idea ("made") or one delivered to them
+  //    ("received") — the public feed is NOT a superset of these, even for a
+  //    genuinely public idea: its query (lookups.js action=public-feed) adds
+  //    `recommender_id != uid` on top of `is_public = true`, deliberately
+  //    excluding the signed-in viewer's own posts (correct for the Pulse
+  //    discovery feed — you don't want to see your own posts there) — which
+  //    means an idea's own author can NEVER find it via getPublicFeed() while
+  //    signed in, public or not. That was the actual bug: a public idea's
+  //    author, opening their own share link in the signed-in app, hit
+  //    "not publicly viewable" purely from that self-exclusion, while
+  //    incognito/other-viewer opens (which never hit `recommender_id != uid`
+  //    for someone else's id) worked fine.
+  //  - failing that, the public feed, for a genuinely public idea with no
+  //    other relationship to this viewer (or no signed-in viewer at all).
+  //
+  // Only once none of these claims it is "not publicly viewable" the right
+  // answer. Waits out authLoading first: a cold app-start straight into this
+  // deep link can reach here before a persisted session finishes resolving,
+  // and running the public-only check while user is still momentarily null
+  // would misjudge a signed-in author's own idea "not publicly viewable"
+  // before their session even had a chance to load it correctly.
   useEffect(() => {
-    if (reco) return;
+    if (reco || authLoading) return;
     let cancelled = false;
     (async () => {
+      if (user?.uid) {
+        const [made, received] = await Promise.all([getMyMadeRecos(), getMyReceivedRecos()]);
+        if (cancelled) return;
+        const ownReceived = (received || []).find((r) => String(r.id) === String(id));
+        if (ownReceived) {
+          setReco(ownReceived);
+          setResolving(false);
+          return;
+        }
+        const ownMade = (made || []).find((r) => String(r.id) === String(id));
+        if (ownMade) {
+          // getMyMadeRecos rows have no author fields (they ARE the
+          // caller's) and name the exit field `exit`, not `exitSignal` —
+          // same normalization track.js's "Created" tab already applies
+          // before handing these rows to RecoCard.
+          setReco({
+            ...ownMade,
+            from: user.uid,
+            byName: profile?.full_name || "You",
+            exitSignal: ownMade.exit,
+          });
+          setResolving(false);
+          return;
+        }
+      }
       const rows = await getPublicFeed();
-      const found = (rows || []).find((r) => String(r.id) === String(id));
       if (cancelled) return;
+      const found = (rows || []).find((r) => String(r.id) === String(id));
       if (found) setReco(mapPublicReco(found));
       setResolving(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [reco, id]);
+  }, [reco, id, authLoading, user?.uid, profile?.full_name]);
+
+  // The resolve effect above can populate `reco` well after mount (a cold
+  // deep link has no in-app hand-off to seed it with at render time) — sync
+  // the owner-only exit toggle and the hide-from-feed switch once that
+  // happens, so an idea that was already exited/hidden doesn't briefly show
+  // the wrong toggle label. Keyed on just the id, not the whole object, so
+  // this doesn't fight the optimistic local updates toggleExit/toggleHidden
+  // already make on the same reco.
+  useEffect(() => {
+    if (!reco) return;
+    setExited(!!reco.exitSignal);
+    setHidden(!!reco.hidden);
+  }, [reco?.id]);
 
   const liked = eng?.myReaction === "like";
   const likeCount = eng?.likes ?? reco?.likes ?? 0;
