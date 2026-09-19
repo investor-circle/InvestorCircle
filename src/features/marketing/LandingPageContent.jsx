@@ -174,11 +174,16 @@ html{scroll-behavior:smooth;}
 .lp-navlinks{display:flex;align-items:center;gap:26px;margin-left:14px;}
 .lp-navlink{background:none;border:none;padding:0;cursor:pointer;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--lp-soft);text-decoration:none;}
 .lp-navlink:hover{color:var(--lp-accent-ink);}
-.lp-searchrow{border-top:1px solid var(--lp-line);padding:12px 0;}
+.lp-searchrow{border-top:1px solid var(--lp-line);padding:9px 0;}
 .lp-searchbar{display:flex;gap:9px;max-width:560px;margin:0 auto;flex-wrap:wrap;}
-.lp-searchbar input{flex:1;min-width:200px;padding:11px 14px;border-radius:11px;border:1.5px solid var(--lp-line2);
-  font-size:14px;font-family:inherit;background:var(--lp-surface);color:var(--lp-ink);}
+.lp-searchbar input{flex:1;min-width:200px;padding:9px 13px;border-radius:11px;border:1.5px solid var(--lp-line2);
+  font-size:13.5px;font-family:inherit;background:var(--lp-surface);color:var(--lp-ink);}
 .lp-searchbar input:focus{outline:none;border-color:var(--lp-accent-line);}
+/* Two-class selector so this beats the plain .lp-btn rule regardless of
+   viewport — the mobile media query below re-declares .lp-btn bigger (for
+   the hero's own CTA buttons), which would otherwise apply here too since
+   .lp-searchbar's button shares the .lp-btn class. */
+.lp-searchbar .lp-btn{padding:9px 14px;font-size:13px;}
 .lp-hero{position:relative;overflow:hidden;}
 .lp-glow{position:absolute;inset:0;pointer-events:none;
   background:radial-gradient(760px 420px at 8% -18%,rgba(109,93,245,.16),transparent 60%),
@@ -228,6 +233,9 @@ html{scroll-behavior:smooth;}
   .lp-social{width:44px;height:44px;}
   .lp-faqrow{padding:17px 18px;}
   .lp-dark{padding:22px 20px;}
+  .lp-searchrow{padding:7px 0;}
+  .lp-searchbar input{padding:8px 12px;font-size:13px;}
+  .lp-searchbar .lp-btn{padding:8px 12px;font-size:12.5px;}
 }
 
 /* Below ~340px even a heavily truncated wordmark is down to one or two

@@ -144,17 +144,30 @@ h3 { font-size: 17px; font-weight: 800; letter-spacing: -.3px; margin: 0; }
   font-size: 12.5px; color: var(--soft); line-height: 1.75;
 }
 
-.searchbar { display: flex; gap: 9px; margin-top: 18px; flex-wrap: wrap; }
+/* margin-bottom matters as much as margin-top here: on the security page,
+   TickerTypeahead's form (this same shared class) sits directly above the
+   sector/"Stock Insights" eyebrow with no wrapping container of its own —
+   without it the two visually run into each other. */
+.searchbar { display: flex; gap: 9px; margin-top: 18px; margin-bottom: 20px; flex-wrap: wrap; }
 .searchbar input {
-  flex: 1; min-width: 200px; padding: 13px 15px; border-radius: 12px; border: 1.5px solid var(--line2);
-  font-size: 15px; font-family: inherit; background: var(--surface); color: var(--ink);
+  flex: 1; min-width: 200px; padding: 10px 14px; border-radius: 12px; border: 1.5px solid var(--line2);
+  font-size: 14px; font-family: inherit; background: var(--surface); color: var(--ink);
 }
+/* TickerTypeahead's non-lp variant applies .btn-sm alongside .btn, but the
+   mobile media query below re-declares bare .btn at a larger size — same
+   specificity as .btn-sm, so on a narrow viewport it would win by being
+   later in the file and make this button bigger, not smaller. The two-class
+   selector here outranks both regardless of source order. */
+.searchbar .btn { padding: 10px 16px; font-size: 13px; }
 
 @media (max-width: 700px) {
   h1 { font-size: 26px; letter-spacing: -.8px; }
   .wrap { padding: 0 18px; }
   .btn { padding: 13px 16px; font-size: 14px; }
   .gate .btn { margin-left: 0; width: 100%; }
+  .searchbar { margin-top: 14px; margin-bottom: 16px; }
+  .searchbar input { padding: 9px 13px; font-size: 13.5px; }
+  .searchbar .btn { padding: 9px 14px; font-size: 12.5px; }
 }
 
 /* Two nav buttons (Sign in + Create account) plus the wordmark don't fit a
