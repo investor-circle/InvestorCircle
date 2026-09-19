@@ -330,6 +330,13 @@ tr.hiddenrow > td{opacity:.55;}
   .search-hide-mobile{display:none!important;}
   .tb-name-role{display:none!important;}
 
+  /* With the name/role text hidden, the pill collapses to just the avatar —
+     drop its padding/background/border and make the avatar itself fully
+     round so a photo fills the circle edge-to-edge instead of sitting as a
+     smaller rounded square inset inside it. */
+  .avatar-pill{padding:0!important;background:none!important;border:none!important;}
+  .avatar-pill .gava{border-radius:50%!important;}
+
   /* Content area */
   .content{padding:16px 14px;}
   .page-title{font-size:20px!important;}

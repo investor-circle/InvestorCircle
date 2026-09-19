@@ -101,6 +101,7 @@ function mapComment(c) {
     id:        c.id,
     userId:    c.user_id,
     userName:  c.user_name,
+    avatarUrl: c.avatar_url || null,
     comment:   c.comment,
     createdAt: c.created_at,
     mentions:  c.mentions || [],
@@ -138,8 +139,11 @@ async function resolveMentions(commentText, commenterId) {
 async function getEngagement(recoId, userId) {
   const [likeRows, commentRows, myReactionRows, trackingRows] = await Promise.all([
     sql`SELECT COUNT(*)::int AS cnt FROM recommendation_reactions WHERE reco_id = ${String(recoId)}`,
-    sql`SELECT id, user_id, user_name, comment, created_at, mentions
-        FROM recommendation_comments WHERE reco_id = ${recoId} ORDER BY created_at ASC`,
+    sql`SELECT rc.id, rc.user_id, rc.user_name, rc.comment, rc.created_at, rc.mentions,
+               up.avatar_url
+        FROM recommendation_comments rc
+        LEFT JOIN user_profiles up ON up.id = rc.user_id
+        WHERE rc.reco_id = ${recoId} ORDER BY rc.created_at ASC`,
     sql`SELECT reaction FROM recommendation_reactions
         WHERE reco_id = ${String(recoId)} AND user_id = ${userId} LIMIT 1`,
     sql`SELECT is_invested, invested_price FROM recommendation_tracking
@@ -392,7 +396,7 @@ export default async function handleEngagement(req, res, userId) {
       if (!commentText) { res.status(400).json({ error: 'comment is required' }); return; }
       if (commentText.length > 2000) { res.status(400).json({ error: 'comment is too long (max 2000 chars)' }); return; }
 
-      const profileRows = await sql`SELECT full_name FROM user_profiles WHERE id=${userId} LIMIT 1`;
+      const profileRows = await sql`SELECT full_name, avatar_url FROM user_profiles WHERE id=${userId} LIMIT 1`;
       const userName = profileRows[0]?.full_name || 'User';
       const mentions = await resolveMentions(commentText, userId);
 
@@ -401,7 +405,7 @@ export default async function handleEngagement(req, res, userId) {
         VALUES (${recoId}, ${userId}, ${userName}, ${commentText}, ${JSON.stringify(mentions)})
         RETURNING id, user_id, user_name, comment, created_at, mentions
       `;
-      const comment = mapComment(inserted[0]);
+      const comment = mapComment({ ...inserted[0], avatar_url: profileRows[0]?.avatar_url || null });
 
       notifyComment({ recoId, userId, commenterName: userName, commentText }).catch(() => {});
       if (mentions.length) {

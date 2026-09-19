@@ -56,8 +56,12 @@ export const recoStats = (recs, pred) => {
     count:list.length, acted:acted.length,
     liked:list.filter(r=>r.reaction==="like").length,
     disliked:list.filter(r=>r.reaction==="dislike").length,
-    inMoney:list.filter(r=>(r.price-r.priceAt)/r.priceAt>=0).length,
-    outMoney:list.filter(r=>(r.price-r.priceAt)/r.priceAt<0).length,
+    // In/out of money only makes sense for ideas actually acted on (invested)
+    // — scoring every received idea by price movement regardless of whether
+    // the viewer invested produced counts like "0 acted on, 1 in money,
+    // 1 out of money", which is internally contradictory.
+    inMoney:acted.filter(r=>r.priceAt&&(r.price-r.priceAt)/r.priceAt>=0).length,
+    outMoney:acted.filter(r=>r.priceAt&&(r.price-r.priceAt)/r.priceAt<0).length,
     pnl,
     pnlPending,
   };
