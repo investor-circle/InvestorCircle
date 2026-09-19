@@ -25,7 +25,18 @@
     { "src": "^/security/([^/]+)$", "dest": "https://investorcircle-public.vercel.app/security/$1" },
     { "src": "^/idea/([^/]+)$", "dest": "https://investorcircle-public.vercel.app/idea/$1" },
     { "src": "^/search$", "dest": "https://investorcircle-public.vercel.app/search" },
-    { "src": "^/$", "dest": "https://investorcircle-public.vercel.app/" },
+    {
+      "src": "^/$",
+      "missing": [
+        { "type": "query", "key": "ref" },
+        { "type": "query", "key": "next" },
+        { "type": "query", "key": "signup" },
+        { "type": "query", "key": "claim_token" },
+        { "type": "query", "key": "oobCode" },
+        { "type": "query", "key": "mode" }
+      ],
+      "dest": "https://investorcircle-public.vercel.app/"
+    },
 
     { "src": "^/_wpub-static/(.+)$", "dest": "https://investorcircle-public.vercel.app/_wpub-static/$1" },
 
