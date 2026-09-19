@@ -35,6 +35,7 @@ import { isAppLockAvailable, getAppLockEnabled } from "../src/services/appLock";
 import { shouldOfferDiscover } from "../src/utils/setup";
 import { parseDeepLink, parseReferral, parsePasswordReset, isExternalWebLink } from "../src/utils/deepLinks";
 import { rememberReferral, redeemPendingReferral } from "../src/services/referral";
+import { rememberDeepLink, pendingDeepLink, clearPendingDeepLink } from "../src/services/pendingDeepLink";
 import { trackScreen } from "../src/services/analytics";
 import * as Notifications from "expo-notifications";
 import { registerDevice, unregisterDevice, urlFromNotification } from "../src/services/pushNotifications";
@@ -162,6 +163,19 @@ function RootNavigator() {
         router.replace(`/reset-password?oobCode=${encodeURIComponent(oobCode)}`);
         return;
       }
+      // A shared idea/security/profile/circle link, tapped while signed out
+      // (or before auth has resolved, which this treats the same way —
+      // see pendingDeepLink.js's own header comment for why). The deep-link
+      // effect below only ever runs once `user` is truthy, and critically
+      // never even subscribes to "url" events before then — so on a WARM
+      // start (app already running, signed out, a fresh link tapped) this
+      // is the only place that ever sees it at all. Remembered here,
+      // consumed by that same effect the moment sign-in completes.
+      if (!user && parseDeepLink(url)) {
+        addLog("info", `deeplink: signed out — remembering ${url} for after sign-in`);
+        rememberDeepLink(url);
+        return;
+      }
       // Our own web pages this app has taken over but cannot draw — a creator
       // claim link, Market Insights, the privacy policy, anything added to
       // the web after this build. A browser tab is a working destination;
@@ -211,7 +225,11 @@ function RootNavigator() {
       sub.remove();
       clearTimeout(timeout);
     };
-  }, [router]);
+    // `user` is read (not just called) inside `handle` above, so it has to
+    // be a dependency — re-subscribing the listener on every sign-in/out is
+    // cheap and already this file's own pattern (see the deep-link effect
+    // below, which does the same for the same reason).
+  }, [router, user]);
 
   // …and redeem it once there IS an account. Mirrors the web's post-login
   // effect (App.jsx calls processReferral there for the same reason). The
@@ -239,6 +257,21 @@ function RootNavigator() {
         target.username ? `${target.path}?username=${encodeURIComponent(target.username)}` : target.path
       );
     };
+
+    // A link tapped while signed out — handle() above stashed it instead of
+    // navigating, since it never had anywhere signed-in to navigate TO. Now
+    // that sign-in just completed, this is that "later" — see
+    // pendingDeepLink.js's own comment for the warm-start case this covers
+    // that Linking.getInitialURL() below cannot (it only ever reflects this
+    // JS instance's ORIGINAL launch URL, not a link tapped after it was
+    // already running). Harmless if getInitialURL() below also resolves the
+    // same URL (the cold-start case, which already worked) — two pushes to
+    // the identical path settle on the same screen either way.
+    pendingDeepLink().then((url) => {
+      if (!url || cancelled) return;
+      clearPendingDeepLink();
+      go(url);
+    });
 
     Linking.getInitialURL().then((url) => url && go(url));
     const sub = Linking.addEventListener("url", ({ url }) => go(url));
