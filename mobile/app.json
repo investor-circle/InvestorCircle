@@ -21,7 +21,10 @@
       "bundleIdentifier": "com.myinvestorcircle.app",
       "associatedDomains": [
         "applinks:myinvestorcircle.com"
-      ]
+      ],
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.myinvestorcircle.app",
@@ -77,6 +80,12 @@
         "expo-local-authentication",
         {
           "faceIDPermission": "Use Face ID to unlock myInvestorCircle."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "myInvestorCircle needs access to your photos so you can choose a profile picture or attach an image to an idea."
         }
       ],
       "./plugins/withCrashLogger"

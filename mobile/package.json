@@ -44,6 +44,8 @@
     "web": "expo start --web",
     "build:android:preview": "eas build --platform android --profile preview",
     "build:android:dev": "eas build --platform android --profile development",
+    "build:ios:preview": "eas build --platform ios --profile preview",
+    "build:ios:dev": "eas build --platform ios --profile development",
     "test": "jest",
     "test:watch": "jest --watch"
   },

@@ -98,7 +98,12 @@ jobs:
           # as before. Client IDs are public by design (they appear in the
           # redirect URL of any OAuth flow); the client SECRET is not used by
           # this PKCE installed-app flow and must never be added here.
-          for NAME in EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID; do
+          # EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID is synced here too (this step sets
+          # EAS PROJECT env vars, which apply to every platform's build, not
+          # just this workflow's own android build) so it's already in place
+          # for whenever an iOS build is triggered from elsewhere — same
+          # "skip if unset" behavior as the other two.
+          for NAME in EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID; do
             if [ -n "${!NAME}" ]; then
               eas env:set --non-interactive --scope project \
                 --name "$NAME" --value "${!NAME}" --visibility plaintext \
@@ -111,6 +116,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
           EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
           EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
           EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
