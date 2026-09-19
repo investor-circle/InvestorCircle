@@ -123,7 +123,32 @@ const PublicProfilePage = React.lazy(() => profileModule().then(m => ({ default:
 // (from the now-trimmed Marketing.jsx) stay eagerly imported below, along
 // with LandingPage, since those ARE needed for first render. See each
 // feature file's own header comment for why it was split this way.
-const LoginPage = React.lazy(() => import("./LoginPage"));
+const loginPageModule = () => import("./LoginPage");
+const LoginPage = React.lazy(loginPageModule);
+
+// A visitor who arrives wanting the login/signup form immediately —
+// ?next=<path> from web-public's homepage/Gate ("Sign in"/"Create
+// account"), a referral link (?ref=, held in mic_ref), or a resumed
+// "Join to connect" from a public profile (pending_connect_username) —
+// would otherwise only start fetching LoginPage's own chunk once React
+// actually renders it (see the Suspense boundary around it below), i.e.
+// only AFTER the main bundle has already finished loading and executing.
+// That's a fully sequential, avoidable round trip specifically for this
+// arrival path: everything this check reads is already knowable the
+// instant this module evaluates, so kick off the same import() here,
+// in parallel with the rest of app boot, rather than waiting for the
+// conditional render further down to discover it's needed. React.lazy's
+// own later call to loginPageModule() resolves from the browser's module
+// cache instead of starting a second request — this is a pure warm-up,
+// not a duplicate fetch. Mirrors wantsFormDirectly's own conditions
+// exactly (see the actual gate further down in this file).
+if (
+  isSameSitePath(new URLSearchParams(window.location.search).get('next')) ||
+  !!localStorage.getItem('mic_ref') ||
+  !!sessionStorage.getItem('pending_connect_username')
+) {
+  loginPageModule();
+}
 const resetPasswordModule = () => import("./features/auth/ResetPasswordPage");
 const ResetPasswordPage = React.lazy(() => resetPasswordModule().then(m => ({ default: m.ResetPasswordPage })));
 const connectionsModule = () => import("./features/connections/Connections");
