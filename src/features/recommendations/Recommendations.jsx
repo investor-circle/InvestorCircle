@@ -1240,7 +1240,7 @@ export function ThesisEditor({ value, onChange }) {
 
       {/* ── Textarea ── */}
       <textarea ref={taRef} value={text} onChange={e=>{ const v=e.target.value.slice(0,THESIS_MAX_CHARS); setText(v); emit(v,undefined); }}
-        placeholder={`Share your investment thesis… Use **bold**, _italic_, [link text](https://url) · Max ${THESIS_MAX_CHARS} chars`}
+        placeholder={`Share your investment thesis… Max ${THESIS_MAX_CHARS} chars`}
         rows={3}
         style={{borderRadius:'0 0 9px 9px',resize:'vertical',fontFamily:'var(--font)',fontSize:13,
           lineHeight:1.65,padding:'10px 12px',border:'1px solid var(--line)',borderTop:'none',

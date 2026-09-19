@@ -173,7 +173,7 @@ export default function ThesisEditor({ value, onChange }) {
         selection={selection}
         multiline
         maxLength={THESIS_MAX_CHARS}
-        placeholder={`Share your investment thesis… Use **bold**, _italic_, links · Max ${THESIS_MAX_CHARS} chars`}
+        placeholder={`Share your investment thesis… Max ${THESIS_MAX_CHARS} chars`}
         placeholderTextColor={colors.muted}
       />
 

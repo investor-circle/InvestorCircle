@@ -56,6 +56,28 @@ import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, ran
 import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor } from "../../services/api/trackingApi";
 import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
 import { getDailyPrices, getPublicDailyPrice, byTicker, priceKey } from "../../services/api/pricingApi";
+
+// Shared by the tab bar, each section's own heading, and the scroll-spy
+// IntersectionObserver below — one list instead of the same five ids typed
+// out three times. Mirrors the public /security/:symbol page's own section
+// set (web-public/app/(pages)/security/[symbol]/SecurityTabs.jsx) — that
+// page never hid inactive panels either (see its own header comment: a
+// hide/show tab switcher excludes the hidden panels from a real browser's
+// text layout, which is the wrong trade-off for content built to be
+// indexed). Applying the same "always rendered, tabs just scroll you to a
+// section" approach here too, for the signed-in view.
+/* eslint-disable react/jsx-key -- lookup-table tuples destructured by
+   .map() calls below, never rendered as an array themselves; the actual
+   rendered elements (tab <button>s) already have their own key. */
+const SECTIONS = [
+  ['consensus', 'Consensus',    <Activity size={15}/> ],
+  ['timeline',  'Idea History', <Clock size={15}/>    ],
+  ['investors', 'Investors',    <Users size={15}/>    ],
+  ['stats',     'Statistics',   <BarChart2 size={15}/>],
+  ['ai',        'AI Summary',   <Sparkles size={15}/>],
+];
+/* eslint-enable react/jsx-key */
+
 export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerUser, trackedIds, onOpenSecurity, onBack, onHome }) {
   const isMobile = useIsMobile();
   const { ticker, name } = securityTicker || {};
@@ -69,6 +91,17 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   const [shareOpen, setShareOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const shareBtnRef = useRef(null);
+  // One DOM node per section, populated via each <section>'s own callback
+  // ref below — keyed by the same ids SECTIONS uses. Every section is now
+  // always mounted (see SECTIONS' own comment), so these stay populated for
+  // as long as a ticker is open, not just while its tab happens to be the
+  // active one.
+  const sectionRefs = useRef({});
+  const scrollToSection = (v) => {
+    setTab(v);
+    if (v === 'ai') buildAiSummary();
+    sectionRefs.current[v]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   // Built explicitly (not read off window.location.href) so it's always the
   // canonical, indexable URL regardless of what tab/query state happens to
@@ -99,10 +132,50 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
 
   // The page can stay mounted across multiple onOpenSecurity() calls (e.g.
   // navigating from one security's modal straight to another's insights
-  // page), so re-sync the tab whenever the caller requests a specific one.
+  // page), so re-sync the tab whenever the caller requests a specific one —
+  // e.g. MarketInsights.jsx's "View all investors" link opens straight to
+  // the Investors section, not just the Investors tab's old hide/show panel.
+  // A plain scrollIntoView (not the smooth-scroll scrollToSection above) —
+  // this is a fresh page landing, not a click mid-read, so there's nothing
+  // to animate from.
   useEffect(()=>{
-    if (securityTicker?.tab) setTab(securityTicker.tab);
+    if (!securityTicker?.tab) return;
+    setTab(securityTicker.tab);
+    sectionRefs.current[securityTicker.tab]?.scrollIntoView({ block: 'start' });
   }, [ticker, securityTicker?.tab]);
+
+  // Scroll-spy: highlights whichever tab's section is actually on screen as
+  // the visitor scrolls, not just whichever was last clicked — every
+  // section stays mounted now (see SECTIONS' own comment), so without this
+  // the tab bar's highlight would go stale the moment someone scrolls
+  // manually instead of clicking. rootMargin shrinks the observed viewport
+  // to a band well below the sticky tab bar and well above the very bottom
+  // edge, picking whichever section's heading is topmost within that band as
+  // "current" — the same convention most scroll-spy nav bars use. The band
+  // is kept wide (not a thin line near the top) specifically so a short
+  // trailing section (e.g. AI Summary, which may be shorter than the
+  // viewport) still gets a chance to register once the page is scrolled as
+  // far as it can go, rather than leaving the previous tab stuck highlighted
+  // because the heading never crossed a narrower band.
+  useEffect(()=>{
+    if (!ticker) return;
+    const entries = SECTIONS
+      .map(([id])=>[id, sectionRefs.current[id]])
+      .filter(([,el])=>el);
+    if (!entries.length) return;
+    const observer = new IntersectionObserver(
+      (observed)=>{
+        const visible = observed.filter(e=>e.isIntersecting);
+        if (!visible.length) return;
+        const topMost = visible.reduce((a,b)=>a.boundingClientRect.top<b.boundingClientRect.top?a:b);
+        const id = topMost.target.dataset.section;
+        if (id) setTab(id);
+      },
+      { rootMargin: '-10% 0px -10% 0px', threshold: 0 }
+    );
+    entries.forEach(([,el])=>observer.observe(el));
+    return ()=>observer.disconnect();
+  }, [ticker, recos.length]);
 
   // Fetch real ICI scores for all investors when recos loads. Only meaningful
   // when signed in: the public (signed-out) data path below has no uid to
@@ -415,24 +488,19 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
         </div>
       )}
 
-      {/* ── Tabs — segmented control, styled to be unmistakably a multi-tab bar ── */}
+      {/* ── Tabs — segmented control, sticky so they stay reachable while
+           scrolling through what's now one long page instead of five swapped
+           panels. Clicking one scrolls to its section (scrollToSection,
+           smooth); the highlight also updates on its own while scrolling,
+           via the IntersectionObserver set up above. ── */}
       <div style={{
         display:'flex', gap:4, marginTop:20, marginBottom:20, overflowX:'auto', WebkitOverflowScrolling:'touch',
         background:'var(--surface-2)', border:'1px solid var(--line)', borderRadius:14, padding:5,
+        position:'sticky', top:0, zIndex:5,
       }}>
-        {[
-          /* eslint-disable react/jsx-key -- lookup-table tuples destructured
-             by the .map() below, never rendered as an array themselves; the
-             actual rendered element (the <button> below) already has a key. */
-          ['consensus', 'Consensus',    <Activity size={15}/> ],
-          ['timeline',  'Idea History', <Clock size={15}/>    ],
-          ['investors', 'Investors',    <Users size={15}/>    ],
-          ['stats',     'Statistics',   <BarChart2 size={15}/>],
-          ['ai',        'AI Summary',   <Sparkles size={15}/>],
-          /* eslint-enable react/jsx-key */
-        ].map(([v,l,icon])=>(
+        {SECTIONS.map(([v,l,icon])=>(
           <button key={v}
-            onClick={()=>{ setTab(v); if(v==='ai') buildAiSummary(); }}
+            onClick={()=>scrollToSection(v)}
             style={{
               display:'flex', alignItems:'center', justifyContent:'center', gap:7, whiteSpace:'nowrap',
               flex: isMobile ? 'none' : 1,
@@ -448,8 +516,12 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
         ))}
       </div>
 
-      {/* Tab: Consensus */}
-      {tab==='consensus'&&(
+      {/* ── Consensus ──
+           scrollMarginTop on every section below matches the sticky tab
+           bar's own rendered height (~64px) plus a little breathing room —
+           without it, scrollIntoView({block:'start'}) lands a section's top
+           edge exactly where the sticky bar sits, which then covers it. */}
+      <section ref={el=>sectionRefs.current.consensus=el} data-section="consensus" style={{scrollMarginTop:76}}>
         <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
           {/* Strength gauge */}
           <div className="card">
@@ -506,10 +578,10 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
             </div>
           </div>
         </div>
-      )}
+      </section>
 
-      {/* Tab: Recommendation History */}
-      {tab==='timeline'&&(
+      {/* ── Idea History ── */}
+      <section ref={el=>sectionRefs.current.timeline=el} data-section="timeline" style={{marginTop:32,scrollMarginTop:76}}>
         <div className="card">
           <div className="card-head"><Clock size={15}/> Idea History <span style={{fontSize:11,color:'var(--muted)',fontWeight:400,marginLeft:4}}>(immutable — all calls are permanent)</span></div>
           {recos.length===0&&!loading?(
@@ -613,10 +685,10 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
             </div>
           )}
         </div>
-      )}
+      </section>
 
-      {/* Tab: Investors */}
-      {tab==='investors'&&(
+      {/* ── Investors ── */}
+      <section ref={el=>sectionRefs.current.investors=el} data-section="investors" style={{marginTop:32,scrollMarginTop:76}}>
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
           {/* Soft conversion prompt in place of "In Your Circle" — with no
               signed-in viewer, circleIds is empty and inCircle would just be
@@ -706,10 +778,10 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
             </div></div>
           )}
         </div>
-      )}
+      </section>
 
-      {/* ── Statistics Tab ─────────────────────────────────────────── */}
-      {tab==='stats'&&(
+      {/* ── Statistics ── */}
+      <section ref={el=>sectionRefs.current.stats=el} data-section="stats" style={{marginTop:32,scrollMarginTop:76}}>
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           {!stats?(
             <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)'}}>No idea history for {ticker} yet.</div></div>
@@ -790,10 +862,10 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
             </>
           )}
         </div>
-      )}
+      </section>
 
-      {/* ── AI Summary Tab ─────────────────────────────────────────── */}
-      {tab==='ai'&&(
+      {/* ── AI Summary ── */}
+      <section ref={el=>sectionRefs.current.ai=el} data-section="ai" style={{marginTop:32,scrollMarginTop:76}}>
         <div>
           {aiLoading&&(
             <div className="card" style={{padding:'48px',textAlign:'center'}}>
@@ -873,7 +945,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
             </div>
           )}
         </div>
-      )}
+      </section>
     </>
   );
 }
