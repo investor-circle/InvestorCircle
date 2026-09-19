@@ -174,7 +174,12 @@ html{scroll-behavior:smooth;}
 .lp-navlinks{display:flex;align-items:center;gap:26px;margin-left:14px;}
 .lp-navlink{background:none;border:none;padding:0;cursor:pointer;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--lp-soft);text-decoration:none;}
 .lp-navlink:hover{color:var(--lp-accent-ink);}
-.lp-searchrow{border-top:1px solid var(--lp-line);padding:9px 0;}
+/* padding-top/bottom only, deliberately not the padding shorthand — this
+   div also carries .lp-wrap (for its horizontal padding/max-width), and the
+   shorthand form sets all four sides, silently zeroing .lp-wrap's own
+   padding-left/right (equal specificity, later in this stylesheet) and
+   pinning the search bar flush to the screen edges on mobile. */
+.lp-searchrow{border-top:1px solid var(--lp-line);padding-top:9px;padding-bottom:9px;}
 .lp-searchbar{display:flex;gap:9px;max-width:560px;margin:0 auto;flex-wrap:wrap;}
 .lp-searchbar input{flex:1;min-width:200px;padding:9px 13px;border-radius:11px;border:1.5px solid var(--lp-line2);
   font-size:13.5px;font-family:inherit;background:var(--lp-surface);color:var(--lp-ink);}
@@ -233,7 +238,7 @@ html{scroll-behavior:smooth;}
   .lp-social{width:44px;height:44px;}
   .lp-faqrow{padding:17px 18px;}
   .lp-dark{padding:22px 20px;}
-  .lp-searchrow{padding:7px 0;}
+  .lp-searchrow{padding-top:7px;padding-bottom:7px;}
   .lp-searchbar input{padding:8px 12px;font-size:13px;}
   .lp-searchbar .lp-btn{padding:8px 12px;font-size:12.5px;}
 }

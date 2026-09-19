@@ -19,6 +19,11 @@ function clip(s, n) {
   return t.length <= n ? t : t.slice(0, n - 1).trimEnd() + '…';
 }
 
+// Duplicated from src/utils/format.js's initialsOf (separate deployable
+// project, no shared build step — same rationale as computeConsensus in
+// lib/consensus.js).
+const initialsOf = (name) => name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+
 export default async function Image({ params }) {
   const { id } = await params;
   const idea = await getIdea(id);
@@ -83,11 +88,35 @@ export default async function Image({ params }) {
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', fontSize: 20, color: '#c9c8e0' }}>{author}</div>
+          <Author name={author} avatarUrl={idea.avatar_url} color={idea.avatar_color} />
         </div>
       </div>
     ),
     size
+  );
+}
+
+// Mirrors src/components/common.jsx's Avatar (image when avatar_url is set,
+// else a colored-initials circle, falling back to the brand gradient when
+// no avatar_color is stored either) — same visual language as everywhere
+// else in the app an author shows up, just re-implemented with Satori-safe
+// inline styles instead of the shared .av CSS class.
+function Author({ name, avatarUrl, color }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      {avatarUrl ? (
+        <img src={avatarUrl} alt="" width={44} height={44} style={{ borderRadius: 999, objectFit: 'cover' }} />
+      ) : (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, borderRadius: 999,
+          background: color || 'linear-gradient(135deg, #6d5df5 0%, #9a55ee 55%, #cf52d8 100%)',
+          color: '#fff', fontSize: 16, fontWeight: 800,
+        }}>
+          {initialsOf(name)}
+        </div>
+      )}
+      <div style={{ display: 'flex', fontSize: 20, color: '#c9c8e0' }}>{name}</div>
+    </div>
   );
 }
 
