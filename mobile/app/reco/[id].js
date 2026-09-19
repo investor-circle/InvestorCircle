@@ -130,10 +130,17 @@ function RecoDetailScreen() {
   // every source the viewer could legitimately see the idea through:
   //
   //  - a signed-in viewer's OWN idea ("made") or one delivered to them
-  //    ("received") — neither is ever public-feed material (that source is
-  //    is_public-only by design server-side, see public-ideas.js's own
-  //    header comment), so a signed-in author tapping their own share link
-  //    was landing on "not publicly viewable" even for their own content.
+  //    ("received") — the public feed is NOT a superset of these, even for a
+  //    genuinely public idea: its query (lookups.js action=public-feed) adds
+  //    `recommender_id != uid` on top of `is_public = true`, deliberately
+  //    excluding the signed-in viewer's own posts (correct for the Pulse
+  //    discovery feed — you don't want to see your own posts there) — which
+  //    means an idea's own author can NEVER find it via getPublicFeed() while
+  //    signed in, public or not. That was the actual bug: a public idea's
+  //    author, opening their own share link in the signed-in app, hit
+  //    "not publicly viewable" purely from that self-exclusion, while
+  //    incognito/other-viewer opens (which never hit `recommender_id != uid`
+  //    for someone else's id) worked fine.
   //  - failing that, the public feed, for a genuinely public idea with no
   //    other relationship to this viewer (or no signed-in viewer at all).
   //
