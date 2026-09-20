@@ -138,17 +138,6 @@ export async function isValidRoutingToken(token, secret) {
 export default async function middleware(request) {
   const url = new URL(request.url);
 
-  // TEMPORARY diagnostic, to be removed before merge: forces the same
-  // rewrite the valid-cookie path takes, on any matched route, without
-  // needing a real signed-in cookie. Lets us test via a plain unauthenticated
-  // curl whether rewrite() takes effect at all under the current vercel.json
-  // routes format + edge runtime, isolating "the rewrite mechanism itself is
-  // broken here" from "cookie validity/minting is the problem" — a
-  // distinction we can't otherwise make without a real browser session.
-  if (url.searchParams.get('mic_debug') === 'force-rewrite') {
-    return rewrite(new URL('/index.html', url));
-  }
-
   // "/" only: a bypass param always wins, regardless of cookie state — see
   // this file's own header comment for why each one is here. This check is
   // free (no crypto, no cookie read) so it happens first.
