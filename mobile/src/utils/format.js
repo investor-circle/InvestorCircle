@@ -242,7 +242,7 @@ export function getThesisText(raw) {
  * src/constants/app.js — these are what makes a thesis written on one
  * client render (and re-edit) the same on the other, not just look similar.
  */
-export const THESIS_MAX_CHARS = 500;
+export const THESIS_MAX_CHARS = 1000;
 export const THESIS_MAX_IMAGES = 2;
 export const THESIS_MAX_MB = 2; // original upload limit, per image
 export const THESIS_TARGET_KB = 100; // compressed target per image

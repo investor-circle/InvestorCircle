@@ -58,7 +58,7 @@ export const NOTIONAL = 1000; // assumed notional per acted recommendation, for 
 
 export const HORIZONS = ["<3m","6m","12m",">2Y"];
 
-export const THESIS_MAX_CHARS  = 500;
+export const THESIS_MAX_CHARS  = 1000;
 
 export const THESIS_MAX_IMAGES = 2;
 

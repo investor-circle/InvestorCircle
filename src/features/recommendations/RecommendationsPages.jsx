@@ -1813,28 +1813,63 @@ function activeMentionQuery(text, caret) {
   return m ? { query: m[1], start: caret - m[1].length - 1 } : null;
 }
 
-// Renders comment text as plain strings + clickable spans for confirmed
-// mentions — confirmed meaning present in that comment's own `mentions`
-// list (server-resolved), not just anything shaped like "@word". Building
-// an array of nodes (rather than dangerouslySetInnerHTML, as ThesisRenderer
-// does for the richer thesis field) keeps this free of any HTML-injection
-// surface, which a plain-text field like a comment has no reason to need.
-function renderCommentBody(text, mentions) {
-  if (!text) return text;
-  const usernames = new Set((mentions || []).map(m => (m.username || '').toLowerCase()));
-  if (!usernames.size) return text;
-  return text.split(/(@[a-zA-Z0-9_]{5,20})/g).map((part, i) => {
+// Bare http(s):// and www. links inside a comment become real anchors.
+// Trailing punctuation (a sentence-ending period, a comma, a closing paren
+// that isn't part of the URL) is peeled off and rendered as plain text
+// after the link, rather than becoming part of the href. Split on this
+// FIRST (before @mention splitting below) so a URL is always treated as one
+// atomic token — a profile link like https://x.com/@someone must never get
+// fragmented into a plain link plus a separately-clickable @mention span.
+const URL_RE = /((?:https?:\/\/|www\.)[^\s<>"']+)/gi;
+const URL_TEST_RE = /^(?:https?:\/\/|www\.)/i;
+const URL_TRAILING_PUNCT_RE = /[.,!?;:'")\]}]+$/;
+
+function renderUrlPart(url, key) {
+  const trailingMatch = url.match(URL_TRAILING_PUNCT_RE);
+  const trailing = trailingMatch ? trailingMatch[0] : '';
+  const cleanUrl = trailing ? url.slice(0, -trailing.length) : url;
+  if (!cleanUrl) return [url];
+  const href = cleanUrl.toLowerCase().startsWith('http') ? cleanUrl : `https://${cleanUrl}`;
+  return [
+    <a key={`${key}-url`} href={href} target="_blank" rel="noopener noreferrer"
+      style={{color:'var(--accent-ink)',textDecoration:'underline',wordBreak:'break-all'}}
+      onClick={e=>e.stopPropagation()}>
+      {cleanUrl}
+    </a>,
+    trailing,
+  ].filter(Boolean);
+}
+
+// Splits plain (non-URL) text into confirmed @mentions — confirmed meaning
+// present in that comment's own `mentions` list (server-resolved), not just
+// anything shaped like "@word" — and clickable spans for each.
+function renderMentions(text, usernames, keyPrefix) {
+  if (!usernames.size) return text ? [text] : [];
+  return text.split(/(@[a-zA-Z0-9_]{5,20})/g).flatMap((part, i) => {
     const m = part.match(/^@([a-zA-Z0-9_]{5,20})$/);
     if (m && usernames.has(m[1].toLowerCase())) {
-      return (
-        <span key={i} style={{color:'var(--accent-ink)',fontWeight:700,cursor:'pointer'}}
+      return [
+        <span key={`${keyPrefix}-m${i}`} style={{color:'var(--accent-ink)',fontWeight:700,cursor:'pointer'}}
           onClick={e=>{ e.stopPropagation(); openProfile(m[1]); }}>
           {part}
-        </span>
-      );
+        </span>,
+      ];
     }
-    return <React.Fragment key={i}>{part}</React.Fragment>;
+    return part ? [part] : [];
   });
+}
+
+// Renders comment text as plain strings, clickable links for any URL, and
+// clickable spans for confirmed @mentions. Building an array of nodes
+// (rather than dangerouslySetInnerHTML, as ThesisRenderer does for the
+// richer thesis field) keeps this free of any HTML-injection surface, which
+// a plain-text field like a comment has no reason to need.
+export function renderCommentBody(text, mentions) {
+  if (!text) return text;
+  const usernames = new Set((mentions || []).map(m => (m.username || '').toLowerCase()));
+  return text.split(URL_RE).flatMap((part, i) =>
+    URL_TEST_RE.test(part) ? renderUrlPart(part, `p${i}`) : renderMentions(part, usernames, `p${i}`)
+  );
 }
 
 /* ─── Shared comments component ─────────────────────────────────────────────────── */

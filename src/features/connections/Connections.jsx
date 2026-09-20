@@ -24,7 +24,8 @@ import {
   sendConnectionRequest
 } from "../../services/api/connectionsApi";
 import {
-  getInvestorIciBatch as dbGetInvestorIciBatch
+  getInvestorIciBatch as dbGetInvestorIciBatch,
+  getPublicIdeasCountBatch as dbGetPublicIdeasCountBatch
 } from "../../services/api/profileApi";
 import { computeIci } from "../../services/api/recommendationsApi";
 import {
@@ -119,7 +120,7 @@ const CLIENT_SORT_FETCH_CAP = 500;
 const CONTACTS_SORT_OPTIONS = [
   { value: "name_asc",   label: "Name A–Z",                key: "name",  dir: "asc"  },
   { value: "name_desc",  label: "Name Z–A",                 key: "name",  dir: "desc" },
-  { value: "recos_desc", label: "Ideas to me (high→low)",   key: "recos", dir: "desc" },
+  { value: "recos_desc", label: "Ideas (high→low)",         key: "recos", dir: "desc" },
   { value: "pnl_desc",   label: "My P&L (high→low)",        key: "pnl",   dir: "desc" },
   { value: "ici_desc",   label: "ICI (high→low)",           key: "ici",   dir: "desc" },
   { value: "ideas_desc", label: "Ideas posted (high→low)",  key: "ideas", dir: "desc" },
@@ -228,6 +229,23 @@ function useIciBatch(ids) {
     }).catch(()=>{});
   },[ids.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   return icis;
+}
+
+/** Fetches each person's PUBLIC ideas-posted count (aligned to their own
+ *  Track Record page) for a page of people in ONE batched call. Kept
+ *  separate from useIciBatch above — see getPublicIdeasCountBatch's own
+ *  comment for why. */
+function usePublicIdeaCounts(ids) {
+  const [counts, setCounts] = useState({});
+  useEffect(()=>{
+    if(!ids.length) return;
+    dbGetPublicIdeasCountBatch(ids).then(rows=>{
+      const map = {};
+      rows.forEach(row=>{ map[row.uid] = Number(row.total)||0; });
+      setCounts(map);
+    }).catch(()=>{});
+  },[ids.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  return counts;
 }
 
 const PAGE_SIZE = 20;
@@ -481,14 +499,22 @@ export function ContactsSection({ connections, setConnections, groups,
 
   // For the "ICI" / "Ideas posted" sort options — same batched computeIci()
   // used by the Tracking me / I'm tracking pages, applied to my connections.
-  const icis = useIciBatch(useMemo(()=>connections.map(c=>c.user_id),[connections]));
+  const connectionIds = useMemo(()=>connections.map(c=>c.user_id),[connections]);
+  const icis = useIciBatch(connectionIds);
+  // Public ideas posted per connection — the "Ideas" column/stat. Aligned to
+  // that person's own Track Record page (is_public=true only), not to what
+  // they've happened to send this viewer — see usePublicIdeaCounts.
+  const publicIdeaCounts = usePublicIdeaCounts(connectionIds);
 
-  const statsOf = (c) => recoStats(recsReceived, r => r.from===c.user_id||(r.byName&&r.byName===c.name));
+  // Matching is by user_id ONLY — never by display name. Two connections can
+  // share a name, so a byName fallback here would silently mix one person's
+  // ideas/P&L into another's stats.
+  const statsOf = (c) => recoStats(recsReceived, r => r.from===c.user_id);
   // Received ∪ (tracked but never received) — the received copy of an idea
   // wins on overlap since it's the richer row (has reaction/likes); a
   // tracked-only idea is normalized via mapTrackedRowForPnl above.
   const pnlFor = (c) => {
-    const received = recsReceived.filter(r=>r.from===c.user_id||(r.byName&&r.byName===c.name));
+    const received = recsReceived.filter(r=>r.from===c.user_id);
     const receivedIds = new Set(received.map(r=>r.id));
     const trackedOnly = trackedRecos
       .filter(r=>r.recommender_id===c.user_id && !receivedIds.has(r.id))
@@ -505,7 +531,7 @@ export function ContactsSection({ connections, setConnections, groups,
     r.sort((a,b)=>{
       if(sort.key==="name")   return a.name.localeCompare(b.name)*dir;
       if(sort.key==="status") return a.status.localeCompare(b.status)*dir;
-      if(sort.key==="recos")  return (statsOf(a).count-statsOf(b).count)*dir;
+      if(sort.key==="recos")  return ((publicIdeaCounts[a.user_id]??0)-(publicIdeaCounts[b.user_id]??0))*dir;
       if(sort.key==="pnl")    return (pnlFor(a).pnl-pnlFor(b).pnl)*dir;
       if(sort.key==="ici")    return ((icis[a.user_id]?.score??-1)-(icis[b.user_id]?.score??-1))*dir;
       if(sort.key==="ideas")  return ((icis[a.user_id]?.total??0)-(icis[b.user_id]?.total??0))*dir;
@@ -513,7 +539,7 @@ export function ContactsSection({ connections, setConnections, groups,
     });
     return r;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connections, q, sort, recsReceived, trackedRecos, icis]);
+  }, [connections, q, sort, recsReceived, trackedRecos, icis, publicIdeaCounts]);
 
   const doAccept = async (c) => {
     setBusy(b=>({...b,[c.connection_id]:true}));
@@ -582,7 +608,7 @@ export function ContactsSection({ connections, setConnections, groups,
         {c.status==="accepted" && (
           <div style={{display:"flex",alignItems:"center",gap:16,marginTop:10,paddingTop:10,borderTop:"1px solid var(--line)"}}>
             <div style={{display:"flex",gap:16,overflowX:"auto",flex:1,minWidth:0}}>
-              <MiniStat label="Ideas" value={stats.count}/>
+              <MiniStat label="Ideas" value={publicIdeaCounts[c.user_id] ?? 0}/>
               <MiniStat label="Acted on" value={stats.acted}/>
               <MiniStat label="In money" value={stats.inMoney} cls="pos"/>
               <MiniStat label="Out money" value={stats.outMoney} cls="neg"/>
@@ -619,7 +645,7 @@ export function ContactsSection({ connections, setConnections, groups,
           {statusPill(c)}
         </div></td>
         <td>{cg.length===0?<span className="muted small">—</span>:<div style={{display:"flex",flexWrap:"wrap",gap:5}}>{cg.map(g=><span key={g.id} className="chip mini">{g.name}</span>)}</div>}</td>
-        <td className="tnum">{c.status==="accepted"?stats.count:<span className="muted">—</span>}</td>
+        <td className="tnum">{c.status==="accepted"?(publicIdeaCounts[c.user_id] ?? 0):<span className="muted">—</span>}</td>
         <td style={{textAlign:"right"}}>
           {c.status==="accepted"
             ? <span className="clickable tnum nowrap" onClick={()=>onOpenRecos({tab:'tracked',by:c.name,invested:'yes'})}>{fmtSigned(pnlInfo.pnl)} ↗</span>
@@ -682,7 +708,7 @@ export function ContactsSection({ connections, setConnections, groups,
             <thead><tr>
               <SortTh label="Name"            k="name"   sort={sort} setSort={setSort}/>
               <th>Common groups</th>
-              <SortTh label="Ideas to me"     k="recos"  sort={sort} setSort={setSort}/>
+              <SortTh label="Ideas"           k="recos"  sort={sort} setSort={setSort}/>
               <SortTh label="My P&amp;L"      k="pnl"    sort={sort} setSort={setSort} align="right"
                 hint="Hypothetical ₹1,000-per-idea return on this person's ideas you marked invested (received or tracked) — a directional signal, not real money. Click a value to see the ideas behind it."/>
               <th>Actions</th>
