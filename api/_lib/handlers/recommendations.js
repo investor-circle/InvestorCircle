@@ -311,6 +311,27 @@ async function deliverToRecipients(recId, senderId, recipients, reco, { asForwar
           VALUES (${memberUid}, 'circle_idea', ${senderId}, ${recId}, ${JSON.stringify(circleMeta)})
         `,
       ])));
+
+      // The Circle's own page (getCircleFeed above) is sourced entirely from
+      // recommendation_deliveries rows for this group — there is no
+      // group/circle reference on ic_recommendations itself. `members`
+      // deliberately excludes the poster (a self-notification "someone
+      // shared an idea in your circle" would be wrong when that someone is
+      // you), which meant a circle with no OTHER active members yet got zero
+      // delivery rows for everything its owner posted — the idea was
+      // genuinely shared, but nothing recorded that fact anywhere, so the
+      // circle page showed 0 ideas despite every post having "succeeded".
+      // A delivery row for the poster themselves (no notification attached)
+      // fixes this without touching the self-notification behavior above.
+      if (!delivered.has(senderId)) {
+        delivered.add(senderId);
+        await sql`
+          INSERT INTO recommendation_deliveries
+            (recommendation_id, delivered_to_user_id, via_type, via_group_id)
+          VALUES (${recId}, ${senderId}, 'group', ${r.id})
+          ON CONFLICT (recommendation_id, delivered_to_user_id) DO NOTHING
+        `;
+      }
     }
   }
 }
