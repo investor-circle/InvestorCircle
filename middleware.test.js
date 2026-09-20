@@ -81,6 +81,17 @@ describe("config.matcher", () => {
       expect.arrayContaining(["/", "/security/:symbol", "/idea/:id", "/investor/:username"])
     );
   });
+
+  // Pinned after a live bug: the (implicit, file-convention-default) "edge"
+  // runtime is deprecated by Vercel in favor of the Node.js runtime for this
+  // exact file convention, and a signed-in visitor with a genuinely valid
+  // mic_route cookie was landing on web-public's page anyway — i.e. the
+  // rewrite below silently not taking effect in production despite passing
+  // every local/unit-level check here. See this file's own config comment.
+  it("opts into the Node.js runtime rather than the deprecated implicit edge default", async () => {
+    const { config } = await import("./middleware.js");
+    expect(config.runtime).toBe('nodejs');
+  });
 });
 
 describe("middleware — the actual exported request handler", () => {

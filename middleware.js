@@ -67,6 +67,20 @@ const BYPASS_PARAMS = ['ref', 'next', 'signup', 'claim_token', 'oobCode', 'mode'
 
 export const config = {
   matcher: ['/', '/security/:symbol', '/idea/:id', '/investor/:username'],
+  // Vercel's build now warns that the (implicit, file-convention-default)
+  // "edge" runtime for this file is deprecated in favor of "Routing
+  // Middleware" on the Node.js runtime, explicitly "for better performance
+  // and reliability". This function only ever used Web Crypto
+  // (crypto.subtle) — deliberately, so it would run on either runtime — so
+  // there is no compatibility cost to opting in now. This was pinned down
+  // as the likely cause of a live bug: vercel.json was converted to the
+  // legacy `routes` array format (see its own header comment) to fix an
+  // unrelated anonymous-"/" bug, and a signed-in visitor with a genuinely
+  // valid mic_route cookie was still landing on web-public's page instead
+  // of this rewrite taking effect — i.e. exactly the "reliability" this
+  // warning names, under the specific combination of the deprecated edge
+  // runtime + the legacy routes format.
+  runtime: 'nodejs',
 };
 
 function base64urlToBytes(b64url) {
