@@ -58,7 +58,7 @@ import {
 } from "../../services/api/profileApi";
 import { InstrumentSearch } from "../../components/common";
 import { EditGroupModal } from "../groups/Groups";
-import { ABOUT_DEFAULT_HTML, CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, TODAY } from "../../constants/app";
+import { ABOUT_DEFAULT_HTML, CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, THESIS_MAX_CHARS, TODAY } from "../../constants/app";
 import { ThesisEditor } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
@@ -247,7 +247,7 @@ export function AdminSeedData() {
               target_price:  r.target_price ? Number(r.target_price) : null,
               stop_loss:     r.stop_loss    ? Number(r.stop_loss)    : null,
               horizon:    String(r.horizon||'12m').trim(),
-              thesis:     String(r.thesis||'').trim().slice(0,500) || null,
+              thesis:     String(r.thesis||'').trim().slice(0,THESIS_MAX_CHARS) || null,
               sector:     String(r.sector||'').trim() || null,
               conviction: String(r.conviction||'Medium').trim(),
               is_public:  String(r.is_public||'Yes').trim().toLowerCase() !== 'no',
