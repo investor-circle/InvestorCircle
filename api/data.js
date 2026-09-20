@@ -51,6 +51,7 @@ import handleClaimProfile from './_lib/handlers/claim-profile.js';
 import handleAdminConfig from './_lib/handlers/admin-config.js';
 import handleLookups from './_lib/handlers/lookups.js';
 import handleTracking from './_lib/handlers/tracking.js';
+import handleProfile from './_lib/handlers/profile.js';
 import handlePricing from './_lib/handlers/pricing.js';
 import handleSeo from './_lib/seo.js';
 import handleSitemap from './_lib/sitemap.js';
@@ -106,6 +107,14 @@ const RESOURCES = {
   // api/_lib/handlers/session.js. This cookie is never itself an auth
   // mechanism: requireUid/requireAdmin above never accept it.
   'session':          { handler: handleSession,           auth: 'none'  },
+  // Consolidates the web app's two hot-path, every-page-load auth calls
+  // (formerly the standalone api/profile/me.js and api/profile/blacklist-
+  // check.js functions) into this already-warm dispatcher instead of each
+  // independently re-initializing Firebase Admin/Neon on its own cold
+  // start — see api/_lib/handlers/profile.js. The original standalone
+  // functions are left in place for the mobile app, which still calls them
+  // directly.
+  'profile':          { handler: handleProfile,           auth: 'user'  },
 };
 
 export default async function handler(req, res) {

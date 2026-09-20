@@ -42,7 +42,7 @@ describe("routing cookie mint/clear — same-origin only", () => {
     const [url, opts] = global.fetch.mock.calls[0];
     expect(url).toBe("/api/data?resource=session&action=mint");
     expect(url).not.toMatch(/^https?:\/\//);
-    expect(opts).toMatchObject({ method: "POST", credentials: "same-origin" });
+    expect(opts).toMatchObject({ method: "POST", credentials: "same-origin", keepalive: true });
     expect(opts.headers.Authorization).toBe("Bearer fake-id-token");
   });
 
@@ -60,7 +60,7 @@ describe("routing cookie mint/clear — same-origin only", () => {
     const [url, opts] = global.fetch.mock.calls[0];
     expect(url).toBe("/api/data?resource=session&action=clear");
     expect(url).not.toMatch(/^https?:\/\//);
-    expect(opts).toMatchObject({ method: "POST", credentials: "same-origin" });
+    expect(opts).toMatchObject({ method: "POST", credentials: "same-origin", keepalive: true });
   });
 });
 
@@ -150,6 +150,24 @@ describe("routing-cookie refresh triggers — visibilitychange, pageshow, thrott
     render(<AuthProvider><div/></AuthProvider>);
     await signIn();
     await waitFor(() => expect(mintCalls.length).toBeGreaterThanOrEqual(1));
+  });
+
+  // Regression coverage for a slow/stuck sign-in spinner in production: `me`
+  // and `blacklist-check` used to be two standalone Vercel functions
+  // (api/profile/me.js, api/profile/blacklist-check.js), each independently
+  // paying its own cold-start Firebase Admin/Neon init on every single app
+  // load. They're now folded into the already-warm api/data.js dispatcher
+  // (api/_lib/handlers/profile.js) — this pins the URLs so that consolidation
+  // can't quietly regress back to the standalone functions.
+  it("fetches the profile/blacklist-check on the consolidated api/data.js dispatcher, not the old standalone functions", async () => {
+    const calls = [];
+    global.fetch = vi.fn((url) => { calls.push(String(url)); return Promise.resolve({ ok: false, json: async () => ({}) }); });
+    render(<AuthProvider><div/></AuthProvider>);
+    await signIn();
+    await waitFor(() => expect(calls.some(u => u.includes("resource=profile&action=me"))).toBe(true));
+    expect(calls.some(u => u.includes("resource=profile&action=blacklist-check"))).toBe(true);
+    expect(calls.some(u => u.includes("/api/profile/me"))).toBe(false);
+    expect(calls.some(u => u.includes("/api/profile/blacklist-check"))).toBe(false);
   });
 
   it("refreshes when the tab becomes visible again", async () => {
