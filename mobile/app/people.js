@@ -294,7 +294,18 @@ const styles = StyleSheet.create({
     borderColor: colors.accentLine,
   },
   sortBackdrop: { flex: 1, backgroundColor: "rgba(15,15,35,0.35)", justifyContent: "center", padding: 32 },
-  sortSheet: { backgroundColor: colors.surface, borderRadius: 16, paddingVertical: 8 },
+  // Unstyled width stretches to fill sortBackdrop's cross-axis (default
+  // alignItems: "stretch") — on a 375pt phone that's already ~311pt thanks
+  // to the backdrop's own padding, but on a 1024pt iPad it becomes an
+  // ~960pt-wide popover for a handful of sort options. Capped and centered.
+  sortSheet: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    paddingVertical: 8,
+    width: "100%",
+    maxWidth: 320,
+    alignSelf: "center",
+  },
   sortSheetTitle: {
     color: colors.muted,
     fontFamily: fonts.bold,

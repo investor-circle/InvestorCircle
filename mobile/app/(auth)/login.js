@@ -11,19 +11,22 @@ import {
   ScrollView,
   Image,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { useAuth } from "../../src/context/AuthContext";
 import { pwValid, pwCheck, USERNAME_RE, requestPasswordReset } from "../../src/services/api/authApi";
 import { fetchSignInMethodsForEmail } from "firebase/auth";
 import { auth } from "../../src/config/firebase";
-import { friendlyAuthError, googleOnlyAccountHint } from "../../src/utils/authErrors";
+import { friendlyAuthError, googleOnlyAccountHint, appleOnlyAccountHint } from "../../src/utils/authErrors";
 import { isGoogleSignInConfigured } from "../../src/services/googleAuth";
 import { pendingReferral } from "../../src/services/referral";
 import { WEB_ORIGIN } from "../../src/utils/links";
 import { track } from "../../src/services/analytics";
 import GoogleSignInButton from "../../src/components/GoogleSignInButton";
+import AppleSignInButton from "../../src/components/AppleSignInButton";
 import { colors, fonts, GRADIENT } from "../../src/theme/colors";
 
 // Three modes, mirroring the web LoginPage: sign in, create account, forgot
@@ -142,7 +145,9 @@ export default function LoginScreen() {
       ) {
         try {
           const methods = await fetchSignInMethodsForEmail(auth, email.trim());
-          const hint = googleOnlyAccountHint(methods, isGoogleSignInConfigured);
+          const hint =
+            googleOnlyAccountHint(methods, isGoogleSignInConfigured) ||
+            appleOnlyAccountHint(methods, await AppleAuthentication.isAvailableAsync().catch(() => false));
           if (hint) message = hint;
         } catch (_) {
           /* keep the generic message */
@@ -205,8 +210,9 @@ export default function LoginScreen() {
   const pw = pwCheck(password);
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         {/* The web's login page sits on two soft purple/magenta glows in the
             corners behind the mark — this is the same treatment, approximated
             with two blurred circles since RN has no radial-gradient. */}
@@ -375,6 +381,14 @@ export default function LoginScreen() {
             <GoogleSignInButton disabled={loading} />
           ) : null}
 
+          {/* No static "is this build configured" flag to gate on, unlike
+              Google — Apple's availability is a live per-device check
+              (AppleAuthentication.isAvailableAsync()), so the component
+              itself renders nothing until that resolves true. Safe to mount
+              unconditionally on every platform: it degrades to false (never
+              throws) anywhere the native module isn't present. */}
+          {tab !== "forgot" ? <AppleSignInButton disabled={loading} /> : null}
+
           {tab === "login" ? (
             <Pressable onPress={() => reset("forgot")} style={styles.linkWrap}>
               <Text style={styles.link}>Forgot your password?</Text>
@@ -385,8 +399,9 @@ export default function LoginScreen() {
             </Pressable>
           ) : null}
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

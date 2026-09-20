@@ -113,6 +113,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 22,
     paddingHorizontal: 20,
     paddingBottom: 32,
+    // See AddHoldingModal.js's sheet style for why: capped and centered so
+    // this doesn't stretch edge-to-edge on iPad.
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
   },
   grabber: {
     width: 36,

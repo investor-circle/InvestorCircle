@@ -85,10 +85,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "myInvestorCircle needs access to your photos so you can choose a profile picture or attach an image to an idea."
+          "photosPermission": "myInvestorCircle needs access to your photos so you can choose a profile picture or attach an image to an idea.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
-      "./plugins/withCrashLogger"
+      "expo-apple-authentication",
+      "./plugins/withCrashLogger",
+      "./plugins/withIpadPortraitOnly"
     ],
     "experiments": {
       "typedRoutes": false

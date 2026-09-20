@@ -1,54 +1,51 @@
 import { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, TextInput } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useGoogleSignIn } from "../services/googleAuth";
+import * as AppleAuthentication from "expo-apple-authentication";
+import { useAppleSignIn } from "../services/appleAuth";
 import { colors, fonts } from "../theme/colors";
 
 /**
- * "Continue with Google", separated from LoginScreen for one specific
- * reason: useGoogleSignIn() throws during render when this build has no
- * OAuth client ids configured (see the note on that hook). Hooks can't be
- * called conditionally, so the guard has to be a component boundary — the
- * caller renders this only when isGoogleSignInConfigured is true, and in a
- * build where it is false this component is never mounted and the hook is
- * never reached. Email/password sign-in is then completely unaffected.
+ * "Sign in with Apple", separated from LoginScreen for the same reason as
+ * GoogleSignInButton: the caller renders this only when it makes sense to
+ * (iOS, tab !== "forgot"), and useAppleSignIn() itself resolves `available`
+ * to false everywhere the native module isn't present, so mounting this on
+ * Android — or in a build made before the native module exists — is safe
+ * and simply renders nothing.
  *
- * Also hosts the account-link prompt: when the chosen Google email already
- * has an email/password account, Firebase refuses to merge them silently, so
- * we ask for that account's password and link the two — matching the web
- * app, and leaving the user with one profile rather than two.
+ * Uses Apple's own AppleAuthenticationButton (ASAuthorizationAppleIDButton)
+ * rather than a custom-styled Pressable: Apple's Human Interface Guidelines
+ * require the approved title/logo/color/proportions for this exact button,
+ * and App Store review checks for it.
  */
-export default function GoogleSignInButton({ disabled }) {
-  const { available, busy, error, signIn, linkPending, linkAccount, cancelLink } = useGoogleSignIn();
+export default function AppleSignInButton({ disabled }) {
+  const { available, busy, error, signIn, linkPending, linkAccount, cancelLink } = useAppleSignIn();
   const [password, setPassword] = useState("");
 
-  // Never keep a typed password around after the prompt closes.
   useEffect(() => {
     if (!linkPending) setPassword("");
   }, [linkPending]);
 
+  if (!available) return null;
+
   return (
     <>
-      <View style={styles.divider}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or</Text>
-        <View style={styles.dividerLine} />
+      {/* AppleAuthenticationButton renders its own internal touch target —
+          wrapped in a View so the busy/disabled dimming and the tap-blocking
+          overlay match GoogleSignInButton's treatment exactly. */}
+      <View style={styles.btnWrap}>
+        <AppleAuthentication.AppleAuthenticationButton
+          buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+          cornerRadius={12}
+          style={styles.btn}
+          onPress={signIn}
+        />
+        {busy || disabled ? (
+          <View style={styles.overlay} pointerEvents="auto">
+            {busy && !linkPending ? <ActivityIndicator color="#fff" /> : null}
+          </View>
+        ) : null}
       </View>
-
-      <Pressable
-        style={[styles.btn, (busy || !available) && { opacity: 0.7 }]}
-        onPress={signIn}
-        disabled={busy || disabled || !available}
-      >
-        {busy && !linkPending ? (
-          <ActivityIndicator color={colors.ink} />
-        ) : (
-          <>
-            <Ionicons name="logo-google" size={18} color={colors.ink} />
-            <Text style={styles.btnText}>Continue with Google</Text>
-          </>
-        )}
-      </Pressable>
 
       {error && !linkPending ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -57,7 +54,7 @@ export default function GoogleSignInButton({ disabled }) {
         <View style={styles.sheet}>
           <View style={styles.handle} />
 
-          <Text style={styles.title}>Connect your Google account</Text>
+          <Text style={styles.title}>Connect your Apple account</Text>
           <Text style={styles.body}>
             <Text style={styles.email}>{linkPending?.email}</Text> already has a myInvestorCircle account with a
             password. Enter that password once and we'll connect the two, so you can use either from now on.
@@ -101,22 +98,15 @@ export default function GoogleSignInButton({ disabled }) {
 }
 
 const styles = StyleSheet.create({
-  divider: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 18, marginBottom: 4 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: colors.line },
-  dividerText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 12 },
-  btn: {
-    flexDirection: "row",
+  btnWrap: { marginTop: 12, height: 48 },
+  btn: { width: "100%", height: 48 },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    gap: 9,
-    borderWidth: 1,
-    borderColor: colors.line2,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingVertical: 14,
-    marginTop: 12,
+    backgroundColor: "rgba(0,0,0,0.35)",
   },
-  btnText: { color: colors.ink, fontFamily: fonts.bold, fontSize: 15 },
   error: { color: colors.loss, fontFamily: fonts.semibold, fontSize: 13, textAlign: "center", marginTop: 10 },
 
   backdrop: { flex: 1, backgroundColor: "rgba(13,14,30,0.5)" },
