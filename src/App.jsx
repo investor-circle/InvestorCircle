@@ -1160,6 +1160,13 @@ export default function App() {
     const circleQuery = new URLSearchParams(pagePath.split('?')[1] || '');
     return (
       <div className="app"><style>{STYLES}</style>
+        {/* Standalone routes (circle/profile/idea/security) are a separate,
+            auth-optional render path that never reaches the app shell's own
+            OnboardingGate mount below — without this, a freshly Google-
+            signed-in user redirected straight here (e.g. from a shared idea
+            link) could Track/Connect/Join with username+consent still NULL.
+            See incident note: myinvestorcircle@gmail.com, 2026-09-20. */}
+        {user && <SectionErrorBoundary label="Onboarding"><React.Suspense fallback={null}><OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={()=>goToPath('/')}/></React.Suspense></SectionErrorBoundary>}
         <ProfileErrorBoundary>
           <div className="content" style={{maxWidth:900,margin:'0 auto',padding:isMobile?'16px 12px':'28px 24px'}}>
             <React.Suspense fallback={<AppLoadingScreen/>}>
@@ -1194,6 +1201,9 @@ export default function App() {
       const pubQuery = new URLSearchParams(pagePath.split('?')[1] || '');
       return (
         <div className="app"><style>{STYLES}</style>
+          {/* Onboarding gate — see the CirclePage route above for why a
+              standalone route needs its own mount of this. */}
+          {user && <SectionErrorBoundary label="Onboarding"><React.Suspense fallback={null}><OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={()=>goToPath('/')}/></React.Suspense></SectionErrorBoundary>}
           <ProfileErrorBoundary>
             <React.Suspense fallback={<AppLoadingScreen/>}>
             <RecoPostPage
@@ -1223,6 +1233,9 @@ export default function App() {
     const isViewingOwnProfile = !!user && !!ME?.username && pubUsername.toLowerCase() === ME.username.toLowerCase();
     return (
       <div className="app"><style>{STYLES}</style>
+        {/* Onboarding gate — see the CirclePage route above for why a
+            standalone route needs its own mount of this. */}
+        {user && <SectionErrorBoundary label="Onboarding"><React.Suspense fallback={null}><OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={()=>goToPath('/')}/></React.Suspense></SectionErrorBoundary>}
         <ProfileErrorBoundary>
           <React.Suspense fallback={<AppLoadingScreen/>}>
           <PublicProfilePage
@@ -1275,6 +1288,9 @@ export default function App() {
     }
     return (
       <div className="app"><style>{STYLES}</style>
+        {/* Onboarding gate — see the CirclePage route above for why a
+            standalone route needs its own mount of this. */}
+        {user && <SectionErrorBoundary label="Onboarding"><React.Suspense fallback={null}><OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={()=>goToPath('/')}/></React.Suspense></SectionErrorBoundary>}
         <ProfileErrorBoundary>
           <React.Suspense fallback={<AppLoadingScreen/>}>
           <RecoPostPage
@@ -1316,6 +1332,9 @@ export default function App() {
     const secQuery = new URLSearchParams(pagePath.split('?')[1] || '');
     return (
       <div className="app"><style>{STYLES}</style>
+        {/* Onboarding gate — see the CirclePage route above for why a
+            standalone route needs its own mount of this. */}
+        {user && <SectionErrorBoundary label="Onboarding"><React.Suspense fallback={null}><OnboardingGate user={user} profile={profile} ME={ME} patchProfile={patchProfile} setPage={()=>goToPath('/')}/></React.Suspense></SectionErrorBoundary>}
         <SectionErrorBoundary label="Stock Insights">
           <div className="content" style={{maxWidth:1100,margin:'0 auto',padding:isMobile?'16px 12px':'28px 24px'}}>
             <React.Suspense fallback={<AppLoadingScreen/>}>

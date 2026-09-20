@@ -24,7 +24,7 @@
  * before this handler runs), never from the request body.
  */
 
-import { sql, parseBody } from '../auth.js';
+import { sql, parseBody, requireOnboarded } from '../auth.js';
 
 const MAX_PAGE_SIZE = 50;
 const DEFAULT_PAGE_SIZE = 20;
@@ -158,6 +158,9 @@ export default async function handleTracking(req, res, myId) {
     if (targetId === myId) { res.status(400).json({ error: 'Cannot track yourself' }); return; }
 
     if (action === 'track') {
+      // Server-side backstop — see requireOnboarded()'s own comment for why
+      // the client gate alone isn't enough here.
+      await requireOnboarded(sql, myId);
       await trackAndNotify(myId, targetId);
       res.status(200).json({ success: true, tracking: true });
       return;
@@ -173,6 +176,10 @@ export default async function handleTracking(req, res, myId) {
 
     res.status(400).json({ error: 'Unknown action' });
   } catch (e) {
+    if (e && typeof e.status === 'number' && typeof e.error === 'string') {
+      res.status(e.status).json({ error: e.error });
+      return;
+    }
     console.error('[tracking] error:', e?.message);
     res.status(500).json({ error: 'Database error' });
   }
