@@ -71,6 +71,20 @@ export function googleOnlyAccountHint(methods, googleAvailable) {
       "This account uses Google Sign-In, which isn't available in this version of the app yet. Please sign in on the website for now.";
 }
 
+// Mirrors googleOnlyAccountHint exactly, for an account created with Sign in
+// with Apple. `appleAvailable` is the live AppleAuthentication.isAvailableAsync()
+// result (Apple's availability is a runtime/device check, not a build-time
+// env var like Google's), so this must be passed in rather than imported.
+export function appleOnlyAccountHint(methods, appleAvailable) {
+  const list = Array.isArray(methods) ? methods : [];
+  if (!list.includes("apple.com")) return null;
+  if (list.includes("password")) return null;
+
+  return appleAvailable
+    ? 'This account uses Sign in with Apple. Tap "Continue with Apple" below instead.'
+    : "This account uses Sign in with Apple, which isn't available on this device. Please sign in on the website for now.";
+}
+
 // For the "change email" flow specifically (reauthenticate + Firebase's
 // verifyBeforeUpdateEmail) — mirrors src/features/profile/Profile.jsx's
 // emailChangeErrorMessage on the web, so the two clients say the same thing
@@ -107,5 +121,24 @@ export function googleErrorMessage(code) {
       return "Google sign-in is temporarily unavailable. Please try email sign-in, or try again shortly.";
     default:
       return `Google sign-in failed${code ? ` (${code})` : ""}. Please try email sign-in for now, or contact support if this continues.`;
+  }
+}
+
+// Mirrors googleErrorMessage — same Firebase-side failure modes, but for the
+// Apple credential exchange (auth/operation-not-allowed here specifically
+// means the "Apple" sign-in provider isn't turned on in the Firebase console
+// yet, which is one of the Phase 2 Apple Developer-dependent steps).
+export function appleErrorMessage(code) {
+  switch (code) {
+    case "auth/operation-not-allowed":
+      return "Apple sign-in isn't enabled for this app yet. Please use email sign-in for now, or contact support.";
+    case "auth/network-request-failed":
+      return "Network error while contacting Apple. Please check your connection and try again.";
+    case "auth/internal-error":
+    case "auth/invalid-api-key":
+    case "auth/configuration-not-found":
+      return "Apple sign-in is temporarily unavailable. Please try email sign-in, or try again shortly.";
+    default:
+      return `Apple sign-in failed${code ? ` (${code})` : ""}. Please try email sign-in for now, or contact support if this continues.`;
   }
 }

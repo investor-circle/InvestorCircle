@@ -708,7 +708,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   topTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 17 },
-  form: { padding: 16, paddingBottom: 24 },
+  // Uncapped, this ScrollView content stretches to fill the full screen
+  // width — fine on iPhone, but a ~1024pt-wide iPad turns a compact idea
+  // form into an edge-to-edge layout. Every field inside already adapts to
+  // its immediate container's width (it already works across iPhone SE
+  // through Pro Max), so capping the outer content container is enough —
+  // no change needed to any individual field.
+  form: { padding: 16, paddingBottom: 24, width: "100%", maxWidth: 480, alignSelf: "center" },
   postedWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
   postedIcon: {
     width: 60,

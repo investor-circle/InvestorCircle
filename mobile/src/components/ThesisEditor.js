@@ -340,6 +340,9 @@ const styles = StyleSheet.create({
   modalWrap: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
   modalCard: {
     width: "86%",
+    // Uncapped, this dialog would be ~880pt wide on a 1024pt iPad for a
+    // two-field form — already centered via modalWrap, just needs a ceiling.
+    maxWidth: 420,
     backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 20,

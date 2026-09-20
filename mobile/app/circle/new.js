@@ -90,7 +90,10 @@ function NewCircleScreen() {
       </View>
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={{ padding: 16, paddingBottom: 40, width: "100%", maxWidth: 480, alignSelf: "center" }}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text style={styles.label}>Name *</Text>
           <TextInput
             style={styles.input}

@@ -222,6 +222,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 28,
     paddingTop: 8,
+    // Bottom sheets are edge-to-edge by default (the Modal's implicit root
+    // stretches an unstyled child to its full width) — fine on iPhone, but
+    // on iPad this stretches a compact form across the whole 1024pt+ width.
+    // Capped and centered, matching the pattern reset-password.js already
+    // uses for its own form.
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
   },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.line2, alignSelf: "center", marginBottom: 10 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },

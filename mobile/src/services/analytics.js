@@ -39,6 +39,7 @@ export const EVENTS = [
   "login",
   "sign_up",
   "google_account_linked",
+  "apple_account_linked",
   "password_reset_requested",
   "password_reset_completed",
   "page_view",

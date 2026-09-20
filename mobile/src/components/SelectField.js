@@ -125,6 +125,11 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 8,
     maxHeight: "70%",
+    // See AddHoldingModal.js's sheet style for why: capped and centered so
+    // this doesn't stretch edge-to-edge on iPad.
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
   },
   sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.line2, alignSelf: "center", marginBottom: 10 },
   searchWrap: {

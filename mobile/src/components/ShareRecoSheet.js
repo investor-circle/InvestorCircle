@@ -185,6 +185,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 28,
     paddingTop: 8,
+    // See AddHoldingModal.js's sheet style for why: capped and centered so
+    // this doesn't stretch edge-to-edge on iPad.
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
   },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.line2, alignSelf: "center", marginBottom: 10 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },

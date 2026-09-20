@@ -1,4 +1,11 @@
-import { friendlyAuthError, googleErrorMessage, googleOnlyAccountHint, emailChangeErrorMessage } from "./authErrors";
+import {
+  friendlyAuthError,
+  googleErrorMessage,
+  googleOnlyAccountHint,
+  appleErrorMessage,
+  appleOnlyAccountHint,
+  emailChangeErrorMessage,
+} from "./authErrors";
 
 // These strings are the only explanation a user gets when sign-in fails, so
 // the important properties are: a known code never falls through to the
@@ -126,6 +133,51 @@ describe("googleOnlyAccountHint — the mirror of the account-link case", () => 
     // account", which would turn a failed login into an email prober.
     for (const methods of [[], ["google.com"], ["password"], ["google.com", "password"]]) {
       const hint = googleOnlyAccountHint(methods, true);
+      if (hint) expect(hint).not.toMatch(/no account|not found|doesn't exist|unregistered/i);
+    }
+  });
+});
+
+describe("appleErrorMessage", () => {
+  it("explains the configuration failures a user could hit", () => {
+    expect(appleErrorMessage("auth/operation-not-allowed")).toMatch(/isn't enabled/);
+    expect(appleErrorMessage("auth/network-request-failed")).toMatch(/Network error/);
+    expect(appleErrorMessage("auth/configuration-not-found")).toMatch(/temporarily unavailable/);
+  });
+
+  it("includes the raw code in the fallback so a failure stays diagnosable", () => {
+    expect(appleErrorMessage("auth/unheard-of")).toContain("auth/unheard-of");
+    expect(appleErrorMessage(undefined)).not.toMatch(/\(\)/);
+  });
+});
+
+describe("appleOnlyAccountHint — the mirror of googleOnlyAccountHint", () => {
+  it("points an Apple-only account at the Apple button when there is one", () => {
+    const hint = appleOnlyAccountHint(["apple.com"], true);
+    expect(hint).toMatch(/Sign in with Apple/);
+    expect(hint).toMatch(/Continue with Apple/);
+  });
+
+  it("sends them to the website when Apple sign-in isn't available on this device", () => {
+    const hint = appleOnlyAccountHint(["apple.com"], false);
+    expect(hint).toMatch(/website/i);
+    expect(hint).not.toMatch(/Continue with Apple/);
+  });
+
+  it("stays silent when the account also has a password", () => {
+    expect(appleOnlyAccountHint(["apple.com", "password"], true)).toBeNull();
+    expect(appleOnlyAccountHint(["password"], true)).toBeNull();
+  });
+
+  it("stays silent when Firebase tells us nothing", () => {
+    for (const methods of [[], null, undefined, "apple.com", {}, [null]]) {
+      expect(appleOnlyAccountHint(methods, true)).toBeNull();
+    }
+  });
+
+  it("never reveals that an account does not exist", () => {
+    for (const methods of [[], ["apple.com"], ["password"], ["apple.com", "password"]]) {
+      const hint = appleOnlyAccountHint(methods, true);
       if (hint) expect(hint).not.toMatch(/no account|not found|doesn't exist|unregistered/i);
     }
   });
