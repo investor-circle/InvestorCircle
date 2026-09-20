@@ -919,6 +919,15 @@ export async function getInvestorIciBatch(uids) {
   return api.ok ? (api.data.stats || []) : [];
 }
 
+/** PUBLIC ideas posted per uid — matches that person's own Track Record page.
+ *  Deliberately a separate call from getInvestorIciBatch: see that action's
+ *  own comment in api/_lib/handlers/lookups.js for why its `total` (used for
+ *  the ICI score) isn't reused here. */
+export async function getPublicIdeasCountBatch(uids) {
+  const api = await callApi('/data?resource=lookups', { method: 'POST', body: { action: 'public-ideas-count-batch', uids } });
+  return api.ok ? (api.data.counts || []) : [];
+}
+
 export async function searchPeople(q, limit) {
   const qs = limit ? `&limit=${limit}` : '';
   const api = await callApi(`/data?resource=lookups&action=people-search&q=${encodeURIComponent(q)}${qs}`);

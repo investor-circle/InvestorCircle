@@ -19,6 +19,7 @@ export {
   lookupUser,
   processReferral,
   getInvestorIciBatch,
+  getPublicIdeasCountBatch,
   uploadAvatar,
   markOnboardingStep
 } from "../../db";
