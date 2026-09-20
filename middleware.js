@@ -67,6 +67,15 @@ const BYPASS_PARAMS = ['ref', 'next', 'signup', 'claim_token', 'oobCode', 'mode'
 
 export const config = {
   matcher: ['/', '/security/:symbol', '/idea/:id', '/investor/:username'],
+  // Vercel's build warns that the implicit "edge" runtime here is
+  // deprecated in favor of the Node.js runtime. That was tried and
+  // reverted: on this account's Hobby plan (already at the 12-Serverless-
+  // Function cap api/data.js's own header comment explains), a Node.js-
+  // runtime middleware counts as an additional Function and the deployment
+  // is rejected outright ("No more than 12 Serverless Functions..."). The
+  // edge runtime doesn't count against that cap, so this stays on it
+  // despite the deprecation warning until either the function count drops
+  // or the account moves off Hobby.
 };
 
 function base64urlToBytes(b64url) {

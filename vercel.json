@@ -3,36 +3,24 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
 
-  "routes": [
+  "framework": null,
+
+  "rewrites": [
+    { "source": "/stock/:symbol", "destination": "/api/data?resource=seo&page=stock&symbol=:symbol" },
+    { "source": "/sitemap.xml", "destination": "/api/data?resource=sitemap" },
+
+    { "source": "/security/:symbol", "destination": "https://investorcircle-public.vercel.app/security/:symbol" },
+    { "source": "/idea/:id", "destination": "https://investorcircle-public.vercel.app/idea/:id" },
+    { "source": "/search", "destination": "https://investorcircle-public.vercel.app/search" },
+
+    { "source": "/security/:symbol/:img(opengraph-image.*)", "destination": "https://investorcircle-public.vercel.app/security/:symbol/:img" },
+    { "source": "/idea/:id/:img(opengraph-image.*)", "destination": "https://investorcircle-public.vercel.app/idea/:id/:img" },
+
+    { "source": "/investor/:username", "destination": "https://investorcircle-public.vercel.app/investor/:username" },
+    { "source": "/investor/:username/:img(opengraph-image.*)", "destination": "https://investorcircle-public.vercel.app/investor/:username/:img" },
+
     {
-      "src": "^/api/(data|price|push|cas|email|reset|profile)(.*)$",
-      "missing": [
-        { "type": "query", "key": "resource", "value": "seo" },
-        { "type": "query", "key": "resource", "value": "sitemap" }
-      ],
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Cache-Control": "s-maxage=0, no-cache"
-      },
-      "continue": true
-    },
-
-    { "src": "^/stock/([^/]+)$", "dest": "/api/data?resource=seo&page=stock&symbol=$1" },
-    { "src": "^/sitemap\\.xml$", "dest": "/api/data?resource=sitemap" },
-
-    { "src": "^/security/([^/]+)$", "dest": "https://investorcircle-public.vercel.app/security/$1" },
-    { "src": "^/idea/([^/]+)$", "dest": "https://investorcircle-public.vercel.app/idea/$1" },
-    { "src": "^/search$", "dest": "https://investorcircle-public.vercel.app/search" },
-
-    { "src": "^/security/([^/]+)/(opengraph-image[^/]*)$", "dest": "https://investorcircle-public.vercel.app/security/$1/$2" },
-    { "src": "^/idea/([^/]+)/(opengraph-image[^/]*)$", "dest": "https://investorcircle-public.vercel.app/idea/$1/$2" },
-
-    { "src": "^/investor/([^/]+)$", "dest": "https://investorcircle-public.vercel.app/investor/$1" },
-    { "src": "^/investor/([^/]+)/(opengraph-image[^/]*)$", "dest": "https://investorcircle-public.vercel.app/investor/$1/$2" },
-    {
-      "src": "^/$",
+      "source": "/",
       "missing": [
         { "type": "query", "key": "ref" },
         { "type": "query", "key": "next" },
@@ -41,13 +29,27 @@
         { "type": "query", "key": "oobCode" },
         { "type": "query", "key": "mode" }
       ],
-      "dest": "https://investorcircle-public.vercel.app/"
+      "destination": "https://investorcircle-public.vercel.app/"
     },
 
-    { "src": "^/_wpub-static/(.+)$", "dest": "https://investorcircle-public.vercel.app/_wpub-static/$1" },
+    { "source": "/_wpub-static/:path+", "destination": "https://investorcircle-public.vercel.app/_wpub-static/:path+" },
 
-    { "handle": "filesystem" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
 
-    { "src": "^/(.*)$", "dest": "/index.html" }
+  "headers": [
+    {
+      "source": "/api/(data|price|push|cas|email|reset|profile)(.*)",
+      "missing": [
+        { "type": "query", "key": "resource", "value": "seo" },
+        { "type": "query", "key": "resource", "value": "sitemap" }
+      ],
+      "headers": [
+        { "key": "Access-Control-Allow-Origin",  "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" },
+        { "key": "Cache-Control",                "value": "s-maxage=0, no-cache" }
+      ]
+    }
   ]
 }
