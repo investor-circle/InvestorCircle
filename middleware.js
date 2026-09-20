@@ -67,20 +67,15 @@ const BYPASS_PARAMS = ['ref', 'next', 'signup', 'claim_token', 'oobCode', 'mode'
 
 export const config = {
   matcher: ['/', '/security/:symbol', '/idea/:id', '/investor/:username'],
-  // Vercel's build now warns that the (implicit, file-convention-default)
-  // "edge" runtime for this file is deprecated in favor of "Routing
-  // Middleware" on the Node.js runtime, explicitly "for better performance
-  // and reliability". This function only ever used Web Crypto
-  // (crypto.subtle) — deliberately, so it would run on either runtime — so
-  // there is no compatibility cost to opting in now. This was pinned down
-  // as the likely cause of a live bug: vercel.json was converted to the
-  // legacy `routes` array format (see its own header comment) to fix an
-  // unrelated anonymous-"/" bug, and a signed-in visitor with a genuinely
-  // valid mic_route cookie was still landing on web-public's page instead
-  // of this rewrite taking effect — i.e. exactly the "reliability" this
-  // warning names, under the specific combination of the deprecated edge
-  // runtime + the legacy routes format.
-  runtime: 'nodejs',
+  // Vercel's build warns that the implicit "edge" runtime here is
+  // deprecated in favor of the Node.js runtime. That was tried and
+  // reverted: on this account's Hobby plan (already at the 12-Serverless-
+  // Function cap api/data.js's own header comment explains), a Node.js-
+  // runtime middleware counts as an additional Function and the deployment
+  // is rejected outright ("No more than 12 Serverless Functions..."). The
+  // edge runtime doesn't count against that cap, so this stays on it
+  // despite the deprecation warning until either the function count drops
+  // or the account moves off Hobby.
 };
 
 function base64urlToBytes(b64url) {
@@ -142,6 +137,17 @@ export async function isValidRoutingToken(token, secret) {
 
 export default async function middleware(request) {
   const url = new URL(request.url);
+
+  // TEMPORARY diagnostic, to be removed before merge: forces the same
+  // rewrite the valid-cookie path takes, on any matched route, without
+  // needing a real signed-in cookie. Lets us test via a plain unauthenticated
+  // curl whether rewrite() takes effect at all under the current vercel.json
+  // routes format + edge runtime, isolating "the rewrite mechanism itself is
+  // broken here" from "cookie validity/minting is the problem" — a
+  // distinction we can't otherwise make without a real browser session.
+  if (url.searchParams.get('mic_debug') === 'force-rewrite') {
+    return rewrite(new URL('/index.html', url));
+  }
 
   // "/" only: a bypass param always wins, regardless of cookie state — see
   // this file's own header comment for why each one is here. This check is
