@@ -14,10 +14,18 @@ const ADMIN_EMAILS = ["ankur.citm@gmail.com"];
 // API_ORIGIN (see src/db.js) resolves to the same-origin api/ on Vercel
 // Preview deployments so this always talks to the deployment's own backend.
 const API_BASE = API_ORIGIN + '/api/profile';
-const PROFILE_ME_API         = `${API_BASE}/me`;
-const PROFILE_BLACKLIST_API  = `${API_BASE}/blacklist-check`;
 const PROFILE_SYNC_API       = `${API_BASE}/sync`;
 const PROFILE_UPDATE_API     = `${API_BASE}/update`;
+// `me`/`blacklist-check` are the two calls onAuthStateChanged below fires on
+// EVERY app load — routed through the consolidated api/data.js dispatcher
+// (api/_lib/handlers/profile.js) instead of their own standalone functions,
+// which were each independently paying a cold-start Firebase Admin/Neon
+// init on this hot path (the concrete cause of a slow/stuck sign-in
+// spinner). The original standalone api/profile/me.js and
+// api/profile/blacklist-check.js are untouched — mobile still calls them
+// directly.
+const PROFILE_ME_API         = `${API_ORIGIN}/api/data?resource=profile&action=me`;
+const PROFILE_BLACKLIST_API  = `${API_ORIGIN}/api/data?resource=profile&action=blacklist-check`;
 
 // Mints/clears the routing-token cookie /middleware.js checks to decide
 // whether a fresh hit on /security/:symbol, /idea/:id, or "/" goes to the
@@ -61,17 +69,32 @@ const ROUTING_TOKEN_REFRESH_MIN_GAP_MS = 60 * 1000;
 // Exported only so AuthContext.test.jsx can pin the fetch URL as
 // same-origin — the exact class of bug this function shipped with once
 // already (see SESSION_API's own comment).
+//
+// keepalive: true matters specifically on mobile: this call is fire-and-
+// forget, fired right as the app is loading (onAuthStateChanged resolving,
+// or a tab returning from the background) — exactly when a mobile browser
+// is most likely to freeze or discard the page (switching apps, locking the
+// screen) before an in-flight fetch completes. Without keepalive, that
+// aborts the request and the cookie silently never gets (re)minted, so the
+// next full-page hit on "/" falls back to web-public's marketing page even
+// though the underlying Firebase session is still perfectly valid — which
+// is what "getting signed out" turned out to actually be. keepalive tells
+// the browser to let this specific request finish in the background instead
+// of killing it with the page (same mechanism analytics beacons rely on);
+// it has no body here, so the platform's small keepalive-request body cap
+// doesn't apply.
 export function mintRoutingCookie(idToken) {
   if (!idToken) return;
   fetch(`${SESSION_API}&action=mint`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${idToken}` },
     credentials: 'same-origin',
+    keepalive: true,
   }).catch(() => {});
 }
 
 export function clearRoutingCookie() {
-  return fetch(`${SESSION_API}&action=clear`, { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+  return fetch(`${SESSION_API}&action=clear`, { method: 'POST', credentials: 'same-origin', keepalive: true }).catch(() => {});
 }
 
 // Exported (not just used inline in AuthProvider below) so

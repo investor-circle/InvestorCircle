@@ -9,10 +9,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const sqlCalls = [];
 let updateRow = { id: "d1", recommendation_id: "r1", reaction: null };
+// authorizedCircleRecipientIds' membership/role check for the poster, and the
+// circle's OTHER active members (excluding the poster) — configurable per
+// test below.
+let groupAuthRows = [];
+let groupMemberRows = [];
 const sqlTag = (strings, ...values) => {
   const text = strings.join("?");
   sqlCalls.push({ text, values });
   if (text.includes("UPDATE recommendation_deliveries")) return Promise.resolve([updateRow]);
+  if (text.includes("INSERT INTO ic_recommendations")) return Promise.resolve([{ id: "rec1" }]);
+  if (text.includes("gm.role, gm.status")) return Promise.resolve(groupAuthRows);
+  if (text.includes("SELECT name, slug FROM ic_groups")) return Promise.resolve([{ name: "Test Circle", slug: "test-circle" }]);
+  if (text.includes("FROM group_members") && text.includes("user_id !=")) return Promise.resolve(groupMemberRows);
   return Promise.resolve([]);
 };
 vi.mock("../auth.js", async () => {
@@ -59,6 +68,8 @@ const reactionWrite = () => {
 beforeEach(() => {
   sqlCalls.length = 0;
   vi.clearAllMocks();
+  groupAuthRows = [];
+  groupMemberRows = [];
 });
 
 describe("update-delivery leaves a reaction alone unless asked", () => {
@@ -112,5 +123,78 @@ describe("update-delivery leaves a reaction alone unless asked", () => {
     const call = sqlCalls.find((c) => c.text.includes("UPDATE recommendation_deliveries"));
     expect(call.text).toContain("delivered_to_user_id");
     expect(call.values).toContain("me");
+  });
+});
+
+// Regression coverage: ic_recommendations has no group/circle column of its
+// own — a Circle's own page (getCircleFeed) is sourced entirely from
+// recommendation_deliveries rows for that group. The member-delivery loop
+// deliberately excludes the poster (a self-notification "someone shared an
+// idea in your circle" would be wrong when that someone is you), which meant
+// a Circle with no OTHER active members yet got zero delivery rows for
+// everything its owner posted — the post itself succeeded, but nothing
+// recorded that it belonged to that circle, so the circle page showed 0
+// ideas despite every post "working".
+describe("posting to your own Circle when it has no other members yet", () => {
+  const postToCircle = async (uid = "admin1") => {
+    const res = mkRes();
+    await handleRecommendations(
+      {
+        method: "POST", query: {}, headers: { authorization: "Bearer t" },
+        body: {
+          action: "create",
+          reco: { assetName: "Foo Corp", ticker: "FOO" },
+          recipients: [{ type: "group", id: "circle1" }],
+        },
+      },
+      res,
+      uid
+    );
+    return res;
+  };
+
+  beforeEach(() => {
+    // The poster is the circle's own admin/owner — the only role allowed to
+    // post to a public circle (see authorizedCircleRecipientIds).
+    groupAuthRows = [{ id: "circle1", circle_type: "public", role: "admin", status: "active" }];
+    groupMemberRows = []; // nobody else has joined yet
+  });
+
+  it("still records a delivery row for the poster, so the circle's own feed isn't empty", async () => {
+    await postToCircle();
+    const selfDelivery = sqlCalls.find(c =>
+      c.text.includes("INSERT INTO recommendation_deliveries") && c.values.includes("admin1")
+    );
+    expect(selfDelivery).toBeTruthy();
+    expect(selfDelivery.text).toContain("'group'");
+    expect(selfDelivery.values).toContain("circle1");
+  });
+
+  it("does not send a self-notification", async () => {
+    await postToCircle();
+    expect(sqlCalls.some(c => c.text.includes("INSERT INTO notifications") && c.text.includes("circle_idea"))).toBe(false);
+  });
+
+  it("still delivers to real members too once the circle has any", async () => {
+    groupMemberRows = [{ user_id: "member1" }];
+    await postToCircle();
+    const memberDelivery = sqlCalls.find(c =>
+      c.text.includes("INSERT INTO recommendation_deliveries") && c.values.includes("member1")
+    );
+    expect(memberDelivery).toBeTruthy();
+    expect(sqlCalls.some(c => c.text.includes("INSERT INTO notifications") && c.text.includes("circle_idea"))).toBe(true);
+    // The poster still gets their own delivery row too — harmless/idempotent,
+    // and keeps the circle feed correct even if every other member later
+    // leaves the circle.
+    const selfDelivery = sqlCalls.find(c =>
+      c.text.includes("INSERT INTO recommendation_deliveries") && c.values.includes("admin1")
+    );
+    expect(selfDelivery).toBeTruthy();
+  });
+
+  it("does not post to a circle the caller isn't authorized for", async () => {
+    groupAuthRows = []; // caller has no role in this group at all
+    await postToCircle();
+    expect(sqlCalls.some(c => c.text.includes("INSERT INTO recommendation_deliveries"))).toBe(false);
   });
 });
