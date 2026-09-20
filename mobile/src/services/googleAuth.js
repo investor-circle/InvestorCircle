@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 import {
@@ -39,12 +40,29 @@ const ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || ""
 const IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || "";
 
 /**
- * True when this build has enough configuration for Google sign-in to work.
- * The web client id is what Firebase validates the id_token against, so it is
- * the one that is genuinely required; the platform ids are what the OS-level
- * flow uses.
+ * The OAuth client id for the platform this JS is actually running on.
+ *
+ * MUST be scoped to Platform.OS, not "either platform id present": expo-
+ * auth-session's useIdTokenAuthRequest resolves clientId per-platform
+ * internally (androidClientId on Android, iosClientId on iOS) and throws
+ * during render if the one for the CURRENT platform is undefined — it does
+ * not fall back to the other platform's id. Before this was scoped, a build
+ * with only EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID configured (the only one
+ * this project has set up so far) satisfied isGoogleSignInConfigured on iOS
+ * too, which would have crashed the iOS login screen outright the first
+ * time it rendered the Google button. See googleAuth.test.js for the
+ * regression test.
  */
-export const isGoogleSignInConfigured = Boolean(WEB_CLIENT_ID && (ANDROID_CLIENT_ID || IOS_CLIENT_ID));
+const PLATFORM_CLIENT_ID =
+  Platform.OS === "ios" ? IOS_CLIENT_ID : Platform.OS === "android" ? ANDROID_CLIENT_ID : "";
+
+/**
+ * True when this build has enough configuration for Google sign-in to work
+ * on the platform it is running on. The web client id is what Firebase
+ * validates the id_token against, so it is the one that is genuinely
+ * required; the platform id is what the OS-level flow uses.
+ */
+export const isGoogleSignInConfigured = Boolean(WEB_CLIENT_ID && PLATFORM_CLIENT_ID);
 
 /**
  * @returns {{ available: boolean, signIn: () => void, busy: boolean, error: string }}

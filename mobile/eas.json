@@ -10,6 +10,9 @@
       "android": {
         "buildType": "apk"
       },
+      "ios": {
+        "simulator": true
+      },
       "env": {
         "EXPO_PUBLIC_API_ORIGIN": "https://investor-circle.vercel.app"
       }
@@ -20,6 +23,9 @@
       "autoIncrement": true,
       "android": {
         "buildType": "apk"
+      },
+      "ios": {
+        "simulator": true
       },
       "env": {
         "EXPO_PUBLIC_API_ORIGIN": "https://investor-circle.vercel.app"
