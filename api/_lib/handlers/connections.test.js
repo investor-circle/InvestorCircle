@@ -10,12 +10,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const sqlCalls = [];
 let connectionRows = [{ id: "c1", requester_id: "me", addressee_id: "them", status: "pending" }];
 let existingRows = [];
+// Defaults to a fully onboarded caller (username set, both consents given)
+// so the pre-existing "send" tests below don't have to know about the
+// requireOnboarded() gate — tests that care about it override this directly.
+let onboardingRows = [{ username: "me", consent_terms_accepted: true, consent_data_accepted: true }];
 const sqlTag = (strings, ...values) => {
   const text = strings.join("?");
   sqlCalls.push({ text, values });
   if (text.includes("SELECT id, status FROM connections")) return Promise.resolve(existingRows);
   if (text.includes("INSERT INTO connections")) return Promise.resolve(connectionRows);
   if (text.includes("UPDATE connections")) return Promise.resolve(connectionRows);
+  if (text.includes("FROM user_profiles")) return Promise.resolve(onboardingRows);
   return Promise.resolve([]);
 };
 vi.mock("../auth.js", async () => {
@@ -48,6 +53,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   connectionRows = [{ id: "c1", requester_id: "me", addressee_id: "them", status: "pending" }];
   existingRows = [];
+  onboardingRows = [{ username: "me", consent_terms_accepted: true, consent_data_accepted: true }];
 });
 
 describe("sending a connection request", () => {
@@ -84,6 +90,18 @@ describe("sending a connection request", () => {
     const res = await post({ action: "send", addresseeId: "me" });
     expect(res.statusCode).toBe(400);
     expect(notifyMember).not.toHaveBeenCalled();
+  });
+
+  // Regression coverage for the WhatsApp-idea-link incident: a Google
+  // sign-in user can reach this endpoint with username/consent still NULL
+  // (see api/profile/sync.js) if a client-side gate is missing or bypassed.
+  // requireOnboarded() is the server-side backstop.
+  it("refuses a send from a caller who hasn't set a username / given consent yet", async () => {
+    onboardingRows = [{ username: null, consent_terms_accepted: null, consent_data_accepted: null }];
+    const res = await post({ action: "send", addresseeId: "them" });
+    expect(res.statusCode).toBe(403);
+    expect(notifyMember).not.toHaveBeenCalled();
+    expect(sqlCalls.some((c) => c.text.includes("INSERT INTO connections"))).toBe(false);
   });
 });
 

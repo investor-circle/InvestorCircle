@@ -21,7 +21,7 @@
  * this handler runs), never from the request body.
  */
 
-import { sql, parseBody } from '../auth.js';
+import { sql, parseBody, requireOnboarded } from '../auth.js';
 import { notifyMember } from '../notifyMember.js';
 
 export default async function handleConnections(req, res, myId) {
@@ -66,6 +66,8 @@ export default async function handleConnections(req, res, myId) {
       const addresseeId = String(body.addresseeId || '');
       if (!addresseeId) { res.status(400).json({ error: 'addresseeId is required' }); return; }
       if (addresseeId === myId) { res.status(400).json({ error: 'Cannot connect to yourself' }); return; }
+      // Server-side backstop — see requireOnboarded()'s own comment.
+      await requireOnboarded(sql, myId);
 
       const existing = await sql`
         SELECT id, status FROM connections
@@ -132,6 +134,10 @@ export default async function handleConnections(req, res, myId) {
 
     res.status(400).json({ error: 'Unknown action' });
   } catch (e) {
+    if (e && typeof e.status === 'number' && typeof e.error === 'string') {
+      res.status(e.status).json({ error: e.error });
+      return;
+    }
     console.error('[connections] error:', e?.message);
     res.status(500).json({ error: 'Database error' });
   }

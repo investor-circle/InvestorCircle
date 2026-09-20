@@ -35,7 +35,7 @@
  *     regenerate-invite-link:{ groupId }                           — owner only, public circles only
  */
 
-import { sql, parseBody, requireUid, optionalUid, sendAuthError } from '../auth.js';
+import { sql, parseBody, requireUid, optionalUid, requireOnboarded, sendAuthError } from '../auth.js';
 import { randomUUID } from 'crypto';
 import { trackAndNotify } from './tracking.js';
 
@@ -460,6 +460,9 @@ export default async function handleGroups(req, res) {
       if (!circle) { res.status(404).json({ error: 'not_found' }); return; }
       if (circle.circle_type !== 'public') { res.status(403).json({ error: 'Not a public circle' }); return; }
       if (circle.created_by === myId) { res.status(400).json({ error: 'You already own this circle' }); return; }
+      // Server-side backstop — see requireOnboarded()'s own comment. Joining
+      // auto-tracks the owner (below), so this has to gate the whole action.
+      await requireOnboarded(sql, myId);
 
       // No eligibility gate here: a PUBLIC circle is, by definition,
       // subscribable by anyone who finds it (e.g. from the owner's public
@@ -559,6 +562,10 @@ export default async function handleGroups(req, res) {
 
     res.status(400).json({ error: 'Unknown action' });
   } catch (e) {
+    if (e && typeof e.status === 'number' && typeof e.error === 'string') {
+      res.status(e.status).json({ error: e.error });
+      return;
+    }
     console.error('[groups] error:', e?.message);
     res.status(500).json({ error: 'Database error' });
   }

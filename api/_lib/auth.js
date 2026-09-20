@@ -117,6 +117,49 @@ export async function requireAdmin(req) {
   return uid;
 }
 
+/**
+ * Require that `uid` has completed the mandatory username + consent step
+ * (see OnboardingGate / MandatorySetupGate, src/features/onboarding/
+ * Onboarding.jsx) before allowing an action that creates a new
+ * relationship on the caller's behalf (Track, Connect, Circle join/
+ * subscribe). Takes an already-verified uid — callers get `uid` from
+ * api/data.js's own requireUid() dispatch, so this only adds the
+ * profile-completeness check, not a second token verification.
+ *
+ * Google sign-in creates a bare user_profiles row with these fields NULL
+ * (see api/profile/sync.js vs. api/profile/signup.js's own INSERT) and
+ * relies on the client-side gate to collect them right after — this is
+ * the server-side backstop for a caller reaching the API directly instead
+ * of through the gated UI (e.g. a shared idea link that lands a fresh
+ * Google sign-in straight on a standalone page, bypassing the app shell
+ * the gate is mounted in).
+ *
+ * Takes `sql` as a parameter rather than using this module's own — same
+ * reason api/_lib/deliverPush.js does — so a handler's test can mock its
+ * own imported `sql` and have this helper honor it too.
+ *
+ * Throws 403 if incomplete. Never used to block undoing an action
+ * (untrack, reject, leave) — only ones that create new data tied to an
+ * unonboarded account.
+ */
+export async function requireOnboarded(sql, uid) {
+  if (!sql) throw { status: 500, error: 'Database not configured' };
+  let rows;
+  try {
+    rows = await sql`
+      SELECT username, consent_terms_accepted, consent_data_accepted
+      FROM user_profiles WHERE id = ${uid} LIMIT 1
+    `;
+  } catch (e) {
+    console.error('[auth] onboarding check failed:', e?.message);
+    throw { status: 500, error: 'Database error' };
+  }
+  const row = rows[0];
+  if (!row?.username || !row.consent_terms_accepted || !row.consent_data_accepted) {
+    throw { status: 403, error: 'Please finish setting up your username and consent before doing this.' };
+  }
+}
+
 /** Parse a JSON body that may arrive as a raw string (mirrors profile/*.js). */
 export function parseBody(req) {
   let body = req.body;
