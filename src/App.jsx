@@ -471,6 +471,9 @@ export default function App() {
 
   // ── Track previous UID so we skip the initial mount in the security reset ──
   const prevUidRef = useRef(undefined);
+  // Tracks whether auth has ever resolved to a real signed-in user before —
+  // see its one use below for why this needs to be distinct from prevUidRef.
+  const hasResolvedAuthOnceRef = useRef(false);
 
   // SECURITY: when the authenticated user actually CHANGES (different UID, or logout),
   // clear all user-specific state to prevent data leaking between accounts in the same tab.
@@ -503,7 +506,16 @@ export default function App() {
     setClaimRequests([]);
     setHasPendingClaim(false);
     setFeedLoading(true);      // next user's data hasn't loaded yet either
-    setInvestorPage('home');   // new user always starts at home
+    // Force the investor nav back to "home" for a genuine account switch or
+    // sign-out mid-session — but NOT for auth's first-ever resolution after a
+    // fresh page load, where prevUid is `null` only because `user` starts
+    // `null` until Firebase restores the persisted session, not because of a
+    // real sign-out. Without this guard, every hard refresh of a deep-linked
+    // URL like /track-record got stomped back to Home Feed the instant auth
+    // resolved, discarding the page pagePath/the address bar already
+    // correctly pointed at.
+    if (hasResolvedAuthOnceRef.current) setInvestorPage('home');
+    if (user) hasResolvedAuthOnceRef.current = true;
     setAdminPage('users');
 
     if (!user) {
