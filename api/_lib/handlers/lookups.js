@@ -32,6 +32,12 @@
  *     expo-push-register:   { token, platform? }                          (auth: user)
  *     expo-push-unregister: { token }                                     (auth: user)
  *     onboarding-complete:{ step: 'discover' }                           (auth: user)
+ *     investor-ici-batch: { uids: [...] } -> { stats: [{ uid, total, ... }] }  (auth: user)
+ *     public-ideas-count-batch: { uids: [...] } -> { counts: [{ uid, total }] } (auth: user)
+ *                          total here is PUBLIC ideas only (is_public=true) —
+ *                          matches that person's own Track Record page,
+ *                          unlike investor-ici-batch's total (see its own
+ *                          action for why those two are kept separate)
  * GET  ?resource=lookups&action=discover-people                         (auth: user)
  * GET  ?resource=lookups&action=discover-more                           (auth: user)
  *
@@ -824,6 +830,28 @@ export default async function handleLookups(req, res) {
         GROUP BY r.recommender_id
       `;
       res.status(200).json({ stats: rows });
+      return;
+    }
+
+    // Deliberately separate from investor-ici-batch above rather than reusing
+    // its `total` — that query intentionally includes private/circle-only
+    // ideas as ICI score inputs (a sensitive, do-not-change-without-approval
+    // calculation, see CLAUDE.md), which answers a different question than
+    // "how many PUBLIC ideas has this person posted." This mirrors
+    // public-profile.js's own summary.total definition exactly (COUNT(*)
+    // WHERE recommender_id=... AND is_public=true) so a count shown from
+    // here always matches what that person's own Track Record page shows.
+    if (action === 'public-ideas-count-batch') {
+      try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+      const uids = Array.isArray(body.uids) ? body.uids.map(String).slice(0, 500) : [];
+      if (!uids.length) { res.status(200).json({ counts: [] }); return; }
+      const rows = await sql`
+        SELECT recommender_id AS uid, COUNT(*)::int AS total
+        FROM ic_recommendations
+        WHERE recommender_id = ANY(${uids}) AND is_public = true
+        GROUP BY recommender_id
+      `;
+      res.status(200).json({ counts: rows });
       return;
     }
 
