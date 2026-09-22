@@ -45,7 +45,8 @@ import {
   trackReco as dbTrackReco,
   getMyTrackedRecos as dbGetMyTrackedRecos
 } from "../../services/api/engagementApi";
-import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
+import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, MemberBadgeOverlay, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
+import { useMemberTagsMap } from "../../MemberTagsContext";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, ideaStatusSummary, initialsOf, scoreFeedRec } from "../../utils/format";
@@ -56,6 +57,7 @@ import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor 
 import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
 import { getDailyPrices, getPublicDailyPrice, byTicker, priceKey } from "../../services/api/pricingApi";
 export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,onViewAllInvestors,onClose,modal=false}) {
+  const memberTagsByUser = useMemberTagsMap();
   const community  = computeConsensus(allRecos);
   const circle     = computeConsensus(circleRecos);
   const trend      = computeTrend(circleRecos.length>=2 ? circleRecos : allRecos);
@@ -143,7 +145,10 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
               const clickable=!!r.username;
               return (
                 <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:i<recent.length-1?'1px solid var(--line)':'none'}}>
-                  <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)',cursor:clickable?'pointer':'default'}} onClick={clickable?()=>openProfile(r.username):undefined}>{initialsOf(r.full_name||r.username||'?')}</div>
+                  <div style={{position:'relative',width:30,height:30,flexShrink:0}}>
+                    <div className="av" style={{width:30,height:30,fontSize:11,background:'var(--grad)',cursor:clickable?'pointer':'default'}} onClick={clickable?()=>openProfile(r.username):undefined}>{initialsOf(r.full_name||r.username||'?')}</div>
+                    <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={30}/>
+                  </div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:'flex',alignItems:'center',gap:5}}>
                       <span
@@ -225,6 +230,7 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
    ═══════════════════════════════════════════════════════════════════ */
 
 export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
+  const memberTagsByUser = useMemberTagsMap();
   const isMobile = useIsMobile();
   const [recos, setRecos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -572,8 +578,11 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                                 return (
                                   <div key={i} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',
                                     background:'var(--surface)',borderRadius:8,border:'1px solid var(--line-2)',fontSize:12}}>
-                                    <div className="av" style={{width:22,height:22,fontSize:9,flexShrink:0,background:'var(--grad)'}}>
-                                      {initialsOf(r.full_name||r.username||'?')}
+                                    <div style={{position:'relative',width:22,height:22,flexShrink:0}}>
+                                      <div className="av" style={{width:22,height:22,fontSize:9,background:'var(--grad)'}}>
+                                        {initialsOf(r.full_name||r.username||'?')}
+                                      </div>
+                                      <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={22}/>
                                     </div>
                                     <span style={{fontWeight:600,maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                                       {r.full_name||r.username||'Investor'}

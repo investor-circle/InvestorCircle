@@ -69,7 +69,8 @@ import {
   setExitSignal as dbSetExit,
   updateDelivery
 } from "../../services/api/recommendationsApi";
-import { Avatar, ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
+import { Avatar, ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, MemberBadgeOverlay, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
+import { useMemberTagsMap } from "../../MemberTagsContext";
 import { CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, SECTOR_EMOJI, THESIS_EMOJIS, THESIS_MAX_CHARS, THESIS_MAX_IMAGES, THESIS_MAX_MB, TODAY } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
@@ -1562,9 +1563,12 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
           <div style={{background:'var(--surface)', border:'1px solid var(--line)', borderRadius:16,
                        padding:'16px 18px', marginBottom:14,
                        display:'flex', alignItems:'center', gap:14}}>
-            <div className="av" style={{width:50, height:50, fontSize:17, flexShrink:0,
-                                        background:profile.avatar_color||'var(--grad)'}}>
-              {initialsOf(fullName)}
+            <div style={{position:'relative', width:50, height:50, flexShrink:0}}>
+              <div className="av" style={{width:50, height:50, fontSize:17,
+                                          background:profile.avatar_color||'var(--grad)'}}>
+                {initialsOf(fullName)}
+              </div>
+              <MemberBadgeOverlay tags={profile.tags} size={50}/>
             </div>
             <div style={{flex:1, minWidth:0}}>
               <div style={{fontWeight:800, fontSize:16, lineHeight:1.2,
@@ -1875,6 +1879,7 @@ export function renderCommentBody(text, mentions) {
 /* ─── Shared comments component ─────────────────────────────────────────────────── */
 
 export function RecoComments({ recoId, me, highlightCommentId }) {
+  const memberTagsByUser = useMemberTagsMap();
   const [comments,  setComments]  = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [text,      setText]      = useState('');
@@ -1982,7 +1987,10 @@ export function RecoComments({ recoId, me, highlightCommentId }) {
                         style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',cursor:'pointer'}}
                         onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
                         onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                        <div className="av" style={{width:24,height:24,fontSize:10,flexShrink:0,background:'var(--grad)'}}>{initialsOf(p.full_name||p.username)}</div>
+                        <div style={{position:'relative',width:24,height:24,flexShrink:0}}>
+                          <div className="av" style={{width:24,height:24,fontSize:10,background:'var(--grad)'}}>{initialsOf(p.full_name||p.username)}</div>
+                          <MemberBadgeOverlay tags={memberTagsByUser[p.id]} size={24}/>
+                        </div>
                         <div style={{minWidth:0}}>
                           <div style={{fontSize:12,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.full_name||p.username}</div>
                           <div className="muted" style={{fontSize:11}}>@{p.username}</div>

@@ -50,7 +50,8 @@ import {
   trackReco as dbTrackReco,
   getMyTrackedRecos as dbGetMyTrackedRecos
 } from "../../services/api/engagementApi";
-import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
+import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, MemberBadgeOverlay, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
+import { useMemberTagsFor } from "../../MemberTagsContext";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, ideaStatusSummary, initialsOf, scoreFeedRec } from "../../utils/format";
@@ -81,6 +82,7 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
 
   useEffect(() => { if (r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo); }, [r.from]);
 
+  const authorTags = useMemberTagsFor(r.from);
   const cf = useMemo(() => {
     const found = contacts.find(x => x.id === r.from);
     if (found) return found;
@@ -155,8 +157,11 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
     >
       {/* WHO — creator, ICI, fresh badge, recency */}
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-        <div className="av" style={{width:26,height:26,background:cf.color||'var(--grad)',fontSize:10,flexShrink:0}}>
-          {cf.initials||initialsOf(cf.name)}
+        <div style={{position:'relative',width:26,height:26,flexShrink:0}}>
+          <div className="av" style={{width:26,height:26,background:cf.color||'var(--grad)',fontSize:10}}>
+            {cf.initials||initialsOf(cf.name)}
+          </div>
+          <MemberBadgeOverlay tags={authorTags} size={26}/>
         </div>
         <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
           <span style={{fontWeight:700,fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:110}}>{cf.name.split(' ')[0]}</span>
@@ -715,6 +720,7 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
 
   useEffect(() => { if (r.from) fetchPublicProfileInfo(r.from).then(setRecommenderInfo); }, [r.from]);
 
+  const authorTags = useMemberTagsFor(r.from);
   const cf = useMemo(() => {
     const found = contacts.find(x => x.id === r.from);
     if (found) return found;
@@ -768,8 +774,11 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
     >
       {/* WHO — creator first, since noticing the creator is half the point */}
       <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:6}}>
-        <div className="av" style={{width:22,height:22,background:cf.color||'var(--grad)',fontSize:9,flexShrink:0}}>
-          {cf.initials||initialsOf(cf.name)}
+        <div style={{position:'relative',width:22,height:22,flexShrink:0}}>
+          <div className="av" style={{width:22,height:22,background:cf.color||'var(--grad)',fontSize:9}}>
+            {cf.initials||initialsOf(cf.name)}
+          </div>
+          <MemberBadgeOverlay tags={authorTags} size={22}/>
         </div>
         <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
           <span style={{fontWeight:700,fontSize:11.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:96}}>

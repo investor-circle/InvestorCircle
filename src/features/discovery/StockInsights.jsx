@@ -46,7 +46,8 @@ import {
   trackReco as dbTrackReco,
   getMyTrackedRecos as dbGetMyTrackedRecos
 } from "../../services/api/engagementApi";
-import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
+import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, MemberBadgeOverlay, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
+import { useMemberTagsMap } from "../../MemberTagsContext";
 import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, ideaStatusSummary, initialsOf, scoreFeedRec } from "../../utils/format";
@@ -80,6 +81,7 @@ const SECTIONS = [
 
 export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerUser, trackedIds, onOpenSecurity, onBack, onHome }) {
   const isMobile = useIsMobile();
+  const memberTagsByUser = useMemberTagsMap();
   const { ticker, name } = securityTicker || {};
   const [recos, setRecos]     = useState([]);
   const [loading, setLoading] = useState(false);
@@ -597,7 +599,10 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                 return (
                   <div key={r.id} onClick={goToReco} style={{border:'1px solid var(--line)',borderRadius:12,padding:'12px 14px',cursor:goToReco?'pointer':'default'}}>
                     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                      <div className="av" style={{width:28,height:28,fontSize:10,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                      <div style={{position:'relative',width:28,height:28,flexShrink:0}}>
+                        <div className="av" style={{width:28,height:28,fontSize:10,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                        <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={28}/>
+                      </div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontWeight:700,fontSize:13}}>{r.full_name||r.username||'Anonymous'}</div>
                         {inYourCircle&&<span style={{fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.05em'}}>Your Circle</span>}
@@ -646,7 +651,10 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                         onMouseLeave={goToReco?(e)=>{e.currentTarget.style.background='';}:undefined}>
                         <td style={{padding:'12px 14px'}}>
                           <div style={{display:'flex',alignItems:'center',gap:8}}>
-                            <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                            <div style={{position:'relative',width:30,height:30,flexShrink:0}}>
+                              <div className="av" style={{width:30,height:30,fontSize:11,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                              <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={30}/>
+                            </div>
                             <div style={{minWidth:0}}>
                               <div style={{fontWeight:700,fontSize:13}}>{r.full_name||r.username||'Anonymous'}</div>
                               {inYourCircle&&<span style={{fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.05em'}}>Your Circle</span>}
@@ -722,9 +730,12 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                         borderBottom: i < list.length-1 ? '1px solid var(--line)' : 'none',
                       }}>
                         {/* Avatar */}
-                        <div className="av" style={{width:40,height:40,fontSize:14,flexShrink:0,background:'var(--grad)',cursor:profileUrl?'pointer':'default'}}
-                          onClick={()=>r.username&&openProfile(r.username)}>
-                          {initialsOf(r.full_name||r.username||'?')}
+                        <div style={{position:'relative',width:40,height:40,flexShrink:0}}>
+                          <div className="av" style={{width:40,height:40,fontSize:14,background:'var(--grad)',cursor:profileUrl?'pointer':'default'}}
+                            onClick={()=>r.username&&openProfile(r.username)}>
+                            {initialsOf(r.full_name||r.username||'?')}
+                          </div>
+                          <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={40}/>
                         </div>
 
                         {/* Name + handle */}

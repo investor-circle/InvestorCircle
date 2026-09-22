@@ -81,7 +81,8 @@ import {
   getMyReceivedRecos,
   getPublicIdeaAuthor as dbGetPublicIdeaAuthor
 } from "./services/api/recommendationsApi";
-import { ProfileErrorBoundary, SectionErrorBoundary } from "./components/common";
+import { MemberBadgeOverlay, ProfileErrorBoundary, SectionErrorBoundary } from "./components/common";
+import { useMemberTagsMap } from "./MemberTagsContext";
 import { CONTACT_COLORS, DEFAULT_CLASSES, HOLDINGS } from "./constants/app";
 // Admin screens are code-split into their own chunk: only admin-role users
 // ever navigate here, so investors never pay for this bundle weight.
@@ -264,6 +265,10 @@ export default function App() {
     const name = `${firstName} ${lastName}`.trim();
     return { id:user.uid, name, firstName, lastName, username:profile?.username||"", initials:initialsOf(name), email:user.email||"", avatarUrl:profile?.avatar_url||"" };
   }, [user?.uid, profile?.first_name, profile?.last_name, profile?.username, profile?.avatar_url]);
+  // Whole { userId: [tag_type,...] } map, looked up once here (never inside
+  // a .map() callback — that would call a hook a variable number of times)
+  // and read by plain property access wherever an avatar renders below.
+  const memberTagsByUser = useMemberTagsMap();
 
   // ── Page navigation ─────────────────────────────────────────────────────────
   const navigate = useNavigate();
@@ -1667,7 +1672,10 @@ export default function App() {
                           onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
                           onMouseLeave={e=>e.currentTarget.style.background=''}
                           onClick={()=>{ if(u.username){ goToPath(`/investor/${u.username}`); setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); } }}>
-                          <div className="av" style={{width:30,height:30,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                          <div style={{position:'relative',width:30,height:30,flexShrink:0}}>
+                            <div className="av" style={{width:30,height:30,fontSize:11,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                            <MemberBadgeOverlay tags={memberTagsByUser[u.id]} size={30}/>
+                          </div>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.full_name||u.username}</div>
                             {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}
@@ -1856,7 +1864,10 @@ export default function App() {
                   title="Profile & settings"
                 >
                   <div className="avatar-pill">
-                    <div className="gava" style={isInv && ME.avatarUrl ? { backgroundImage:`url(${ME.avatarUrl})`, backgroundSize:"cover", backgroundPosition:"center", color:"transparent" } : undefined}>{isInv ? ME.initials : "AD"}</div>
+                    <div style={{position:"relative",width:30,height:30,flexShrink:0}}>
+                      <div className="gava" style={isInv && ME.avatarUrl ? { backgroundImage:`url(${ME.avatarUrl})`, backgroundSize:"cover", backgroundPosition:"center", color:"transparent" } : undefined}>{isInv ? ME.initials : "AD"}</div>
+                      {isInv && <MemberBadgeOverlay tags={memberTagsByUser[ME.id]} size={30}/>}
+                    </div>
                     <div className="tb-name-role" style={{paddingRight:6}}>
                       <div style={{fontSize:13,fontWeight:700,lineHeight:1.2}}>
                         {isInv ? ME.name : "Admin"}
@@ -1873,7 +1884,10 @@ export default function App() {
                     {/* Profile header */}
                     <div style={{padding:"16px 16px 12px",borderBottom:"1px solid var(--line)"}}>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <div className="av" style={ME.avatarUrl ? {width:40,height:40,fontSize:15,flexShrink:0,backgroundImage:`url(${ME.avatarUrl})`,backgroundSize:"cover",backgroundPosition:"center"} : {width:40,height:40,background:"var(--grad)",fontSize:15,flexShrink:0}}>{!ME.avatarUrl && ME.initials}</div>
+                        <div style={{position:"relative",width:40,height:40,flexShrink:0}}>
+                          <div className="av" style={ME.avatarUrl ? {width:40,height:40,fontSize:15,backgroundImage:`url(${ME.avatarUrl})`,backgroundSize:"cover",backgroundPosition:"center"} : {width:40,height:40,background:"var(--grad)",fontSize:15}}>{!ME.avatarUrl && ME.initials}</div>
+                          <MemberBadgeOverlay tags={memberTagsByUser[ME.id]} size={40}/>
+                        </div>
                         <div style={{minWidth:0}}>
                           <div style={{fontWeight:700,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ME.name}</div>
                           <div style={{fontSize:11,color:"var(--muted)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ME.email}</div>
@@ -1958,7 +1972,10 @@ export default function App() {
                       return (
                         <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid var(--line)':'none'}}
                           onClick={()=>{ if(u.username){ goToPath(`/investor/${u.username}`); setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); setShowMobileSearch(false); } }}>
-                          <div className="av" style={{width:32,height:32,fontSize:11,flexShrink:0,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                          <div style={{position:'relative',width:32,height:32,flexShrink:0}}>
+                            <div className="av" style={{width:32,height:32,fontSize:11,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                            <MemberBadgeOverlay tags={memberTagsByUser[u.id]} size={32}/>
+                          </div>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontWeight:700,fontSize:13}}>{u.full_name||u.username}</div>
                             {u.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{u.username}</div>}

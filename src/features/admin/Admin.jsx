@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useAuth } from "../../AuthContext";
+import { useRefreshMemberTags } from "../../MemberTagsContext";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { secondaryAuth } from "../../firebase";
 import {
@@ -965,12 +966,17 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
   // Founding Member tag — the same generic set-tag action will grant/revoke any
   // future tag type (see ALLOWED_TAG_TYPES in api/_lib/handlers/admin-config.js).
   const [tagBusy, setTagBusy] = useState(null);
+  const refreshMemberTags = useRefreshMemberTags();
   const toggleFounding = async (u) => {
     const next = !u.foundingMember;
     setTagBusy(u.id);
     try {
       await dbSetMemberTag(u.id, 'founding_member', next);
       setUsers(us => us.map(x => x.id === u.id ? { ...x, foundingMember: next } : x));
+      // Without this, the badge/pill this just granted stays invisible
+      // everywhere else in the app until a full page reload — MemberTagsContext
+      // otherwise only fetches once at app mount.
+      refreshMemberTags();
     } catch (e) {
       alert('Update failed: ' + e.message);
     } finally {
