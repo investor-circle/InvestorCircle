@@ -625,6 +625,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
       sebi_reg_number: d_p.sebi_reg_number ?? null,
       twitter_url: d_p.twitter_url ?? '', linkedin_url: d_p.linkedin_url ?? '',
       telegram_url: d_p.telegram_url ?? '', instagram_url: d_p.instagram_url ?? '',
+      tags: Array.isArray(d_p.tags) ? d_p.tags : [],
     };
     const summary = {
       total:         d_s.total         ?? 0,
