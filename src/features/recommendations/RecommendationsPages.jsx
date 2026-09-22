@@ -1961,7 +1961,7 @@ export function RecoComments({ recoId, me, highlightCommentId }) {
       {/* Input */}
       {me?.id && (
         <div style={{display:'flex',gap:9,marginBottom:14,alignItems:'flex-start'}}>
-          <Avatar f={{ avatarUrl: me.avatarUrl, name: me.name }} size={30}/>
+          <Avatar f={{ id: me.id, avatarUrl: me.avatarUrl, name: me.name }} size={30}/>
           <div ref={wrapRef} style={{flex:1,display:'flex',gap:8,position:'relative'}}>
             <input ref={inputRef} value={text} onChange={onTextChange} placeholder="Add a comment… (@ to mention someone)"
               onKeyDown={e=>{
@@ -2004,7 +2004,7 @@ export function RecoComments({ recoId, me, highlightCommentId }) {
               const isHighlighted = String(c.id)===String(highlightCommentId);
               return (
               <div key={c.id} id={`comment-${c.id}`} style={{display:'flex',gap:9,marginBottom:12}}>
-                <Avatar f={{ avatarUrl: c.avatarUrl, name: c.userName, color: 'var(--accent)' }} size={28}/>
+                <Avatar f={{ id: c.userId, avatarUrl: c.avatarUrl, name: c.userName, color: 'var(--accent)' }} size={28}/>
                 <div style={{flex:1}}>
                   <div style={{display:'flex',alignItems:'baseline',gap:7,marginBottom:2}}>
                     <span style={{fontSize:12,fontWeight:700}}>{c.userName||'User'}</span>

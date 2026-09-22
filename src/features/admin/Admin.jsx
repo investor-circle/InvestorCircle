@@ -39,6 +39,7 @@ import {
   getAdminInstruments as dbGetAdminInstruments,
   getInstrumentsExport as dbGetInstrumentsExport,
   seedCreatorRecos as dbSeedCreatorRecos,
+  setMemberTag as dbSetMemberTag,
   toggleFeedConfig as dbToggleFeedConfig,
   upsertInstrument as dbUpsertInstrument
 } from "../../services/api/adminApi";
@@ -961,6 +962,21 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
   const filtered = users.filter(u=>(u.name+u.email).toLowerCase().includes(q.toLowerCase()));
   const setStatus=(id,status)=>setUsers(us=>us.map(u=>u.id===id?{...u,status}:u));
   const sp=(s)=>s==="Active"?"gain":s==="Suspended"?"loss":"";
+  // Founding Member tag — the same generic set-tag action will grant/revoke any
+  // future tag type (see ALLOWED_TAG_TYPES in api/_lib/handlers/admin-config.js).
+  const [tagBusy, setTagBusy] = useState(null);
+  const toggleFounding = async (u) => {
+    const next = !u.foundingMember;
+    setTagBusy(u.id);
+    try {
+      await dbSetMemberTag(u.id, 'founding_member', next);
+      setUsers(us => us.map(x => x.id === u.id ? { ...x, foundingMember: next } : x));
+    } catch (e) {
+      alert('Update failed: ' + e.message);
+    } finally {
+      setTagBusy(null);
+    }
+  };
 
   const hardDelete = async (u) => {
     const confirmed = window.confirm(
@@ -998,6 +1014,7 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
           <th>Username</th>
           <th>Role</th>
           <th>Status</th>
+          <th>Founding Member</th>
           <th style={{textAlign:"center"}}>Accounts</th>
           <th>Joined</th>
           <th style={{textAlign:"right"}}>Actions</th>
@@ -1039,6 +1056,27 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
           </td>
           <td>{u.role==="Admin" ? <span className="pill accent">Admin</span> : <span className="pill">Investor</span>}</td>
           <td><span className={"pill "+sp(u.status)}>{u.status}</span></td>
+          <td>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!u.foundingMember}
+              aria-label={`Founding Member tag for ${u.name}`}
+              disabled={tagBusy===u.id}
+              onClick={()=>toggleFounding(u)}
+              style={{
+                width:36, height:20, borderRadius:999, border:"none", cursor:tagBusy===u.id?"default":"pointer",
+                background: u.foundingMember ? "#C9971F" : "var(--surface-2)",
+                position:"relative", padding:0, opacity:tagBusy===u.id?0.6:1, flexShrink:0,
+              }}
+            >
+              <span style={{
+                position:"absolute", top:2, width:16, height:16, borderRadius:"50%", background:"#fff",
+                boxShadow:"0 1px 2px rgba(0,0,0,.3)", transition:"left .12s",
+                left: u.foundingMember ? 18 : 2,
+              }}/>
+            </button>
+          </td>
           <td style={{textAlign:"center"}}>{u.accounts}</td>
           <td className="muted small">{u.joined}</td>
           <td style={{textAlign:"right"}}>

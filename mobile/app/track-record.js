@@ -166,6 +166,7 @@ function MyTrackRecordScreen() {
             circles={circles}
             ici={ici}
             isSebiApproved={sebi}
+            isFoundingMember={!!profile?.tags?.includes("founding_member")}
             onOpenReco={(r) => {
               // Map to RecoCard's shape (see mapProfileReco) before handing
               // it off — the raw row has no by_name/from_id/camelCase price

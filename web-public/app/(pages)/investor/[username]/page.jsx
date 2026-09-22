@@ -84,13 +84,32 @@ export default async function InvestorPage({ params }) {
       <Breadcrumbs items={breadcrumbItems} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
-        {profile.avatar_url ? (
-          <img src={profile.avatar_url} alt="" width={72} height={72} className="avatar" />
-        ) : (
-          <div className="avatar-fallback" style={{ width: 72, height: 72, fontSize: 24, background: profile.avatar_color || undefined }}>
-            {initialsOf(name)}
-          </div>
-        )}
+        <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
+          {profile.avatar_url ? (
+            <img src={profile.avatar_url} alt="" width={72} height={72} className="avatar" />
+          ) : (
+            <div className="avatar-fallback" style={{ width: 72, height: 72, fontSize: 24, background: profile.avatar_color || undefined }}>
+              {initialsOf(name)}
+            </div>
+          )}
+          {/* Founding Member badge — same asset/overlay treatment as the main
+              app's Avatar component (src/components/common.jsx), served from
+              the main project's public/ (this Next app is a separate Vercel
+              project, so shared static assets are always a full URL — see
+              favicon.png/og-image.png above). */}
+          {profile.tags?.includes('founding_member') && (
+            <img
+              src="https://myinvestorcircle.com/badges/founding-member.png"
+              alt="Founding Member"
+              title="Founding Member"
+              style={{
+                position: 'absolute', right: -3, bottom: -3,
+                width: 30, height: 30, objectFit: 'contain', display: 'block',
+                filter: 'drop-shadow(0 1px 3px rgba(0,0,0,.4))',
+              }}
+            />
+          )}
+        </div>
         <div>
           <div className="eyebrow">Investor{memberSince ? ` · member since ${memberSince}` : ''}</div>
           <h1>{name}</h1>
@@ -104,6 +123,12 @@ export default async function InvestorPage({ params }) {
         <span className="tag" style={{ background: 'var(--accent-soft)', color: 'var(--accent-ink)' }}>
           ICI {ici.score} · {ici.band}
         </span>
+        {profile.tags?.includes('founding_member') && (
+          <span className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FDF3DC', color: '#8A6A16', border: '1px solid #F0D89A' }}>
+            <img src="https://myinvestorcircle.com/badges/founding-member.png" alt="" width={13} height={13} style={{ display: 'block', objectFit: 'contain' }} />
+            Founding Member
+          </span>
+        )}
       </div>
 
       <div className="stats">

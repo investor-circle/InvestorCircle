@@ -1,10 +1,18 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { View, Text, Image, StyleSheet } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { initialsOf } from "../utils/format";
 import { avatarSource } from "../utils/avatar";
 import { subscribeAvatars, cachedAvatar } from "../services/avatarCache";
+import { subscribeMemberTags, cachedMemberTags, primeMemberTags } from "../services/memberTagsCache";
 import { colors, fonts, GRADIENT } from "../theme/colors";
+
+const FOUNDING_MEMBER_BADGE = require("../../assets/founding-member-badge.png");
+// MEMBER_TAGS mirrors src/constants/app.js on web — a new tag type is a new
+// entry here (icon + label), not new markup in this file.
+const MEMBER_TAGS = {
+  founding_member: { label: "Founding Member", icon: FOUNDING_MEMBER_BADGE },
+};
 
 /**
  * A person's picture, falling back to their initials.
@@ -30,7 +38,7 @@ import { colors, fonts, GRADIENT } from "../theme/colors";
  * chip — the feed card's look. It only affects the fallback; a real picture
  * looks the same either way.
  */
-export default function Avatar({ profile, uid, name, size = 40, gradient = false, style }) {
+export default function Avatar({ profile, uid, name, size = 40, gradient = false, style, tags: tagsProp }) {
   // Subscribed rather than read once: a list paints before the avatar batch
   // resolves, and this is what makes those rows update when it lands.
   const cached = useSyncExternalStore(
@@ -39,12 +47,45 @@ export default function Avatar({ profile, uid, name, size = 40, gradient = false
     () => null // server snapshot — unused in RN, required by the signature
   );
 
+  // Same auto-lookup-by-id idea as web's Avatar (src/components/common.jsx):
+  // pass `tags` explicitly to override, otherwise resolve from whichever id
+  // this call site has (`uid`, or `profile.id`/`profile.uid` for the
+  // profile-row callers that don't pass `uid` separately).
+  const tagUid = uid || profile?.id || profile?.uid;
+  // cachedMemberTags(undefined) already returns its own stable "no tags"
+  // reference — do NOT fall back to a fresh `[]` literal here, or
+  // useSyncExternalStore sees a "changed" snapshot on every render and loops.
+  const cachedTags = useSyncExternalStore(
+    subscribeMemberTags,
+    () => cachedMemberTags(tagUid),
+    () => cachedMemberTags(tagUid)
+  );
+  useEffect(() => {
+    primeMemberTags();
+  }, []);
+  const tags = tagsProp !== undefined ? tagsProp : cachedTags;
+  const tagType = tags?.find((t) => MEMBER_TAGS[t]);
+  const badgeCfg = tagType ? MEMBER_TAGS[tagType] : null;
+
   const source = avatarSource(profile) || (cached ? { uri: cached } : null);
   const label = name || profile?.full_name || profile?.name || profile?.username;
   const dim = { width: size, height: size, borderRadius: size / 2 };
 
+  const badge = badgeCfg ? <MemberBadgeOverlay icon={badgeCfg.icon} label={badgeCfg.label} size={size} /> : null;
+
+  // The wrapper carries `dim` (not just width/height) too — same width/
+  // height/borderRadius the single rendered element used to carry before
+  // this badge overlay wrapped it in a View, so anything inspecting the
+  // rendered tree's outer style (tests, a caller's own layout math) still
+  // finds them there. Never overflow:hidden here, or the badge — deliberately
+  // positioned a little outside this box — would itself get clipped.
   if (source) {
-    return <Image source={source} style={[styles.img, dim, style]} accessibilityIgnoresInvertColors />;
+    return (
+      <View style={[dim, style]}>
+        <Image source={source} style={[styles.img, dim]} accessibilityIgnoresInvertColors />
+        {badge}
+      </View>
+    );
   }
 
   const initials = (
@@ -55,18 +96,47 @@ export default function Avatar({ profile, uid, name, size = 40, gradient = false
 
   if (gradient) {
     return (
-      <LinearGradient
-        colors={GRADIENT.colors}
-        start={GRADIENT.start}
-        end={GRADIENT.end}
-        style={[styles.fallbackBase, dim, style]}
-      >
-        {initials}
-      </LinearGradient>
+      <View style={[dim, style]}>
+        <LinearGradient colors={GRADIENT.colors} start={GRADIENT.start} end={GRADIENT.end} style={[styles.fallbackBase, dim]}>
+          {initials}
+        </LinearGradient>
+        {badge}
+      </View>
     );
   }
 
-  return <View style={[styles.fallback, dim, style]}>{initials}</View>;
+  return (
+    <View style={[dim, style]}>
+      <View style={[styles.fallback, dim]}>{initials}</View>
+      {badge}
+    </View>
+  );
+}
+
+/* Small badge on the avatar's bottom-right edge — the same overlay treatment
+   as web's MemberBadgeOverlay (src/components/common.jsx), sized as a
+   fraction of the avatar so it scales everywhere Avatar is used. */
+function MemberBadgeOverlay({ icon, label, size }) {
+  const badgeSize = Math.max(13, Math.round(size * 0.46));
+  const offset = -Math.round(badgeSize * 0.1);
+  return (
+    <Image
+      source={icon}
+      accessibilityLabel={label}
+      resizeMode="contain"
+      style={{
+        position: "absolute",
+        right: offset,
+        bottom: offset,
+        width: badgeSize,
+        height: badgeSize,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.4,
+        shadowRadius: 2,
+      }}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

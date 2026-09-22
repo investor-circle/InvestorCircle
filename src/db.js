@@ -94,6 +94,22 @@ export async function callApi(path, { method = "GET", body } = {}) {
   }
 }
 
+// Unauthenticated GET, for the handful of resources that don't require
+// (and must work without) a signed-in user — e.g. lookups&action=member-tags,
+// read by the standalone public routes (idea/:id, circle/:slug) that render
+// before/without auth. Deliberately does not go through callApi(), which
+// short-circuits with {ok:false} when auth.currentUser is null.
+export async function callPublicApi(path) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`);
+    if (!res.ok) return { ok: false, infra: true, status: res.status };
+    const data = await res.json().catch(() => ({}));
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, infra: true, error: e };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CONNECTIONS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -787,6 +803,22 @@ export async function seedCreatorRecos(creatorId, recos) {
 export async function adminDeleteUser(userId) {
   const api = await callApi('/data?resource=admin-config', { method: 'POST', body: { action: 'delete-user', userId } });
   if (!api.ok) throw new Error(api.data?.error || 'Delete failed');
+}
+
+// Grants/revokes one member tag (e.g. 'founding_member') for a user — see
+// ALLOWED_TAG_TYPES in api/_lib/handlers/admin-config.js for the allowed set.
+export async function setMemberTag(userId, tagType, granted) {
+  const api = await callApi('/data?resource=admin-config', { method: 'POST', body: { action: 'set-tag', userId, tagType, granted } });
+  if (!api.ok) throw new Error(api.data?.error || 'Update failed');
+}
+
+// Public: { founding_member: [userId, ...], ... } — every member tag
+// currently granted, for client-side badge/pill enrichment wherever a user
+// id renders (idea cards, connections, groups) without needing every one of
+// those list/feed queries to itself join user_tags. See MemberTagsContext.
+export async function getMemberTags() {
+  const api = await callPublicApi('/data?resource=lookups&action=member-tags');
+  return api.ok ? (api.data.tags || {}) : {};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

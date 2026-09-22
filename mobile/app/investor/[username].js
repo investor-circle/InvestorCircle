@@ -146,6 +146,7 @@ function InvestorProfileScreen() {
             circles={circles}
             ici={ici}
             isSebiApproved={sebi}
+            isFoundingMember={!!profile?.tags?.includes("founding_member")}
             onOpenReco={(r) => {
               // Seed the hand-off cache so the detail screen opens from data
               // already in memory rather than re-fetching what this list has.
