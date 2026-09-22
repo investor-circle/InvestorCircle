@@ -4,11 +4,14 @@ import {
   X,
   Check
 } from "lucide-react";
+import { MemberBadgeOverlay } from "../../components/common";
+import { useMemberTagsMap } from "../../MemberTagsContext";
 import { useIsMobile } from "../../hooks/index";
 import { fmtDate, initialsOf } from "../../utils/format";
 
 export function NotificationPanel({ notifications, myId, onAccept, onReject, onRead, onReadAll, onClose, onNavigate, pushPermission, onEnablePush, onDisablePush }) {
   const isMobile = useIsMobile();
+  const memberTagsByUser = useMemberTagsMap();
   const unread = notifications.filter(n => !n.is_read);
   const TYPE_LABEL = {
     connection_request:      "wants to connect with you",
@@ -190,12 +193,15 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
             onMouseEnter={isClickable ? e => { e.currentTarget.style.background = 'var(--surface-2)'; } : undefined}
             onMouseLeave={isClickable ? e => { e.currentTarget.style.background = n.is_read ? 'transparent' : 'rgba(109,93,245,.08)'; } : undefined}
           >
-            <div className="av" style={{
-              width: 36, height: 36, flexShrink: 0,
-              background: avBg,
-              fontSize: isEngagement ? 16 : 13,
-            }}>
-              {isEngagement ? TYPE_ICON[n.type] : initialsOf(n.from_name||"?")}
+            <div style={{position:'relative', width:36, height:36, flexShrink:0}}>
+              <div className="av" style={{
+                width: 36, height: 36,
+                background: avBg,
+                fontSize: isEngagement ? 16 : 13,
+              }}>
+                {isEngagement ? TYPE_ICON[n.type] : initialsOf(n.from_name||"?")}
+              </div>
+              {!isEngagement && <MemberBadgeOverlay tags={memberTagsByUser[n.from_user_id]} size={36}/>}
             </div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{

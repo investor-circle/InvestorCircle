@@ -590,7 +590,10 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
             </div>
             <div className="card" style={{padding:'20px 24px',marginBottom:20}}>
               <div style={{display:'flex',alignItems:'center',gap:14}}>
-                <div className="av" style={{width:56,height:56,fontSize:20,flexShrink:0,background:'var(--grad)'}}>{initialsOf(data?.profile?.full_name||username)}</div>
+                <div style={{position:'relative',width:56,height:56,flexShrink:0}}>
+                  <div className="av" style={{width:56,height:56,fontSize:20,background:'var(--grad)'}}>{initialsOf(data?.profile?.full_name||username)}</div>
+                  <MemberBadgeOverlay tags={data?.profile?.tags} size={56}/>
+                </div>
                 <div>
                   <div style={{fontWeight:800,fontSize:20}}>{data?.profile?.full_name}</div>
                   <div style={{fontSize:13,color:'var(--muted)'}}>@{username}</div>

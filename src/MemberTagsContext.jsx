@@ -1,46 +1,45 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { getMemberTags } from "./services/api/lookupsApi";
 
 /**
  * MemberTagsContext — who holds which member tag (Founding Member today;
- * Verified etc. later), fetched once as a small { tag_type: [userId, ...] }
- * map (see api/_lib/handlers/lookups.js action=member-tags) rather than
- * having every feed/connections/groups query join user_tags itself. Any
- * component that renders a user id can ask "does this id have tag X" without
- * its own data source needing to carry that field.
+ * Verified etc. later), fetched as a small { tag_type: [userId, ...] } map
+ * (see api/_lib/handlers/lookups.js action=member-tags) rather than having
+ * every feed/connections/groups query join user_tags itself. Any component
+ * that renders a user id can ask "does this id have tag X" without its own
+ * data source needing to carry that field.
  *
  * Public data (a tag is always displayed, signed-out visitors included), so
- * this fetches on mount regardless of auth state and needs no refresh
- * beyond a fresh page load — a newly-granted tag shows up next time the
- * app loads, which is fine for something an admin sets rarely.
+ * this fetches on mount regardless of auth state. Also re-fetchable via
+ * `refresh` (src/features/admin/Admin.jsx calls it right after granting/
+ * revoking a tag) — without this, an admin who toggles a tag and then
+ * navigates elsewhere in the same SPA session (no full page reload) would
+ * see stale state until their next reload, since this provider otherwise
+ * only fetches once at app mount.
  */
-const MemberTagsContext = createContext({ tagsByUser: {} });
+const MemberTagsContext = createContext({ tagsByUser: {}, refresh: () => {} });
 // A stable reference for "no tags" — returning a fresh `[]` literal on every
 // call would make a value that's otherwise unchanged look different to
 // anything comparing by reference (a dependency array, useSyncExternalStore).
 const EMPTY_TAGS = [];
 
 export function MemberTagsProvider({ children }) {
-  const [tags, setTags] = useState({}); // { tag_type: [userId, ...] }
+  const [tagsByUser, setTagsByUser] = useState({});
 
-  useEffect(() => {
-    let cancelled = false;
-    getMemberTags().then(t => { if (!cancelled) setTags(t || {}); }).catch(() => {});
-    return () => { cancelled = true; };
+  const refresh = useCallback(() => {
+    return getMemberTags().then(tags => {
+      const byUser = {};
+      for (const [tagType, userIds] of Object.entries(tags || {})) {
+        for (const uid of userIds) (byUser[uid] ||= []).push(tagType);
+      }
+      setTagsByUser(byUser);
+    }).catch(() => {});
   }, []);
 
-  // Inverted once per fetch (not per Avatar render): { userId: [tag_type, ...] }
-  const [tagsByUser, setTagsByUser] = useState({});
-  useEffect(() => {
-    const byUser = {};
-    for (const [tagType, userIds] of Object.entries(tags)) {
-      for (const uid of userIds) (byUser[uid] ||= []).push(tagType);
-    }
-    setTagsByUser(byUser);
-  }, [tags]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   return (
-    <MemberTagsContext.Provider value={{ tagsByUser }}>
+    <MemberTagsContext.Provider value={{ tagsByUser, refresh }}>
       {children}
     </MemberTagsContext.Provider>
   );
@@ -55,4 +54,10 @@ export function useMemberTagsFor(userId) {
 
 export function useMemberTagsMap() {
   return useContext(MemberTagsContext).tagsByUser;
+}
+
+// Re-fetches the tag map — call right after an admin action that grants or
+// revokes a tag, so the change shows up without a full page reload.
+export function useRefreshMemberTags() {
+  return useContext(MemberTagsContext).refresh;
 }
