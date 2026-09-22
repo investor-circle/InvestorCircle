@@ -74,7 +74,8 @@ import {
   setExitSignal as dbSetExit,
   updateDelivery
 } from "../../services/api/recommendationsApi";
-import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, MemberBadgeOverlay, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
+import { useMemberTagsFor } from "../../MemberTagsContext";
 import { CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, SECTOR_EMOJI, THESIS_EMOJIS, THESIS_MAX_CHARS, THESIS_MAX_IMAGES, THESIS_MAX_MB, TODAY } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
@@ -872,6 +873,7 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
     const name=r.byName||'Someone';
     return { name, initials:initialsOf(name), color:'#8d90ad' };
   },[r.from, contacts]);
+  const authorTags = useMemberTagsFor(r.from);
 
   const closed = getClosedInfo(r);
   const retPct = closed && closed.retPct!=null ? closed.retPct : ((r.priceAt&&r.priceAt!==0) ? (r.price-r.priceAt)/r.priceAt : 0);
@@ -957,11 +959,14 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
         <div style={{display:'flex',alignItems:'flex-start',gap:12,marginBottom:11}}>
 
           {/* Avatar — click → profile */}
-          <div className="av"
-            style={{width:42,height:42,background:cf.color||'var(--grad)',fontSize:15,flexShrink:0,cursor:canOpenProfile?'pointer':'default'}}
-            title={canOpenProfile?`View ${cf.name}'s profile`:''}
-            onClick={e=>{ if(canOpenProfile){ e.stopPropagation(); openProfile(recommenderInfo.username); } }}>
-            {cf.initials||initialsOf(cf.name)}
+          <div style={{position:'relative',width:42,height:42,flexShrink:0}}>
+            <div className="av"
+              style={{width:42,height:42,background:cf.color||'var(--grad)',fontSize:15,cursor:canOpenProfile?'pointer':'default'}}
+              title={canOpenProfile?`View ${cf.name}'s profile`:''}
+              onClick={e=>{ if(canOpenProfile){ e.stopPropagation(); openProfile(recommenderInfo.username); } }}>
+              {cf.initials||initialsOf(cf.name)}
+            </div>
+            <MemberBadgeOverlay tags={authorTags} size={42}/>
           </div>
 
           <div style={{flex:1,minWidth:0}}>

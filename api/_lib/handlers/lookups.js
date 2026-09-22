@@ -217,6 +217,26 @@ export default async function handleLookups(req, res) {
         return;
       }
 
+      if (action === 'member-tags') {
+        // Every member tag (Founding Member, and future tag types) is
+        // something the app displays as a public badge next to that
+        // member's name/avatar wherever it appears — a card, a connections
+        // row, a group member list — none of which necessarily carries the
+        // full profile row back from its own query. Rather than adding a
+        // correlated subquery to every one of those joins, the client
+        // fetches this small id-list once and decides locally whether a
+        // given user id gets a badge. Unauthenticated like about-us: the
+        // tag itself is never sensitive (it's shown to signed-out visitors
+        // on public profile/idea pages too).
+        const rows = await sql`SELECT user_id, tag_type FROM user_tags`;
+        const tags = {};
+        for (const r of rows) {
+          (tags[r.tag_type] ||= []).push(r.user_id);
+        }
+        res.status(200).json({ tags });
+        return;
+      }
+
       if (action === 'feed-config') {
         let uid;
         try { uid = await requireUid(req); } catch (e) { sendAuthError(res, e); return; }

@@ -175,7 +175,7 @@ function TrackingRow({ person, ici, connectionStatus, primaryAction, onConnect, 
       <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",flex:1,minWidth:180}}
           onClick={()=>gotoUserProfile(person.id)}>
-          <Avatar f={{name:person.full_name,avatarUrl:person.avatar_url,color:person.avatar_color,initials:initialsOf(person.full_name||person.username||"?")}} size={40}/>
+          <Avatar f={{id:person.id,name:person.full_name,avatarUrl:person.avatar_url,color:person.avatar_color,initials:initialsOf(person.full_name||person.username||"?")}} size={40}/>
           <div style={{minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <div style={{fontWeight:700,fontSize:13.5,color:"var(--accent-ink)",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>{person.full_name||person.username}</div>
@@ -576,7 +576,7 @@ export function ContactsSection({ connections, setConnections, groups,
     const stats = statsOf(c);
     const pnlInfo = pnlFor(c);
     const cg = commonGroups(c);
-    const av = {name:c.name,initials:initialsOf(c.name),avatarUrl:c.avatar_url,color:c.avatar_color||CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
+    const av = {id:c.user_id,name:c.name,initials:initialsOf(c.name),avatarUrl:c.avatar_url,color:c.avatar_color||CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
 
     const MiniStat = ({label, value, cls}) => (
       <div style={{textAlign:"center",flexShrink:0}}>
@@ -768,7 +768,7 @@ function PendingRequestsCard({ pendingReceived, connections, busy, doAccept, doR
         {visible.length===0
           ? <div className="muted small" style={{padding:"18px 16px"}}>No requests match &ldquo;{search}&rdquo;.</div>
           : visible.map(c=>{
-              const av = {name:c.name, initials:initialsOf(c.name), avatarUrl:c.avatar_url, color:c.avatar_color||CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
+              const av = {id:c.user_id, name:c.name, initials:initialsOf(c.name), avatarUrl:c.avatar_url, color:c.avatar_color||CONTACT_COLORS[connections.indexOf(c)%CONTACT_COLORS.length]};
               return (
                 <div key={c.connection_id} className="hoverable"
                   style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"11px 16px",borderBottom:"1px solid var(--line)",flexWrap:"wrap"}}>

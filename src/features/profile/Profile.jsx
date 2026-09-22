@@ -63,7 +63,7 @@ import {
   forwardRecommendation as dbForwardReco
 } from "../../services/api/recommendationsApi";
 import { IdeaSharePopover, ThesisRenderer } from "../recommendations/Recommendations";
-import { ClosedInfoLine, ConvBadge, IciDonut, IdeaDisclaimer, OpenInAppBanner, RetBadge, ScoreBox, SmallAnchoredPopover, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
+import { ClosedInfoLine, ConvBadge, IciDonut, IdeaDisclaimer, MemberBadgeOverlay, MemberTagPill, OpenInAppBanner, RetBadge, ScoreBox, SmallAnchoredPopover, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
 import { SECTOR_EMOJI } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
@@ -802,13 +802,16 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
             }}>
               {/* Avatar + name/badges row */}
               <div style={{display:'flex', gap:14, alignItems:'center'}}>
-                {profile.avatar_url ? (
-                  <img src={profile.avatar_url} alt="" style={{width:64,height:64,borderRadius:18,objectFit:'cover',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)'}}/>
-                ) : (
-                  <div style={{width:64,height:64,borderRadius:18,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,fontWeight:900,color:'#fff',flexShrink:0,boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
-                    {initialsOf(displayName)}
-                  </div>
-                )}
+                <div style={{position:'relative',width:64,height:64,flexShrink:0}}>
+                  {profile.avatar_url ? (
+                    <img src={profile.avatar_url} alt="" style={{width:64,height:64,borderRadius:18,objectFit:'cover',boxShadow:'0 4px 20px rgba(109,93,245,.4)'}}/>
+                  ) : (
+                    <div style={{width:64,height:64,borderRadius:18,background:profile.avatar_color||'linear-gradient(135deg,#6d5df5,#cf52d8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,fontWeight:900,color:'#fff',boxShadow:'0 4px 20px rgba(109,93,245,.4)',letterSpacing:'-.5px'}}>
+                      {initialsOf(displayName)}
+                    </div>
+                  )}
+                  <MemberBadgeOverlay tags={profile.tags} size={64}/>
+                </div>
                 <div style={{minWidth:0,flex:1,display:'flex',flexDirection:'column',gap:6}}>
                   {/* Name + badges */}
                   <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -827,6 +830,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                       if(isSebi&&approved) return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(21,146,78,.2)',color:'#4ade80',border:'1px solid rgba(21,146,78,.35)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>✓ SEBI{profile.sebi_reg_number?` · ${profile.sebi_reg_number}`:''}</span>;
                       return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.3)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>Non-SEBI</span>;
                     })()}
+                    <MemberTagPill tags={profile.tags}/>
                   </div>
                   {/* Username + since */}
                   <div style={{fontSize:13,color:'rgba(255,255,255,.45)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>

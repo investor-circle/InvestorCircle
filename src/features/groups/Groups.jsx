@@ -65,9 +65,9 @@ export function GroupsSection({ groups, setGroups, contacts, configs, recsReceiv
     return contacts.find(c=>c.id===id)?.name || id;
   };
   const avOf = (id) => {
-    if(id===myId||id==="me") return {name:me?.name||"You",initials:me?.initials||"ME",color:"#6d5df5"};
+    if(id===myId||id==="me") return {id:myId,name:me?.name||"You",initials:me?.initials||"ME",color:"#6d5df5"};
     const c = contacts.find(x=>x.id===id);
-    return c || {name:id,initials:initialsOf(id),color:"#8d90ad"};
+    return c || {id,name:id,initials:initialsOf(id),color:"#8d90ad"};
   };
   const statsOf = (g) => recoStats(recsReceived, r=>r.shareType==="group"&&r.groupId===g.id);
 
@@ -425,7 +425,7 @@ export function JoinRequestsModal({ group, onClose, onReviewed }) {
           : <div style={{display:"flex",flexDirection:"column",gap:10}}>
               {requests.map(r=>(
                 <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10}}>
-                  <Avatar f={{name:r.full_name,initials:initialsOf(r.full_name||r.username||"?"),color:"#6d5df5"}} size={30}/>
+                  <Avatar f={{id:r.user_id,name:r.full_name,initials:initialsOf(r.full_name||r.username||"?"),color:"#6d5df5"}} size={30}/>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontWeight:600,fontSize:13}}>{r.full_name||r.username}</div>
                     <div className="muted small">@{r.username} · requested {fmtDate(r.created_at)}</div>
@@ -743,7 +743,7 @@ export function CirclePage({ slug, inviteCode, highlightIdeaId, autoOpenRequests
                       )}
                       <div style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',flex:1,minWidth:0}}
                         onClick={()=>onNavigateProfile ? onNavigateProfile(m.username) : gotoUserProfile(m.user_id)}>
-                        <Avatar f={{name:m.name,avatarUrl:m.avatar_url,color:m.avatar_color,initials:initialsOf(m.name||"?")}} size={28}/>
+                        <Avatar f={{id:m.user_id,name:m.name,avatarUrl:m.avatar_url,color:m.avatar_color,initials:initialsOf(m.name||"?")}} size={28}/>
                         <div style={{minWidth:0}}>
                           <div style={{fontWeight:600,fontSize:13}}>{m.name}</div>
                           <div className="muted" style={{fontSize:11}}>{m.role==='admin'?'Owner':'Member'}</div>
@@ -828,7 +828,7 @@ export function CirclePage({ slug, inviteCode, highlightIdeaId, autoOpenRequests
               onClick={()=>{
                 if (idea.recommender_username) openReco(idea.recommender_username, idea.id);
               }}>
-              <Avatar f={{name:idea.recommender_name,avatarUrl:idea.recommender_avatar_url,color:idea.recommender_avatar_color,initials:initialsOf(idea.recommender_name||"?")}} size={34}/>
+              <Avatar f={{id:idea.recommender_id,name:idea.recommender_name,avatarUrl:idea.recommender_avatar_url,color:idea.recommender_avatar_color,initials:initialsOf(idea.recommender_name||"?")}} size={34}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:2}}>
                   <span style={{fontWeight:700,fontSize:13.5}}>{idea.ticker}</span>

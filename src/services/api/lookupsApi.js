@@ -24,5 +24,6 @@ export {
   getAboutUsContent,
   saveAboutUsContent,
   voteFeature,
-  submitContactForm
+  submitContactForm,
+  getMemberTags
 } from "../../db";

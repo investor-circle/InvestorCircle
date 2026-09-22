@@ -1,10 +1,12 @@
 import { memo, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, TextInput, Linking } from "react-native";
+import { View, Text, Image, StyleSheet, Pressable, TextInput, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import IciBadge, { IciBreakdown } from "./IciBadge";
 import { fmt, fmtDate, fmtPct, returnPct } from "../utils/format";
 import { mapProfileReco } from "../utils/feed";
 import { colors, fonts } from "../theme/colors";
+
+const FOUNDING_MEMBER_BADGE = require("../../assets/founding-member-badge.png");
 
 // Search / filter / sort over the ideas list — the same three controls and
 // the same fields (ticker + asset_name search, asset_class filter, date/
@@ -44,6 +46,7 @@ function TrackRecordView({
   circles = { public: [], private: [] },
   ici,
   isSebiApproved = false,
+  isFoundingMember = false,
   onOpenReco,
   onOpenCircle,
 }) {
@@ -83,6 +86,13 @@ function TrackRecordView({
         <View style={styles.sebiRow}>
           <Ionicons name="shield-checkmark" size={15} color={colors.accentInk} />
           <Text style={styles.sebiText}>SEBI registered</Text>
+        </View>
+      ) : null}
+
+      {isFoundingMember ? (
+        <View style={styles.foundingRow}>
+          <Image source={FOUNDING_MEMBER_BADGE} resizeMode="contain" style={styles.foundingIcon} />
+          <Text style={styles.foundingText}>Founding Member</Text>
         </View>
       ) : null}
 
@@ -469,6 +479,22 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   sebiText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 12.5 },
+  foundingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#FDF3DC",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#F0D89A",
+    alignSelf: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginTop: 10,
+  },
+  foundingIcon: { width: 14, height: 14 },
+  foundingText: { color: "#8A6A16", fontFamily: fonts.bold, fontSize: 12.5 },
   socialRow: { flexDirection: "row", gap: 8, marginTop: 12 },
   socialBtn: {
     width: 32,

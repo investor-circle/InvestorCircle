@@ -8,13 +8,19 @@
  * from the client); non-admins never reach this code. See admin-sebi.js for
  * the same pattern.
  *
- * Covers three admin-only config domains previously done via direct browser
+ * Covers four admin-only config domains previously done via direct browser
  * Neon access in src/App.jsx:
  *   (A) Feed configuration  — AdminFeedConfig (~App.jsx:8750)
  *   (B) Instruments admin   — AdminInstruments / InstrumentBrowser /
  *                              InstrumentUploader / InstrumentAddForm
  *                              (~App.jsx:8838-9046)
  *   (C) Admin user deletion — AdminUsers.hardDelete (~App.jsx:9273-9295)
+ *   (D) Member tags (Founding Member, and future tag types) — AdminUsers'
+ *       tag toggle. Backed by the user_tags table (supabase/
+ *       phase12_member_tags.sql), one row per (user, tag_type). Grant/revoke
+ *       is a single generic action (`set-tag`) validated against
+ *       ALLOWED_TAG_TYPES below — adding a new tag type later is a one-line
+ *       change here, no new endpoint or schema migration required.
  *
  * NOTE: the non-admin read paths for feed config options (Sharing & Privacy
  * toggle screen, ~App.jsx:4870) and instruments (loadInstruments/loadSectorOpts
@@ -51,11 +57,18 @@
  *         recommendation_deliveries, notifications, etc — see
  *         supabase/migration_v2.sql) removes their v2 table data; no manual
  *         cascade needed here.
+ *     set-tag:               { userId, tagType, granted: boolean }
+ *       — grants (INSERT ... ON CONFLICT DO NOTHING) or revokes (DELETE) one
+ *         row in user_tags. tagType must be one of ALLOWED_TAG_TYPES.
  */
 
 import { sql, parseBody } from '../auth.js';
 
 const FEED_TOGGLE_FIELDS = ['admin_enabled', 'always_on', 'default_on'];
+// The full set of tag types an admin may grant/revoke. Adding a new tag
+// type (e.g. 'verified') later is just adding it here plus a
+// MEMBER_TAGS entry in src/constants/app.js — no schema change.
+const ALLOWED_TAG_TYPES = ['founding_member'];
 
 async function getFeedConfig() {
   const options = await sql`
@@ -142,10 +155,15 @@ export default async function handleAdminConfig(req, res, userId) {
 
       if (scope === 'all-users') {
         const rows = await sql`
-          SELECT id, full_name, email, username, is_admin, is_unclaimed, claim_status, created_at
-          FROM user_profiles
-          WHERE (claim_status IS DISTINCT FROM 'claimed')
-          ORDER BY created_at
+          SELECT up.id, up.full_name, up.email, up.username, up.is_admin, up.is_unclaimed,
+                 up.claim_status, up.created_at,
+                 COALESCE(
+                   (SELECT array_agg(ut.tag_type) FROM user_tags ut WHERE ut.user_id = up.id),
+                   '{}'
+                 ) AS tags
+          FROM user_profiles up
+          WHERE (up.claim_status IS DISTINCT FROM 'claimed')
+          ORDER BY up.created_at
         `;
         res.status(200).json({ users: rows });
         return;
@@ -367,6 +385,25 @@ export default async function handleAdminConfig(req, res, userId) {
         count++;
       }
       res.status(200).json({ count });
+      return;
+    }
+
+    if (action === 'set-tag') {
+      const targetUserId = String(body.userId || '');
+      const tagType = String(body.tagType || '');
+      const granted = body.granted === true;
+      if (!targetUserId) { res.status(400).json({ error: 'userId is required' }); return; }
+      if (!ALLOWED_TAG_TYPES.includes(tagType)) { res.status(400).json({ error: 'Unknown tagType' }); return; }
+      if (granted) {
+        await sql`
+          INSERT INTO user_tags (user_id, tag_type, granted_by)
+          VALUES (${targetUserId}, ${tagType}, ${userId})
+          ON CONFLICT (user_id, tag_type) DO NOTHING
+        `;
+      } else {
+        await sql`DELETE FROM user_tags WHERE user_id = ${targetUserId} AND tag_type = ${tagType}`;
+      }
+      res.status(200).json({ success: true });
       return;
     }
 

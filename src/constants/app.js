@@ -103,6 +103,26 @@ export const SOCIAL_BRAND = {
   instagram: { active:'rgba(225,48,108,.18)',  icon:'#E1306C', border:'rgba(225,48,108,.45)' },
 };
 
+/* ─── Member tags ──────────────────────────────────────────────────────────────
+   Every tag a member can hold (Founding Member today; Verified etc. later) is
+   one entry here — an icon, a label, and pill colors — driving both the
+   avatar-overlay badge (Avatar in components/common.jsx) and the name-adjacent
+   pill (MemberTagPill, same file) uniformly. Adding a new tag type is adding
+   an entry here plus to ALLOWED_TAG_TYPES in
+   api/_lib/handlers/admin-config.js — no new component, no schema change.
+   The icon is a real asset (not emoji/inline SVG) so it can carry brand
+   artwork; mirrored at mobile/assets/founding-member-badge.png for React
+   Native, which can't load a remote/public/ path via require(). */
+export const MEMBER_TAGS = {
+  founding_member: {
+    label: 'Founding Member',
+    icon: '/badges/founding-member.png',
+    pillBg: '#FDF3DC',
+    pillText: '#8A6A16',
+    pillBorder: '#F0D89A',
+  },
+};
+
 export const ADMIN_SEBI_API = (import.meta.env.VITE_CAS_API_URL || "https://investor-circle.vercel.app") + "/api/data?resource=admin-sebi";
 
 export const contactInputSt = {

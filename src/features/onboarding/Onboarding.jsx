@@ -237,7 +237,7 @@ export function DiscoverModal({ ME, patchProfile, onClose, onDiscoverMore, markO
             const isTracking = tracking[p.id];
             return (
               <div key={p.id} style={personRowStyle}>
-                <Avatar f={{ initials: initialsOf(p.full_name || p.username || "?"), avatarUrl: p.avatar_url, color: p.avatar_color }} size={38} />
+                <Avatar f={{ id: p.id, initials: initialsOf(p.full_name || p.username || "?"), avatarUrl: p.avatar_url, color: p.avatar_color }} size={38} />
                 <div style={{ flex: 1, minWidth: 0, cursor: p.username ? "pointer" : "default" }} onClick={()=>p.username && openProfile(p.username)}>
                   <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", lineHeight: 1.3, wordBreak: "break-word" }}>
                     {p.full_name || p.username}
@@ -350,7 +350,7 @@ export function DiscoverPeoplePage({ ME }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: p.username ? "pointer" : "default", flex: 1, minWidth: 180 }}
             onClick={() => p.username && openProfile(p.username)}>
-            <Avatar f={{ name: p.full_name, avatarUrl: p.avatar_url, color: p.avatar_color, initials: initialsOf(p.full_name || p.username || "?") }} size={40} />
+            <Avatar f={{ id: p.id, name: p.full_name, avatarUrl: p.avatar_url, color: p.avatar_color, initials: initialsOf(p.full_name || p.username || "?") }} size={40} />
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 13.5, color: "var(--accent-ink)", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3 }}>{p.full_name || p.username}</div>
               <div className="muted small">@{p.username || "—"}</div>

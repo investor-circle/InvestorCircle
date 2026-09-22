@@ -27,6 +27,10 @@ export default async function handlePublicProfile(req, res) {
         up.username, up.created_at,
         up.bio, up.twitter_url, up.linkedin_url, up.telegram_url, up.instagram_url,
         up.avatar_color, up.avatar_url,
+        COALESCE(
+          (SELECT array_agg(ut.tag_type) FROM user_tags ut WHERE ut.user_id = up.id),
+          '{}'
+        )                                                              AS tags,
         (SELECT COUNT(*) FROM connections
          WHERE (requester_id = up.id OR addressee_id = up.id)
            AND status = 'accepted')                                AS connection_count,

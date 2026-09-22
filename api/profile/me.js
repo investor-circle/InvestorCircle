@@ -96,7 +96,11 @@ export default async function handler(req, res) {
              consent_terms_accepted, consent_data_accepted,
              bio, twitter_url, linkedin_url, telegram_url, instagram_url,
              registration_status, sebi_reg_number, sebi_reg_valid_till,
-             sebi_firm_name, sebi_approval_status
+             sebi_firm_name, sebi_approval_status,
+             COALESCE(
+               (SELECT array_agg(ut.tag_type) FROM user_tags ut WHERE ut.user_id = user_profiles.id),
+               '{}'
+             ) AS tags
       FROM user_profiles
       WHERE id = ${uid}
       LIMIT 1

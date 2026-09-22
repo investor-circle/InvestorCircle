@@ -13,10 +13,11 @@ import {
   Copy,
   Check
 } from "lucide-react";
-import { SOCIAL_BRAND, SOCIAL_PATHS, TYPE_COLORS } from "../constants/app";
+import { MEMBER_TAGS, SOCIAL_BRAND, SOCIAL_PATHS, TYPE_COLORS } from "../constants/app";
 import { classColor, consensusStrengthColor, fmt, fmtDate, initialsOf } from "../utils/format";
 import { loadInstruments } from "../utils/instruments";
 import { useIsMobile } from "../hooks/index";
+import { useMemberTagsFor } from "../MemberTagsContext";
 
 export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;
 
@@ -81,13 +82,80 @@ export function IdeaDisclaimer({ align="left", compact=false, divider=false, def
   );
 }
 
-export const Avatar = ({ f, size=40 }) => {
-  if (!f) return <div className="av" style={{ width:size, height:size, background:"var(--grad)", fontSize:size*0.38 }}>?</div>;
+/* ── Member tags (Founding Member; Verified etc. later) ──────────────────────
+   MEMBER_TAGS (constants/app.js) maps a tag_type to its icon/label/pill
+   colors — adding a new tag type is a config entry, not new markup, both
+   here and in MemberTagPill below.
+
+   MemberBadgeOverlay renders as a small badge over the bottom-right edge of
+   an avatar, offset just enough to sit on the photo's edge without covering
+   the face — the same treatment for every avatar size in the app. Only the
+   first recognized tag renders (there's only room for one badge in that
+   corner); a member holding several tags is a later design problem, not
+   this one. */
+export function MemberBadgeOverlay({ tags, size }) {
+  if (!tags || !tags.length) return null;
+  const tagType = tags.find(t => MEMBER_TAGS[t]);
+  if (!tagType) return null;
+  const cfg = MEMBER_TAGS[tagType];
+  const badgeSize = Math.max(13, Math.round(size * 0.46));
+  const offset = -Math.round(badgeSize * 0.1);
+  return (
+    <img src={cfg.icon} alt={cfg.label} title={cfg.label}
+      style={{
+        position: "absolute", right: offset, bottom: offset,
+        width: badgeSize, height: badgeSize, objectFit: "contain", display: "block",
+        filter: "drop-shadow(0 1px 3px rgba(0,0,0,.4))", pointerEvents: "none",
+      }}
+    />
+  );
+}
+
+/* Name-adjacent pill — the "SEBI registered" treatment on the track record
+   page, reused for any tag type. */
+export function MemberTagPill({ tags, style }) {
+  if (!tags || !tags.length) return null;
+  const tagType = tags.find(t => MEMBER_TAGS[t]);
+  if (!tagType) return null;
+  const cfg = MEMBER_TAGS[tagType];
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      background: cfg.pillBg, color: cfg.pillText,
+      fontSize: 10, fontWeight: 800, padding: "3px 9px 3px 4px",
+      borderRadius: 999, border: `1px solid ${cfg.pillBorder}`,
+      textTransform: "uppercase", letterSpacing: ".06em", flexShrink: 0,
+      ...style,
+    }}>
+      <img src={cfg.icon} alt="" style={{ width: 13, height: 13, objectFit: "contain", display: "block" }}/>
+      {cfg.label}
+    </span>
+  );
+}
+
+export const Avatar = ({ f, size=40, tags: tagsProp }) => {
+  // Auto-looked-up from MemberTagsContext by whatever id field `f` carries,
+  // so existing call sites get the badge for free; pass `tags` explicitly
+  // to override (or force-suppress with `tags={[]}`) when a caller already
+  // has the answer or `f` carries no id (e.g. a raw name/color object).
+  const autoTags = useMemberTagsFor(f?.id || f?.uid || f?.userId);
+  const tags = tagsProp !== undefined ? tagsProp : autoTags;
+  const wrapStyle = { position:"relative", width:size, height:size, flexShrink:0, display:"inline-block" };
+  if (!f) return (
+    <span style={wrapStyle}>
+      <div className="av" style={{ width:size, height:size, background:"var(--grad)", fontSize:size*0.38 }}>?</div>
+      <MemberBadgeOverlay tags={tags} size={size}/>
+    </span>
+  );
   const avatarUrl = f.avatarUrl || f.avatar_url;
-  if (avatarUrl) {
-    return <img src={avatarUrl} alt="" className="av" style={{ width:size, height:size, objectFit:"cover" }}/>;
-  }
-  return <div className="av" style={{ width:size, height:size, background:f.color||"var(--grad)", fontSize:size*0.38 }}>{f.initials||initialsOf(f.name||"?")}</div>;
+  return (
+    <span style={wrapStyle}>
+      {avatarUrl
+        ? <img src={avatarUrl} alt="" className="av" style={{ width:size, height:size, objectFit:"cover" }}/>
+        : <div className="av" style={{ width:size, height:size, background:f.color||"var(--grad)", fontSize:size*0.38 }}>{f.initials||initialsOf(f.name||"?")}</div>}
+      <MemberBadgeOverlay tags={tags} size={size}/>
+    </span>
+  );
 };
 
 /* ── useIsMobile — JS-driven responsive control (bypasses CSS media query issues) ── */

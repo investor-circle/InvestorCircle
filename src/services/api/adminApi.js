@@ -21,5 +21,6 @@ export {
   adminGetUserByEmail,
   seedCreatorRecos,
   adminDeleteUser,
-  getAllUsersAdmin
+  getAllUsersAdmin,
+  setMemberTag
 } from "../../db";
