@@ -92,12 +92,14 @@ export default async function InvestorPage({ params }) {
               {initialsOf(name)}
             </div>
           )}
-          {/* Founding Member badge — same asset/overlay treatment as the main
-              app's Avatar component (src/components/common.jsx), served from
-              the main project's public/ (this Next app is a separate Vercel
+          {/* Member-tag badge — same asset/overlay treatment as the main app's
+              Avatar component (src/components/common.jsx), served from the
+              main project's public/ (this Next app is a separate Vercel
               project, so shared static assets are always a full URL — see
-              favicon.png/og-image.png above). */}
-          {profile.tags?.includes('founding_member') && (
+              favicon.png/og-image.png above). Only one badge fits the corner,
+              so — same as the main app's Avatar — the first recognized tag
+              wins if a profile ever holds more than one. */}
+          {profile.tags?.includes('founding_member') ? (
             <img
               src="https://myinvestorcircle.com/badges/founding-member.png"
               alt="Founding Member"
@@ -108,7 +110,18 @@ export default async function InvestorPage({ params }) {
                 filter: 'drop-shadow(0 1px 3px rgba(0,0,0,.4))',
               }}
             />
-          )}
+          ) : profile.tags?.includes('founding_research_partner') ? (
+            <img
+              src="https://myinvestorcircle.com/badges/founding-research-partner.png"
+              alt="Founding Research Partner"
+              title="Founding Research Partner"
+              style={{
+                position: 'absolute', right: -3, bottom: -3,
+                width: 30, height: 30, objectFit: 'contain', display: 'block',
+                filter: 'drop-shadow(0 1px 3px rgba(0,0,0,.4))',
+              }}
+            />
+          ) : null}
         </div>
         <div>
           <div className="eyebrow">Investor{memberSince ? ` · member since ${memberSince}` : ''}</div>
@@ -127,6 +140,12 @@ export default async function InvestorPage({ params }) {
           <span className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FDF3DC', color: '#8A6A16', border: '1px solid #F0D89A' }}>
             <img src="https://myinvestorcircle.com/badges/founding-member.png" alt="" width={13} height={13} style={{ display: 'block', objectFit: 'contain' }} />
             Founding Member
+          </span>
+        )}
+        {profile.tags?.includes('founding_research_partner') && (
+          <span className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#E5EDFC', color: '#2A4E8C', border: '1px solid #B9CDF2' }}>
+            <img src="https://myinvestorcircle.com/badges/founding-research-partner.png" alt="" width={13} height={13} style={{ display: 'block', objectFit: 'contain' }} />
+            Founding Research Partner
           </span>
         )}
       </div>
