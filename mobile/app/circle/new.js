@@ -15,9 +15,9 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { createGroup, getMyGroups } from "../../src/services/api/groupsApi";
 import { getMyConnections } from "../../src/services/api/connectionsApi";
-import { initialsOf } from "../../src/utils/format";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
+import Avatar from "../../src/components/Avatar";
 
 // Create a Circle. Members are picked from the caller's active connections;
 // the server re-validates every id against its own eligibility rules, so this
@@ -163,9 +163,7 @@ function NewCircleScreen() {
                   size={22}
                   color={selected[c.user_id] ? colors.accent : colors.muted}
                 />
-                <View style={styles.miniAvatar}>
-                  <Text style={styles.miniAvatarText}>{initialsOf(c.name)}</Text>
-                </View>
+                <Avatar profile={c} uid={c.user_id} name={c.name} size={26}/>
                 <Text style={styles.checkLabel} numberOfLines={1}>
                   {c.name || c.username || "Investor"}
                 </Text>
@@ -221,15 +219,6 @@ const styles = StyleSheet.create({
   swatchOn: { borderWidth: 2, borderColor: colors.ink },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9 },
   checkLabel: { flex: 1, color: colors.ink, fontFamily: fonts.semibold, fontSize: 14 },
-  miniAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.surface2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  miniAvatarText: { color: colors.inkSoft, fontFamily: fonts.bold, fontSize: 10 },
   error: { color: colors.loss, fontFamily: fonts.semibold, fontSize: 13, marginTop: 12 },
   submit: {
     backgroundColor: colors.accent,

@@ -19,13 +19,14 @@ import { getMyConnections } from "../src/services/api/connectionsApi";
 import { announcePublicReco } from "../src/services/announceReco";
 import { useAuth } from "../src/context/AuthContext";
 import { getMyGroups } from "../src/services/api/groupsApi";
-import { initialsOf, isExpired, HORIZONS, CONVICTIONS, FALLBACK_SECTORS, calcTargetDate, today } from "../src/utils/format";
+import { isExpired, HORIZONS, CONVICTIONS, FALLBACK_SECTORS, calcTargetDate, today } from "../src/utils/format";
 import { getSectors } from "../src/services/api/lookupsApi";
 import { getPreviousClose, sourceName } from "../src/services/marketData";
 import { buildRecoPayload, validateRecoDraft } from "../src/utils/recoDraft";
 import { putReco } from "../src/utils/recoStore";
 import { colors, fonts } from "../src/theme/colors";
 import InstrumentSearch from "../src/components/InstrumentSearch";
+import Avatar from "../src/components/Avatar";
 import SelectField from "../src/components/SelectField";
 import ThesisEditor from "../src/components/ThesisEditor";
 import { withBoundary } from "../src/components/ErrorBoundary";
@@ -647,9 +648,7 @@ function NewRecoScreen() {
                               size={20}
                               color={selUsers[c.user_id] ? colors.accent : colors.muted}
                             />
-                            <View style={styles.miniAvatar}>
-                              <Text style={styles.miniAvatarText}>{initialsOf(c.name)}</Text>
-                            </View>
+                            <Avatar profile={c} uid={c.user_id} name={c.name} size={26}/>
                             <Text style={styles.checkLabel} numberOfLines={1}>
                               {c.name || c.username || "Investor"}
                             </Text>
@@ -870,9 +869,6 @@ const styles = StyleSheet.create({
   selectAllBtn: { paddingHorizontal: 12, justifyContent: "center", borderRadius: 9, backgroundColor: colors.accentSoft },
   selectAllText: { color: colors.accentInk, fontFamily: fonts.bold, fontSize: 12 },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 },
-  miniAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: colors.surface2, alignItems: "center", justifyContent: "center" },
-  miniAvatarText: { color: colors.inkSoft, fontFamily: fonts.bold, fontSize: 10 },
-
   note: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 4 },
   error: { color: colors.loss, fontFamily: fonts.semibold, fontSize: 13, marginTop: 10 },
 

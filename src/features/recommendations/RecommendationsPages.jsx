@@ -1564,10 +1564,12 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
                        padding:'16px 18px', marginBottom:14,
                        display:'flex', alignItems:'center', gap:14}}>
             <div style={{position:'relative', width:50, height:50, flexShrink:0}}>
-              <div className="av" style={{width:50, height:50, fontSize:17,
-                                          background:profile.avatar_color||'var(--grad)'}}>
-                {initialsOf(fullName)}
-              </div>
+              {profile.avatar_url
+                ? <img src={profile.avatar_url} alt="" className="av" style={{width:50, height:50, objectFit:'cover'}}/>
+                : <div className="av" style={{width:50, height:50, fontSize:17,
+                                            background:profile.avatar_color||'var(--grad)'}}>
+                    {initialsOf(fullName)}
+                  </div>}
               <MemberBadgeOverlay tags={profile.tags} size={50}/>
             </div>
             <div style={{flex:1, minWidth:0}}>
@@ -1988,7 +1990,9 @@ export function RecoComments({ recoId, me, highlightCommentId }) {
                         onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}
                         onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                         <div style={{position:'relative',width:24,height:24,flexShrink:0}}>
-                          <div className="av" style={{width:24,height:24,fontSize:10,background:'var(--grad)'}}>{initialsOf(p.full_name||p.username)}</div>
+                          {p.avatar_url
+                            ? <img src={p.avatar_url} alt="" className="av" style={{width:24,height:24,objectFit:'cover'}}/>
+                            : <div className="av" style={{width:24,height:24,fontSize:10,background:p.avatar_color||'var(--grad)'}}>{initialsOf(p.full_name||p.username)}</div>}
                           <MemberBadgeOverlay tags={memberTagsByUser[p.id]} size={24}/>
                         </div>
                         <div style={{minWidth:0}}>

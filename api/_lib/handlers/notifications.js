@@ -24,7 +24,8 @@ export default async function handleNotifications(req, res, userId) {
       const rows = await sql`
         SELECT n.id, n.user_id, n.type, n.from_user_id, n.reference_id, n.metadata,
                n.is_read, n.created_at,
-               up.full_name AS from_name, up.email AS from_email
+               up.full_name AS from_name, up.email AS from_email,
+               up.avatar_url AS from_avatar_url, up.avatar_color AS from_avatar_color
         FROM notifications n
         LEFT JOIN user_profiles up ON up.id = n.from_user_id
         WHERE n.user_id = ${userId}

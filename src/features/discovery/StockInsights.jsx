@@ -600,7 +600,9 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                   <div key={r.id} onClick={goToReco} style={{border:'1px solid var(--line)',borderRadius:12,padding:'12px 14px',cursor:goToReco?'pointer':'default'}}>
                     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
                       <div style={{position:'relative',width:28,height:28,flexShrink:0}}>
-                        <div className="av" style={{width:28,height:28,fontSize:10,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                        {r.avatar_url
+                          ? <img src={r.avatar_url} alt="" className="av" style={{width:28,height:28,objectFit:'cover'}}/>
+                          : <div className="av" style={{width:28,height:28,fontSize:10,background:r.avatar_color||'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>}
                         <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={28}/>
                       </div>
                       <div style={{flex:1,minWidth:0}}>
@@ -652,7 +654,9 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                         <td style={{padding:'12px 14px'}}>
                           <div style={{display:'flex',alignItems:'center',gap:8}}>
                             <div style={{position:'relative',width:30,height:30,flexShrink:0}}>
-                              <div className="av" style={{width:30,height:30,fontSize:11,background:'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>
+                              {r.avatar_url
+                                ? <img src={r.avatar_url} alt="" className="av" style={{width:30,height:30,objectFit:'cover'}}/>
+                                : <div className="av" style={{width:30,height:30,fontSize:11,background:r.avatar_color||'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>}
                               <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={30}/>
                             </div>
                             <div style={{minWidth:0}}>
@@ -731,10 +735,13 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                       }}>
                         {/* Avatar */}
                         <div style={{position:'relative',width:40,height:40,flexShrink:0}}>
-                          <div className="av" style={{width:40,height:40,fontSize:14,background:'var(--grad)',cursor:profileUrl?'pointer':'default'}}
-                            onClick={()=>r.username&&openProfile(r.username)}>
-                            {initialsOf(r.full_name||r.username||'?')}
-                          </div>
+                          {r.avatar_url
+                            ? <img src={r.avatar_url} alt="" className="av" style={{width:40,height:40,objectFit:'cover',cursor:profileUrl?'pointer':'default'}}
+                                onClick={()=>r.username&&openProfile(r.username)}/>
+                            : <div className="av" style={{width:40,height:40,fontSize:14,background:r.avatar_color||'var(--grad)',cursor:profileUrl?'pointer':'default'}}
+                                onClick={()=>r.username&&openProfile(r.username)}>
+                                {initialsOf(r.full_name||r.username||'?')}
+                              </div>}
                           <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={40}/>
                         </div>
 

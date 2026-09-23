@@ -183,6 +183,7 @@ import { STYLES } from "./styles/globalStyles";
 import { initialsOf } from "./utils/format";
 import { loadInstruments } from "./utils/instruments";
 import { registerGoToPath, isSameSitePath } from "./utils/navigation";
+import { avatarFields } from "./utils/avatar";
 
 /* ============================================================
    InvestorCircle — social space for investors.
@@ -566,6 +567,7 @@ export default function App() {
         initials:     initialsOf(c.name),
         color:        CONTACT_COLORS[i % CONTACT_COLORS.length],
         title:        "My Investor Circle member",
+        ...avatarFields(c),
       })),
     [connections]
   );
@@ -1673,7 +1675,9 @@ export default function App() {
                           onMouseLeave={e=>e.currentTarget.style.background=''}
                           onClick={()=>{ if(u.username){ goToPath(`/investor/${u.username}`); setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); } }}>
                           <div style={{position:'relative',width:30,height:30,flexShrink:0}}>
-                            <div className="av" style={{width:30,height:30,fontSize:11,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                            {u.avatar_url
+                              ? <img src={u.avatar_url} alt="" className="av" style={{width:30,height:30,objectFit:'cover'}}/>
+                              : <div className="av" style={{width:30,height:30,fontSize:11,background:u.avatar_color||'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>}
                             <MemberBadgeOverlay tags={memberTagsByUser[u.id]} size={30}/>
                           </div>
                           <div style={{flex:1,minWidth:0}}>
@@ -1973,7 +1977,9 @@ export default function App() {
                         <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid var(--line)':'none'}}
                           onClick={()=>{ if(u.username){ goToPath(`/investor/${u.username}`); setGlobalSearch(''); setSearchPeople([]); setSearchInstruments([]); setShowMobileSearch(false); } }}>
                           <div style={{position:'relative',width:32,height:32,flexShrink:0}}>
-                            <div className="av" style={{width:32,height:32,fontSize:11,background:'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>
+                            {u.avatar_url
+                              ? <img src={u.avatar_url} alt="" className="av" style={{width:32,height:32,objectFit:'cover'}}/>
+                              : <div className="av" style={{width:32,height:32,fontSize:11,background:u.avatar_color||'var(--grad)'}}>{initialsOf(u.full_name||u.username||'?')}</div>}
                             <MemberBadgeOverlay tags={memberTagsByUser[u.id]} size={32}/>
                           </div>
                           <div style={{flex:1,minWidth:0}}>

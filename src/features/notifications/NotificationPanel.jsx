@@ -194,13 +194,15 @@ export function NotificationPanel({ notifications, myId, onAccept, onReject, onR
             onMouseLeave={isClickable ? e => { e.currentTarget.style.background = n.is_read ? 'transparent' : 'rgba(109,93,245,.08)'; } : undefined}
           >
             <div style={{position:'relative', width:36, height:36, flexShrink:0}}>
-              <div className="av" style={{
-                width: 36, height: 36,
-                background: avBg,
-                fontSize: isEngagement ? 16 : 13,
-              }}>
-                {isEngagement ? TYPE_ICON[n.type] : initialsOf(n.from_name||"?")}
-              </div>
+              {!isEngagement && n.from_avatar_url
+                ? <img src={n.from_avatar_url} alt="" className="av" style={{width:36,height:36,objectFit:'cover'}}/>
+                : <div className="av" style={{
+                    width: 36, height: 36,
+                    background: isEngagement ? avBg : (n.from_avatar_color||avBg),
+                    fontSize: isEngagement ? 16 : 13,
+                  }}>
+                    {isEngagement ? TYPE_ICON[n.type] : initialsOf(n.from_name||"?")}
+                  </div>}
               {!isEngagement && <MemberBadgeOverlay tags={memberTagsByUser[n.from_user_id]} size={36}/>}
             </div>
             <div style={{flex:1,minWidth:0}}>
