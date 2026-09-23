@@ -1042,7 +1042,7 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
     <div className="card"><div className="card-head"><span>All users</span>
       <div style={{ display:"flex", alignItems:"center", gap:8, background:"var(--surface-2)", borderRadius:10, padding:"7px 12px" }}>
         <Search size={15} color="var(--muted)"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…" style={{border:"none",outline:"none",background:"transparent",fontSize:13}}/></div></div>
-      <div className="card-body" style={{padding:"8px 10px"}}><table className="grid">
+      <div className="card-body" style={{padding:"8px 10px"}}><div className="tscroll"><table className="grid" style={{minWidth:900}}>
         <thead><tr>
           <th>User</th>
           <th>Username</th>
@@ -1119,7 +1119,7 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
               <button className="iconbtn danger" title={`Permanently delete ${u.name}`} onClick={()=>hardDelete(u)}><Trash2 size={14}/></button>
             </div>
           </td>
-        </tr>))}</tbody></table></div></div>
+        </tr>))}</tbody></table></div></div></div>
     {showAdd && <AddUserModal onClose={()=>setShowAdd(false)} onAdd={(u)=>{
       const newUser = {...u, id:"u"+Date.now(), isUnclaimedCreator:false, claimStatus:null};
       setUsers(us=>[newUser,...us]);
