@@ -146,7 +146,9 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
               return (
                 <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:i<recent.length-1?'1px solid var(--line)':'none'}}>
                   <div style={{position:'relative',width:30,height:30,flexShrink:0}}>
-                    <div className="av" style={{width:30,height:30,fontSize:11,background:'var(--grad)',cursor:clickable?'pointer':'default'}} onClick={clickable?()=>openProfile(r.username):undefined}>{initialsOf(r.full_name||r.username||'?')}</div>
+                    {r.avatar_url
+                      ? <img src={r.avatar_url} alt="" className="av" style={{width:30,height:30,objectFit:'cover',cursor:clickable?'pointer':'default'}} onClick={clickable?()=>openProfile(r.username):undefined}/>
+                      : <div className="av" style={{width:30,height:30,fontSize:11,background:r.avatar_color||'var(--grad)',cursor:clickable?'pointer':'default'}} onClick={clickable?()=>openProfile(r.username):undefined}>{initialsOf(r.full_name||r.username||'?')}</div>}
                     <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={30}/>
                   </div>
                   <div style={{flex:1,minWidth:0}}>
@@ -579,9 +581,11 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                                   <div key={i} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',
                                     background:'var(--surface)',borderRadius:8,border:'1px solid var(--line-2)',fontSize:12}}>
                                     <div style={{position:'relative',width:22,height:22,flexShrink:0}}>
-                                      <div className="av" style={{width:22,height:22,fontSize:9,background:'var(--grad)'}}>
-                                        {initialsOf(r.full_name||r.username||'?')}
-                                      </div>
+                                      {r.avatar_url
+                                        ? <img src={r.avatar_url} alt="" className="av" style={{width:22,height:22,objectFit:'cover'}}/>
+                                        : <div className="av" style={{width:22,height:22,fontSize:9,background:r.avatar_color||'var(--grad)'}}>
+                                            {initialsOf(r.full_name||r.username||'?')}
+                                          </div>}
                                       <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={22}/>
                                     </div>
                                     <span style={{fontWeight:600,maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>

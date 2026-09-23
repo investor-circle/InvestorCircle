@@ -42,6 +42,7 @@ import { GroupsSection } from "../groups/Groups";
 import { useIsMobile } from "../../hooks/index";
 import { fmtDate, fmtSigned, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile } from "../../utils/navigation";
+import { avatarFields } from "../../utils/avatar";
 
 export function Network({ connections, setConnections, groups, setGroups, configs,
     recsReceived, onOpenRecos, me, setPage,
@@ -89,7 +90,7 @@ export function Network({ connections, setConnections, groups, setGroups, config
       {tab==="trackers" && <TrackingMeSection me={me} setConnections={setConnections} onTrackingCountsChange={onTrackingCountsChange}/>}
       {tab==="tracking" && <ImTrackingSection me={me} setConnections={setConnections} onTrackingCountsChange={onTrackingCountsChange}/>}
       {tab==="groups" && <GroupsSection groups={groups} setGroups={setGroups}
-            contacts={connections.filter(c=>c.status==="accepted").map((c,i)=>({id:c.user_id,name:c.name,color:CONTACT_COLORS[i%CONTACT_COLORS.length],connectionId:c.connection_id}))}
+            contacts={connections.filter(c=>c.status==="accepted").map((c,i)=>({id:c.user_id,name:c.name,color:CONTACT_COLORS[i%CONTACT_COLORS.length],connectionId:c.connection_id,...avatarFields(c)}))}
             configs={configs} me={me}
             recsReceived={recsReceived} onOpenRecos={onOpenRecos}/>}
     </>

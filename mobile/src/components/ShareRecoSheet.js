@@ -5,8 +5,8 @@ import { forwardRecommendation } from "../services/api/recommendationsApi";
 import { getMyConnections } from "../services/api/connectionsApi";
 import { getMyGroups } from "../services/api/groupsApi";
 import { recoUrl } from "../utils/links";
-import { initialsOf } from "../utils/format";
 import { colors, fonts } from "../theme/colors";
+import Avatar from "./Avatar";
 
 /**
  * Bottom-sheet for sharing an idea onward: forward it to connections/Circles
@@ -146,9 +146,7 @@ export default function ShareRecoSheet({ visible, reco, onClose }) {
                     size={22}
                     color={selUsers[c.user_id] ? colors.accent : colors.muted}
                   />
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{initialsOf(c.name)}</Text>
-                  </View>
+                  <Avatar profile={c} uid={c.user_id} name={c.name} size={26}/>
                   <Text style={styles.rowLabel} numberOfLines={1}>
                     {c.name || c.username || "Investor"}
                   </Text>
@@ -209,15 +207,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9 },
   rowLabel: { flex: 1, color: colors.ink, fontFamily: fonts.semibold, fontSize: 14 },
   swatch: { width: 26, height: 26, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  avatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.surface2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { color: colors.inkSoft, fontFamily: fonts.bold, fontSize: 10 },
   empty: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, paddingVertical: 14 },
   msg: { color: colors.accentInk, fontFamily: fonts.semibold, fontSize: 13, textAlign: "center", marginTop: 8 },
   sendBtn: {

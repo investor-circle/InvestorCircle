@@ -347,7 +347,7 @@ export default async function handleLookups(req, res) {
         const rows = await sql`
           SELECT r.ticker, r.asset_name, r.recommendation_type,
                  r.recommender_id as "from", r.conviction, r.created_at, r.sector,
-                 up.username, up.full_name
+                 up.username, up.full_name, up.avatar_url, up.avatar_color
           FROM ic_recommendations r
           LEFT JOIN user_profiles up ON r.recommender_id = up.id
           WHERE r.is_public = true
@@ -425,7 +425,7 @@ export default async function handleLookups(req, res) {
         const like = `%${q}%`;
         const rows = await sql`
           SELECT id, username, full_name, first_name, last_name,
-                 registration_status, sebi_approval_status
+                 registration_status, sebi_approval_status, avatar_url, avatar_color
           FROM user_profiles
           WHERE (full_name   ILIKE ${like}
               OR username    ILIKE ${like}

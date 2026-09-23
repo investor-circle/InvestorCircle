@@ -960,12 +960,17 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
 
           {/* Avatar — click → profile */}
           <div style={{position:'relative',width:42,height:42,flexShrink:0}}>
-            <div className="av"
-              style={{width:42,height:42,background:cf.color||'var(--grad)',fontSize:15,cursor:canOpenProfile?'pointer':'default'}}
-              title={canOpenProfile?`View ${cf.name}'s profile`:''}
-              onClick={e=>{ if(canOpenProfile){ e.stopPropagation(); openProfile(recommenderInfo.username); } }}>
-              {cf.initials||initialsOf(cf.name)}
-            </div>
+            {cf.avatarUrl
+              ? <img src={cf.avatarUrl} alt="" className="av"
+                  style={{width:42,height:42,objectFit:'cover',cursor:canOpenProfile?'pointer':'default'}}
+                  title={canOpenProfile?`View ${cf.name}'s profile`:''}
+                  onClick={e=>{ if(canOpenProfile){ e.stopPropagation(); openProfile(recommenderInfo.username); } }}/>
+              : <div className="av"
+                  style={{width:42,height:42,background:cf.color||'var(--grad)',fontSize:15,cursor:canOpenProfile?'pointer':'default'}}
+                  title={canOpenProfile?`View ${cf.name}'s profile`:''}
+                  onClick={e=>{ if(canOpenProfile){ e.stopPropagation(); openProfile(recommenderInfo.username); } }}>
+                  {cf.initials||initialsOf(cf.name)}
+                </div>}
             <MemberBadgeOverlay tags={authorTags} size={42}/>
           </div>
 

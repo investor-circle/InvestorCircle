@@ -158,9 +158,11 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
       {/* WHO — creator, ICI, fresh badge, recency */}
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
         <div style={{position:'relative',width:26,height:26,flexShrink:0}}>
-          <div className="av" style={{width:26,height:26,background:cf.color||'var(--grad)',fontSize:10}}>
-            {cf.initials||initialsOf(cf.name)}
-          </div>
+          {cf.avatarUrl
+            ? <img src={cf.avatarUrl} alt="" className="av" style={{width:26,height:26,objectFit:'cover'}}/>
+            : <div className="av" style={{width:26,height:26,background:cf.color||'var(--grad)',fontSize:10}}>
+                {cf.initials||initialsOf(cf.name)}
+              </div>}
           <MemberBadgeOverlay tags={authorTags} size={26}/>
         </div>
         <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
@@ -775,9 +777,11 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
       {/* WHO — creator first, since noticing the creator is half the point */}
       <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:6}}>
         <div style={{position:'relative',width:22,height:22,flexShrink:0}}>
-          <div className="av" style={{width:22,height:22,background:cf.color||'var(--grad)',fontSize:9}}>
-            {cf.initials||initialsOf(cf.name)}
-          </div>
+          {cf.avatarUrl
+            ? <img src={cf.avatarUrl} alt="" className="av" style={{width:22,height:22,objectFit:'cover'}}/>
+            : <div className="av" style={{width:22,height:22,background:cf.color||'var(--grad)',fontSize:9}}>
+                {cf.initials||initialsOf(cf.name)}
+              </div>}
           <MemberBadgeOverlay tags={authorTags} size={22}/>
         </div>
         <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>

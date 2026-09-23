@@ -45,6 +45,7 @@ import { Avatar, ConvBadge, RetBadge, SmallAnchoredPopover, TypeBadge } from "..
 import { fmtDate, initialsOf, recoStats } from "../../utils/format";
 import { gotoUserProfile, gotoCircle, openReco } from "../../utils/navigation";
 import { useIsMobile } from "../../hooks/index";
+import { avatarFields } from "../../utils/avatar";
 
 /** Circles = the product-facing rename of the pre-existing Group concept.
  * Still backed by ic_groups/group_members (see api/_lib/handlers/groups.js).
@@ -65,7 +66,7 @@ export function GroupsSection({ groups, setGroups, contacts, configs, recsReceiv
     return contacts.find(c=>c.id===id)?.name || id;
   };
   const avOf = (id) => {
-    if(id===myId||id==="me") return {id:myId,name:me?.name||"You",initials:me?.initials||"ME",color:"#6d5df5"};
+    if(id===myId||id==="me") return {id:myId,name:me?.name||"You",initials:me?.initials||"ME",color:"#6d5df5",avatarUrl:me?.avatarUrl};
     const c = contacts.find(x=>x.id===id);
     return c || {id,name:id,initials:initialsOf(id),color:"#8d90ad"};
   };
@@ -425,7 +426,7 @@ export function JoinRequestsModal({ group, onClose, onReviewed }) {
           : <div style={{display:"flex",flexDirection:"column",gap:10}}>
               {requests.map(r=>(
                 <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:"var(--surface-2)",border:"1px solid var(--line)",borderRadius:10}}>
-                  <Avatar f={{id:r.user_id,name:r.full_name,initials:initialsOf(r.full_name||r.username||"?"),color:"#6d5df5"}} size={30}/>
+                  <Avatar f={{id:r.user_id,name:r.full_name,initials:initialsOf(r.full_name||r.username||"?"),color:"#6d5df5",...avatarFields(r)}} size={30}/>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontWeight:600,fontSize:13}}>{r.full_name||r.username}</div>
                     <div className="muted small">@{r.username} · requested {fmtDate(r.created_at)}</div>
