@@ -958,21 +958,49 @@ export function AdminSebi() {
 
 /* =================================================================== ADMIN USERS */
 
+// Small on/off switch for a single member tag — shared by every tag column in
+// the users table below (Founding Member, Founding Research Partner, …).
+function TagToggleSwitch({ active, busy, label, onClick, activeColor = "#C9971F" }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={!!active}
+      aria-label={label}
+      disabled={busy}
+      onClick={onClick}
+      style={{
+        width:36, height:20, borderRadius:999, border:"none", cursor:busy?"default":"pointer",
+        background: active ? activeColor : "var(--surface-2)",
+        position:"relative", padding:0, opacity:busy?0.6:1, flexShrink:0,
+      }}
+    >
+      <span style={{
+        position:"absolute", top:2, width:16, height:16, borderRadius:"50%", background:"#fff",
+        boxShadow:"0 1px 2px rgba(0,0,0,.3)", transition:"left .12s",
+        left: active ? 18 : 2,
+      }}/>
+    </button>
+  );
+}
+
 export function AdminUsers({ users, setUsers, contacts, setContacts }) {
   const [q, setQ] = useState(""); const [showAdd, setShowAdd] = useState(false);
   const filtered = users.filter(u=>(u.name+u.email).toLowerCase().includes(q.toLowerCase()));
   const setStatus=(id,status)=>setUsers(us=>us.map(u=>u.id===id?{...u,status}:u));
   const sp=(s)=>s==="Active"?"gain":s==="Suspended"?"loss":"";
-  // Founding Member tag — the same generic set-tag action will grant/revoke any
-  // future tag type (see ALLOWED_TAG_TYPES in api/_lib/handlers/admin-config.js).
+  // Member tags — the same generic set-tag action grants/revokes any tag type
+  // (see ALLOWED_TAG_TYPES in api/_lib/handlers/admin-config.js). tagBusy is
+  // keyed per (user, tagType) so toggling one tag doesn't disable the other.
   const [tagBusy, setTagBusy] = useState(null);
   const refreshMemberTags = useRefreshMemberTags();
-  const toggleFounding = async (u) => {
-    const next = !u.foundingMember;
-    setTagBusy(u.id);
+  const toggleTag = async (u, tagType, fieldName) => {
+    const next = !u[fieldName];
+    const busyKey = `${u.id}:${tagType}`;
+    setTagBusy(busyKey);
     try {
-      await dbSetMemberTag(u.id, 'founding_member', next);
-      setUsers(us => us.map(x => x.id === u.id ? { ...x, foundingMember: next } : x));
+      await dbSetMemberTag(u.id, tagType, next);
+      setUsers(us => us.map(x => x.id === u.id ? { ...x, [fieldName]: next } : x));
       // Without this, the badge/pill this just granted stays invisible
       // everywhere else in the app until a full page reload — MemberTagsContext
       // otherwise only fetches once at app mount.
@@ -1021,6 +1049,7 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
           <th>Role</th>
           <th>Status</th>
           <th>Founding Member</th>
+          <th>Research Partner</th>
           <th style={{textAlign:"center"}}>Accounts</th>
           <th>Joined</th>
           <th style={{textAlign:"right"}}>Actions</th>
@@ -1063,25 +1092,22 @@ export function AdminUsers({ users, setUsers, contacts, setContacts }) {
           <td>{u.role==="Admin" ? <span className="pill accent">Admin</span> : <span className="pill">Investor</span>}</td>
           <td><span className={"pill "+sp(u.status)}>{u.status}</span></td>
           <td>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={!!u.foundingMember}
-              aria-label={`Founding Member tag for ${u.name}`}
-              disabled={tagBusy===u.id}
-              onClick={()=>toggleFounding(u)}
-              style={{
-                width:36, height:20, borderRadius:999, border:"none", cursor:tagBusy===u.id?"default":"pointer",
-                background: u.foundingMember ? "#C9971F" : "var(--surface-2)",
-                position:"relative", padding:0, opacity:tagBusy===u.id?0.6:1, flexShrink:0,
-              }}
-            >
-              <span style={{
-                position:"absolute", top:2, width:16, height:16, borderRadius:"50%", background:"#fff",
-                boxShadow:"0 1px 2px rgba(0,0,0,.3)", transition:"left .12s",
-                left: u.foundingMember ? 18 : 2,
-              }}/>
-            </button>
+            <TagToggleSwitch
+              active={u.foundingMember}
+              busy={tagBusy===`${u.id}:founding_member`}
+              label={`Founding Member tag for ${u.name}`}
+              onClick={()=>toggleTag(u, 'founding_member', 'foundingMember')}
+              activeColor="#C9971F"
+            />
+          </td>
+          <td>
+            <TagToggleSwitch
+              active={u.foundingResearchPartner}
+              busy={tagBusy===`${u.id}:founding_research_partner`}
+              label={`Founding Research Partner tag for ${u.name}`}
+              onClick={()=>toggleTag(u, 'founding_research_partner', 'foundingResearchPartner')}
+              activeColor="#2A4E8C"
+            />
           </td>
           <td style={{textAlign:"center"}}>{u.accounts}</td>
           <td className="muted small">{u.joined}</td>

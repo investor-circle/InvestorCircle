@@ -68,7 +68,7 @@ const FEED_TOGGLE_FIELDS = ['admin_enabled', 'always_on', 'default_on'];
 // The full set of tag types an admin may grant/revoke. Adding a new tag
 // type (e.g. 'verified') later is just adding it here plus a
 // MEMBER_TAGS entry in src/constants/app.js — no schema change.
-const ALLOWED_TAG_TYPES = ['founding_member'];
+const ALLOWED_TAG_TYPES = ['founding_member', 'founding_research_partner'];
 
 async function getFeedConfig() {
   const options = await sql`

@@ -7,6 +7,7 @@ import { mapProfileReco } from "../utils/feed";
 import { colors, fonts } from "../theme/colors";
 
 const FOUNDING_MEMBER_BADGE = require("../../assets/founding-member-badge.png");
+const FOUNDING_RESEARCH_PARTNER_BADGE = require("../../assets/founding-research-partner-badge.png");
 
 // Search / filter / sort over the ideas list — the same three controls and
 // the same fields (ticker + asset_name search, asset_class filter, date/
@@ -47,6 +48,7 @@ function TrackRecordView({
   ici,
   isSebiApproved = false,
   isFoundingMember = false,
+  isFoundingResearchPartner = false,
   onOpenReco,
   onOpenCircle,
 }) {
@@ -93,6 +95,13 @@ function TrackRecordView({
         <View style={styles.foundingRow}>
           <Image source={FOUNDING_MEMBER_BADGE} resizeMode="contain" style={styles.foundingIcon} />
           <Text style={styles.foundingText}>Founding Member</Text>
+        </View>
+      ) : null}
+
+      {isFoundingResearchPartner ? (
+        <View style={styles.researchPartnerRow}>
+          <Image source={FOUNDING_RESEARCH_PARTNER_BADGE} resizeMode="contain" style={styles.foundingIcon} />
+          <Text style={styles.researchPartnerText}>Founding Research Partner</Text>
         </View>
       ) : null}
 
@@ -495,6 +504,21 @@ const styles = StyleSheet.create({
   },
   foundingIcon: { width: 14, height: 14 },
   foundingText: { color: "#8A6A16", fontFamily: fonts.bold, fontSize: 12.5 },
+  researchPartnerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#E5EDFC",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#B9CDF2",
+    alignSelf: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginTop: 10,
+  },
+  researchPartnerText: { color: "#2A4E8C", fontFamily: fonts.bold, fontSize: 12.5 },
   socialRow: { flexDirection: "row", gap: 8, marginTop: 12 },
   socialBtn: {
     width: 32,

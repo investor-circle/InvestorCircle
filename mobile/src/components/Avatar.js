@@ -8,10 +8,12 @@ import { subscribeMemberTags, cachedMemberTags, primeMemberTags } from "../servi
 import { colors, fonts, GRADIENT } from "../theme/colors";
 
 const FOUNDING_MEMBER_BADGE = require("../../assets/founding-member-badge.png");
+const FOUNDING_RESEARCH_PARTNER_BADGE = require("../../assets/founding-research-partner-badge.png");
 // MEMBER_TAGS mirrors src/constants/app.js on web — a new tag type is a new
 // entry here (icon + label), not new markup in this file.
 const MEMBER_TAGS = {
   founding_member: { label: "Founding Member", icon: FOUNDING_MEMBER_BADGE },
+  founding_research_partner: { label: "Founding Research Partner", icon: FOUNDING_RESEARCH_PARTNER_BADGE },
 };
 
 /**

@@ -1131,6 +1131,7 @@ export default function App() {
           isUnclaimedCreator: p.is_unclaimed === true,
           claimStatus:  p.claim_status || null,
           foundingMember: Array.isArray(p.tags) && p.tags.includes('founding_member'),
+          foundingResearchPartner: Array.isArray(p.tags) && p.tags.includes('founding_research_partner'),
           role: p.is_admin ? "Admin" : "Investor", status: "Active", accounts: 0,
           joined: new Date(p.created_at).toLocaleDateString("en-US",{month:"short",year:"numeric"}),
         })));

@@ -121,6 +121,13 @@ export const MEMBER_TAGS = {
     pillText: '#8A6A16',
     pillBorder: '#F0D89A',
   },
+  founding_research_partner: {
+    label: 'Founding Research Partner',
+    icon: '/badges/founding-research-partner.png',
+    pillBg: '#E5EDFC',
+    pillText: '#2A4E8C',
+    pillBorder: '#B9CDF2',
+  },
 };
 
 export const ADMIN_SEBI_API = (import.meta.env.VITE_CAS_API_URL || "https://investor-circle.vercel.app") + "/api/data?resource=admin-sebi";
