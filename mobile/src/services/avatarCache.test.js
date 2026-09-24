@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { callApi } from "./api";
 import {
   primeAvatars,
+  requestAvatar,
   cachedAvatar,
   setCachedAvatar,
   subscribeAvatars,
@@ -47,9 +48,9 @@ describe("primeAvatars", () => {
     expect(cachedAvatar("u1")).toBe("data:image/jpeg;base64,AAA");
   });
 
-  it("remembers that someone has NO picture, and never asks again", async () => {
+  it("remembers that someone has NO picture, and does not re-ask right away", async () => {
     // Most users have no picture. Without a negative cache, every list would
-    // re-request all of them on every load — the exact cost this avoids.
+    // re-request all of them on every render — the exact cost this avoids.
     callApi.mockResolvedValue(ok([]));
 
     await primeAvatars(["u2"]);
@@ -57,6 +58,93 @@ describe("primeAvatars", () => {
 
     await primeAvatars(["u2"]);
     expect(callApi).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-checks a 'no picture' answer after a few minutes, so a new upload appears", async () => {
+    // The bug this pins: "has no picture" used to be trusted for a WEEK, so
+    // someone who uploaded a photo stayed on initials on every phone that had
+    // looked them up before.
+    const realNow = Date.now;
+    try {
+      let now = realNow();
+      Date.now = () => now;
+      callApi.mockResolvedValue(ok([]));
+      await primeAvatars(["u2"]);
+      expect(cachedAvatar("u2")).toBeNull();
+
+      now += 6 * 60 * 1000; // past the re-check window
+      callApi.mockResolvedValue(ok([{ id: "u2", avatar_url: "data:image/jpeg;base64,NEW", avatar_hash: "a".repeat(32) }]));
+      await primeAvatars(["u2"]);
+
+      expect(callApi).toHaveBeenCalledTimes(2);
+      expect(cachedAvatar("u2")).toBe("data:image/jpeg;base64,NEW");
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it("re-checks a picture it holds by hash, without downloading it again", async () => {
+    const realNow = Date.now;
+    const hash = "b".repeat(32);
+    try {
+      let now = realNow();
+      Date.now = () => now;
+      callApi.mockResolvedValue(ok([{ id: "u1", avatar_url: "pic", avatar_hash: hash }]));
+      await primeAvatars(["u1"]);
+
+      now += 6 * 60 * 1000;
+      // Server: hash still matches, so no data: URI comes back.
+      callApi.mockResolvedValue(ok([{ id: "u1", avatar_url: null, avatar_hash: hash }]));
+      await primeAvatars(["u1"]);
+
+      expect(bodyOf(callApi.mock.calls[1]).known).toEqual({ u1: hash });
+      expect(cachedAvatar("u1")).toBe("pic");
+      // …and it now counts as fresh again, so no third request.
+      await primeAvatars(["u1"]);
+      expect(callApi).toHaveBeenCalledTimes(2);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it("swaps in a changed picture when the hash no longer matches", async () => {
+    const realNow = Date.now;
+    try {
+      let now = realNow();
+      Date.now = () => now;
+      callApi.mockResolvedValue(ok([{ id: "u1", avatar_url: "old", avatar_hash: "c".repeat(32) }]));
+      await primeAvatars(["u1"]);
+
+      now += 6 * 60 * 1000;
+      callApi.mockResolvedValue(ok([{ id: "u1", avatar_url: "new", avatar_hash: "d".repeat(32) }]));
+      await primeAvatars(["u1"]);
+
+      expect(cachedAvatar("u1")).toBe("new");
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it("does not let an in-flight answer overwrite the user's own newer upload", async () => {
+    const realNow = Date.now;
+    try {
+      let now = realNow();
+      Date.now = () => now;
+      // While the batch is out, the user uploads; the server then answers
+      // "no picture" to the question asked BEFORE the upload.
+      callApi.mockImplementation(async () => {
+        now += 10;
+        setCachedAvatar("me", "data:image/jpeg;base64,JUST_UPLOADED");
+        return ok([]);
+      });
+
+      await primeAvatars(["me"]);
+
+      expect(cachedAvatar("me")).toBe("data:image/jpeg;base64,JUST_UPLOADED");
+    } finally {
+      Date.now = realNow;
+      callApi.mockReset();
+    }
   });
 
   it("only asks for people it does not already have", async () => {
@@ -108,6 +196,34 @@ describe("primeAvatars", () => {
     callApi.mockResolvedValue(ok([{ id: "u1", avatar_url: "x" }]));
     await primeAvatars(["u1"]);
     expect(cachedAvatar("u1")).toBe("x");
+  });
+});
+
+describe("requestAvatar", () => {
+  // What every <Avatar> calls on mount — so no screen has to remember to
+  // prime the cache for its people.
+  it("collects the avatars mounted in one render into a single batch", async () => {
+    jest.useFakeTimers();
+    try {
+      callApi.mockResolvedValue(ok([]));
+      requestAvatar("u1");
+      requestAvatar("u2");
+      requestAvatar("u1");
+      expect(callApi).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(100);
+      await jest.runOnlyPendingTimersAsync();
+
+      expect(callApi).toHaveBeenCalledTimes(1);
+      expect(bodyOf(callApi.mock.calls[0]).values).toEqual(["u1", "u2"]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("ignores an empty id", () => {
+    expect(() => requestAvatar(null)).not.toThrow();
+    expect(() => requestAvatar("")).not.toThrow();
   });
 });
 
@@ -170,6 +286,20 @@ describe("persistence across launches", () => {
     await primeAvatars(["u1"]);
 
     expect(cachedAvatar("u1")).toBe("new");
+  });
+
+  it("never lets the disk copy replace a newer answer already in memory", async () => {
+    // The signed-in user's own picture is seeded from their profile, often
+    // before this read finishes; an older stored "no picture" must not win.
+    AsyncStorage.getItem.mockResolvedValue(
+      JSON.stringify({ me: { url: null, at: Date.now() - 60 * 1000 } })
+    );
+    setCachedAvatar("me", "data:image/jpeg;base64,MINE");
+    callApi.mockResolvedValue(ok([]));
+
+    await primeAvatars(["me"]);
+
+    expect(cachedAvatar("me")).toBe("data:image/jpeg;base64,MINE");
   });
 
   it("starts empty rather than throwing when the stored blob is corrupt", async () => {

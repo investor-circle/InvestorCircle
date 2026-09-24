@@ -633,7 +633,7 @@ function RecoDetailScreen() {
                 ) : (
                   mentionResults.map((p) => (
                     <Pressable key={p.id} style={styles.mentionRow} onPress={() => selectMention(p)}>
-                      <Avatar uid={p.id} name={p.full_name || p.username} size={24} />
+                      <Avatar profile={p} uid={p.id} name={p.full_name || p.username} size={24} />
                       <View style={{ minWidth: 0 }}>
                         <Text style={styles.mentionName} numberOfLines={1}>
                           {p.full_name || p.username}

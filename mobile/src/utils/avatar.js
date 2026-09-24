@@ -83,3 +83,14 @@ export function avatarSource(profile) {
   const url = profile?.avatar_url || profile?.avatarUrl;
   return typeof url === "string" && url ? { uri: url } : null;
 }
+
+/**
+ * The person an avatar is for, as a string id — or null. The explicit `uid`
+ * wins; otherwise whichever id field the row carries (profiles use `id`,
+ * connection and member rows use `user_id`). This is the key for both the
+ * picture cache and the member-tag map, so one rule serves both.
+ */
+export function avatarIdOf(profile, uid) {
+  const id = uid ?? profile?.id ?? profile?.uid ?? profile?.user_id;
+  return id == null || id === "" ? null : String(id);
+}

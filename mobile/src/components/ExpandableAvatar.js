@@ -3,7 +3,7 @@ import { useSyncExternalStore } from "react";
 import { Modal, Pressable, Image, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Avatar from "./Avatar";
-import { avatarSource } from "../utils/avatar";
+import { avatarSource, avatarIdOf } from "../utils/avatar";
 import { subscribeAvatars, cachedAvatar } from "../services/avatarCache";
 
 /**
@@ -21,11 +21,12 @@ import { subscribeAvatars, cachedAvatar } from "../services/avatarCache";
 export default function ExpandableAvatar({ profile, uid, name, size = 40, gradient = false, style }) {
   const [open, setOpen] = useState(false);
   // Same two ways of resolving a picture as Avatar itself (see its own
-  // comment) — mirrored here rather than imported, since it's the one bit of
-  // Avatar's internals a wrapper needs to know "is there something to expand."
+  // comment), keyed by the same id rule, since this wrapper needs to know
+  // "is there something to expand."
+  const id = avatarIdOf(profile, uid);
   const cached = useSyncExternalStore(
     subscribeAvatars,
-    () => (uid ? cachedAvatar(uid) : null),
+    () => (id ? cachedAvatar(id) : null),
     () => null
   );
   const source = avatarSource(profile) || (cached ? { uri: cached } : null);
