@@ -28,7 +28,9 @@
  *     user-lookup:        { by: 'id'|'username', value }  -> id/username/name only
  *                          (auth: user; never returns another member's email)
  *     avatar-upload:      { dataUrl }                                    (auth: user)
- *     avatars-batch:      { values: [id, ...] }  -> [{ id, avatar_url }]    (auth: user)
+ *     avatars-batch:      { values: [id, ...], known?: { id: md5 } }
+ *                           -> [{ id, avatar_hash, avatar_url }]         (auth: user)
+ *                          avatar_url is NULL when `known` already has that hash
  *     expo-push-register:   { token, platform? }                          (auth: user)
  *     expo-push-unregister: { token }                                     (auth: user)
  *     onboarding-complete:{ step: 'discover' }                           (auth: user)
@@ -920,8 +922,24 @@ export default async function handleLookups(req, res) {
       try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
       const values = Array.isArray(body.values) ? body.values.map(String).slice(0, MAX_AVATAR_BATCH) : [];
       if (!values.length) { res.status(200).json({ avatars: [] }); return; }
+      // `known` is { id: md5 } for pictures the app already holds. A picture
+      // whose hash still matches comes back with avatar_url NULL — the data:
+      // URI (up to MAX_AVATAR_DATA_URL_LENGTH) is only resent when it changed,
+      // which is what lets the app re-check every few minutes rather than
+      // trusting a week-old copy. Rebuilt from `values` so only well-formed
+      // hashes for ids actually asked about ever reach the query. A client
+      // that sends no `known` (older app builds) gets every picture, as before.
+      const knownIn = body.known && typeof body.known === 'object' ? body.known : {};
+      const known = {};
+      for (const id of values) {
+        const h = knownIn[id];
+        if (typeof h === 'string' && /^[0-9a-f]{32}$/.test(h)) known[id] = h;
+      }
       const rows = await sql`
-        SELECT id, avatar_url
+        SELECT id,
+               md5(avatar_url) AS avatar_hash,
+               CASE WHEN md5(avatar_url) = (${JSON.stringify(known)}::jsonb ->> id) THEN NULL
+                    ELSE avatar_url END AS avatar_url
         FROM user_profiles
         WHERE id = ANY(${values}) AND avatar_url IS NOT NULL
       `;

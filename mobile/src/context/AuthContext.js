@@ -21,7 +21,7 @@ import {
 } from "firebase/auth";
 import { auth } from "../config/firebase";
 import { unregisterCurrentDevice } from "../services/pushNotifications";
-import { clearAvatarCache } from "../services/avatarCache";
+import { clearAvatarCache, setCachedAvatar } from "../services/avatarCache";
 import { clearReactions } from "../services/reactionStore";
 import { clearTracked } from "../services/trackStore";
 import { identify } from "../services/analytics";
@@ -44,6 +44,19 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+
+  // The server's own profile row is the authority on the signed-in user's
+  // picture, so hand it to the shared avatar cache that every uid-only Avatar
+  // (your feed cards, comments, circle rows) reads — otherwise a photo
+  // uploaded from the web showed on the profile screen but as initials
+  // everywhere else. Not for the offline fallback shape: its photoURL is
+  // Firebase's, not an upload.
+  const profileId = profile?.id;
+  const profileAvatar = profile?.avatar_url || null;
+  const profileIsLocal = !!profile?.__local;
+  useEffect(() => {
+    if (profileId && !profileIsLocal) setCachedAvatar(profileId, profileAvatar);
+  }, [profileId, profileAvatar, profileIsLocal]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {

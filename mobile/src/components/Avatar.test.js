@@ -1,6 +1,8 @@
-import { render, screen, act } from "@testing-library/react-native";
+import { render, screen, act, waitFor } from "@testing-library/react-native";
 import Avatar from "./Avatar";
 import { setCachedAvatar, _resetAvatarCache } from "../services/avatarCache";
+import { primeMemberTags, _resetMemberTagsCache } from "../services/memberTagsCache";
+import { callApi } from "../services/api";
 
 jest.mock("../services/api", () => ({ callApi: jest.fn() }));
 jest.mock("@react-native-async-storage/async-storage", () => ({
@@ -16,11 +18,22 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
 
 const imageIn = (tree) => tree.UNSAFE_queryByType(require("react-native").Image);
 
-beforeEach(() => _resetAvatarCache());
+beforeEach(() => {
+  _resetAvatarCache();
+  _resetMemberTagsCache();
+});
 
 // The cache debounces its write with a timer; leaving one pending keeps the
 // test process alive after the run.
-afterEach(() => _resetAvatarCache());
+afterEach(() => {
+  _resetAvatarCache();
+  _resetMemberTagsCache();
+  callApi.mockReset();
+});
+
+const avatarBatchCalls = () =>
+  callApi.mock.calls.filter(([, opts]) => opts?.body?.action === "avatars-batch");
+const badgeIn = (label) => screen.queryByLabelText(label);
 
 describe("Avatar", () => {
   it("renders the picture when the profile has one", () => {
@@ -103,6 +116,68 @@ describe("Avatar by uid", () => {
     setCachedAvatar("u2", "x");
     const tree = render(<Avatar uid="u1" name="Asha Rao" />);
     expect(imageIn(tree)).toBeNull();
+  });
+});
+
+// The screen used to be responsible for priming the cache; any screen that
+// forgot (a deep-linked idea, the mention list, pickers) left its people on
+// initials for good. The component now asks for itself.
+describe("Avatar fetches its own picture", () => {
+  it("asks the server for a uid it has no picture for", async () => {
+    callApi.mockResolvedValue({ ok: true, data: { avatars: [{ id: "u1", avatar_url: "data:image/jpeg;base64,AAA" }] } });
+    const tree = render(<Avatar uid="u1" name="Asha Rao" />);
+
+    await waitFor(() => expect(avatarBatchCalls()).toHaveLength(1));
+    expect(avatarBatchCalls()[0][1].body.values).toEqual(["u1"]);
+    await waitFor(() => expect(imageIn(tree).props.source).toEqual({ uri: "data:image/jpeg;base64,AAA" }));
+  });
+
+  it("resolves the person from a row's user_id when no uid is passed", async () => {
+    callApi.mockResolvedValue({ ok: true, data: { avatars: [] } });
+    render(<Avatar profile={{ user_id: "u7", name: "Asha Rao" }} />);
+    await waitFor(() => expect(avatarBatchCalls()).toHaveLength(1));
+    expect(avatarBatchCalls()[0][1].body.values).toEqual(["u7"]);
+  });
+
+  it("does not ask when the row already carries the picture", async () => {
+    callApi.mockResolvedValue({ ok: true, data: { avatars: [] } });
+    render(<Avatar uid="u1" profile={{ avatar_url: "data:image/jpeg;base64,OWN" }} />);
+    await new Promise((r) => setTimeout(r, 120));
+    expect(avatarBatchCalls()).toHaveLength(0);
+  });
+});
+
+describe("member badge", () => {
+  it("shows the badge from the shared tag map", async () => {
+    callApi.mockResolvedValue({ ok: true, data: { tags: { founding_member: ["u1"] } } });
+    await primeMemberTags();
+    render(<Avatar uid="u1" name="Asha Rao" />);
+    expect(badgeIn("Founding Member")).toBeTruthy();
+  });
+
+  it("shows the Founding Research Partner badge", async () => {
+    callApi.mockResolvedValue({ ok: true, data: { tags: { founding_research_partner: ["u1"] } } });
+    await primeMemberTags();
+    render(<Avatar uid="u1" name="Asha Rao" />);
+    expect(badgeIn("Founding Research Partner")).toBeTruthy();
+  });
+
+  it("honours tags the profile row itself carries, even before the map has them", () => {
+    // The public profile response includes `tags`; a badge granted since the
+    // shared map last loaded must still show on that person's own page.
+    render(<Avatar profile={{ id: "u9", full_name: "Asha Rao", tags: ["founding_research_partner"] }} />);
+    expect(badgeIn("Founding Research Partner")).toBeTruthy();
+  });
+
+  it("ignores unrelated values in a row's tags", () => {
+    render(<Avatar profile={{ id: "u9", full_name: "Asha Rao", tags: ["growth", "banking"] }} />);
+    expect(badgeIn("Founding Member")).toBeNull();
+    expect(badgeIn("Founding Research Partner")).toBeNull();
+  });
+
+  it("shows no badge for someone untagged", () => {
+    render(<Avatar uid="u1" name="Asha Rao" />);
+    expect(badgeIn("Founding Member")).toBeNull();
   });
 });
 

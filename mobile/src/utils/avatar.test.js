@@ -8,6 +8,7 @@ import {
   validateSource,
   validateDataUrl,
   avatarSource,
+  avatarIdOf,
   QUALITY_STEPS,
 } from "./avatar";
 
@@ -121,6 +122,31 @@ describe("avatarSource — cross-client display", () => {
   it("returns null when there is no picture, so callers fall back to initials", () => {
     for (const p of [null, undefined, {}, { avatar_url: "" }, { avatar_url: 42 }]) {
       expect(avatarSource(p)).toBeNull();
+    }
+  });
+});
+
+// One id rule keys both the picture cache and the member-tag map, so every
+// row shape — a profile, a connection, a circle member — resolves the same
+// person to the same photo and badge.
+describe("avatarIdOf", () => {
+  it("prefers an explicit uid over anything on the row", () => {
+    expect(avatarIdOf({ id: "row" }, "explicit")).toBe("explicit");
+  });
+
+  it("falls back to the row's id, uid, then user_id", () => {
+    expect(avatarIdOf({ id: "a" })).toBe("a");
+    expect(avatarIdOf({ uid: "b" })).toBe("b");
+    expect(avatarIdOf({ user_id: "c" })).toBe("c");
+  });
+
+  it("returns a string so numeric ids match the cache's string keys", () => {
+    expect(avatarIdOf({ id: 42 })).toBe("42");
+  });
+
+  it("returns null when there is no id at all", () => {
+    for (const [p, u] of [[null], [undefined], [{}], [{ id: "" }], [{}, ""]]) {
+      expect(avatarIdOf(p, u)).toBeNull();
     }
   });
 });
