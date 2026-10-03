@@ -56,6 +56,7 @@ import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, ran
 import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor } from "../../services/api/trackingApi";
 import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
 import { getDailyPrices, getPublicDailyPrice, byTicker, priceKey } from "../../services/api/pricingApi";
+import { ideaTypeMeta, toneColors } from "../../utils/ideaType";
 export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpenFull,onViewAllInvestors,onClose,modal=false}) {
   const memberTagsByUser = useMemberTagsMap();
   const community  = computeConsensus(allRecos);
@@ -140,7 +141,7 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
               )}
             </div>
             {recent.map((r,i)=>{
-              const isBuy=r.recommendation_type==='Buy';
+              const typeM=ideaTypeMeta(r.recommendation_type); const typeC=toneColors(typeM.tone);
               const inCircle=circleMemberIds.has(r.from);
               const clickable=!!r.username;
               return (
@@ -165,8 +166,8 @@ export function SecurityQuickPanel({ticker,name,allRecos=[],circleRecos=[],onOpe
                     {r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'}):''}
                   </span>
                   <span style={{fontSize:10,fontWeight:800,padding:'2px 8px',borderRadius:4,flexShrink:0,
-                    background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
-                    {isBuy?'BUY':'SELL'}
+                    background:typeC.bg,color:typeC.fg}}>
+                    {typeM.label.toUpperCase()}
                   </span>
                 </div>
               );
@@ -576,7 +577,7 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                             <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                               {t.filteredRecos.map((r,i)=>{
                                 const inCircle = circleIds.includes(r.from);
-                                const isBuy    = r.recommendation_type==='Buy';
+                                const typeM=ideaTypeMeta(r.recommendation_type); const typeC=toneColors(typeM.tone);
                                 return (
                                   <div key={i} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',
                                     background:'var(--surface)',borderRadius:8,border:'1px solid var(--line-2)',fontSize:12}}>
@@ -593,8 +594,8 @@ export function MarketIntelligencePage({ contacts, me, onOpenSecurity }) {
                                     </span>
                                     {inCircle&&<span style={{fontSize:9,background:'var(--accent-soft)',color:'var(--accent-ink)',borderRadius:3,padding:'1px 4px',fontWeight:700}}>Circle</span>}
                                     <span style={{fontSize:10,fontWeight:800,padding:'2px 6px',borderRadius:4,
-                                      background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
-                                      {isBuy?'BUY':'SELL'}
+                                      background:typeC.bg,color:typeC.fg}}>
+                                      {typeM.label.toUpperCase()}
                                     </span>
                                     {r.conviction&&<span style={{fontSize:10,color:'var(--muted)'}}>{r.conviction}</span>}
                                     <span style={{fontSize:10,color:'var(--muted)'}}>

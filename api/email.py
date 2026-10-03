@@ -263,10 +263,14 @@ def tpl_contact_recommendation(data):
         + "".join(meta_parts) + "</div>"
     ) if meta_parts else ""
 
-    type_color = "#22863a" if reco_type.lower() == "buy" else "#c0392b"
+    # Buy/Hold/Sell are recommendations; Positive/Neutral/Negative are Market Views.
+    rt = reco_type.lower()
+    type_color = {"buy": "#22863a", "positive": "#22863a", "hold": "#6b7280", "neutral": "#6b7280"}.get(rt, "#c0392b")
+    is_view = rt in ("positive", "neutral", "negative")
+    subject_kind = f"{reco_type.lower()} market view" if is_view else f"{reco_type} idea"
 
     return {
-        "subject": f"{from_name} just posted a {reco_type} idea — {ticker}",
+        "subject": f"{from_name} just posted a {subject_kind} — {ticker}",
         "html": layout(f"""
             <h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">New idea 💡</h2>
             <p style="color:#888;margin:0 0 20px;font-size:13px;">

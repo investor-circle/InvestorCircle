@@ -45,6 +45,7 @@
  */
 
 import { sql } from '../auth.js';
+import { MARKET_VIEW_TYPES } from '../ideaType.js';
 
 // Tickers are short alphanumerics with the odd dot/dash/ampersand (BSE codes,
 // "M&M", "BAJAJ-AUTO"). Anything else is not a symbol we hold ideas for, so it
@@ -105,7 +106,7 @@ async function oneIdea(req, res) {
   const rows = await sql`
     SELECT
       r.id, r.ticker, r.asset_name, r.asset_class,
-      r.recommendation_type, r.sector, r.conviction,
+      r.recommendation_type, r.sector, r.conviction, r.disclosure,
       r.reco_price, r.current_price, r.exit_price,
       r.expiry_price, r.target_price, r.stop_loss,
       r.horizon, r.target_date, r.thesis,
@@ -155,7 +156,7 @@ async function bySymbol(req, res) {
     sql`
       SELECT
         r.id, r.ticker, r.asset_name, r.asset_class,
-        r.recommendation_type, r.sector, r.conviction,
+        r.recommendation_type, r.sector, r.conviction, r.disclosure,
         r.reco_price, r.current_price, r.exit_price,
         r.expiry_price, r.target_price, r.stop_loss,
         r.horizon, r.target_date, r.thesis,
@@ -188,6 +189,7 @@ async function bySymbol(req, res) {
       FROM ic_recommendations r
       JOIN user_profiles up ON up.id = r.recommender_id
       WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
       ORDER BY r.created_at DESC
       LIMIT ${limit}
     `,
@@ -202,6 +204,7 @@ async function bySymbol(req, res) {
         MAX(r.sector)                             AS sector
       FROM ic_recommendations r
       WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
     `,
   ]);
 
@@ -237,7 +240,7 @@ async function search(req, res) {
   const ideas = await sql`
     SELECT
       r.id, r.ticker, r.asset_name, r.asset_class,
-      r.recommendation_type, r.sector, r.conviction,
+      r.recommendation_type, r.sector, r.conviction, r.disclosure,
       r.reco_price, r.current_price, r.exit_price,
       r.expiry_price, r.target_price, r.stop_loss,
       r.horizon, r.target_date, r.thesis,
@@ -291,6 +294,7 @@ async function symbols(_req, res) {
       MAX(r.created_at) AS last_posted
     FROM ic_recommendations r
     WHERE r.is_public = true AND r.ticker IS NOT NULL AND r.ticker <> ''
+      AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
     GROUP BY UPPER(r.ticker)
     ORDER BY MAX(r.created_at) DESC
   `;
@@ -315,6 +319,7 @@ async function related(req, res) {
     WHERE r.is_public = true
       AND r.ticker IS NOT NULL AND r.ticker <> ''
       AND UPPER(r.ticker) <> ${symbol}
+      AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
       AND r.sector = (
         SELECT MAX(r2.sector) FROM ic_recommendations r2
         WHERE UPPER(r2.ticker) = ${symbol} AND r2.is_public = true

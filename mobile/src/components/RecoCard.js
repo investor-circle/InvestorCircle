@@ -7,6 +7,7 @@ import ThesisText from "./ThesisText";
 import { fetchProfileNavInfo } from "../services/profileNav";
 import { colors, fonts } from "../theme/colors";
 import { fmt, fmtDate, fmtPct, returnPct } from "../utils/format";
+import { ideaTypeMeta, isMarketView } from "../utils/ideaType";
 import { isLiked, subscribeReactions, toggleReaction } from "../services/reactionStore";
 import { isTracked, subscribeTracked, toggleTracked } from "../services/trackStore";
 
@@ -20,7 +21,12 @@ const SOURCE_LABELS = { public: "Public", network_engagement: "From your network
 function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = true, expandThesis = false }) {
   const pct = returnPct(reco);
   const positive = pct >= 0;
-  const isBuy = (reco.recType || "Buy") !== "Sell";
+  // Buy / Hold / Sell recommendation, or a Market View (Positive / Neutral /
+  // Negative) — which has no entry price, return, target or status.
+  const typeMeta = ideaTypeMeta(reco.recType);
+  const isView = isMarketView(reco.recType);
+  const toneColor = typeMeta.tone === "gain" ? colors.gain : typeMeta.tone === "loss" ? colors.loss : colors.muted;
+  const tonePill = typeMeta.tone === "gain" ? styles.buyPill : typeMeta.tone === "loss" ? styles.sellPill : styles.neutralPill;
   const sourceLabel = SOURCE_LABELS[reco.feedSource];
 
   // Second line under the name: circle it came via, or who forwarded it.
@@ -68,17 +74,15 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = tr
             <Text onPress={canOpenAuthor ? openAuthor : undefined} style={canOpenAuthor ? styles.byNameLink : null}>
               {reco.byName || "Someone"}
             </Text>{" "}
-            <Text style={styles.recommended}>recommended</Text>
+            <Text style={styles.recommended}>{isView ? "shared a view" : "recommended"}</Text>
           </Text>
           <Text style={styles.subtitle} numberOfLines={1}>
             {subtitle ? `${subtitle} · ` : ""}
             {fmtDate(reco.date)}
           </Text>
         </View>
-        <View style={[styles.typePill, isBuy ? styles.buyPill : styles.sellPill]}>
-          <Text style={[styles.typePillText, { color: isBuy ? colors.gain : colors.loss }]}>
-            {isBuy ? "Buy" : "Sell"}
-          </Text>
+        <View style={[styles.typePill, tonePill]}>
+          <Text style={[styles.typePillText, { color: toneColor }]}>{typeMeta.label}</Text>
         </View>
       </View>
 
@@ -103,16 +107,18 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = tr
             </Text>
           ) : null}
         </Pressable>
-        <View style={{ alignItems: "flex-end" }}>
-          <Text style={styles.currentPrice}>{fmt(reco.price)}</Text>
-          <Text style={[styles.returnText, { color: positive ? colors.gain : colors.loss }]}>
-            {positive ? "▲" : "▼"} {fmtPct(pct)}
-          </Text>
-        </View>
+        {!isView ? (
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={styles.currentPrice}>{fmt(reco.price)}</Text>
+            <Text style={[styles.returnText, { color: positive ? colors.gain : colors.loss }]}>
+              {positive ? "▲" : "▼"} {fmtPct(pct)}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
-      {/* Reco price / target / horizon / conviction grid */}
-      <View style={styles.grid}>
+      {/* Reco price / target / horizon / conviction grid — recommendations only */}
+      {!isView ? <View style={styles.grid}>
         <View style={styles.gridCell}>
           <Text style={styles.gridLabel}>RECO PRICE</Text>
           <Text style={styles.gridValue}>{fmt(reco.priceAt)}</Text>
@@ -133,7 +139,7 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = tr
             </View>
           </>
         ) : null}
-      </View>
+      </View> : null}
 
       {/* ThesisText renders the same bold/italic/link markup and attached
           images the web's ThesisRenderer shows, not just the raw column — a
@@ -148,11 +154,13 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = tr
 
       {/* Footer — status + sector pills, comments, invested */}
       <View style={styles.footer}>
-        <View style={[styles.pill, status === "Active" ? styles.pillAccent : styles.pillMuted]}>
-          <Text style={[styles.pillText, status === "Active" ? styles.pillTextAccent : styles.pillTextMuted]}>
-            {status}
-          </Text>
-        </View>
+        {!isView ? (
+          <View style={[styles.pill, status === "Active" ? styles.pillAccent : styles.pillMuted]}>
+            <Text style={[styles.pillText, status === "Active" ? styles.pillTextAccent : styles.pillTextMuted]}>
+              {status}
+            </Text>
+          </View>
+        ) : null}
         {reco.sector ? (
           <View style={[styles.pill, styles.pillMuted]}>
             <Text style={[styles.pillText, styles.pillTextMuted]}>{reco.sector}</Text>
@@ -171,14 +179,14 @@ function RecoCard({ reco, onPress, onOpenProfile, onOpenTicker, showActions = tr
             <Text style={styles.footerStatText}>{reco.commentCount}</Text>
           </View>
         ) : null}
-        {reco.invested ? (
+        {!isView && reco.invested ? (
           <View style={styles.footerStat}>
             <Ionicons name="checkmark-circle" size={16} color={colors.gain} />
             <Text style={[styles.footerStatText, { color: colors.gain }]}>Invested</Text>
           </View>
         ) : null}
       </View>
-      <IdeaDisclaimer defaultExpanded={expandThesis} />
+      <IdeaDisclaimer defaultExpanded={expandThesis} text={reco.disclosure} />
     </View>
   );
 
@@ -307,6 +315,7 @@ const styles = StyleSheet.create({
   typePill: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   buyPill: { backgroundColor: colors.gainSoft },
   sellPill: { backgroundColor: colors.lossSoft },
+  neutralPill: { backgroundColor: colors.surface2 },
   typePillText: { fontFamily: fonts.bold, fontSize: 12 },
 
   priceBox: {

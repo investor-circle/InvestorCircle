@@ -18,6 +18,7 @@ import { classColor, consensusStrengthColor, fmt, fmtDate, initialsOf } from "..
 import { loadInstruments } from "../utils/instruments";
 import { useIsMobile } from "../hooks/index";
 import { useMemberTagsFor } from "../MemberTagsContext";
+import { ideaTypeMeta, toneColors } from "../utils/ideaType";
 
 export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" style={{ background:TYPE_COLORS[t]||"#999" }}/>{t}</span>;
 
@@ -47,8 +48,12 @@ export const TypeTag = ({ t }) => <span className="ttag"><span className="dot" s
 export const IDEA_DISCLAIMER_TEXT =
   "This is the publisher’s personal view, for informational purposes only—not investment advice or a solicitation to buy/sell. myInvestorCircle (mic) does not endorse or provide this view. Please do your own research. Investments are subject to market risks.";
 
-export function IdeaDisclaimer({ align="left", compact=false, divider=false, defaultExpanded=false, style }) {
+export function IdeaDisclaimer({ align="left", compact=false, divider=false, defaultExpanded=false, style, text }) {
   const [expanded, setExpanded] = useState(false);
+  // A Market View carries its author's own (editable) disclosure; show that
+  // in place of the standard publisher disclaimer. Everything else unchanged.
+  const body = text || IDEA_DISCLAIMER_TEXT;
+  const label = text ? 'Disclosure' : 'Disclaimer';
   const wrapStyle = {
     fontSize: compact ? 9.5 : 11,
     color: "var(--muted)",
@@ -59,14 +64,14 @@ export function IdeaDisclaimer({ align="left", compact=false, divider=false, def
   };
 
   if (defaultExpanded) {
-    return <div style={wrapStyle}>{IDEA_DISCLAIMER_TEXT}</div>;
+    return <div style={wrapStyle}>{body}</div>;
   }
 
   return (
     <div style={wrapStyle}>
       {expanded ? (
         <>
-          {IDEA_DISCLAIMER_TEXT}{' '}
+          {body}{' '}
           <span onClick={e=>{ e.stopPropagation(); setExpanded(false); }}
             style={{color:'var(--accent-ink)', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap'}}>
             Hide
@@ -75,7 +80,7 @@ export function IdeaDisclaimer({ align="left", compact=false, divider=false, def
       ) : (
         <span onClick={e=>{ e.stopPropagation(); setExpanded(true); }}
           style={{color:'var(--accent-ink)', fontWeight:700, cursor:'pointer', textDecoration:'underline'}}>
-          Disclaimer
+          {label}
         </span>
       )}
     </div>
@@ -295,7 +300,8 @@ export function RetBadge({ pct, size=13 }) {
 }
 
 export function TypeBadge({ t }) {
-  return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:5,background:t==='Sell'?'var(--loss-soft)':'var(--gain-soft)',color:t==='Sell'?'var(--loss)':'var(--gain)'}}>{t||'Buy'}</span>;
+  const m = ideaTypeMeta(t); const c = toneColors(m.tone);
+  return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:5,background:c.bg,color:c.fg}}>{m.label}</span>;
 }
 
 export function ConvBadge({ level }) {

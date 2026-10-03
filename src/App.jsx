@@ -264,8 +264,8 @@ export default function App() {
     const firstName = profile?.first_name || user.email?.split("@")[0] || "User";
     const lastName  = profile?.last_name  || "";
     const name = `${firstName} ${lastName}`.trim();
-    return { id:user.uid, name, firstName, lastName, username:profile?.username||"", initials:initialsOf(name), email:user.email||"", avatarUrl:profile?.avatar_url||"" };
-  }, [user?.uid, profile?.first_name, profile?.last_name, profile?.username, profile?.avatar_url]);
+    return { id:user.uid, name, firstName, lastName, username:profile?.username||"", initials:initialsOf(name), email:user.email||"", avatarUrl:profile?.avatar_url||"", registrationStatus:profile?.registration_status||"", sebiApprovalStatus:profile?.sebi_approval_status||"" };
+  }, [user?.uid, profile?.first_name, profile?.last_name, profile?.username, profile?.avatar_url, profile?.registration_status, profile?.sebi_approval_status]);
   // Whole { userId: [tag_type,...] } map, looked up once here (never inside
   // a .map() callback — that would call a hook a variable number of times)
   // and read by plain property access wherever an avatar renders below.

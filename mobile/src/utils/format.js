@@ -148,7 +148,8 @@ export const initialsOf = (name) =>
 export const returnPct = (r) => {
   const entry = r.priceAt;
   const current = r.exitPrice ?? r.price ?? entry;
-  if (!entry) return 0;
+  // A Market View has no entry price and no performance.
+  if (!entry || ["Positive", "Neutral", "Negative"].includes(r.recType)) return 0;
   const raw = (current - entry) / entry;
   return r.recType === "Sell" ? -raw : raw;
 };

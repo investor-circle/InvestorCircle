@@ -29,7 +29,7 @@ const toIso = (v) => (v instanceof Date ? v.toISOString() : String(v || ""));
  * the web's rather than silently omitting a tile.
  */
 export function tickerStats(recos) {
-  const rows = recos || [];
+  const rows = (recos || []).filter((r) => !["Positive", "Neutral", "Negative"].includes(r.recommendation_type));
   if (!rows.length) return null;
 
   const byMonth = {};
@@ -77,7 +77,7 @@ const SENTIMENT = {
  * @returns null when there is nothing to summarise
  */
 export function buildAiSummary(recos) {
-  const rows = recos || [];
+  const rows = (recos || []).filter((r) => !["Positive", "Neutral", "Negative"].includes(r.recommendation_type));
   if (!rows.length) return null;
 
   const bull = rows.filter((r) => r.recommendation_type === "Buy");

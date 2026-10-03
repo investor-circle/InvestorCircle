@@ -56,6 +56,7 @@
 
 import { sql, parseBody, requireUid, requireAdmin, sendAuthError } from '../auth.js';
 import { sendInternalEmail } from '../notifyMember.js';
+import { MARKET_VIEW_TYPES } from '../ideaType.js';
 import { REG_CONTRIBUTOR, REG_STATUSES, normalizeRegStatus, effectiveRegStatus, isPublisherStatus } from '../registrationStatus.js';
 
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
@@ -264,7 +265,7 @@ export default async function handleLookups(req, res) {
           SELECT DISTINCT ir.id, ir.asset_name, ir.ticker, ir.asset_class,
                  ir.recommendation_type, ir.reco_price, ir.current_price,
                  ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
-                 ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
+                 ir.sector, ir.conviction, ir.disclosure, ir.created_at as date, ir.is_public,
                  up.full_name as by_name, up.id as from_id,
                  (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text)::int as likes,
                  (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
@@ -297,7 +298,7 @@ export default async function handleLookups(req, res) {
           SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class,
                  ir.recommendation_type, ir.reco_price, ir.current_price,
                  ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
-                 ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
+                 ir.sector, ir.conviction, ir.disclosure, ir.created_at as date, ir.is_public,
                  up.full_name as by_name, up.id as from_id, up.username as from_username,
                  (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
                  (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text)::int as likes_count,
@@ -339,6 +340,7 @@ export default async function handleLookups(req, res) {
           LEFT JOIN user_profiles up ON r.recommender_id = up.id
           WHERE (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
+            AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
         `;
         res.status(200).json({ recos: rows });
         return;
@@ -355,6 +357,7 @@ export default async function handleLookups(req, res) {
           WHERE r.is_public = true
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
+            AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
           ORDER BY r.created_at DESC
         `;
         res.status(200).json({ recos: rows });
@@ -410,6 +413,9 @@ export default async function handleLookups(req, res) {
           LEFT JOIN user_profiles up ON r.recommender_id = up.id
           WHERE r.ticker = ${ticker}
             AND r.is_public = true
+            -- Stock Insights is built on recommendations (consensus, sentiment mix);
+            -- Market Views are not surfaced on it.
+            AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
           ORDER BY r.created_at DESC
@@ -482,6 +488,7 @@ export default async function handleLookups(req, res) {
             ), 0) AS ret_stddev
           FROM user_profiles up
           LEFT JOIN ic_recommendations r ON r.recommender_id = up.id
+            AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
           WHERE up.id != ${uid}
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
@@ -852,6 +859,7 @@ export default async function handleLookups(req, res) {
           ), 0)                                                          AS ret_stddev
         FROM ic_recommendations r
         WHERE r.recommender_id = ANY(${uids})
+          AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
         GROUP BY r.recommender_id
       `;
       res.status(200).json({ stats: rows });
@@ -874,6 +882,7 @@ export default async function handleLookups(req, res) {
         SELECT recommender_id AS uid, COUNT(*)::int AS total
         FROM ic_recommendations
         WHERE recommender_id = ANY(${uids}) AND is_public = true
+          AND COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
         GROUP BY recommender_id
       `;
       res.status(200).json({ counts: rows });

@@ -57,6 +57,7 @@ import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, ran
 import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor } from "../../services/api/trackingApi";
 import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
 import { getDailyPrices, getPublicDailyPrice, byTicker, priceKey } from "../../services/api/pricingApi";
+import { ideaTypeMeta, toneColors } from "../../utils/ideaType";
 
 // Shared by the tab bar, each section's own heading, and the scroll-spy
 // IntersectionObserver below — one list instead of the same five ids typed
@@ -610,9 +611,9 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                         {inYourCircle&&<span style={{fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.05em'}}>Your Circle</span>}
                       </div>
                       <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,flexShrink:0,
-                        background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
-                        color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>
-                        {r.recommendation_type==='Buy'?'BUY':'SELL'}
+                        background:toneColors(ideaTypeMeta(r.recommendation_type).tone).bg,
+                        color:toneColors(ideaTypeMeta(r.recommendation_type).tone).fg}}>
+                        {ideaTypeMeta(r.recommendation_type).label.toUpperCase()}
                       </span>
                     </div>
                     {r.thesis&&r.thesis!=='—'&&(
@@ -670,9 +671,9 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                         </td>
                         <td style={{padding:'12px 14px',textAlign:'center'}}>
                           <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,
-                            background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
-                            color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>
-                            {r.recommendation_type==='Buy'?'BUY':'SELL'}
+                            background:toneColors(ideaTypeMeta(r.recommendation_type).tone).bg,
+                            color:toneColors(ideaTypeMeta(r.recommendation_type).tone).fg}}>
+                            {ideaTypeMeta(r.recommendation_type).label.toUpperCase()}
                           </span>
                         </td>
                         <td style={{padding:'12px 14px',textAlign:'center',fontSize:13,color:'var(--muted)'}}>
@@ -778,9 +779,9 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
                         <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
                           <ConvBadge level={r.conviction}/>
                           <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,whiteSpace:'nowrap',
-                            background:r.recommendation_type==='Buy'?'var(--gain-soft)':'var(--loss-soft)',
-                            color:r.recommendation_type==='Buy'?'var(--gain)':'var(--loss)'}}>
-                            {r.recommendation_type==='Buy'?'BUY':'SELL'}
+                            background:toneColors(ideaTypeMeta(r.recommendation_type).tone).bg,
+                            color:toneColors(ideaTypeMeta(r.recommendation_type).tone).fg}}>
+                            {ideaTypeMeta(r.recommendation_type).label.toUpperCase()}
                           </span>
                         </div>
                       </div>

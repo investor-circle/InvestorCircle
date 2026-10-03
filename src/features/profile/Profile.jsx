@@ -68,6 +68,7 @@ import { SECTOR_EMOJI, REG_CONTRIBUTOR, REGISTRATION_OPTIONS, normalizeRegStatus
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
 import { getClosedInfo, initialsOf } from "../../utils/format";
+import { ideaTypeMeta, toneColors, isMarketViewIdea } from "../../utils/ideaType";
 
 /**
  * Firebase Auth error -> user-facing message, for the "change email" flow
@@ -1342,11 +1343,11 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
             : <div style={{display:'flex',flexDirection:'column',gap:10}}>
                 {filteredRecos.map(r=>{
                   const isLinked=r.id===recoId;
-                  const isBuy=(r.recommendation_type||'Buy')==='Buy';
+                  const typeM=ideaTypeMeta((r.recommendation_type||'Buy')); const typeC=toneColors(typeM.tone);
                   const retPct=Number(r.return_pct||0);
                   return (
                     <div key={r.id} ref={isLinked?expandedRef:null} className="card"
-                      style={{padding:'14px 16px',cursor:'pointer',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)'),
+                      style={{padding:'14px 16px',cursor:'pointer',borderLeft:'3px solid '+(typeC.fg),
                         background:isLinked?'var(--accent-soft)':'var(--surface)',
                         outline:isLinked?'2px solid var(--accent)':'none',outlineOffset:-2}}
                       onClick={()=>openReco(username,r.id)}>
@@ -1357,7 +1358,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                         </div>
                         <TypeBadge t={r.recommendation_type}/>
                       </div>
-                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
+                      {!isMarketViewIdea(r) && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
                         {[['Entry',r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'],
                           ['Current',r.current_price?`₹${Number(r.current_price).toLocaleString('en-IN')}`:'—'],
                           ['Return',null]].map(([label,val],i)=>(
@@ -1366,7 +1367,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                             {i===2 ? <RetBadge pct={retPct}/> : <div style={{fontWeight:700,fontSize:13,fontFamily:"'JetBrains Mono',monospace"}}>{val}</div>}
                           </div>
                         ))}
-                      </div>
+                      </div>}
                       {(() => { const closed = getClosedInfo(r); return closed && (
                         <div style={{marginBottom:10}}><ClosedInfoLine info={closed}/></div>
                       ); })()}
@@ -1375,7 +1376,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                       )}
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
                         <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
-                          <StatusBadge2 status={r.status}/>
+                          {!isMarketViewIdea(r)&&<StatusBadge2 status={r.status}/>}
                           {r.conviction&&<ConvBadge level={r.conviction}/>}
                           {r.sector&&<span className="pill" style={{fontSize:10}}>{SECTOR_EMOJI[r.sector]} {r.sector}</span>}
                           {r.holding_days?<span className="muted small">{r.holding_days}d held</span>:null}
@@ -1393,7 +1394,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                           )}
                         </div>
                       </div>
-                      <IdeaDisclaimer style={{marginTop:10}}/>
+                      <IdeaDisclaimer style={{marginTop:10}} text={r.disclosure}/>
                     </div>
                   );
                 })}

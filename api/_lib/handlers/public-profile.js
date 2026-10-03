@@ -13,6 +13,7 @@
  */
 
 import { sql } from '../auth.js';
+import { MARKET_VIEW_TYPES } from '../ideaType.js';
 
 export default async function handlePublicProfile(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -67,6 +68,7 @@ export default async function handlePublicProfile(req, res) {
           ROUND(EXTRACT(EPOCH FROM (now() - MIN(created_at))) / 86400 / 365, 1) AS years_history
         FROM ic_recommendations
         WHERE recommender_id = ${userId} AND is_public = true
+        AND COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
       `,
       sql`
       SELECT
@@ -88,6 +90,7 @@ export default async function handlePublicProfile(req, res) {
         ROUND(AVG(CURRENT_DATE - created_at::date)::numeric, 0)  AS avg_holding_days
       FROM ic_recommendations
       WHERE recommender_id = ${userId} AND is_public = true
+        AND COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
         AND NOT exit_signal
         AND (target_date IS NULL OR target_date >= CURRENT_DATE)
     `,
@@ -99,6 +102,7 @@ export default async function handlePublicProfile(req, res) {
         END AS ret_pct
       FROM ic_recommendations
       WHERE recommender_id = ${userId} AND is_public = true
+        AND COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
         AND NOT exit_signal AND (target_date IS NULL OR target_date >= CURRENT_DATE)
       ORDER BY ret_pct DESC LIMIT 1
     `,
@@ -110,6 +114,7 @@ export default async function handlePublicProfile(req, res) {
         END AS ret_pct
       FROM ic_recommendations
       WHERE recommender_id = ${userId} AND is_public = true
+        AND COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
         AND NOT exit_signal AND (target_date IS NULL OR target_date >= CURRENT_DATE)
       ORDER BY ret_pct ASC LIMIT 1
     `,
@@ -123,7 +128,8 @@ export default async function handlePublicProfile(req, res) {
           COALESCE(exit_date::date, CURRENT_DATE) - created_at::date AS hold_days,
           ticker, asset_name
         FROM ic_recommendations
-        WHERE recommender_id = ${userId} AND is_public = true AND exit_signal = true
+        WHERE recommender_id = ${userId} AND is_public = true
+        AND COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES}) AND exit_signal = true
       )
       SELECT
         COUNT(*)                                               AS closed_count,
@@ -143,7 +149,8 @@ export default async function handlePublicProfile(req, res) {
           ELSE             (COALESCE(exit_price, current_price, reco_price, 0) - COALESCE(reco_price,0)) / NULLIF(reco_price,0) * 100
         END)::numeric, 2) AS ret_pct
       FROM ic_recommendations
-      WHERE recommender_id = ${userId} AND is_public = true AND exit_signal = true
+      WHERE recommender_id = ${userId} AND is_public = true
+        AND COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES}) AND exit_signal = true
       ORDER BY ret_pct DESC LIMIT 1
     `,
       sql`
@@ -173,13 +180,14 @@ export default async function handlePublicProfile(req, res) {
         )::numeric, 1)                                         AS median_closed_return
       FROM ic_recommendations
       WHERE recommender_id = ${userId} AND is_public = true
+        AND COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
       GROUP BY COALESCE(sector, 'Uncategorised')
       ORDER BY total_recs DESC
     `,
       sql`
       SELECT
         r.id, r.ticker, r.asset_name, r.asset_class,
-        r.recommendation_type, r.sector, r.conviction,
+        r.recommendation_type, r.sector, r.conviction, r.disclosure,
         r.reco_price, r.current_price, r.exit_price,
         r.expiry_price, r.expiry_price_source,
         r.target_price, r.stop_loss,

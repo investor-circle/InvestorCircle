@@ -79,6 +79,7 @@ import { calcTargetDate, classColor, compressImage, fmt, fmtDate, fmtPct, getClo
 import { fetchPublicProfileInfo, goBackOrElse, goHome, gotoReco, gotoUserProfile, openProfile, openReco, openSecurity } from "../../utils/navigation";
 
 import { ThesisRenderer, MakeRecoModal, IdeaSharePopover, InvestedToggle, fallbackCopyLink, InvestPriceModal, ThesisEditor } from "./Recommendations";
+import { ideaTypeMeta, toneColors, isMarketViewIdea } from "../../utils/ideaType";
 export function Recommendations({ recsReceived, setRecsReceived, recsMade, setRecsMade,
     contacts, groups, assetClasses, setAssetClasses, initFilter, holdings, me, onReload, tracked, toggleTrack, globalSearch }) {
   const [tab, setTab] = useState(initFilter?.tab || "tracked");
@@ -313,21 +314,21 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
             const closedM=getClosedInfo(r);
             const recoRet=closedM && closedM.retPct!=null ? closedM.retPct : (r.reco_price?(r.current_price-r.reco_price)/r.reco_price:0);
             const myRet=r.is_invested&&r.invested_price?(r.current_price-r.invested_price)/r.invested_price:null;
-            const isBuy=(r.recommendation_type||'Buy')==='Buy';
+            const typeM=ideaTypeMeta((r.recommendation_type||'Buy')); const typeC=toneColors(typeM.tone);
             const isInv=r.is_invested||false;
             const cur=r.currency||'INR';
             const fn=r.first_name||''; const ln=r.last_name||'';
             const rName=fn&&ln&&fn!==ln?`${fn} ${ln}`:(fn||r.recommender_name||'Unknown');
             return (
               <div key={r.id} className="card"
-                style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)'),cursor:r.recommender_username?'pointer':'default'}}
+                style={{padding:'14px 16px',borderLeft:'3px solid '+(typeC.fg),cursor:r.recommender_username?'pointer':'default'}}
                 onClick={()=>r.recommender_username&&openReco(r.recommender_username,r.id)}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
                   <div>
                     <div style={{fontWeight:800,fontSize:15,marginBottom:2}}>{r.asset_name}</div>
                     <div style={{fontSize:11,color:'var(--muted)'}}>{r.ticker} · By {rName}</div>
                   </div>
-                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:typeC.bg,color:typeC.fg}}>{typeM.label}</span>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:8,marginBottom:12}}>
                   {[['Entry Price',r.reco_price?fmt(r.reco_price,cur):'—',null],
@@ -396,7 +397,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
                 // Fix duplicate name: if first_name and last_name are identical, show only one
                 const fn = r.first_name||''; const ln = r.last_name||'';
                 const rName = fn && ln && fn!==ln ? `${fn} ${ln}` : (fn || r.recommender_name || 'Unknown');
-                const isBuy = (r.recommendation_type||'Buy')==='Buy';
+                const typeM=ideaTypeMeta((r.recommendation_type||'Buy')); const typeC=toneColors(typeM.tone);
                 const isInv = r.is_invested || false;
 
                 return (<React.Fragment key={r.id}>
@@ -408,7 +409,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
                         <div style={r.recommender_username?{cursor:'pointer'}:{}} onClick={()=>r.recommender_username?openReco(r.recommender_username,r.id):setOpenRow(open?null:r.id)} title={r.recommender_username?'View this idea':undefined}>
                           <div style={{display:'flex',alignItems:'center',gap:6}}>
                             <span className="sym" style={{fontSize:13}}>{r.asset_name}</span>
-                            <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:4,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
+                            <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:4,background:typeC.bg,color:typeC.fg}}>{typeM.label}</span>
                           </div>
                           <div style={{fontSize:11,color:'var(--muted)'}}><ClassTag c={r.asset_class}/></div>
                         </div>
@@ -484,7 +485,7 @@ export function TrackedSection({ tracked, toggleTrack, me, contacts, groups=[], 
                         {r.stop_loss&&<div><div className="cap">Stop loss</div><b className="tnum neg">{fmt(r.stop_loss,r.currency||'INR')}</b></div>}
                         {r.conviction&&<div><div className="cap">Conviction</div><ConvBadge level={r.conviction}/></div>}
                         {r.sector&&<div><div className="cap">Sector</div><b>{r.sector}</b></div>}
-                        <div><div className="cap">Idea Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>
+                        {!isMarketViewIdea(r)&&<div><div className="cap">Idea Return</div><b className={"tnum "+(itm?"pos":"neg")}>{itm?'+':''}{(recoRet*100).toFixed(1)}%</b></div>}
                         {myRet!==null&&<div><div className="cap">My Return</div><b className={"tnum "+(myRet>=0?"pos":"neg")}>{myRet>=0?'+':''}{(myRet*100).toFixed(1)}%</b></div>}
                       </div>
                       {closed && <div style={{marginBottom:12}}><ClosedInfoLine info={closed} cur={r.currency||'INR'}/></div>}
@@ -642,20 +643,20 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
       : isMobile
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {rows.map(r=>{
-            const isBuy=(r.recommendation_type||r.recType||'Buy')==='Buy';
+            const typeM=ideaTypeMeta((r.recommendation_type||r.recType||'Buy')); const typeC=toneColors(typeM.tone);
             const closed=getClosedInfo(r);
             const recoRet=closed && closed.retPct!=null ? closed.retPct : (r.priceAt?(r.price-r.priceAt)/r.priceAt:0);
             const cur=r.currency||'INR';
             const fromName=r.byName||(typeof contactName==='function'?contactName(r.from):'Someone');
             return (
-              <div key={r.id} className="card" style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)'),cursor:r.from?'pointer':'default'}}
+              <div key={r.id} className="card" style={{padding:'14px 16px',borderLeft:'3px solid '+(typeC.fg),cursor:r.from?'pointer':'default'}}
                 onClick={()=>r.from&&gotoReco(r.from,r.id)}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                   <div>
                     <div style={{fontWeight:800,fontSize:15,marginBottom:2}}>{r.assetName||r.asset_name}</div>
                     <div style={{fontSize:11,color:'var(--muted)'}}>{r.ticker} · From {fromName}</div>
                   </div>
-                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:typeC.bg,color:typeC.fg}}>{typeM.label}</span>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
                   {[['Entry Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
@@ -739,7 +740,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                     <td className="muted small nowrap">{fmtDate(r.date)}</td>
                     <td style={{textAlign:"right"}} className="tnum">{r.priceAt?fmt(r.priceAt):<span className="muted">—</span>}</td>
                     <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
-                    <td className={"tnum nowrap "+(itm?"pos":"neg")} style={{fontWeight:700,textAlign:"right"}}>{fmtPct(retVal)}</td>
+                    <td className={"tnum nowrap "+(itm?"pos":"neg")} style={{fontWeight:700,textAlign:"right"}}>{isMarketViewIdea(r)?'—':fmtPct(retVal)}</td>
                     <td>{closed ? <StatusBadge2 status={closed.kind==='exited'?'Closed':'Expired'}/> : <Money itm={itm}/>}</td>
                     <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
                     {/* Reactions */}
@@ -829,7 +830,7 @@ export function ReceivedSection({ recs, setRecs, myId, contactName, groupName, a
                         <div className="cap" style={{marginBottom:10}}>Comments</div>
                         <RecoComments recoId={r.id} me={me}/>
                       </div>
-                      <IdeaDisclaimer defaultExpanded style={{marginTop:14}}/>
+                      <IdeaDisclaimer defaultExpanded style={{marginTop:14}} text={r.disclosure}/>
                     </div></td></tr>
                   )}
                 </React.Fragment>);
@@ -1190,20 +1191,20 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
       : isMobile
       ? <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {rows.map(r=>{
-            const isBuy=(r.recType||'Buy')==='Buy';
+            const typeM=ideaTypeMeta((r.recType||'Buy')); const typeC=toneColors(typeM.tone);
             const closedM=getClosedInfo(r);
             const recoRet=closedM && closedM.retPct!=null ? closedM.retPct : (r.priceAt?(r.price-r.priceAt)/r.priceAt:0);
             const cur=r.currency||'INR';
             return (
               <div key={r.id} className="card"
-                style={{padding:'14px 16px',borderLeft:'3px solid '+(isBuy?'var(--gain)':'var(--loss)'),cursor:me?.username?'pointer':'default'}}
+                style={{padding:'14px 16px',borderLeft:'3px solid '+(typeC.fg),cursor:me?.username?'pointer':'default'}}
                 onClick={()=>me?.username&&openReco(me.username,r.id)}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                   <div>
                     <div style={{fontWeight:800,fontSize:15,marginBottom:2}}>{r.assetName}</div>
                     <div style={{fontSize:11,color:'var(--muted)'}}>{r.ticker} · {fmtDate(r.date)}</div>
                   </div>
-                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>{isBuy?'Buy':'Sell'}</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,flexShrink:0,background:typeC.bg,color:typeC.fg}}>{typeM.label}</span>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
                   {[['Entry Price',r.priceAt?fmt(r.priceAt,cur):'—'],['Current',r.price?fmt(r.price,cur):'—'],['Return',r.priceAt?fmtPct(recoRet):'—']].map(([label,val],i)=>(
@@ -1222,7 +1223,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                   </div>
                   <div style={{display:'flex',gap:4,position:'relative'}} onClick={e=>e.stopPropagation()}>
                     <button className="iconbtn" title="Share" onClick={(e)=>{ setSharePopId(sharePopId===r.id?null:r.id); setShareAnchor(e.currentTarget); }}><Share2 size={13}/></button>
-                    {!r.exit&&<button className="iconbtn" title="Mark exit" onClick={()=>toggleExit(r)} style={{color:'var(--muted)'}}><LogOut size={13}/></button>}
+                    {!r.exit&&!isMarketViewIdea(r)&&<button className="iconbtn" title="Mark exit" onClick={()=>toggleExit(r)} style={{color:'var(--muted)'}}><LogOut size={13}/></button>}
                     {sharePopId===r.id && (
                       <IdeaSharePopover
                         reco={r} username={r.isPublic?me.username:null} contacts={contacts} groups={groups}
@@ -1276,7 +1277,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                     <td className="muted small nowrap">{fmtDate(r.date)}</td>
                     <td style={{textAlign:"right"}} className="tnum">{r.priceAt?fmt(r.priceAt):<span className="muted">—</span>}</td>
                     <td style={{textAlign:"right"}} className="tnum">{fmt(r.price)}</td>
-                    <td style={{textAlign:"right",fontWeight:700}} className={"tnum nowrap "+(itm?"pos":"neg")}>{fmtPct(retVal)}</td>
+                    <td style={{textAlign:"right",fontWeight:700}} className={"tnum nowrap "+(itm?"pos":"neg")}>{isMarketViewIdea(r)?'—':fmtPct(retVal)}</td>
                     <td>{closed ? <StatusBadge2 status={closed.kind==='exited'?'Closed':'Expired'}/> : <Money itm={itm}/>}</td>
                     <td>{r.horizon?<span className="pill accent" style={{fontSize:11}}>{r.horizon}</span>:<span className="muted">—</span>}</td>
                     {/* Likes from recipients */}
@@ -1299,9 +1300,9 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                             />
                           )}
                         </div>
-                        <button className={"btn btn-sm "+(r.exit?"btn-ghost":"btn-soft")} style={{fontSize:11,padding:"4px 8px"}} disabled={exitingId===r.id} onClick={()=>toggleExit(r)}>
+                        {!isMarketViewIdea(r)&&<button className={"btn btn-sm "+(r.exit?"btn-ghost":"btn-soft")} style={{fontSize:11,padding:"4px 8px"}} disabled={exitingId===r.id} onClick={()=>toggleExit(r)}>
                           {exitingId===r.id?<><Loader size={12} className="spin"/> …</>:<><LogOut size={12}/> {r.exit?"Cancel exit":"Send exit"}</>}
-                        </button>
+                        </button>}
                       </div>
                     </td>
                   </tr>
@@ -1339,7 +1340,7 @@ export function MadeSection({ recs, setRecs, recipientName, reach, contacts, gro
                           <span key={i} className="nl-item"><span className="av" style={{width:24,height:24,background:CONTACT_COLORS[i%CONTACT_COLORS.length],fontSize:9}}>{initialsOf(a.name)}</span>{a.name}<span className="muted small"> · {fmtDate(a.date)}</span></span>
                         ))}</div></>
                       )}
-                      <IdeaDisclaimer defaultExpanded divider/>
+                      <IdeaDisclaimer defaultExpanded divider text={r.disclosure}/>
                     </div></td></tr>
                   )}
                 </React.Fragment>);
@@ -1608,7 +1609,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
               <div>
                 <div style={{display:'flex', alignItems:'center', gap:7, marginBottom:6, flexWrap:'wrap'}}>
                   <TypeBadge t={reco.recommendation_type}/>
-                  <StatusBadge2 status={reco.status}/>
+                  {!isMarketViewIdea(reco) && <StatusBadge2 status={reco.status}/>}
                   {reco.conviction && <ConvBadge level={reco.conviction}/>}
                 </div>
                 <div style={{fontWeight:900, fontSize:24, lineHeight:1.1, letterSpacing:'-.5px'}}>
@@ -1616,17 +1617,17 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
                 </div>
                 <div style={{fontSize:14, color:'var(--muted)', marginTop:3}}>{reco.asset_name}</div>
               </div>
-              <div style={{textAlign:'right'}}>
+              {!isMarketViewIdea(reco) && <div style={{textAlign:'right'}}>
                 <div style={{fontSize:26, fontWeight:900, color:retPos?'var(--gain)':'var(--loss)',
                              letterSpacing:'-.5px'}}>
                   {retPos?'+':''}{retPct.toFixed(1)}%
                 </div>
                 <div style={{fontSize:11, color:'var(--muted)', marginTop:1}}>Total return</div>
-              </div>
+              </div>}
             </div>
 
-            {/* Price grid */}
-            <div style={{display:'grid',
+            {/* Price grid — a Market View has no entry/target/horizon to show */}
+            {!isMarketViewIdea(reco) && <div style={{display:'grid',
                          gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)',
                          gap:10, marginBottom:14}}>
               {[
@@ -1643,7 +1644,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
                   <div style={{fontWeight:700, fontSize:14, fontFamily:"'JetBrains Mono',monospace"}}>{val}</div>
                 </div>
               ))}
-            </div>
+            </div>}
 
             {/* Tags row */}
             <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom: reco.thesis ? 14 : 0}}>
@@ -1664,7 +1665,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
             {reco.thesis && reco.thesis !== '—' && (
               <div style={{background:'var(--surface-2)', borderRadius:12, padding:'14px 16px'}}>
                 <div style={{fontSize:10.5, fontWeight:700, color:'var(--muted)', textTransform:'uppercase',
-                             letterSpacing:.5, marginBottom:6}}>Investment Thesis</div>
+                             letterSpacing:.5, marginBottom:6}}>{isMarketViewIdea(reco) ? 'Commentary' : 'Investment Thesis'}</div>
                 <ThesisRenderer thesis={reco.thesis} previewLines={8} defaultExpanded/>
               </div>
             )}
@@ -1728,7 +1729,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
               <Bookmark size={14}/>
             </button>
             {/* Mark Invested */}
-            {viewerUser && reco && (
+            {viewerUser && reco && !isMarketViewIdea(reco) && (
               <InvestedToggle
                 invested={invested}
                 investedPrice={investedPrice}
@@ -1803,7 +1804,7 @@ export function RecoPostPage({ username, recoId, highlightCommentId, viewerUser,
           </div>
 
           {/* ── Disclaimer ── */}
-          <IdeaDisclaimer align="center" defaultExpanded style={{padding:'0 8px'}}/>
+          <IdeaDisclaimer align="center" defaultExpanded style={{padding:'0 8px'}} text={reco?.disclosure}/>
         </>)}
       </div>
     </div>

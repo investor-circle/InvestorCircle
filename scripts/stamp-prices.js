@@ -267,6 +267,9 @@ async function getActiveInstrumentUniverse(db) {
       FROM ic_recommendations r
       WHERE r.ticker IS NOT NULL
         AND TRIM(r.ticker) <> ''
+        -- Market Views (Positive/Neutral/Negative) carry no entry price and are
+        -- never tracked for performance; keep them out of the price universe.
+        AND COALESCE(r.recommendation_type, 'Buy') NOT IN ('Positive', 'Neutral', 'Negative')
         AND (
           (r.exit_signal = false AND (r.target_date IS NULL OR r.target_date >= CURRENT_DATE))
           OR EXISTS (SELECT 1 FROM recommendation_tracking rt WHERE rt.reco_id = r.id)
@@ -664,6 +667,7 @@ async function runTask1(db, bhavMap) {
          AND COALESCE(NULLIF(TRIM(asset_class), ''), 'Equity') = $3
          AND exit_signal = false
          AND (target_date IS NULL OR target_date >= CURRENT_DATE)
+         AND COALESCE(recommendation_type, 'Buy') NOT IN ('Positive', 'Neutral', 'Negative')
     `, [value.close, item.symbol, item.assetClass]);
     updatedRecos += rowCount;
 
@@ -808,7 +812,10 @@ async function main() {
     SELECT id, ticker, exchange, created_at::date AS reco_date,
            COALESCE(NULLIF(TRIM(asset_class), ''), 'Equity') AS asset_class
     FROM ic_recommendations
-    WHERE reco_price IS NULL OR reco_price = 0
+    WHERE (reco_price IS NULL OR reco_price = 0)
+      -- A Market View deliberately has no entry price; stamping one would
+      -- turn it into a performance-tracked recommendation.
+      AND COALESCE(recommendation_type, 'Buy') NOT IN ('Positive', 'Neutral', 'Negative')
   `);
   console.log(`  Found ${unpriced.length} recommendations without entry price`);
   const unpricedToFetch = [];

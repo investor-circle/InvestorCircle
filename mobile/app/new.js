@@ -23,6 +23,16 @@ import { isExpired, HORIZONS, CONVICTIONS, FALLBACK_SECTORS, calcTargetDate, tod
 import { getSectors } from "../src/services/api/lookupsApi";
 import { getPreviousClose, sourceName } from "../src/services/marketData";
 import { buildRecoPayload, validateRecoDraft } from "../src/utils/recoDraft";
+import {
+  RECOMMENDATION_TYPES,
+  MARKET_VIEW_TYPES,
+  MARKET_VIEW_MIN_COMMENTARY,
+  DISCLOSURE_MAX_CHARS,
+  DEFAULT_MARKET_VIEW_DISCLOSURE,
+  publishingPersona,
+  commentaryText,
+  ideaTypeMeta,
+} from "../src/utils/ideaType";
 import { putReco } from "../src/utils/recoStore";
 import { colors, fonts } from "../src/theme/colors";
 import InstrumentSearch from "../src/components/InstrumentSearch";
@@ -31,7 +41,6 @@ import SelectField from "../src/components/SelectField";
 import ThesisEditor from "../src/components/ThesisEditor";
 import { withBoundary } from "../src/components/ErrorBoundary";
 
-const TYPES = ["Buy", "Sell"];
 const CURRENCIES = ["INR", "USD", "GBP", "EUR"];
 const CURRENCY_SYMBOL = { INR: "₹", USD: "$", GBP: "£", EUR: "€" };
 
@@ -39,6 +48,13 @@ function NewRecoScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const myId = profile?.id;
+  // Who is posting decides what this form offers: a Verified Research
+  // Publisher posts Buy/Hold/Sell recommendations; everyone else posts a
+  // Market View (Positive/Neutral/Negative) with commentary and a disclosure,
+  // and none of the recommendation-performance fields. The server enforces
+  // the same rule — this only decides what to show (same as the web).
+  const persona = publishingPersona(profile?.registration_status, profile?.sebi_approval_status);
+  const isView = persona === "contributor";
 
   // Instrument — search-first, same order as the web's New Idea modal: pick
   // (or type) the instrument before anything else, since everything else on
@@ -54,7 +70,8 @@ function NewRecoScreen() {
   const [exchange, setExchange] = useState(null);
   const [sectorOptions, setSectorOptions] = useState(FALLBACK_SECTORS);
 
-  const [recType, setRecType] = useState("Buy");
+  const [recType, setRecType] = useState(isView ? "" : "Buy");
+  const [disclosure, setDisclosure] = useState(DEFAULT_MARKET_VIEW_DISCLOSURE);
   // Auto-stamped entry price — never typed, same as web (getPreviousClose the
   // moment an instrument is picked). Renamed from "Reco price": the number is
   // the price the idea's return is measured FROM, i.e. the entry, and mobile
@@ -112,8 +129,16 @@ function NewRecoScreen() {
 
   // Auto-stamp the entry price the instant an instrument is picked — same
   // call, same trigger, as the web (Recommendations.jsx MakeRecoModal).
+  // The profile can resolve after first render; keep the chosen type valid for
+  // whoever turns out to be posting.
   useEffect(() => {
-    if (!selectedInstr) {
+    const allowed = isView ? MARKET_VIEW_TYPES : RECOMMENDATION_TYPES;
+    if (!allowed.includes(recType)) setRecType(isView ? "" : "Buy");
+  }, [isView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!selectedInstr || isView) {
+      // A Market View has no entry price to stamp.
       setPriceData(null);
       setPriceError("");
       setPriceLoading(false);
@@ -209,6 +234,10 @@ function NewRecoScreen() {
 
   const submit = async () => {
     const invalid = validateRecoDraft({
+      persona,
+      recType,
+      thesis,
+      disclosure,
       assetName,
       ticker,
       priceAt: priceData?.price || 0,
@@ -235,6 +264,8 @@ function NewRecoScreen() {
     ];
 
     const recoPayload = buildRecoPayload({
+      persona,
+      disclosure,
       assetName,
       ticker,
       assetClass,
@@ -318,7 +349,8 @@ function NewRecoScreen() {
     setSector(null);
     setCurrency("INR");
     setExchange(null);
-    setRecType("Buy");
+    setRecType(isView ? "" : "Buy");
+    setDisclosure(DEFAULT_MARKET_VIEW_DISCLOSURE);
     setPriceData(null);
     setPriceLoading(false);
     setPriceError("");
@@ -336,11 +368,19 @@ function NewRecoScreen() {
     setPosted(null);
   };
 
-  const targetDate = calcTargetDate(today(), horizon);
+  const targetDate = isView ? null : calcTargetDate(today(), horizon);
+  const commentaryLen = commentaryText(thesis).length;
+  const viewValid =
+    !isView ||
+    (MARKET_VIEW_TYPES.includes(recType) &&
+      commentaryLen >= MARKET_VIEW_MIN_COMMENTARY &&
+      disclosure.trim().length > 0 &&
+      disclosure.length <= DISCLOSURE_MAX_CHARS);
   const valid =
     (assetName.trim() || ticker.trim()) &&
     (isPublic || hasPublicCircleSelected || recipientCount > 0) &&
-    ((priceData?.price || 0) > 0 || !!priceError);
+    (isView || (priceData?.price || 0) > 0 || !!priceError) &&
+    viewValid;
 
   // Confirmation screen: shown in place of the form once the idea is live,
   // matching the web's MakeRecoModal `posted` state exactly — same title,
@@ -359,7 +399,7 @@ function NewRecoScreen() {
           <View style={styles.postedIcon}>
             <Ionicons name="checkmark" size={28} color={colors.gain} />
           </View>
-          <Text style={styles.postedTitle}>Your idea has been posted</Text>
+          <Text style={styles.postedTitle}>{isView ? "Your market view has been posted" : "Your idea has been posted"}</Text>
           <Text style={styles.postedSub}>
             {posted.ticker && posted.ticker !== "—" ? posted.ticker : posted.assetName} is now live in your circle.
           </Text>
@@ -382,27 +422,44 @@ function NewRecoScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <Ionicons name="close" size={26} color={colors.ink} />
         </Pressable>
-        <Text style={styles.topTitle}>New idea</Text>
+        <Text style={styles.topTitle}>{isView ? "New market view" : "New idea"}</Text>
         <View style={{ width: 26 }} />
       </View>
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-          {/* ── Idea type — the first, quickest decision ─────────────── */}
-          <Field label="Idea type">
+          {/* ── Recommendation (Buy / Hold / Sell) for a Verified Research
+              Publisher; Market View (Positive / Neutral / Negative) for
+              everyone else — the first, quickest decision ─────────────── */}
+          <Field
+            label={isView ? "Your view" : "Recommendation"}
+            hint={
+              isView
+                ? "Your overall stance on this company or security. This is your personal market view, not a buy, sell or hold recommendation."
+                : "Your professional recommendation on this security. Hold means keep an existing position."
+            }
+          >
             <View style={styles.seg}>
-              {TYPES.map((t) => {
+              {(isView ? MARKET_VIEW_TYPES : RECOMMENDATION_TYPES).map((t) => {
                 const active = recType === t;
+                const tone = ideaTypeMeta(t).tone;
                 return (
                   <Pressable
                     key={t}
                     style={[
                       styles.segBtn,
-                      active && (t === "Buy" ? styles.segBtnBuy : styles.segBtnSell),
+                      active && (tone === "gain" ? styles.segBtnBuy : tone === "loss" ? styles.segBtnSell : styles.segBtnNeutral),
                     ]}
                     onPress={() => setRecType(t)}
                   >
-                    <Text style={[styles.segText, active && (t === "Buy" ? styles.segTextBuy : styles.segTextSell)]}>{t}</Text>
+                    <Text
+                      style={[
+                        styles.segText,
+                        active && (tone === "gain" ? styles.segTextBuy : tone === "loss" ? styles.segTextSell : styles.segTextNeutral),
+                      ]}
+                    >
+                      {t}
+                    </Text>
                   </Pressable>
                 );
               })}
@@ -410,7 +467,10 @@ function NewRecoScreen() {
           </Field>
 
           {/* ── Instrument — search first; everything else follows from it ── */}
-          <Field label="Search ticker or company">
+          <Field
+            label="Search ticker or company"
+            hint={isView ? "The company or security your view is about." : "The security you are recommending. Picking one fills in its industry, currency and entry price."}
+          >
             <InstrumentSearch
               value={ticker}
               placeholder="e.g. RELIANCE or Reliance Industries…"
@@ -495,11 +555,17 @@ function NewRecoScreen() {
                 lockedLabel={selectedInstr?.sector}
               />
             </Field>
-            <Field label="Conviction" style={{ flex: 1 }}>
-              <SelectField value={conviction} onChange={setConviction} options={CONVICTIONS} placeholder="Not specified" />
-            </Field>
+            {!isView ? (
+              <Field label="Conviction" hint="How strongly you hold this view." style={{ flex: 1 }}>
+                <SelectField value={conviction} onChange={setConviction} options={CONVICTIONS} placeholder="Not specified" />
+              </Field>
+            ) : null}
           </View>
 
+          {/* Currency, entry price, target, stop loss and horizon frame a
+              formal recommendation and its performance — not offered for a
+              Market View. */}
+          {!isView ? (<>
           <View style={styles.row}>
             <Field label="Currency" style={{ flex: 1 }}>
               <SelectField
@@ -510,13 +576,16 @@ function NewRecoScreen() {
                 lockedLabel={`${CURRENCY_SYMBOL[currency] || currency} ${currency}`}
               />
             </Field>
-            <Field label="Horizon" style={{ flex: 1 }}>
+            <Field label="Investment horizon" hint="How long you expect your view to play out. The idea is marked expired when it ends." style={{ flex: 1 }}>
               <SelectField value={horizon} onChange={setHorizon} options={HORIZONS} />
             </Field>
           </View>
 
           {/* ── Entry price — auto-stamped, never typed ──────────────────── */}
-          <Field label={`Entry price (${CURRENCY_SYMBOL[currency] || currency})`}>
+          <Field
+            label={`Entry price (${CURRENCY_SYMBOL[currency] || currency})`}
+            hint="Set automatically from the previous close, so every idea is measured from the same starting point. It can't be edited."
+          >
             {priceLoading ? (
               <View style={styles.priceBoxNeutral}>
                 <ActivityIndicator size="small" color={colors.muted} />
@@ -545,17 +614,49 @@ function NewRecoScreen() {
           </Field>
 
           <View style={styles.row}>
-            <Field label="Target price (opt.)" style={{ flex: 1 }}>
+            <Field label="Target price (opt.)" hint="The price you expect it to reach within your horizon." style={{ flex: 1 }}>
               <TextInput style={styles.input} placeholder="0" placeholderTextColor={colors.muted} keyboardType="numeric" value={targetPrice} onChangeText={setTargetPrice} />
             </Field>
-            <Field label="Stop loss (opt.)" style={{ flex: 1 }}>
+            <Field label="Stop loss (opt.)" hint="The price at which your view would be proven wrong." style={{ flex: 1 }}>
               <TextInput style={styles.input} placeholder="0" placeholderTextColor={colors.muted} keyboardType="numeric" value={stopLoss} onChangeText={setStopLoss} />
             </Field>
           </View>
 
-          <Field label="Thesis (optional)">
-            <ThesisEditor value={thesis} onChange={setThesis} />
-          </Field>
+          </>) : null}
+
+          {isView ? (<>
+            <Field
+              label="Commentary (required)"
+              hint={
+                commentaryLen > 0 && commentaryLen < MARKET_VIEW_MIN_COMMENTARY
+                  ? `Share the reasoning behind your view. A little more detail needed (${commentaryLen}/${MARKET_VIEW_MIN_COMMENTARY}).`
+                  : "Share the reasoning behind your view so others can judge it for themselves. Formatting, links and images are supported."
+              }
+            >
+              <ThesisEditor
+                value={thesis}
+                onChange={setThesis}
+                placeholder={`Explain your view — what you are seeing and why. At least ${MARKET_VIEW_MIN_COMMENTARY} characters.`}
+              />
+            </Field>
+            <Field
+              label="Disclosure"
+              hint={`State your interests and your status. You can adjust this text; a disclosure is required. Adding one does not by itself make a post compliant with any regulation. ${disclosure.length}/${DISCLOSURE_MAX_CHARS}`}
+            >
+              <TextInput
+                style={[styles.input, styles.disclosureInput]}
+                value={disclosure}
+                onChangeText={(v) => setDisclosure(v.slice(0, DISCLOSURE_MAX_CHARS))}
+                multiline
+                maxLength={DISCLOSURE_MAX_CHARS}
+                placeholderTextColor={colors.muted}
+              />
+            </Field>
+          </>) : (
+            <Field label="Thesis (optional)" hint="Explain the reasoning behind your recommendation — valuation, catalysts and risks.">
+              <ThesisEditor value={thesis} onChange={setThesis} />
+            </Field>
+          )}
 
           {/* ── Who should see this? ─────────────────────────────────── */}
           <Text style={styles.sectionLabel}>Who should see this?</Text>
@@ -677,7 +778,7 @@ function NewRecoScreen() {
             bottom of a long scroll. */}
         <View style={styles.footer}>
           <Pressable style={[styles.submit, (!valid || saving) && styles.submitDisabled]} onPress={submit} disabled={!valid || saving}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Post idea</Text>}
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>{isView ? "Post view" : "Post idea"}</Text>}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -685,11 +786,12 @@ function NewRecoScreen() {
   );
 }
 
-function Field({ label, children, style }) {
+function Field({ label, hint, children, style }) {
   return (
     <View style={[{ marginBottom: 16 }, style]}>
       <Text style={styles.label}>{label}</Text>
       {children}
+      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );
 }
@@ -773,6 +875,10 @@ const styles = StyleSheet.create({
   segText: { color: colors.muted, fontFamily: fonts.bold, fontSize: 14 },
   segTextBuy: { color: colors.gain },
   segTextSell: { color: colors.loss },
+  segBtnNeutral: { backgroundColor: colors.surface },
+  segTextNeutral: { color: colors.inkSoft },
+  hint: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, lineHeight: 17, marginTop: 6 },
+  disclosureInput: { minHeight: 96, textAlignVertical: "top" },
 
   instrChip: {
     flexDirection: "row",

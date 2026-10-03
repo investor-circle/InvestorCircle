@@ -145,3 +145,68 @@ describe("validateRecoDraft", () => {
     expect(validateRecoDraft({ ticker: "X", priceAt: 100, isPublic: false, recipientCount: 1 })).toBeNull();
   });
 });
+
+// Market View (Independent Market Contributor) — same form, different payload.
+// A Verified Research Publisher's flow (everything above) is unchanged; these
+// pin what a contributor may send. The server nulls the performance fields for
+// a contributor regardless (api/_lib/ideaType.js) — this keeps the two aligned.
+describe("Market View payload and validation", () => {
+  const COMMENTARY = "Order inflow is accelerating and margins have room to expand from here.";
+  const view = {
+    persona: "contributor",
+    assetName: "Infosys",
+    ticker: "infy",
+    recType: "Positive",
+    thesis: COMMENTARY,
+    disclosure: "  Personal view. I hold no position.  ",
+    isPublic: true,
+    // A contributor's form never collects these, but prove they can't leak even if passed.
+    priceAt: 1450, targetPrice: "1700", stopLoss: "1300", horizon: "12m", conviction: "High",
+  };
+
+  it("sends the view, commentary and disclosure — and none of the recommendation fields", () => {
+    const p = buildRecoPayload(view);
+    expect(p).toMatchObject({ recType: "Positive", ticker: "INFY", thesis: COMMENTARY, disclosure: "Personal view. I hold no position." });
+    for (const k of ["priceAt", "price", "priceSource", "targetPrice", "stopLoss", "horizon", "targetDate", "conviction"]) {
+      expect(p).not.toHaveProperty(k);
+    }
+  });
+
+  it("never turns a contributor's payload into a Buy", () => {
+    expect(buildRecoPayload({ ...view, recType: "" }).recType).toBe("");
+    expect(buildRecoPayload({ ...view, recType: undefined }).recType).toBe("");
+  });
+
+  it("leaves a publisher's payload exactly as before when no persona is given", () => {
+    expect(buildRecoPayload(full)).toHaveProperty("targetDate");
+    expect(buildRecoPayload({ ...full, persona: "verified_publisher" })).toEqual(buildRecoPayload(full));
+  });
+
+  it("accepts a complete view, with no entry price needed", () => {
+    expect(validateRecoDraft({ ...view, priceAt: 0, priceError: "" })).toBeNull();
+  });
+
+  it("requires a Positive / Neutral / Negative choice", () => {
+    for (const recType of ["", undefined, "Buy", "Sell", "Hold", "Bullish"]) {
+      expect(validateRecoDraft({ ...view, recType })).toMatch(/Positive, Neutral or Negative/);
+    }
+    for (const recType of ["Positive", "Neutral", "Negative"]) expect(validateRecoDraft({ ...view, recType })).toBeNull();
+  });
+
+  it("requires meaningful commentary, not a link or a few words", () => {
+    expect(validateRecoDraft({ ...view, thesis: "" })).toMatch(/commentary/);
+    expect(validateRecoDraft({ ...view, thesis: "too short" })).toMatch(/commentary/);
+    expect(validateRecoDraft({ ...view, thesis: "[click](https://example.com/" + "a".repeat(80) + ")" })).toMatch(/commentary/);
+    expect(validateRecoDraft({ ...view, thesis: JSON.stringify({ __v: "1", text: COMMENTARY, images: [] }) })).toBeNull();
+  });
+
+  it("requires a disclosure within its length limit", () => {
+    expect(validateRecoDraft({ ...view, disclosure: "   " })).toMatch(/disclosure is required/i);
+    expect(validateRecoDraft({ ...view, disclosure: "x".repeat(601) })).toMatch(/600/);
+  });
+
+  it("still stops a private view going nowhere", () => {
+    expect(validateRecoDraft({ ...view, isPublic: false, recipientCount: 0 })).toMatch(/Pick at least one/);
+    expect(validateRecoDraft({ ...view, isPublic: false, recipientCount: 2 })).toBeNull();
+  });
+});

@@ -41,7 +41,7 @@ import { colors, fonts } from "../theme/colors";
  *  - Bold/italic wrap the current selection via TextInput's controlled
  *    `selection` prop rather than a DOM textarea's setSelectionRange.
  */
-export default function ThesisEditor({ value, onChange }) {
+export default function ThesisEditor({ value, onChange, placeholder }) {
   const init = useRef(parseThesis(value));
   const [text, setText] = useState(init.current?.text || "");
   const [images, setImages] = useState(init.current?.images || []);
@@ -173,7 +173,7 @@ export default function ThesisEditor({ value, onChange }) {
         selection={selection}
         multiline
         maxLength={THESIS_MAX_CHARS}
-        placeholder={`Share your investment thesis… Max ${THESIS_MAX_CHARS} chars`}
+        placeholder={placeholder || `Share your investment thesis… Max ${THESIS_MAX_CHARS} chars`}
         placeholderTextColor={colors.muted}
       />
 

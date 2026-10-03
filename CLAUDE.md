@@ -273,6 +273,15 @@ modules. These are now durable conventions, not a one-time cleanup:
   caller's actual data shape, not just the one it was written against, and
   (2) every page-level render needs a boundary above it regardless.
 
+## Idea types: recommendations vs Market Views
+
+`ic_recommendations.recommendation_type` holds one of two families. **Recommendations** (`Buy` / `Hold` / `Sell`) come from a Verified Research Publisher (SEBI verification *approved*) and are tracked for performance. **Market Views** (`Positive` / `Neutral` / `Negative`) come from everyone else — including a publisher whose verification is pending or rejected — and are commentary only: no entry price, target, stop loss, horizon or conviction, plus a per-idea editable `disclosure`.
+
+- **The server is the gate.** `api/_lib/handlers/recommendations.js` (`create`) derives the author's persona from their stored `registration_status` + `sebi_approval_status` (`api/_lib/ideaType.js`) — never from the request — rejects the wrong family, and nulls the recommendation-only fields for a Market View. The forms only decide what to show. `ideaType.js` is mirrored in `src/utils/ideaType.js`, `mobile/src/utils/ideaType.js` and `web-public/lib/ideaType.js`; `api/_lib/ideaType.test.js` fails if they drift.
+- **Market Views must never reach a performance, ICI or consensus aggregate.** The return maths everywhere treats any type that is not `Sell` as a *long* position, so a leaked Market View would be scored as a Buy. Every such query excludes them with `COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})` (`public-profile.js`, the ICI/discovery/consensus/ticker queries in `lookups.js`, `public-ideas.js` symbol queries) and `scripts/stamp-prices.js` neither stamps nor tracks them. `marketViews.exclusion.test.js` reads the emitted SQL and fails if one stops. Add the same guard to any new aggregate.
+- Ideas are still permanent: Market Views cannot be closed (`set-exit-signal` refuses them), and there is no edit flow.
+- `supabase/phase14_market_views.sql` (adds `disclosure`, widens any type CHECK) must be run **before** deploying code that selects `disclosure`.
+
 ## Mobile OTA updates (EAS Update)
 
 - `mobile/app.json` sets `runtimeVersion: { policy: "appVersion" }`. **Do not

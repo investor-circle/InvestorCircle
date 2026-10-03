@@ -329,7 +329,7 @@ export default async function handleEngagement(req, res, userId) {
         const rows = await sql`
           SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class, ir.recommendation_type,
                  ir.reco_price, ir.current_price, ir.target_price, ir.stop_loss,
-                 ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.exchange,
+                 ir.horizon, ir.thesis, ir.sector, ir.conviction, ir.disclosure, ir.exchange,
                  ir.exit_signal, ir.exit_date, ir.exit_price, ir.is_public, ir.created_at,
                  ir.target_date, ir.expiry_price, ir.expiry_price_source,
                  ir.recommender_id,

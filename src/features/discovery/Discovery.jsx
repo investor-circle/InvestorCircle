@@ -61,6 +61,7 @@ import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, ran
 import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor } from "../../services/api/trackingApi";
 import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
 import { getDailyPrices, getPublicDailyPrice, byTicker, priceKey } from "../../services/api/pricingApi";
+import { ideaTypeMeta, toneColors, isMarketViewIdea } from "../../utils/ideaType";
 
 // A recommendation counts as "fresh" while it's inside this window — same
 // created_at ordering the rest of the feed already uses (r.date), just
@@ -92,7 +93,7 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
 
   const username  = r.from_username || recommenderInfo?.username || null;
   const isFresh   = r.date ? (Date.now() - new Date(r.date).getTime()) < FRESH_WINDOW_MS : false;
-  const isBuy     = (r.recommendation_type || r.recType || 'Buy') === 'Buy';
+  const typeM=ideaTypeMeta((r.recommendation_type || r.recType || 'Buy')); const typeC=toneColors(typeM.tone);
   const isTracked = tracked?.has(r.id);
   const sourceLabel = r.feedSource === 'public' ? 'Public'
     : r.shareType === 'group' ? 'Circle' : null;
@@ -187,8 +188,8 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
       <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:6,flexWrap:'wrap'}}>
         <span style={{fontWeight:800,fontSize:13.5,letterSpacing:'-.2px'}}>{r.assetName}</span>
         <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:5,
-          background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
-          {isBuy?'Buy':'Sell'}
+          background:typeC.bg,color:typeC.fg}}>
+          {typeM.label}
         </span>
         {r.priceAt>0 && <span style={{fontSize:11,color:'var(--muted)'}}>Entry ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
       </div>
@@ -234,7 +235,7 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
           style={isTracked?{width:26,height:26,background:'var(--accent-soft)',color:'var(--accent-ink)',borderColor:'var(--accent-line)'}:{width:26,height:26}}>
           <Bookmark size={12}/>
         </button>
-        <div style={{marginLeft:'auto'}}>
+        {!isMarketViewIdea(r) && <div style={{marginLeft:'auto'}}>
           <InvestedToggle
             invested={r.invested} investedPrice={r.investedPrice||r.invested_price}
             reco={{...r,price:r.price,ticker:r.ticker,assetName:r.assetName,priceAt:r.priceAt}}
@@ -252,9 +253,9 @@ function FreshIdeaCard({ r, contacts, groups, me, tracked, toggleTrack, setRecsR
             }}
             stopProp={true}
           />
-        </div>
+        </div>}
       </div>
-      <IdeaDisclaimer style={{marginTop:8}}/>
+      <IdeaDisclaimer style={{marginTop:8}} text={r.disclosure}/>
     </div>
   );
 }
@@ -730,7 +731,7 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
   }, [r.from, contacts, item.creator.name]);
 
   const username = r.from_username || recommenderInfo?.username || null;
-  const isBuy = (r.recommendation_type || r.recType || 'Buy') === 'Buy';
+  const typeM=ideaTypeMeta((r.recommendation_type || r.recType || 'Buy')); const typeC=toneColors(typeM.tone);
   const isTracked = tracked?.has(r.id);
 
   // Same deep link every other Pulse card uses — /investor/:username/idea/:id.
@@ -819,8 +820,8 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4,flexWrap:'wrap'}}>
         <span style={{fontWeight:800,fontSize:12.5,letterSpacing:'-.2px'}}>{r.assetName}</span>
         <span style={{fontSize:9.5,fontWeight:700,padding:'1px 6px',borderRadius:5,
-          background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
-          {isBuy?'Buy':'Sell'}
+          background:typeC.bg,color:typeC.fg}}>
+          {typeM.label}
         </span>
       </div>
 
@@ -852,7 +853,7 @@ function TrendingCard({ item, contacts, me, tracked, toggleTrack, setPublicFeedR
           <Bookmark size={11}/>
         </button>
       </div>
-      <IdeaDisclaimer compact divider/>
+      <IdeaDisclaimer compact divider text={r.disclosure}/>
     </div>
   );
 }

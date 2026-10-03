@@ -1,4 +1,5 @@
 import IdeaCard from '../../../../components/IdeaCard';
+import { ideaTypeMeta } from '../../../../lib/ideaType';
 import { computeConsensus, consensusStrengthColor } from '../../../../lib/consensus';
 import { money, day } from '../../../../lib/format';
 
@@ -185,8 +186,8 @@ export default function SecurityTabs({ symbol, ideas, summary, related = [] }) {
                   )}
                   {inv.author_username && <div className="meta">@{inv.author_username}</div>}
                 </div>
-                <span className={`tag ${inv.recommendation_type === 'Buy' ? 'tag-buy' : 'tag-sell'}`}>
-                  {inv.recommendation_type === 'Buy' ? 'BUY' : 'SELL'}
+                <span className={`tag ${ideaTypeMeta(inv.recommendation_type).tag}`}>
+                  {ideaTypeMeta(inv.recommendation_type).label.toUpperCase()}
                 </span>
               </div>
             ))}
