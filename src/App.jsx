@@ -83,7 +83,7 @@ import {
 } from "./services/api/recommendationsApi";
 import { MemberBadgeOverlay, ProfileErrorBoundary, SectionErrorBoundary } from "./components/common";
 import { useMemberTagsMap } from "./MemberTagsContext";
-import { CONTACT_COLORS, DEFAULT_CLASSES, HOLDINGS } from "./constants/app";
+import { CONTACT_COLORS, DEFAULT_CLASSES, HOLDINGS, isPublisherStatus } from "./constants/app";
 // Admin screens are code-split into their own chunk: only admin-role users
 // ever navigate here, so investors never pay for this bundle weight.
 const adminModule = () => import("./features/admin/Admin");
@@ -1669,7 +1669,7 @@ export default function App() {
                     {searchPeople.map((u,i)=>{
                       const isConn = connections.some(c=>c.user_id===u.id&&c.status==='accepted');
                       const isPend = connections.some(c=>c.user_id===u.id&&c.status==='pending');
-                      const isSebi = u.sebi_approval_status==='approved'||['sebi_ra','sebi_ria'].includes(u.registration_status||'');
+                      const isSebi = isPublisherStatus(u.registration_status);
                       return (
                         <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',borderTop:i>0?'1px solid var(--line)':'none',transition:'background .1s'}}
                           onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}

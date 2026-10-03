@@ -64,7 +64,7 @@ import {
 } from "../../services/api/recommendationsApi";
 import { IdeaSharePopover, ThesisRenderer } from "../recommendations/Recommendations";
 import { ClosedInfoLine, ConvBadge, IciDonut, IdeaDisclaimer, MemberBadgeOverlay, MemberTagPill, OpenInAppBanner, RetBadge, ScoreBox, SmallAnchoredPopover, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
-import { SECTOR_EMOJI } from "../../constants/app";
+import { SECTOR_EMOJI, REG_CONTRIBUTOR, REGISTRATION_OPTIONS, normalizeRegStatus, isPublisherStatus } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
 import { getClosedInfo, initialsOf } from "../../utils/format";
@@ -294,7 +294,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
   const avatarInputRef = useRef(null);
   const [editBio,          setEditBio]          = useState('');
   const [editSocials,      setEditSocials]      = useState({ twitter:'', linkedin:'', telegram:'', instagram:'' });
-  const [editRegStatus,    setEditRegStatus]    = useState('self_directed');
+  const [editRegStatus,    setEditRegStatus]    = useState(REG_CONTRIBUTOR);
   const [editSebiNum,      setEditSebiNum]      = useState('');
   const [editSebiTill,     setEditSebiTill]     = useState('');
   const [editSebiFirm,     setEditSebiFirm]     = useState('');
@@ -369,7 +369,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
     setAvatarErr('');
     setEditBio(p.bio||'');
     setEditSocials({ twitter:p.twitter_url||'', linkedin:p.linkedin_url||'', telegram:p.telegram_url||'', instagram:p.instagram_url||'' });
-    setEditRegStatus(p.registration_status||'self_directed');
+    setEditRegStatus(normalizeRegStatus(p.registration_status));
     setEditSebiNum(p.sebi_reg_number||'');
     setEditSebiTill(p.sebi_reg_valid_till||'');
     setEditSebiFirm(p.sebi_firm_name||'');
@@ -389,7 +389,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
     if(!data?.profile?.id) return;
     setSavingEdit(true);
     setEditErr('');
-    const isSebi = ['sebi_ra','sebi_ria'].includes(editRegStatus);
+    const isSebi = isPublisherStatus(editRegStatus);
     try {
       const fn = editFirstName.trim(); const ln = editLastName.trim();
       await dbSaveProfileEdit({
@@ -401,7 +401,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
         sebiNum: editSebiNum, sebiTill: editSebiTill, sebiFirm: editSebiFirm,
       });
       const newApprovalStatus = isSebi
-        ? (editRegStatus !== (data.profile.registration_status||'self_directed') ? 'pending' : (data.profile.sebi_approval_status||'not_applied'))
+        ? (editRegStatus !== normalizeRegStatus(data.profile.registration_status) ? 'pending' : (data.profile.sebi_approval_status||'not_applied'))
         : 'not_applied';
       const updates = {
         first_name:fn, last_name:ln, full_name:[fn,ln].filter(Boolean).join(' '),
@@ -620,7 +620,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
       connection_count: d_p.connection_count ?? 0, group_count: d_p.group_count ?? 0,
       tracking_count: d_p.tracking_count ?? 0,
       created_at: d_p.created_at ?? null,
-      registration_status: d_p.registration_status ?? 'self_directed',
+      registration_status: normalizeRegStatus(d_p.registration_status),
       sebi_approval_status: d_p.sebi_approval_status ?? 'not_applied',
       sebi_reg_number: d_p.sebi_reg_number ?? null,
       twitter_url: d_p.twitter_url ?? '', linkedin_url: d_p.linkedin_url ?? '',
@@ -821,16 +821,14 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                   <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                     <span style={{fontSize:21,fontWeight:900,color:'#fff',letterSpacing:'-.6px',lineHeight:1.15}}>{displayName}</span>
                     {(()=>{
-                      const status=profile.registration_status||'self_directed';
                       const approved=profile.sebi_approval_status==='approved';
-                      const isSebi=['sebi_ra','sebi_ria'].includes(status);
-                      const label=isSebi&&approved?(status==='sebi_ra'?'SEBI RA':'SEBI RIA'):(status==='enthusiast'?'Enthusiast':'Self-directed');
+                      const isPublisher=isPublisherStatus(profile.registration_status);
+                      const label=isPublisher?(approved?'Verified Publisher':'Research Publisher'):'Independent Contributor';
                       return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.75)',border:'1px solid rgba(255,255,255,.14)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>{label}</span>;
                     })()}
                     {(()=>{
-                      const status=profile.registration_status||'self_directed';
                       const approved=profile.sebi_approval_status==='approved';
-                      const isSebi=['sebi_ra','sebi_ria'].includes(status);
+                      const isSebi=isPublisherStatus(profile.registration_status);
                       if(isSebi&&approved) return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(21,146,78,.2)',color:'#4ade80',border:'1px solid rgba(21,146,78,.35)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>✓ SEBI{profile.sebi_reg_number?` · ${profile.sebi_reg_number}`:''}</span>;
                       return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.3)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>Non-SEBI</span>;
                     })()}
@@ -1080,12 +1078,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                 {/* Registration status */}
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Investor type</div>
                 <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
-                  {(regOptions.length ? regOptions : [
-                    {code:'self_directed',label:'Self-directed Investor',description:'Invests own money independently.',requires_sebi_fields:false},
-                    {code:'enthusiast',label:'Market Enthusiast',description:'Passionate about markets, shares ideas informally.',requires_sebi_fields:false},
-                    {code:'sebi_ra',label:'SEBI Registered Research Analyst',description:'INH000XXXXXX format.',requires_sebi_fields:true},
-                    {code:'sebi_ria',label:'SEBI Registered Investment Adviser',description:'INA000XXXXXX format.',requires_sebi_fields:true},
-                  ]).map(opt=>(
+                  {(regOptions.length ? regOptions : REGISTRATION_OPTIONS).map(opt=>(
                     <label key={opt.code} style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer',padding:'11px 14px',borderRadius:10,background:editRegStatus===opt.code?'rgba(109,93,245,.2)':'rgba(255,255,255,.04)',border:`1px solid ${editRegStatus===opt.code?'rgba(109,93,245,.55)':'rgba(255,255,255,.08)'}`,transition:'.15s'}}>
                       <input type="radio" name="regStatus" value={opt.code} checked={editRegStatus===opt.code} onChange={()=>setEditRegStatus(opt.code)} style={{accentColor:'#6d5df5',marginTop:3,flexShrink:0}}/>
                       <div><div style={{fontSize:14,fontWeight:700,color:'#fff'}}>{opt.label}</div><div style={{fontSize:12,color:'rgba(255,255,255,.4)',marginTop:2,lineHeight:1.4}}>{opt.description}</div></div>
@@ -1094,13 +1087,13 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                 </div>
 
                 {/* SEBI fields */}
-                {['sebi_ra','sebi_ria'].includes(editRegStatus) && (<>
+                {isPublisherStatus(editRegStatus) && (<>
                   <div style={{background:'rgba(251,191,36,.08)',border:'1px solid rgba(251,191,36,.2)',borderRadius:10,padding:'12px 14px',marginBottom:16,fontSize:13,color:'#fbbf24',lineHeight:1.6}}>
                     {sebiVerifyMsg || 'Your SEBI registration details will be reviewed by our team within 2–3 business days.'}
                   </div>
                   <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10,marginBottom:20}}>
                     {[
-                      {label:'SEBI Registration Number',ph:editRegStatus==='sebi_ra'?'INH000XXXXXX':'INA000XXXXXX',val:editSebiNum,set:setEditSebiNum},
+                      {label:'SEBI Registration Number',ph:'INH000XXXXXX',val:editSebiNum,set:setEditSebiNum},
                       {label:'Registration Valid Till',ph:'',val:editSebiTill,set:setEditSebiTill,type:'date'},
                       {label:'Firm / Employer Name (optional)',ph:'e.g. XYZ Securities',val:editSebiFirm,set:setEditSebiFirm},
                     ].map((f,i)=>(
@@ -1524,7 +1517,7 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
     telegram:  profile?.telegram_url  || '',
     instagram: profile?.instagram_url || '',
   });
-  const [regStatus,    setRegStatus]    = useState(profile?.registration_status || 'self_directed');
+  const [regStatus,    setRegStatus]    = useState(normalizeRegStatus(profile?.registration_status));
   const [sebiNum,      setSebiNum]      = useState(profile?.sebi_reg_number      || '');
   const [sebiTill,     setSebiTill]     = useState(profile?.sebi_reg_valid_till  || '');
   const [sebiFirm,     setSebiFirm]     = useState(profile?.sebi_firm_name       || '');
@@ -1599,7 +1592,7 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
     setAvatarBusy(false);
   };
 
-  const isSebi = ['sebi_ra', 'sebi_ria'].includes(regStatus);
+  const isSebi = isPublisherStatus(regStatus);
 
   // ── Claim submission (claimMode only) ────────────────────────────────────
   const handleClaim = async () => {
@@ -1925,12 +1918,7 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
           <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',
               textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Investor type</div>
           <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
-            {(regOptions.length ? regOptions : [
-              {code:'self_directed',label:'Self-directed Investor',           description:'Invests own money independently.'},
-              {code:'enthusiast',  label:'Market Enthusiast',                 description:'Passionate about markets, shares ideas informally.'},
-              {code:'sebi_ra',     label:'SEBI Registered Research Analyst',  description:'INH000XXXXXX format.'},
-              {code:'sebi_ria',    label:'SEBI Registered Investment Adviser',description:'INA000XXXXXX format.'},
-            ]).map(opt=>(
+            {(regOptions.length ? regOptions : REGISTRATION_OPTIONS).map(opt=>(
               <label key={opt.code} style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer',
                   padding:'11px 14px',borderRadius:10,transition:'.15s',
                   background:regStatus===opt.code?'rgba(109,93,245,.2)':'rgba(255,255,255,.04)',
@@ -1954,7 +1942,7 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
               {[
-                {label:'SEBI Reg. Number',       ph:regStatus==='sebi_ra'?'INH000XXXXXX':'INA000XXXXXX',val:sebiNum, set:setSebiNum},
+                {label:'SEBI Reg. Number',       ph:'INH000XXXXXX',val:sebiNum, set:setSebiNum},
                 {label:'Valid Till',              ph:'',val:sebiTill,set:setSebiTill,type:'date'},
                 {label:'Firm / Employer (opt.)', ph:'e.g. XYZ Securities',val:sebiFirm,set:setSebiFirm,span:true},
               ].map((f,i)=>(

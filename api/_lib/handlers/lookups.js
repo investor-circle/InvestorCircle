@@ -56,12 +56,12 @@
 
 import { sql, parseBody, requireUid, requireAdmin, sendAuthError } from '../auth.js';
 import { sendInternalEmail } from '../notifyMember.js';
+import { REG_CONTRIBUTOR, REG_STATUSES, normalizeRegStatus, isPublisherStatus } from '../registrationStatus.js';
 
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FEATURE_KEYS = ['portfolio_import', 'ai_summaries', 'mutual_fund', 'leaderboards', 'overlap', 'mobile_app'];
 const CONTACT_CATEGORIES = ['bug', 'feature', 'question', 'partner', 'media', 'misleading', 'abuse', 'other'];
-const ALLOWED_REG_STATUS_LOOKUPS = ['self_directed', 'sebi_ra', 'sebi_ria'];
 // Profile-picture upload guardrail: client compresses to a small JPEG/PNG/WebP
 // before upload (see src/utils/image.js); this is a hard server-side backstop
 // against a caller sending something much larger. ~130,000 base64 chars is
@@ -184,7 +184,7 @@ export default async function handleLookups(req, res) {
           FROM user_profiles WHERE id = ${userId} LIMIT 1
         `;
         if (!rows[0]) { res.status(200).json({ info: null }); return; }
-        const isSebiApproved = ['sebi_ra', 'sebi_ria'].includes(rows[0].registration_status)
+        const isSebiApproved = isPublisherStatus(rows[0].registration_status)
           && rows[0].sebi_approval_status === 'approved';
         res.status(200).json({ info: { username: rows[0].username || null, isSebiApproved } });
         return;
@@ -193,7 +193,7 @@ export default async function handleLookups(req, res) {
       if (action === 'reg-options') {
         try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
         const [opts, msg] = await Promise.all([
-          sql`SELECT id, code, label, description, is_active, sort_order FROM registration_status_options WHERE is_active=true ORDER BY sort_order`,
+          sql`SELECT id, code, label, description, is_active, sort_order FROM registration_status_options WHERE is_active=true AND code = ANY(${REG_STATUSES}) ORDER BY sort_order`,
           sql`SELECT value FROM app_settings WHERE key='sebi_verification_message' LIMIT 1`,
         ]);
         res.status(200).json({ options: opts, verifyMessage: msg[0]?.value || '' });
@@ -711,17 +711,17 @@ export default async function handleLookups(req, res) {
       const p = body.profile || {};
       const fn = String(p.firstName || '').trim();
       const ln = String(p.lastName || '').trim();
-      const regStatus = String(p.registrationStatus || 'self_directed');
-      if (!ALLOWED_REG_STATUS_LOOKUPS.includes(regStatus)) {
+      const regStatus = normalizeRegStatus(p.registrationStatus || REG_CONTRIBUTOR);
+      if (!regStatus) {
         res.status(400).json({ error: 'Invalid registration status' });
         return;
       }
-      const isSebi = ['sebi_ra', 'sebi_ria'].includes(regStatus);
+      const isSebi = isPublisherStatus(regStatus);
       const current = await sql`
         SELECT registration_status, sebi_approval_status, sebi_submitted_at FROM user_profiles WHERE id = ${uid} LIMIT 1
       `;
       if (!current[0]) { res.status(404).json({ error: 'not_found' }); return; }
-      const sebiChanged = regStatus !== (current[0].registration_status || 'self_directed');
+      const sebiChanged = regStatus !== (normalizeRegStatus(current[0].registration_status) || REG_CONTRIBUTOR);
       const newApprovalStatus = isSebi
         ? (sebiChanged ? 'pending' : (current[0].sebi_approval_status || 'not_applied'))
         : 'not_applied';

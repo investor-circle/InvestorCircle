@@ -60,7 +60,7 @@ import {
 } from "../../services/api/profileApi";
 import { InstrumentSearch } from "../../components/common";
 import { EditGroupModal } from "../groups/Groups";
-import { ABOUT_DEFAULT_HTML, CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, THESIS_MAX_CHARS, TODAY } from "../../constants/app";
+import { ABOUT_DEFAULT_HTML, CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, THESIS_MAX_CHARS, TODAY, REG_PUBLISHER, REG_CONTRIBUTOR, REGISTRATION_OPTIONS, normalizeRegStatus } from "../../constants/app";
 import { ThesisEditor } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
@@ -73,7 +73,7 @@ export function AdminSeedData() {
   const VALID_HORIZONS   = ['<3m','6m','12m','>2Y'];
   const VALID_CONVICTIONS= ['Low','Medium','High'];
   const VALID_TYPES      = ['Buy','Sell','Hold'];
-  const VALID_REG_STATUS = ['self_directed','enthusiast','sebi_ra','sebi_ria'];
+  const VALID_REG_STATUS = [REG_PUBLISHER, REG_CONTRIBUTOR];
 
   const [file,       setFile]       = useState(null);
   const [parsed,     setParsed]     = useState(null);
@@ -131,8 +131,8 @@ export function AdminSeedData() {
     /* Sheet 2: Profiles */
     const profHdr = ['email','first_name','last_name','bio','avatar_color','registration_status','twitter_url','linkedin_url','telegram_url','instagram_url'];
     const profRows = [
-      ['rahul@example.com','Rahul','Sharma','Long-term equity investor focused on quality compounders and secular growth themes','#6d5df5','self_directed','https://twitter.com/rahulsharma','https://linkedin.com/in/rahulsharma','',''],
-      ['priya@example.com','Priya','Mehta','Thematic investor with conviction in India\'s infrastructure and domestic consumption story','#15924e','self_directed','','https://linkedin.com/in/priyamehta','https://t.me/priyamehta','https://instagram.com/priyamehta'],
+      ['rahul@example.com','Rahul','Sharma','Long-term equity investor focused on quality compounders and secular growth themes','#6d5df5','independent_market_contributor','https://twitter.com/rahulsharma','https://linkedin.com/in/rahulsharma','',''],
+      ['priya@example.com','Priya','Mehta','Thematic investor with conviction in India\'s infrastructure and domestic consumption story','#15924e','independent_market_contributor','','https://linkedin.com/in/priyamehta','https://t.me/priyamehta','https://instagram.com/priyamehta'],
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([profHdr,...profRows]), 'Profiles');
 
@@ -212,7 +212,7 @@ export function AdminSeedData() {
               last_name:  String(r.last_name||'').trim(),
               bio:        String(r.bio||'').trim().slice(0,300) || null,
               avatar_color:        String(r.avatar_color||'').trim() || null,
-              registration_status: String(r.registration_status||'self_directed').trim(),
+              registration_status: normalizeRegStatus(String(r.registration_status||'').trim()),
               twitter_url:   String(r.twitter_url||'').trim()   || null,
               linkedin_url:  String(r.linkedin_url||'').trim()  || null,
               telegram_url:  String(r.telegram_url||'').trim()  || null,
@@ -1578,7 +1578,7 @@ export function CreateCreatorModal({ onClose, onCreated }) {
   const [lastName,    setLastName]    = useState('');
   const [username,    setUsername]    = useState('');
   const [bio,         setBio]         = useState('');
-  const [regStatus,   setRegStatus]   = useState('self_directed');
+  const [regStatus,   setRegStatus]   = useState(REG_CONTRIBUTOR);
   const [busy,        setBusy]        = useState(false);
   const [err,         setErr]         = useState('');
   const [created,     setCreated]     = useState(null); // { claimLink, profileId, username }
@@ -1630,9 +1630,7 @@ export function CreateCreatorModal({ onClose, onCreated }) {
       <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Bio (optional)</label><textarea className="inp" value={bio} onChange={e=>setBio(e.target.value)} placeholder="Brief description of the creator's investment style…" rows={3} style={{width:'100%',marginTop:4,resize:'vertical',boxSizing:'border-box'}}/></div>
       <div><label style={{fontSize:12,fontWeight:700,color:'var(--muted)'}}>Registration type</label>
         <select className="inp" value={regStatus} onChange={e=>setRegStatus(e.target.value)} style={{width:'100%',marginTop:4}}>
-          <option value="self_directed">Self-directed / Non-SEBI</option>
-          <option value="sebi_ra">SEBI Registered Analyst</option>
-          <option value="sebi_ria">SEBI Registered Investment Advisor</option>
+          {REGISTRATION_OPTIONS.map(o=><option key={o.code} value={o.code}>{o.label}</option>)}
         </select>
       </div>
       {err && <div className="note warn" style={{fontSize:12}}>{err}</div>}

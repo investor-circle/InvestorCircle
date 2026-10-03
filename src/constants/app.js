@@ -316,3 +316,33 @@ export const PRIVACY_HTML = `
 
 </div>
 `.trim();
+
+// Profile categories (user_profiles.registration_status). Exactly two. Mirrored
+// in api/_lib/registrationStatus.js and mobile/src/utils/profile.js — keep all
+// three in step. The retired self_directed / enthusiast / sebi_ra / sebi_ria
+// codes are mapped, never written (see normalizeRegStatus).
+export const REG_PUBLISHER   = 'verified_research_publisher';
+export const REG_CONTRIBUTOR = 'independent_market_contributor';
+
+// Fallback list for the Edit Profile selector when the registration_status_options
+// lookup hasn't loaded; the server list (same codes) wins when present.
+export const REGISTRATION_OPTIONS = [
+  { code: REG_PUBLISHER,   label: 'Verified Research Publisher',
+    description: 'SEBI-registered Research Analysts and Research Entities who publish professional investment research.',
+    requires_sebi_fields: true },
+  { code: REG_CONTRIBUTOR, label: 'Independent Market Contributor',
+    description: 'Investors and market participants who share independent views, analysis and commentary on companies and markets.',
+    requires_sebi_fields: false },
+];
+
+const LEGACY_REG_STATUS = {
+  sebi_ra: REG_PUBLISHER,
+  self_directed: REG_CONTRIBUTOR, enthusiast: REG_CONTRIBUTOR, sebi_ria: REG_CONTRIBUTOR,
+};
+
+/** Any stored value (current or legacy, even null) -> a current category code. */
+export const normalizeRegStatus = (v) =>
+  (v === REG_PUBLISHER || v === REG_CONTRIBUTOR) ? v : (LEGACY_REG_STATUS[v] || REG_CONTRIBUTOR);
+
+/** Only Verified Research Publishers carry SEBI registration fields. */
+export const isPublisherStatus = (v) => normalizeRegStatus(v) === REG_PUBLISHER;

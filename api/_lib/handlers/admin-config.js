@@ -63,6 +63,7 @@
  */
 
 import { sql, parseBody } from '../auth.js';
+import { REG_CONTRIBUTOR, normalizeRegStatus } from '../registrationStatus.js';
 
 const FEED_TOGGLE_FIELDS = ['admin_enabled', 'always_on', 'default_on'];
 // The full set of tag types an admin may grant/revoke. Adding a new tag
@@ -263,7 +264,7 @@ export default async function handleAdminConfig(req, res, userId) {
               first_name=${p.first_name || null}, last_name=${p.last_name || null},
               full_name=${[p.first_name, p.last_name].filter(Boolean).join(' ') || null},
               bio=${p.bio}, avatar_color=${p.avatar_color},
-              registration_status=${p.registration_status || 'self_directed'},
+              registration_status=${normalizeRegStatus(p.registration_status) || REG_CONTRIBUTOR},
               twitter_url=${p.twitter_url}, linkedin_url=${p.linkedin_url},
               telegram_url=${p.telegram_url}, instagram_url=${p.instagram_url}
             WHERE email=${p.email} RETURNING id

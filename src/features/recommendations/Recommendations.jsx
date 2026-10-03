@@ -938,11 +938,11 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
   const SebiBadge=()=>{
     if(!recommenderInfo) return null;
     return recommenderInfo.isSebiApproved
-      ? <span title="SEBI Registered Research Analyst or Investment Adviser — platform-verified"
+      ? <span title="Verified Research Publisher — SEBI registration platform-verified"
           style={{fontSize:9,fontWeight:800,padding:'2px 8px',borderRadius:4,background:'rgba(21,146,78,.12)',color:'var(--gain)',border:'1px solid rgba(21,146,78,.3)',textTransform:'uppercase',letterSpacing:'.05em',whiteSpace:'nowrap',flexShrink:0}}>
           ✓ SEBI Reg.
         </span>
-      : <span title="Not SEBI Registered — investing on own account"
+      : <span title="Not a SEBI-verified publisher"
           style={{fontSize:9,fontWeight:700,padding:'2px 8px',borderRadius:4,background:'rgba(141,144,173,.08)',color:'var(--muted)',border:'1px solid rgba(141,144,173,.2)',textTransform:'uppercase',letterSpacing:'.05em',whiteSpace:'nowrap',flexShrink:0}}>
           Non-SEBI
         </span>;
