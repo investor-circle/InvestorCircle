@@ -56,7 +56,7 @@
 
 import { sql, parseBody, requireUid, requireAdmin, sendAuthError } from '../auth.js';
 import { sendInternalEmail } from '../notifyMember.js';
-import { REG_CONTRIBUTOR, REG_STATUSES, normalizeRegStatus, isPublisherStatus } from '../registrationStatus.js';
+import { REG_CONTRIBUTOR, REG_STATUSES, normalizeRegStatus, effectiveRegStatus, isPublisherStatus } from '../registrationStatus.js';
 
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -721,10 +721,13 @@ export default async function handleLookups(req, res) {
         SELECT registration_status, sebi_approval_status, sebi_submitted_at FROM user_profiles WHERE id = ${uid} LIMIT 1
       `;
       if (!current[0]) { res.status(404).json({ error: 'not_found' }); return; }
-      const sebiChanged = regStatus !== (normalizeRegStatus(current[0].registration_status) || REG_CONTRIBUTOR);
+      const sebiChanged = regStatus !== effectiveRegStatus(current[0].registration_status, current[0].sebi_approval_status);
+      // SEBI details are only ever written for the publisher category. Saving
+      // as an Independent Market Contributor leaves them (and the verification
+      // outcome, e.g. 'rejected') exactly as stored, as an audit trail.
       const newApprovalStatus = isSebi
         ? (sebiChanged ? 'pending' : (current[0].sebi_approval_status || 'not_applied'))
-        : 'not_applied';
+        : (current[0].sebi_approval_status || 'not_applied');
       const submittedAt = (isSebi && sebiChanged) ? new Date().toISOString() : current[0].sebi_submitted_at;
       const row = await sql`
         UPDATE user_profiles SET
@@ -735,9 +738,9 @@ export default async function handleLookups(req, res) {
           twitter_url = ${p.twitter || null}, linkedin_url = ${p.linkedin || null},
           telegram_url = ${p.telegram || null}, instagram_url = ${p.instagram || null},
           registration_status = ${regStatus},
-          sebi_reg_number = ${isSebi ? (p.sebiNum || null) : null},
-          sebi_reg_valid_till = ${isSebi ? (p.sebiTill || null) : null},
-          sebi_firm_name = ${isSebi ? (p.sebiFirm || null) : null},
+          sebi_reg_number = CASE WHEN ${isSebi}::boolean THEN ${p.sebiNum || null} ELSE sebi_reg_number END,
+          sebi_reg_valid_till = CASE WHEN ${isSebi}::boolean THEN ${p.sebiTill || null} ELSE sebi_reg_valid_till END,
+          sebi_firm_name = CASE WHEN ${isSebi}::boolean THEN ${p.sebiFirm || null} ELSE sebi_firm_name END,
           sebi_approval_status = ${newApprovalStatus},
           sebi_submitted_at = ${submittedAt},
           updated_at = now()

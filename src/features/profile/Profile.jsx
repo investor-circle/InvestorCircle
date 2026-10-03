@@ -64,7 +64,7 @@ import {
 } from "../../services/api/recommendationsApi";
 import { IdeaSharePopover, ThesisRenderer } from "../recommendations/Recommendations";
 import { ClosedInfoLine, ConvBadge, IciDonut, IdeaDisclaimer, MemberBadgeOverlay, MemberTagPill, OpenInAppBanner, RetBadge, ScoreBox, SmallAnchoredPopover, SocialIconBtn, StatusBadge2, TypeBadge } from "../../components/common";
-import { SECTOR_EMOJI, REG_CONTRIBUTOR, REGISTRATION_OPTIONS, normalizeRegStatus, isPublisherStatus } from "../../constants/app";
+import { SECTOR_EMOJI, REG_CONTRIBUTOR, REGISTRATION_OPTIONS, normalizeRegStatus, effectiveRegStatus, isPublisherStatus } from "../../constants/app";
 import { useIsMobile } from "../../hooks/index";
 import { sendEmail } from "../../services/notify";
 import { getClosedInfo, initialsOf } from "../../utils/format";
@@ -369,7 +369,7 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
     setAvatarErr('');
     setEditBio(p.bio||'');
     setEditSocials({ twitter:p.twitter_url||'', linkedin:p.linkedin_url||'', telegram:p.telegram_url||'', instagram:p.instagram_url||'' });
-    setEditRegStatus(normalizeRegStatus(p.registration_status));
+    setEditRegStatus(effectiveRegStatus(p.registration_status,p.sebi_approval_status));
     setEditSebiNum(p.sebi_reg_number||'');
     setEditSebiTill(p.sebi_reg_valid_till||'');
     setEditSebiFirm(p.sebi_firm_name||'');
@@ -401,18 +401,16 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
         sebiNum: editSebiNum, sebiTill: editSebiTill, sebiFirm: editSebiFirm,
       });
       const newApprovalStatus = isSebi
-        ? (editRegStatus !== normalizeRegStatus(data.profile.registration_status) ? 'pending' : (data.profile.sebi_approval_status||'not_applied'))
-        : 'not_applied';
+        ? (editRegStatus !== effectiveRegStatus(data.profile.registration_status,data.profile.sebi_approval_status) ? 'pending' : (data.profile.sebi_approval_status||'not_applied'))
+        : (data.profile.sebi_approval_status||'not_applied'); // SEBI history is retained for non-publishers
       const updates = {
         first_name:fn, last_name:ln, full_name:[fn,ln].filter(Boolean).join(' '),
         avatar_color:editAvatarColor, bio:editBio,
         twitter_url:editSocials.twitter, linkedin_url:editSocials.linkedin,
         telegram_url:editSocials.telegram, instagram_url:editSocials.instagram,
         registration_status:editRegStatus,
-        sebi_reg_number:isSebi?editSebiNum:null,
-        sebi_reg_valid_till:isSebi?editSebiTill:null,
-        sebi_firm_name:isSebi?editSebiFirm:null,
         sebi_approval_status:newApprovalStatus,
+        ...(isSebi?{sebi_reg_number:editSebiNum,sebi_reg_valid_till:editSebiTill,sebi_firm_name:editSebiFirm}:{}),
       };
       setData(d=>({...d,profile:{...d.profile,...updates}}));
       if(patchProfile) patchProfile(updates);
@@ -822,13 +820,14 @@ export function PublicProfilePage({ username, recoId, viewerUser, viewerConnecti
                     <span style={{fontSize:21,fontWeight:900,color:'#fff',letterSpacing:'-.6px',lineHeight:1.15}}>{displayName}</span>
                     {(()=>{
                       const approved=profile.sebi_approval_status==='approved';
-                      const isPublisher=isPublisherStatus(profile.registration_status);
-                      const label=isPublisher?(approved?'Verified Publisher':'Research Publisher'):'Independent Contributor';
+                      const isPublisher=isPublisherStatus(effectiveRegStatus(profile.registration_status,profile.sebi_approval_status));
+                      const label=isPublisher?(approved?'Verified Research Publisher':'Research Publisher · Verification Pending'):'Independent Market Contributor';
                       return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(255,255,255,.1)',color:'rgba(255,255,255,.75)',border:'1px solid rgba(255,255,255,.14)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>{label}</span>;
                     })()}
                     {(()=>{
                       const approved=profile.sebi_approval_status==='approved';
-                      const isSebi=isPublisherStatus(profile.registration_status);
+                      const isSebi=isPublisherStatus(effectiveRegStatus(profile.registration_status,profile.sebi_approval_status));
+                      if(isSebi&&!approved) return null; // pending verification — not "Non-SEBI"
                       if(isSebi&&approved) return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(21,146,78,.2)',color:'#4ade80',border:'1px solid rgba(21,146,78,.35)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>✓ SEBI{profile.sebi_reg_number?` · ${profile.sebi_reg_number}`:''}</span>;
                       return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:5,background:'rgba(244,63,94,.15)',color:'#fb7185',border:'1px solid rgba(244,63,94,.3)',textTransform:'uppercase',letterSpacing:'.06em',flexShrink:0}}>Non-SEBI</span>;
                     })()}
@@ -1517,7 +1516,7 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
     telegram:  profile?.telegram_url  || '',
     instagram: profile?.instagram_url || '',
   });
-  const [regStatus,    setRegStatus]    = useState(normalizeRegStatus(profile?.registration_status));
+  const [regStatus,    setRegStatus]    = useState(effectiveRegStatus(profile?.registration_status, profile?.sebi_approval_status));
   const [sebiNum,      setSebiNum]      = useState(profile?.sebi_reg_number      || '');
   const [sebiTill,     setSebiTill]     = useState(profile?.sebi_reg_valid_till  || '');
   const [sebiFirm,     setSebiFirm]     = useState(profile?.sebi_firm_name       || '');
@@ -1692,9 +1691,10 @@ export function ProfileEditModal({ profile, userId, username, patchProfile, onCl
         twitter_url: socials.twitter, linkedin_url: socials.linkedin,
         telegram_url: socials.telegram, instagram_url: socials.instagram,
         registration_status: regStatus,
-        sebi_reg_number:     isSebi ? sebiNum  : null,
-        sebi_reg_valid_till: isSebi ? sebiTill : null,
-        sebi_firm_name:      isSebi ? sebiFirm : null,
+        sebi_approval_status: isSebi
+          ? (regStatus !== effectiveRegStatus(profile?.registration_status, profile?.sebi_approval_status) ? 'pending' : (profile?.sebi_approval_status || 'not_applied'))
+          : (profile?.sebi_approval_status || 'not_applied'), // SEBI history is retained for non-publishers
+        ...(isSebi ? { sebi_reg_number: sebiNum, sebi_reg_valid_till: sebiTill, sebi_firm_name: sebiFirm } : {}),
       });
       onClose();
     } catch(e) { setErr('Could not save: ' + e.message); }

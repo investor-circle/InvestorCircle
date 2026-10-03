@@ -29,6 +29,18 @@ export function normalizeRegStatus(value) {
   return LEGACY_MAP[v] || null;
 }
 
+/**
+ * The category a profile effectively holds. The stored registration_status is
+ * the category the member CHOSE; sebi_approval_status is the separate
+ * verification outcome. A publisher whose verification was rejected is
+ * effectively an Independent Market Contributor (their SEBI details stay on
+ * the row for audit). Pending / not-yet-reviewed publishers stay publishers.
+ */
+export function effectiveRegStatus(status, approvalStatus) {
+  const s = normalizeRegStatus(status) || REG_CONTRIBUTOR;
+  return s === REG_PUBLISHER && approvalStatus === 'rejected' ? REG_CONTRIBUTOR : s;
+}
+
 /** Only the Verified Research Publisher category carries SEBI fields. */
 export function isPublisherStatus(value) {
   return normalizeRegStatus(value) === REG_PUBLISHER;

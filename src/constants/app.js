@@ -344,5 +344,17 @@ const LEGACY_REG_STATUS = {
 export const normalizeRegStatus = (v) =>
   (v === REG_PUBLISHER || v === REG_CONTRIBUTOR) ? v : (LEGACY_REG_STATUS[v] || REG_CONTRIBUTOR);
 
+/**
+ * The category a profile effectively holds: the stored registration_status is
+ * what the member chose, sebi_approval_status is the separate verification
+ * outcome. A publisher whose verification was rejected is effectively an
+ * Independent Market Contributor (SEBI details are kept for audit).
+ * Mirrors effectiveRegStatus in api/_lib/registrationStatus.js.
+ */
+export const effectiveRegStatus = (status, approval) => {
+  const s = normalizeRegStatus(status);
+  return s === REG_PUBLISHER && approval === 'rejected' ? REG_CONTRIBUTOR : s;
+};
+
 /** Only Verified Research Publishers carry SEBI registration fields. */
 export const isPublisherStatus = (v) => normalizeRegStatus(v) === REG_PUBLISHER;

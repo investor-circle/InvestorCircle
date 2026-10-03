@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  REG_PUBLISHER, REG_CONTRIBUTOR, REG_STATUSES, normalizeRegStatus, isPublisherStatus,
+  REG_PUBLISHER, REG_CONTRIBUTOR, REG_STATUSES, normalizeRegStatus, isPublisherStatus, effectiveRegStatus,
 } from './registrationStatus.js';
 import * as web from '../../src/constants/app.js';
 
@@ -29,6 +29,15 @@ describe('profile categories', () => {
     expect(isPublisherStatus('sebi_ria')).toBe(false);
   });
 
+  it('verification lifecycle: only a rejected publisher drops to contributor', () => {
+    for (const a of ['pending', 'approved', 'not_applied', null, undefined]) {
+      expect(effectiveRegStatus(REG_PUBLISHER, a)).toBe(REG_PUBLISHER);
+    }
+    expect(effectiveRegStatus(REG_PUBLISHER, 'rejected')).toBe(REG_CONTRIBUTOR);
+    expect(effectiveRegStatus('sebi_ra', 'rejected')).toBe(REG_CONTRIBUTOR);
+    expect(effectiveRegStatus(REG_CONTRIBUTOR, 'approved')).toBe(REG_CONTRIBUTOR);
+  });
+
   // The server and web copies are independent files; they must not drift.
   it('agrees with the web constants', () => {
     expect([web.REG_PUBLISHER, web.REG_CONTRIBUTOR]).toEqual(REG_STATUSES);
@@ -37,6 +46,11 @@ describe('profile categories', () => {
       expect(web.normalizeRegStatus(v)).toBe(normalizeRegStatus(v));
     }
     expect(web.normalizeRegStatus(null)).toBe(REG_CONTRIBUTOR);
+    for (const st of [REG_PUBLISHER, REG_CONTRIBUTOR, 'sebi_ra']) {
+      for (const ap of ['pending', 'approved', 'rejected', null]) {
+        expect(web.effectiveRegStatus(st, ap)).toBe(effectiveRegStatus(st, ap));
+      }
+    }
   });
 
   it('web selector options carry the specified labels and descriptions', () => {

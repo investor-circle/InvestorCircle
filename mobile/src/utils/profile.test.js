@@ -8,6 +8,7 @@ import {
   REG_CONTRIBUTOR,
   REG_LABELS,
   normalizeRegStatus,
+  effectiveRegStatus,
 } from "./profile";
 
 // profile-edit-save is a WHOLE-RECORD write: the server sets every column it
@@ -156,6 +157,19 @@ describe("isSebiStatus", () => {
     for (const v of [REG_CONTRIBUTOR, "self_directed", "sebi_ria", "", null, undefined, "sebi"]) {
       expect(isSebiStatus(v)).toBe(false);
     }
+  });
+});
+
+describe("verification lifecycle", () => {
+  it("keeps a pending or approved publisher as a publisher", () => {
+    for (const ap of ["pending", "approved", "not_applied"]) {
+      expect(profileToForm({ registration_status: REG_PUBLISHER, sebi_approval_status: ap }).registrationStatus).toBe(REG_PUBLISHER);
+    }
+  });
+
+  it("treats a rejected publisher as an Independent Market Contributor", () => {
+    expect(effectiveRegStatus(REG_PUBLISHER, "rejected")).toBe(REG_CONTRIBUTOR);
+    expect(profileToForm({ registration_status: REG_PUBLISHER, sebi_approval_status: "rejected" }).registrationStatus).toBe(REG_CONTRIBUTOR);
   });
 });
 

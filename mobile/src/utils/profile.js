@@ -43,6 +43,16 @@ export function normalizeRegStatus(status) {
   return LEGACY_REG_STATUS[status] || REG_CONTRIBUTOR;
 }
 
+/**
+ * Effective category: a publisher whose SEBI verification was rejected is an
+ * Independent Market Contributor (details kept server-side for audit).
+ * Mirrors effectiveRegStatus in api/_lib/registrationStatus.js.
+ */
+export function effectiveRegStatus(status, approval) {
+  const s = normalizeRegStatus(status);
+  return s === REG_PUBLISHER && approval === "rejected" ? REG_CONTRIBUTOR : s;
+}
+
 /** Whether a status is Verified Research Publisher — the only one with SEBI fields. */
 export function isSebiStatus(status) {
   return normalizeRegStatus(status) === REG_PUBLISHER;
@@ -55,7 +65,7 @@ export function isSebiStatus(status) {
  */
 export function profileToForm(profile) {
   const p = profile || {};
-  const status = normalizeRegStatus(p.registration_status);
+  const status = effectiveRegStatus(p.registration_status, p.sebi_approval_status);
   return {
     firstName: p.first_name || "",
     lastName: p.last_name || "",
