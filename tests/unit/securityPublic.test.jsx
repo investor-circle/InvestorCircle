@@ -147,3 +147,25 @@ describe("public Security Page — Market Views carry no recommendation framing"
     expect(out).toContain('href="/idea/v1"');
   });
 });
+
+describe("public Security Page — monthly activity is exact beyond the capped lists", () => {
+  it("renders the server's monthly aggregates, with research and Market Views in separate charts", () => {
+    const d = dataOf({ r: [research(1, "Buy")], v: [view(1, "Positive")] });
+    const m = securityModel(d);
+    const out = renderToStaticMarkup(
+      <SecurityTabs symbol="INFY" ideas={d.ideas} summary={d.summary} views={d.views} viewSummary={d.view_summary} viewStances={d.view_stances}
+        researchMonthlyAgg={[{ mo: "2026-01", Buy: 700, Hold: 200, Sell: 100 }]}
+        viewMonthlyAgg={[{ mo: "2026-01", Positive: 12, Neutral: 3, Negative: 4000 }]} related={[]} />
+    );
+    expect(m.hasPage).toBe(true);
+    expect(out).toContain("700");
+    expect(out).toContain("4000");
+    // The one rendered research idea / view would have produced 1 Buy / 1 Positive.
+    const [researchChart, viewChart] = [out.split("Research activity by month")[1].split("Market Views on INFY")[0], out.split("Market View activity by month")[1]];
+    expect(researchChart).toContain("700");
+    expect(researchChart).not.toContain("4000");
+    expect(researchChart).not.toMatch(/Positive|Negative/);
+    expect(viewChart).toContain("4000");
+    expect(viewChart).not.toMatch(/\bBuy\b|\bHold\b|\bSell\b/);
+  });
+});

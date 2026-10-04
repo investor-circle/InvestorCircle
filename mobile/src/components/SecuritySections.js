@@ -8,6 +8,8 @@ import {
   researchBreakdown,
   researchMonthly,
   viewMonthly,
+  viewMonthlyFromAggregate,
+  circleViewBreakdown,
   viewBreakdown,
   viewBreakdownFromCounts,
   viewThemes,
@@ -295,6 +297,8 @@ export function ViewsSection({
   summary,
   views,
   stances,
+  monthly,
+  byContributor,
   circleIds,
   signedIn,
   hasMore,
@@ -304,9 +308,14 @@ export function ViewsSection({
   onOpenProfile,
 }) {
   const community = viewBreakdownFromCounts(summary);
-  const circleStances = signedIn && circleIds ? stances.filter((s) => circleIds.has(String(s.from))) : [];
-  const circle = viewBreakdown(circleStances, (s) => s.from);
-  const months = viewMonthly(stances);
+  // Exact server aggregates over every public view; the capped stances are only a fallback.
+  const inCircle = (id) => !!(circleIds && circleIds.has(String(id)));
+  const circle = !signedIn || !circleIds
+    ? viewBreakdownFromCounts({})
+    : byContributor
+      ? circleViewBreakdown(byContributor, inCircle)
+      : viewBreakdown(stances.filter((s) => inCircle(s.from)), (s) => s.from);
+  const months = monthly ? viewMonthlyFromAggregate(monthly) : viewMonthly(stances);
   const themes = viewThemes(views, { nameOf: (r) => r.full_name || r.username || null });
   const hasThemes = themes.positive.length > 0 || themes.concerns.length > 0;
   return (

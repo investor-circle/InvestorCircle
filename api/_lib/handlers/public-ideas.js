@@ -157,7 +157,7 @@ async function bySymbol(req, res) {
   if (!SYMBOL_RE.test(symbol)) { res.status(400).json({ error: 'invalid symbol' }); return; }
   const limit = clampLimit(req.query?.limit, MAX_LIMIT);
 
-  const [ideas, summary, views, viewSummary, viewStances] = await Promise.all([
+  const [ideas, summary, views, viewSummary, viewStances, researchMonthly, viewMonthly] = await Promise.all([
     sql`
       SELECT
         r.id, r.ticker, r.asset_name, r.asset_class,
@@ -259,6 +259,29 @@ async function bySymbol(req, res) {
       ORDER BY r.created_at DESC
       LIMIT ${STANCE_CAP}
     `,
+    // Exact monthly activity, grouped in the database over EVERY public idea —
+    // never derived from the capped lists above. Two datasets, two statements:
+    // research (Buy/Hold/Sell) and Market Views (Positive/Neutral/Negative).
+    sql`
+      SELECT to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS mo,
+             COUNT(*) FILTER (WHERE COALESCE(r.recommendation_type, 'Buy') NOT IN ('Hold', 'Sell')) AS buy,
+             COUNT(*) FILTER (WHERE r.recommendation_type = 'Hold') AS hold,
+             COUNT(*) FILTER (WHERE r.recommendation_type = 'Sell') AS sell
+      FROM ic_recommendations r
+      WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
+      GROUP BY 1 ORDER BY 1
+    `,
+    sql`
+      SELECT to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS mo,
+             COUNT(*) FILTER (WHERE r.recommendation_type = 'Positive') AS positive,
+             COUNT(*) FILTER (WHERE r.recommendation_type = 'Neutral')  AS neutral,
+             COUNT(*) FILTER (WHERE r.recommendation_type = 'Negative') AS negative
+      FROM ic_recommendations r
+      WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+      GROUP BY 1 ORDER BY 1
+    `,
   ]);
 
   const s = summary[0] || {};
@@ -294,6 +317,9 @@ async function bySymbol(req, res) {
     views: views.map(i => ({ ...i, thesis: plainThesisText(i.thesis) })),
     // Only who/what/when — never commentary — whatever the query returned.
     view_stances: viewStances.map(({ recommendation_type, created_at, author_username }) => ({ recommendation_type, created_at, author_username })),
+    // Exact month-by-month counts over every public idea (not the capped lists).
+    research_monthly: researchMonthly.map(m => ({ mo: m.mo, Buy: Number(m.buy) || 0, Hold: Number(m.hold) || 0, Sell: Number(m.sell) || 0 })),
+    view_monthly: viewMonthly.map(m => ({ mo: m.mo, Positive: Number(m.positive) || 0, Neutral: Number(m.neutral) || 0, Negative: Number(m.negative) || 0 })),
   });
 }
 

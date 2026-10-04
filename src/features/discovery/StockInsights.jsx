@@ -47,6 +47,10 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   const [viewSummary, setViewSummary] = useState({ total:0, positive:0, neutral:0, negative:0, contributors:0 });
   const [viewStances, setViewStances] = useState([]); // lightweight who/what/when for every public view
   const [hasMoreViews, setHasMoreViews] = useState(false);
+  // Exact server aggregates (null = not provided → derived from the full list): monthly activity and per-contributor view counts.
+  const [researchMonthlyAgg, setResearchMonthlyAgg] = useState(null);
+  const [viewMonthlyAgg, setViewMonthlyAgg] = useState(null);
+  const [byContributor, setByContributor] = useState(null);
   const [researchCounts, setResearchCounts] = useState(null); // exact rating counts (public path), else derived from the full list
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -179,17 +183,17 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   useEffect(()=>{
     if (!ticker) return;
     let cancelled = false;
-    setLoading(true); setRecos([]); setViews([]); setViewStances([]); setHasMoreViews(false); setResearchCounts(null);
+    setLoading(true); setRecos([]); setViews([]); setViewStances([]); setHasMoreViews(false); setResearchCounts(null); setResearchMonthlyAgg(null); setViewMonthlyAgg(null); setByContributor(null);
     setViewSummary({ total:0, positive:0, neutral:0, negative:0, contributors:0 });
     const load = signedIn
       ? Promise.all([dbGetTickerRecos(ticker), dbGetTickerViews(ticker)])
-          .then(([rows, v]) => ({ ideas: rows, views: v.views, summary: v.summary, stances: v.stances, hasMore: v.hasMore, counts: null }))
+          .then(([rows, v]) => ({ ideas: rows, views: v.views, summary: v.summary, stances: v.stances, hasMore: v.hasMore, counts: null, researchMonthly: null, viewMonthly: v.monthly, byContributor: v.byContributor }))
       : dbGetPublicSecurity(ticker)
-          .then(d => ({ ideas: d.ideas, views: d.views, summary: d.viewSummary, stances: d.viewStances, hasMore: d.views.length < d.viewSummary.total, counts: d.researchCounts }));
+          .then(d => ({ ideas: d.ideas, views: d.views, summary: d.viewSummary, stances: d.viewStances, hasMore: d.views.length < d.viewSummary.total, counts: d.researchCounts, researchMonthly: d.researchMonthly, viewMonthly: d.viewMonthly, byContributor: null }));
     load
       .then(d=>{
         if (cancelled) return;
-        setRecos(d.ideas); setViews(d.views); setViewSummary(d.summary); setViewStances(d.stances); setHasMoreViews(!!d.hasMore); setResearchCounts(d.counts);
+        setRecos(d.ideas); setViews(d.views); setViewSummary(d.summary); setViewStances(d.stances); setHasMoreViews(!!d.hasMore); setResearchCounts(d.counts); setResearchMonthlyAgg(d.researchMonthly); setViewMonthlyAgg(d.viewMonthly); setByContributor(d.byContributor);
         setLoading(false);
       })
       .catch(()=>{ if (!cancelled) setLoading(false); });
@@ -432,12 +436,12 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
           ("what does verified research say?"), then Market Views ("what are
           independent participants saying?"), then the people behind both. */}
       {hasResearch && (
-        <ResearchSection sectionRef={el=>sectionRefs.current.research=el} ticker={ticker} recos={recos} breakdown={researchB}
+        <ResearchSection sectionRef={el=>sectionRefs.current.research=el} ticker={ticker} recos={recos} breakdown={researchB} monthly={researchMonthlyAgg}
           circleIds={circleIds} isMobile={isMobile} memberTagsByUser={memberTagsByUser}/>
       )}
       {hasViews && (
         <ViewsSection sectionRef={el=>sectionRefs.current.views=el} ticker={ticker}
-          summary={viewSummary} views={views} stances={viewStances} hasMore={hasMoreViews}
+          summary={viewSummary} views={views} stances={viewStances} monthly={viewMonthlyAgg} byContributor={byContributor} hasMore={hasMoreViews}
           loadingMore={loadingMore} onLoadMore={loadMoreViews}
           signedIn={signedIn} circleIds={circleIds} onSignIn={goHome} isMobile={isMobile}
           memberTagsByUser={memberTagsByUser}/>

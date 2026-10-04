@@ -136,3 +136,33 @@ describe("mobile Security Page — Market Views carry no recommendation framing"
     expect(t.queryByText("Low")).toBeNull();
   });
 });
+
+describe("mobile Security Page — analytics come from exact aggregates, not the capped rows", () => {
+  it("Your Circle split and monthly Market View activity use every record", () => {
+    const v = [view(1, "Positive"), view(2, "Negative")]; // the capped page
+    const t = render(
+      <ViewsSection
+        ticker="INFY"
+        summary={{ total: 4000, positive: 1000, neutral: 1000, negative: 2000, contributors: 80 }}
+        views={v}
+        stances={stancesOf(v)}
+        monthly={[
+          { mo: "2026-01", Positive: 600, Neutral: 400, Negative: 900 },
+          { mo: "2026-02", Positive: 400, Neutral: 600, Negative: 1100 },
+        ]}
+        byContributor={[
+          { from: "circ1", positive: 100, neutral: 100, negative: 800 },
+          { from: "stranger", positive: 900, neutral: 900, negative: 1200 },
+        ]}
+        circleIds={new Set(["circ1"])}
+        signedIn
+        hasMore
+      />
+    );
+    expect(t.getAllByText(/10% Positive/).length).toBeGreaterThan(0); // Circle: 100 / 1000
+    expect(t.getAllByText(/80% Negative/).length).toBeGreaterThan(0);
+    expect(t.getAllByText(/25% Positive/).length).toBeGreaterThan(0); // Community: 1000 / 4000
+    expect(t.getAllByText(/50% Negative/).length).toBeGreaterThan(0);
+    expect(t.queryAllByText(/\b(Buy|Hold|Sell)\b/)).toHaveLength(0);
+  });
+});

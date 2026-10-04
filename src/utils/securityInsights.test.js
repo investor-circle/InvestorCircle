@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import {
   percentSplit, researchBreakdown, researchBreakdownFromCounts, viewBreakdown, viewBreakdownFromCounts, currentViews, researchMonthly, viewMonthly,
   commentaryOf, excerpt, viewThemes, pageSections, researchRows, viewRows, isViewRow,
+  monthlyFromAggregate, researchMonthlyFromAggregate, viewMonthlyFromAggregate, circleViewBreakdown,
 } from "./securityInsights";
 
 // Verified Research (Buy / Hold / Sell) and Market Views (Positive / Neutral /
@@ -156,4 +157,42 @@ describe("pageSections — what to show", () => {
     [{ research: 0, views: 0 }, { hasResearch: false, hasViews: false, hasAny: false }],
     [{}, { hasResearch: false, hasViews: false, hasAny: false }],
   ])("%j", (input, out) => expect(pageSections(input)).toEqual(out));
+});
+
+describe("exact analytics from server aggregates", () => {
+  it("monthly activity from aggregate rows keeps each dataset's own types, sorted, with empty months dropped", () => {
+    const agg = [
+      { mo: "2026-02", Buy: 4000, Hold: 10, Sell: 0, Positive: 99 },
+      { mo: "2025-12", Buy: 0, Hold: 0, Sell: 0 },
+      { mo: "2026-01", Buy: 1, Hold: 2, Sell: "3" },
+    ];
+    expect(researchMonthlyFromAggregate(agg)).toEqual([
+      { mo: "2026-01", Buy: 1, Hold: 2, Sell: 3 },
+      { mo: "2026-02", Buy: 4000, Hold: 10, Sell: 0 },
+    ]);
+    // a research aggregate row never leaks a Market View key, and vice versa
+    expect(Object.keys(researchMonthlyFromAggregate(agg)[0])).not.toContain("Positive");
+    expect(Object.keys(viewMonthlyFromAggregate([{ mo: "2026-01", Positive: 5, Neutral: 0, Negative: 1, Buy: 7 }])[0]).sort()).toEqual(["Negative", "Neutral", "Positive", "mo"]);
+    expect(monthlyFromAggregate(null, ["Buy"])).toEqual([]);
+  });
+
+  it("matches counting the full rows (the same shape the capped-row path produced)", () => {
+    const rows = [r("Buy"), r("Buy"), r("Sell", { created_at: "2025-04-02T00:00:00Z" })];
+    expect(researchMonthlyFromAggregate([{ mo: "2025-02", Buy: 2, Hold: 0, Sell: 0 }, { mo: "2025-04", Buy: 0, Hold: 0, Sell: 1 }])).toEqual(researchMonthly(rows));
+  });
+
+  it("Your Circle split totals every Circle member's views from the per-contributor counts, beyond any row cap", () => {
+    const by = [
+      { from: "a", positive: 3000, neutral: 0, negative: 1000 },   // in the Circle
+      { from: "b", positive: 0, neutral: 2000, negative: 0 },      // in the Circle
+      { from: "c", positive: 9999, neutral: 0, negative: 0 },      // community only
+      { from: "d", positive: 0, neutral: 0, negative: 0 },
+    ];
+    const c = circleViewBreakdown(by, (id) => id === "a" || id === "b" || id === "d");
+    expect(c).toMatchObject({ total: 6000, positive: 3000, neutral: 2000, negative: 1000, contributors: 2 });
+    expect([c.positivePct, c.neutralPct, c.negativePct]).toEqual([50, 33, 17]);
+    expect(c.positivePct + c.neutralPct + c.negativePct).toBe(100);
+    expect(circleViewBreakdown([], () => true).total).toBe(0);
+    expect(circleViewBreakdown(undefined, () => true).total).toBe(0);
+  });
 });

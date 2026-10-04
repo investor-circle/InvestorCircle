@@ -66,11 +66,11 @@ describe("Market Views stay out of performance, ICI and consensus inputs", () =>
     rows = [{ idea_count: 1, total: 1 }];
     await handlePublicIdeas({ method: "GET", query: { action: "by-symbol", symbol: "INFY" } }, mkRes());
     const calls = onIdeas();
-    expect(calls).toHaveLength(5);
+    expect(calls).toHaveLength(7);
     const viewCalls = calls.filter((c) => c.text.includes("= ANY("));
     const researchCalls = calls.filter((c) => !c.text.includes("= ANY("));
-    expect(viewCalls).toHaveLength(3);      // page, aggregate, lightweight stances
-    expect(researchCalls).toHaveLength(2);  // ideas, summary
+    expect(viewCalls).toHaveLength(4);      // page, aggregate, lightweight stances, monthly
+    expect(researchCalls).toHaveLength(3);  // ideas, summary, monthly
     for (const c of researchCalls) expect(excludes(c), c.text.slice(0, 100)).toBe(true);
     for (const c of viewCalls) {
       expect(c.text, c.text.slice(0, 100)).not.toContain("<> ALL(");
@@ -96,7 +96,7 @@ describe("Market Views stay out of performance, ICI and consensus inputs", () =>
     sqlCalls.length = 0;
     await handleLookups({ method: "GET", query: { action: "ticker-views", ticker: "INFY" }, headers: { authorization: "Bearer t" } }, mkRes());
     const calls = onIdeas();
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(5);
     for (const c of calls) {
       expect(c.text).toContain("r.is_public = true");
       expect(c.text).toContain("= ANY(");

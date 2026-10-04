@@ -160,6 +160,8 @@ function SecurityScreen() {
                   summary={summary}
                   views={viewData.views}
                   stances={viewData.stances}
+                  monthly={viewData.monthly}
+                  byContributor={viewData.byContributor}
                   circleIds={circleIds}
                   signedIn
                   hasMore={viewData.hasMore}

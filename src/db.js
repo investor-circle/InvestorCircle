@@ -921,7 +921,7 @@ const EMPTY_VIEW_SUMMARY = { total: 0, positive: 0, neutral: 0, negative: 0, con
 // lightweight who/what/when for all of them (current view per contributor,
 // Circle comparison, monthly activity).
 export async function getTickerViews(ticker, { limit = 30, offset = 0 } = {}) {
-  const empty = { summary: EMPTY_VIEW_SUMMARY, views: [], stances: [], hasMore: false };
+  const empty = { summary: EMPTY_VIEW_SUMMARY, views: [], stances: [], monthly: [], byContributor: [], hasMore: false };
   if (!ticker) return empty;
   const api = await callApi(`/data?resource=lookups&action=ticker-views&ticker=${encodeURIComponent(ticker)}&limit=${limit}&offset=${offset}`);
   if (!api.ok) return empty;
@@ -929,6 +929,9 @@ export async function getTickerViews(ticker, { limit = 30, offset = 0 } = {}) {
     summary: api.data.summary || EMPTY_VIEW_SUMMARY,
     views: api.data.views || [],
     stances: api.data.stances || [],
+    // Exact aggregates over every public view (see lookups.js ticker-views).
+    monthly: api.data.monthly || [],
+    byContributor: api.data.by_contributor || [],
     hasMore: !!api.data.has_more,
   };
 }
@@ -939,7 +942,7 @@ export async function getTickerViews(ticker, { limit = 30, offset = 0 } = {}) {
 // the page logic runs unmodified against either source (see the field notes on
 // getPublicTickerIdeas above — `from` is the author's username here).
 export async function getPublicSecurity(ticker) {
-  const empty = { ideas: [], views: [], viewSummary: EMPTY_VIEW_SUMMARY, viewStances: [], researchCounts: null, name: null, sector: null };
+  const empty = { ideas: [], views: [], viewSummary: EMPTY_VIEW_SUMMARY, viewStances: [], researchCounts: null, researchMonthly: [], viewMonthly: [], name: null, sector: null };
   if (!ticker) return empty;
   try {
     const res = await fetch(`${API_BASE}/data?resource=public-ideas&action=by-symbol&symbol=${encodeURIComponent(ticker)}`);
@@ -960,6 +963,9 @@ export async function getPublicSecurity(ticker) {
       researchCounts: data.summary && data.summary.buy_count != null
         ? { buy: Number(data.summary.buy_count) || 0, hold: Number(data.summary.hold_count) || 0, sell: Number(data.summary.sell_count) || 0, publishers: Number(data.summary.contributor_count) || 0 }
         : null,
+      // Exact month-by-month counts over every public idea (the lists are capped).
+      researchMonthly: data.research_monthly || [],
+      viewMonthly: data.view_monthly || [],
       name: data.name || null,
       sector: data.sector || null,
     };

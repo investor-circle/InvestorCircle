@@ -200,3 +200,61 @@ describe("Security Page — public (signed-out) vs authenticated", () => {
     expect(screen.getAllByText(/Sign in to see/).length).toBeGreaterThan(0);
   });
 });
+
+describe("Security Page — analytics come from exact aggregates, not the capped rows", () => {
+  // The rendered rows/stances are a tiny capped slice; the aggregates describe a
+  // far larger dataset. The page must show the aggregates.
+  const bigViews = [view("1", "Positive"), view("2", "Negative")];
+  const aggregates = {
+    summary: { total: 4000, positive: 1000, neutral: 1000, negative: 2000, contributors: 80 },
+    monthly: [{ mo: "2026-01", Positive: 600, Neutral: 400, Negative: 900 }, { mo: "2026-02", Positive: 400, Neutral: 600, Negative: 1100 }],
+    byContributor: [
+      { from: "circ1", positive: 100, neutral: 100, negative: 800 },   // in Your Circle
+      { from: "stranger", positive: 900, neutral: 900, negative: 1200 },
+    ],
+  };
+
+  it("signed-in: Your Circle and Community percentages and monthly counts use every record", async () => {
+    api.getTickerRecos.mockResolvedValue([research("1", "Buy")]);
+    api.getTickerViews.mockResolvedValue({ ...aggregates, views: bigViews, stances: stancesOf(bigViews), hasMore: true });
+    render(
+      <SecurityIntelligencePage securityTicker={{ ticker: "INFY", name: "Infosys" }} contacts={[{ id: "circ1" }]} me={{ id: "me" }}
+        viewerUser={{ uid: "me" }} trackedIds={new Set()} onOpenSecurity={() => {}} onBack={() => {}} onHome={() => {}} />
+    );
+    await loaded();
+    const card = within(await screen.findByText("Your Circle vs Community").then(n => n.closest(".card")));
+    // Community: 1000 / 1000 / 2000 of 4000 → 25 / 25 / 50. Circle: 100 / 100 / 800 of 1000 → 10 / 10 / 80.
+    const community = card.getByText("Community").parentElement.parentElement;
+    expect(within(community).getByText("25% Positive")).toBeTruthy();
+    expect(within(community).getByText("50% Negative")).toBeTruthy();
+    expect(community.textContent).toContain("4000 views");
+    const circle = card.getAllByText("Your Circle")[0].parentElement.parentElement;
+    expect(within(circle).getByText("10% Positive")).toBeTruthy();
+    expect(within(circle).getByText("80% Negative")).toBeTruthy();
+    expect(circle.textContent).toContain("1000 views");
+
+    // Monthly Market View activity: counts from the aggregate (900 / 1100), not the 2 rendered rows.
+    const monthly = (await screen.findByText("Market View activity by month")).closest(".card");
+    expect(within(monthly).getByText("900 Negative")).toBeTruthy();
+    expect(within(monthly).getByText("1100 Negative")).toBeTruthy();
+    // …and it carries no research labels.
+    expect(within(monthly).queryByText(/Buy|Hold|Sell/)).toBeNull();
+  });
+
+  it("signed-out: research and Market View monthly charts use the exact public aggregates, kept separate", async () => {
+    const r = [research("1", "Buy")];
+    api.getPublicSecurity.mockResolvedValue({
+      ideas: r, views: bigViews, viewSummary: aggregates.summary, viewStances: stancesOf(bigViews),
+      researchCounts: { buy: 3000, hold: 500, sell: 500, publishers: 20 },
+      researchMonthly: [{ mo: "2026-01", Buy: 1500, Hold: 250, Sell: 250 }, { mo: "2026-02", Buy: 1500, Hold: 250, Sell: 250 }],
+      viewMonthly: aggregates.monthly, name: "Infosys", sector: "IT",
+    });
+    mount({ signedIn: false }); await loaded();
+    const rm = (await screen.findByText("Research activity by month")).closest(".card");
+    expect(within(rm).getAllByText("1500 Buy")).toHaveLength(2);
+    expect(within(rm).queryByText(/Positive|Neutral|Negative/)).toBeNull();
+    const vm = (await screen.findByText("Market View activity by month")).closest(".card");
+    expect(within(vm).getByText("900 Negative")).toBeTruthy();
+    expect(within(vm).queryByText(/\bBuy\b|\bHold\b|\bSell\b/)).toBeNull();
+  });
+});

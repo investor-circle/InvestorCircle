@@ -178,7 +178,7 @@ export default async function SecurityPage({ params }) {
           no data is not rendered. Sector is the eyebrow above — not repeated. */}
       <SecurityLayers research={researchB} views={viewB} />
 
-      <SecurityTabs symbol={sym} ideas={ideas} summary={summary} views={views} viewSummary={viewSummary} viewStances={viewStances} related={related} />
+      <SecurityTabs symbol={sym} ideas={ideas} summary={summary} views={views} viewSummary={viewSummary} viewStances={viewStances} researchMonthlyAgg={data.research_monthly || null} viewMonthlyAgg={data.view_monthly || null} related={related} />
 
       <Gate
         line={`Sign in to see Your Circle's take on ${sym}, post your own view, or track this stock.`}

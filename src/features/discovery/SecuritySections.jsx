@@ -14,7 +14,7 @@ import { ThesisRenderer } from "../recommendations/Recommendations";
 import { fmtDate, ideaStatusSummary, initialsOf } from "../../utils/format";
 import { openProfile, openReco } from "../../utils/navigation";
 import { ideaTypeMeta, toneColors } from "../../utils/ideaType";
-import { researchBreakdown, researchMonthly, viewMonthly, viewBreakdown, viewBreakdownFromCounts, viewThemes } from "../../utils/securityInsights";
+import { researchBreakdown, researchMonthly, viewMonthly, viewBreakdown, viewBreakdownFromCounts, viewThemes, researchMonthlyFromAggregate, viewMonthlyFromAggregate, circleViewBreakdown } from "../../utils/securityInsights";
 
 const when = (v) => v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const nameOf = (r) => r.full_name || r.username || 'Anonymous';
@@ -134,10 +134,11 @@ const TypePill = ({ t, size = 11 }) => {
 const CirclePill = () => <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'var(--accent-soft)', color: 'var(--accent-ink)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Your Circle</span>;
 
 /* ───────────────────────── Verified Research ───────────────────────── */
-export function ResearchSection({ sectionRef, ticker, recos, breakdown, circleIds, isMobile, memberTagsByUser }) {
+export function ResearchSection({ sectionRef, ticker, recos, breakdown, monthly, circleIds, isMobile, memberTagsByUser }) {
   // `breakdown` carries the exact counts when the data source caps its list.
   const b = breakdown || researchBreakdown(recos, r => r.from);
-  const months = researchMonthly(recos);
+  // Exact server aggregate when the list is capped (public path); else the full list.
+  const months = monthly ? researchMonthlyFromAggregate(monthly) : researchMonthly(recos);
   const convMap = {};
   recos.forEach(r => { if (r.conviction) convMap[r.conviction] = (convMap[r.conviction] || 0) + 1; });
   const active = recos.filter(r => r.status === 'Active').length;
@@ -315,11 +316,13 @@ export function ViewCard({ v, inCircle, memberTags }) {
   );
 }
 
-export function ViewsSection({ sectionRef, ticker, summary, views, stances, hasMore, loadingMore, onLoadMore, signedIn, circleIds, onSignIn, isMobile, memberTagsByUser }) {
+export function ViewsSection({ sectionRef, ticker, summary, views, stances, monthly, byContributor, hasMore, loadingMore, onLoadMore, signedIn, circleIds, onSignIn, isMobile, memberTagsByUser }) {
   const community = viewBreakdownFromCounts(summary);
-  const circleStances = signedIn ? stances.filter(s => circleIds.has(s.from)) : [];
-  const circle = viewBreakdown(circleStances, s => s.from);
-  const months = viewMonthly(stances);
+  // Exact server aggregates over every public view; the capped stances are only a fallback.
+  const circle = !signedIn ? viewBreakdownFromCounts({})
+    : byContributor ? circleViewBreakdown(byContributor, id => circleIds.has(id))
+    : viewBreakdown(stances.filter(s => circleIds.has(s.from)), s => s.from);
+  const months = monthly ? viewMonthlyFromAggregate(monthly) : viewMonthly(stances);
   const themes = viewThemes(views, { nameOf: (r) => nameOf(r) });
   const hasThemes = themes.positive.length > 0 || themes.concerns.length > 0;
   return (

@@ -121,6 +121,36 @@ export function monthlyActivity(rows, types) {
   }
   return Object.values(byMonth).sort((a, b) => a.mo.localeCompare(b.mo));
 }
+
+/**
+ * Monthly activity from the server's exact aggregate rows ({ mo, <type>: count }),
+ * grouped in the database over every idea — never from a capped list of rows.
+ * Same shape monthlyActivity returns, so the charts are unchanged.
+ */
+export function monthlyFromAggregate(rows, types) {
+  return (rows || [])
+    .map((r) => ({ mo: String(r.mo || ''), ...Object.fromEntries(types.map((t) => [t, Number(r[t]) || 0])) }))
+    .filter((m) => m.mo && types.some((t) => m[t] > 0))
+    .sort((a, b) => a.mo.localeCompare(b.mo));
+}
+export const researchMonthlyFromAggregate = (rows) => monthlyFromAggregate(rows, RESEARCH_TYPES);
+export const viewMonthlyFromAggregate = (rows) => monthlyFromAggregate(rows, VIEW_TYPES);
+
+/**
+ * "Your Circle" Market View distribution from the server's exact per-contributor
+ * counts ({ from, positive, neutral, negative }) — every view by every member of
+ * the Circle, not the capped stances list. `inCircle(from)` says who counts.
+ */
+export function circleViewBreakdown(byContributor, inCircle) {
+  let positive = 0, neutral = 0, negative = 0, contributors = 0;
+  for (const r of byContributor || []) {
+    if (!inCircle(String(r.from))) continue;
+    const p = Number(r.positive) || 0, n = Number(r.neutral) || 0, g = Number(r.negative) || 0;
+    if (!p && !n && !g) continue;
+    positive += p; neutral += n; negative += g; contributors++;
+  }
+  return viewBreakdownFromCounts({ positive, neutral, negative, contributors });
+}
 export const researchMonthly = (rows) => monthlyActivity(rows, RESEARCH_TYPES);
 export const viewMonthly = (rows) => monthlyActivity(rows, VIEW_TYPES);
 

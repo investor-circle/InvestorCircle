@@ -380,7 +380,7 @@ export default async function handleLookups(req, res) {
         if (!ticker) { res.status(400).json({ error: 'ticker is required' }); return; }
         const limit = Math.min(60, Math.max(1, parseInt(req.query?.limit, 10) || 30));
         const offset = Math.max(0, parseInt(req.query?.offset, 10) || 0);
-        const [views, summary, stances] = await Promise.all([
+        const [views, summary, stances, monthly, byContributor] = await Promise.all([
           sql`
             SELECT r.id, r.ticker, r.asset_name, r.recommendation_type,
                    r.recommender_id as "from", r.created_at, r.thesis, r.disclosure, r.sector,
@@ -421,9 +421,41 @@ export default async function handleLookups(req, res) {
             ORDER BY r.created_at DESC
             LIMIT 1000
           `,
+          // Exact month-by-month counts over EVERY public view (not the capped stances).
+          sql`
+            SELECT to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS mo,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Positive')::int AS "Positive",
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Neutral')::int  AS "Neutral",
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Negative')::int AS "Negative"
+            FROM ic_recommendations r
+            LEFT JOIN user_profiles up ON r.recommender_id = up.id
+            WHERE r.ticker = ${ticker}
+              AND r.is_public = true
+              AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
+            GROUP BY 1 ORDER BY 1
+          `,
+          // Exact counts per contributor over EVERY public view: one row per
+          // person, so the client can total "Your Circle" without relying on
+          // the capped stances (the Circle itself is known only to the client).
+          sql`
+            SELECT r.recommender_id AS "from",
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Positive')::int AS positive,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Neutral')::int  AS neutral,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Negative')::int AS negative
+            FROM ic_recommendations r
+            LEFT JOIN user_profiles up ON r.recommender_id = up.id
+            WHERE r.ticker = ${ticker}
+              AND r.is_public = true
+              AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
+            GROUP BY r.recommender_id
+          `,
         ]);
         const sm = summary[0] || { total: 0, positive: 0, neutral: 0, negative: 0, contributors: 0 };
-        res.status(200).json({ summary: sm, views, stances, has_more: offset + views.length < (sm.total || 0) });
+        res.status(200).json({ summary: sm, views, stances, monthly, by_contributor: byContributor, has_more: offset + views.length < (sm.total || 0) });
         return;
       }
 

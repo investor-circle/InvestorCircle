@@ -4,7 +4,7 @@ import { researchBreakdownOf } from '../../../../lib/securityModel';
 import { ideaTypeMeta } from '../../../../lib/ideaType';
 import { money, day } from '../../../../lib/format';
 import {
-  researchRows, researchMonthly, viewBreakdownFromCounts, viewMonthly, currentViews, viewThemes,
+  researchRows, researchMonthly, researchMonthlyFromAggregate, viewMonthlyFromAggregate, viewBreakdownFromCounts, viewMonthly, currentViews, viewThemes,
 } from '../../../../lib/securityInsights';
 
 // Deliberately NOT a tab switcher that hides inactive panels: an earlier
@@ -60,7 +60,7 @@ function formatRange(range) {
   return range.min === range.max ? money(range.min) : `${money(range.min)}–${money(range.max)}`;
 }
 
-export default function SecurityTabs({ symbol, ideas, summary, views = [], viewSummary = {}, viewStances = [], related = [] }) {
+export default function SecurityTabs({ symbol, ideas, summary, views = [], viewSummary = {}, viewStances = [], researchMonthlyAgg = null, viewMonthlyAgg = null, related = [] }) {
   const research = researchRows(ideas);
   const rb = researchBreakdownOf({ summary }, research);
   const vb = viewBreakdownFromCounts({ ...viewSummary, contributors: viewSummary.contributor_count });
@@ -80,8 +80,9 @@ export default function SecurityTabs({ symbol, ideas, summary, views = [], viewS
   const publishers = Object.values(publisherMap);
   const contributors = currentViews(views, (v) => v.author_username || v.author_name);
 
-  const researchMonths = researchMonthly(research);
-  const viewMonths = viewMonthly(viewStances);
+  // Exact month-by-month counts from the server aggregate (the lists above are capped).
+  const researchMonths = researchMonthlyAgg ? researchMonthlyFromAggregate(researchMonthlyAgg) : researchMonthly(research);
+  const viewMonths = viewMonthlyAgg ? viewMonthlyFromAggregate(viewMonthlyAgg) : viewMonthly(viewStances);
   const themes = viewThemes(views, { nameOf: (v) => v.author_name || v.author_username || null });
   const hasThemes = themes.positive.length > 0 || themes.concerns.length > 0;
   const expiredCount = research.filter((i) => i.status === 'Expired').length;

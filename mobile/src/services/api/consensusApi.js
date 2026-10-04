@@ -36,7 +36,7 @@ export async function getTickerRecos(ticker) {
  * stances (lightweight who/what/when for every public view), hasMore }.
  */
 export async function getTickerViews(ticker, { limit = 30, offset = 0 } = {}) {
-  const empty = { summary: { total: 0, positive: 0, neutral: 0, negative: 0, contributors: 0 }, views: [], stances: [], hasMore: false };
+  const empty = { summary: { total: 0, positive: 0, neutral: 0, negative: 0, contributors: 0 }, views: [], stances: [], monthly: [], byContributor: [], hasMore: false };
   const t = String(ticker || "").trim();
   if (!t) return empty;
   const api = await callApi(
@@ -47,6 +47,8 @@ export async function getTickerViews(ticker, { limit = 30, offset = 0 } = {}) {
     summary: api.data.summary || empty.summary,
     views: api.data.views || [],
     stances: api.data.stances || [],
+    monthly: api.data.monthly || [],
+    byContributor: api.data.by_contributor || [],
     hasMore: !!api.data.has_more,
   };
 }
