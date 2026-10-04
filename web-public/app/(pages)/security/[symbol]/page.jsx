@@ -2,22 +2,44 @@ import { notFound } from 'next/navigation';
 import { getSecurityByTicker, getRelatedSecurities, getDailyPrice, getPublicSymbols } from '../../../../lib/api';
 import TickerTypeahead from '../../../../components/TickerTypeahead';
 import { jsonLd, ideaStatusSummary, money, pct, day } from '../../../../lib/format';
-import { computeConsensus } from '../../../../lib/consensus';
+import { researchRows } from '../../../../lib/securityInsights';
+import { securityModel } from '../../../../lib/securityModel';
+import SecurityLayers from '../../../../components/SecurityLayers';
 import Gate from '../../../../components/Gate';
 import Breadcrumbs from '../../../../components/Breadcrumbs';
 import SecurityTabs from './SecurityTabs';
 
 export const revalidate = 120;
 
+// What a security page has: Verified Research (Buy / Hold / Sell) and/or Market
+// Views (Positive / Neutral / Negative). Either, both — never neither (404).
+function layerCounts(data) {
+  const research = data?.summary?.idea_count || 0;
+  const views = data?.view_summary?.total || 0;
+  return { research, views };
+}
+
+function describe({ name, sym, research, views, contributors }) {
+  const parts = [];
+  if (research) parts.push(`${research} piece${research === 1 ? '' : 's'} of verified research (Buy / Hold / Sell, with entry price, target and outcome on the record)`);
+  if (views) parts.push(`${views} independent Market View${views === 1 ? '' : 's'} (Positive / Neutral / Negative)`);
+  return `${parts.join(' and ')} on ${name} (${sym})${contributors ? ` from ${contributors} member${contributors === 1 ? '' : 's'}` : ''}.`;
+}
+
 export async function generateMetadata({ params }) {
   const { symbol } = await params;
   const data = await getSecurityByTicker(symbol);
-  if (!data || !data.summary?.idea_count) return { title: 'Not found | My Investor Circle' };
+  const { research, views } = layerCounts(data);
+  if (!data || (!research && !views)) return { title: 'Not found | My Investor Circle' };
 
-  const { name, summary } = data;
+  const { name } = data;
   const sym = data.symbol;
-  const title = `${sym} — Stock Insights: ${summary.idea_count} investor idea${summary.idea_count === 1 ? '' : 's'} | My Investor Circle`;
-  const description = `${summary.idea_count} published idea${summary.idea_count === 1 ? '' : 's'} on ${name} (${sym}) from ${summary.contributor_count} investor${summary.contributor_count === 1 ? '' : 's'}, each with entry price, target and outcome on the record.`.slice(0, 200);
+  const what = research && views ? 'verified research & market views' : research ? 'verified research' : 'market views';
+  const title = `${sym} — Stock Insights: ${what} | My Investor Circle`;
+  const description = describe({
+    name, sym, research, views,
+    contributors: (data.summary?.contributor_count || 0) + (data.view_summary?.contributor_count || 0),
+  }).slice(0, 200);
   const canonical = `https://myinvestorcircle.com/security/${encodeURIComponent(sym)}`;
 
   return {
@@ -60,19 +82,25 @@ export default async function SecurityPage({ params }) {
     getDailyPrice(symbol),
     getPublicSymbols(),
   ]);
-  if (!data || !data.summary?.idea_count) notFound();
+  const counts = data ? layerCounts(data) : { research: 0, views: 0 };
+  if (!data || (!counts.research && !counts.views)) notFound();
 
   const { name, sector, summary, ideas } = data;
+  const views = data.views || [];
+  const viewSummary = data.view_summary || {};
+  const viewStances = data.view_stances || [];
   const sym = data.symbol;
   const canonical = `https://myinvestorcircle.com/security/${encodeURIComponent(sym)}`;
-  const consensus = computeConsensus(ideas);
-  const statusCounts = countByStatus(ideas);
+
+  // Two separate datasets, two separate breakdowns — never combined.
+  const { researchB, viewB } = securityModel(data);
+  const statusCounts = countByStatus(researchRows(ideas));
 
   const collectionLd = jsonLd({
     '@context': 'https://schema.org',
     '@type': 'CollectionPage',
     name: `Stock Insights on ${name} (${sym})`,
-    description: `${summary.idea_count} published ideas on ${name} from ${summary.contributor_count} investors.`,
+    description: describe({ name, sym, research: counts.research, views: counts.views }),
     url: canonical,
     isPartOf: { '@type': 'WebSite', name: 'My Investor Circle', url: 'https://myinvestorcircle.com/' },
   });
@@ -115,11 +143,17 @@ export default async function SecurityPage({ params }) {
           itself, being the clearest example) — "BSE (BSE) — ..." repeats
           the same four letters twice in a row for no reason. Only add the
           parenthetical when it actually adds information. */}
-      <h1>{name}{name.trim().toUpperCase() !== sym.toUpperCase() ? ` (${sym})` : ''} — Investor Ideas &amp; Community Sentiment</h1>
+      <h1>{name}{name.trim().toUpperCase() !== sym.toUpperCase() ? ` (${sym})` : ''} — {counts.research && counts.views ? 'Verified Research & Market Views' : counts.research ? 'Verified Research' : 'Market Views'}</h1>
       <p className="lede">
-        {summary.idea_count} public idea{summary.idea_count === 1 ? '' : 's'} on {name} from{' '}
-        {summary.contributor_count} investor{summary.contributor_count === 1 ? '' : 's'}.{' '}
-        {ideaStatusSummary(statusCounts.Active, statusCounts.Closed, statusCounts.Expired)}
+        {counts.research > 0 && (<>
+          {counts.research} piece{counts.research === 1 ? '' : 's'} of verified research from{' '}
+          {summary.contributor_count} publisher{summary.contributor_count === 1 ? '' : 's'}.{' '}
+          {ideaStatusSummary(statusCounts.Active, statusCounts.Closed, statusCounts.Expired)}{' '}
+        </>)}
+        {counts.views > 0 && (<>
+          {counts.views} independent Market View{counts.views === 1 ? '' : 's'} from{' '}
+          {viewSummary.contributor_count} contributor{viewSummary.contributor_count === 1 ? '' : 's'}.
+        </>)}
       </p>
 
       {/* Nightly-batch EOD data, never live/intraday — the visible "as of"
@@ -137,21 +171,12 @@ export default async function SecurityPage({ params }) {
         </div>
       )}
 
-      {/* Sector isn't repeated here — it's already the eyebrow directly
-          above the H1, and this page had it in both spots at first. */}
-      <div className="badge-row">
-        <span className="tag tag-buy">{consensus.bull} Buy</span>
-        {consensus.bear > 0 && <span className="tag tag-sell">{consensus.bear} Sell</span>}
-      </div>
-      {/* Active/closed aren't repeated as tiles here — the sentence above
-          (via ideaStatusSummary) already states them; these two tiles are
-          what it doesn't cover. */}
-      <div className="stats" style={{ marginTop: 10, marginBottom: 10 }}>
-        <div className="stat"><div className="k">IDEAS</div><div className="v">{summary.idea_count}</div></div>
-        <div className="stat"><div className="k">INVESTORS</div><div className="v">{summary.contributor_count}</div></div>
-      </div>
+      {/* The two layers, visibly separate: Verified Research (Buy / Hold /
+          Sell) and Market Views (Positive / Neutral / Negative). A layer with
+          no data is not rendered. Sector is the eyebrow above — not repeated. */}
+      <SecurityLayers research={researchB} views={viewB} />
 
-      <SecurityTabs symbol={sym} ideas={ideas} summary={summary} related={related} />
+      <SecurityTabs symbol={sym} ideas={ideas} summary={summary} views={views} viewSummary={viewSummary} viewStances={viewStances} related={related} />
 
       <Gate
         line={`Sign in to see Your Circle's take on ${sym}, post your own view, or track this stock.`}

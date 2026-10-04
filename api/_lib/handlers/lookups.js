@@ -364,6 +364,69 @@ export default async function handleLookups(req, res) {
         return;
       }
 
+      // Market Views on one security — the counterpart to ticker-recos, which
+      // is research-only. A separate dataset, never mixed into it: commentary
+      // and disclosure only (a Market View has no entry price, target, horizon,
+      // conviction, return or status). Public ideas only, so no private Circle
+      // or direct-share content can surface here. Returns:
+      //   summary  exact counts over EVERY public view of the ticker,
+      //   views    one page of full commentary (limit/offset),
+      //   stances  lightweight (who/what/when) rows for the same ticker, used
+      //            for each contributor's current view, the Circle comparison
+      //            and monthly activity without shipping every commentary.
+      if (action === 'ticker-views') {
+        try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+        const ticker = String(req.query?.ticker || '');
+        if (!ticker) { res.status(400).json({ error: 'ticker is required' }); return; }
+        const limit = Math.min(60, Math.max(1, parseInt(req.query?.limit, 10) || 30));
+        const offset = Math.max(0, parseInt(req.query?.offset, 10) || 0);
+        const [views, summary, stances] = await Promise.all([
+          sql`
+            SELECT r.id, r.ticker, r.asset_name, r.recommendation_type,
+                   r.recommender_id as "from", r.created_at, r.thesis, r.disclosure, r.sector,
+                   up.username, up.full_name, up.avatar_url, up.avatar_color
+            FROM ic_recommendations r
+            LEFT JOIN user_profiles up ON r.recommender_id = up.id
+            WHERE r.ticker = ${ticker}
+              AND r.is_public = true
+              AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
+            ORDER BY r.created_at DESC
+            LIMIT ${limit} OFFSET ${offset}
+          `,
+          sql`
+            SELECT COUNT(*)::int AS total,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Positive')::int AS positive,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Neutral')::int  AS neutral,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Negative')::int AS negative,
+                   COUNT(DISTINCT r.recommender_id)::int AS contributors
+            FROM ic_recommendations r
+            LEFT JOIN user_profiles up ON r.recommender_id = up.id
+            WHERE r.ticker = ${ticker}
+              AND r.is_public = true
+              AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
+          `,
+          sql`
+            SELECT r.recommender_id as "from", r.recommendation_type, r.created_at
+            FROM ic_recommendations r
+            LEFT JOIN user_profiles up ON r.recommender_id = up.id
+            WHERE r.ticker = ${ticker}
+              AND r.is_public = true
+              AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
+            ORDER BY r.created_at DESC
+            LIMIT 1000
+          `,
+        ]);
+        const sm = summary[0] || { total: 0, positive: 0, neutral: 0, negative: 0, contributors: 0 };
+        res.status(200).json({ summary: sm, views, stances, has_more: offset + views.length < (sm.total || 0) });
+        return;
+      }
+
       if (action === 'ticker-recos') {
         try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
         const ticker = String(req.query?.ticker || '');
@@ -413,8 +476,8 @@ export default async function handleLookups(req, res) {
           LEFT JOIN user_profiles up ON r.recommender_id = up.id
           WHERE r.ticker = ${ticker}
             AND r.is_public = true
-            -- Stock Insights is built on recommendations (consensus, sentiment mix);
-            -- Market Views are not surfaced on it.
+            -- Verified Research only (consensus, history, performance). The Security
+            -- Page's Market Views layer comes from action=ticker-views, never from here.
             AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')

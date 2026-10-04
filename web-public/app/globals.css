@@ -145,6 +145,16 @@ h3 { font-size: 17px; font-weight: 800; letter-spacing: -.3px; margin: 0; }
 .dist-bar { height: 8px; border-radius: 6px; overflow: hidden; background: var(--line); display: flex; }
 .dist-bar .seg-buy { background: var(--gain); height: 100%; }
 .dist-bar .seg-sell { background: var(--loss); height: 100%; }
+.dist-bar .seg-neutral { background: var(--muted); height: 100%; }
+
+/* Security page: the two layers (Verified Research / Market Views) side by side on wide screens. */
+.layers { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 14px 0; }
+@media (min-width: 720px) { .layers.two { grid-template-columns: 1fr 1fr; } }
+.layer-label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+.layer-counts { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+.quote { padding: 10px 12px; border-radius: 8px; font-size: 14px; line-height: 1.55; margin-top: 8px; }
+.quote.pos { background: var(--gain-soft); border-left: 3px solid var(--gain); }
+.quote.neg { background: var(--loss-soft); border-left: 3px solid var(--loss); }
 
 .foot {
   border-top: 1px solid var(--line); background: var(--surface); margin-top: 34px; padding: 28px 0;

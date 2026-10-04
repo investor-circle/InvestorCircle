@@ -62,17 +62,46 @@ describe("Market Views stay out of performance, ICI and consensus inputs", () =>
     for (const c of calls) expect(excludes(c), c.text.slice(0, 140)).toBe(true);
   });
 
-  it("public-ideas: the by-symbol hub, sitemap symbols and related list exclude them (the idea page itself and search do not)", async () => {
-    for (const query of [{ action: "by-symbol", symbol: "INFY" }, { action: "symbols" }, { action: "related", symbol: "INFY" }]) {
+  it("public-ideas by-symbol keeps the two datasets apart: research statements exclude Market Views, Market View statements select ONLY them", async () => {
+    rows = [{ idea_count: 1, total: 1 }];
+    await handlePublicIdeas({ method: "GET", query: { action: "by-symbol", symbol: "INFY" } }, mkRes());
+    const calls = onIdeas();
+    expect(calls).toHaveLength(5);
+    const viewCalls = calls.filter((c) => c.text.includes("= ANY("));
+    const researchCalls = calls.filter((c) => !c.text.includes("= ANY("));
+    expect(viewCalls).toHaveLength(3);      // page, aggregate, lightweight stances
+    expect(researchCalls).toHaveLength(2);  // ideas, summary
+    for (const c of researchCalls) expect(excludes(c), c.text.slice(0, 100)).toBe(true);
+    for (const c of viewCalls) {
+      expect(c.text, c.text.slice(0, 100)).not.toContain("<> ALL(");
+      expect(c.text).toContain("is_public = true");
+      expect(c.values.some((v) => Array.isArray(v) && v.join() === MARKET_VIEW_TYPES.join())).toBe(true);
+      // never any recommendation-performance column
+      for (const col of ["reco_price", "target_price", "stop_loss", "exit_price", "conviction", "horizon", "return_pct"]) {
+        expect(c.text, `${col} in a Market View statement`).not.toContain(col);
+      }
+    }
+  });
+
+  it("public-ideas: the sitemap symbols and related list now count Market Views too (a Market-View-only stock is a real page); the idea page and search never excluded them", async () => {
+    for (const query of [{ action: "symbols" }, { action: "related", symbol: "INFY" }, { action: "idea", id: "i1" }, { action: "search", q: "infy" }]) {
       sqlCalls.length = 0;
       rows = [{ idea_count: 1 }];
       await handlePublicIdeas({ method: "GET", query }, mkRes());
-      for (const c of onIdeas()) expect(excludes(c), `${query.action}: ${c.text.slice(0, 100)}`).toBe(true);
-    }
-    for (const query of [{ action: "idea", id: "i1" }, { action: "search", q: "infy" }]) {
-      sqlCalls.length = 0;
-      await handlePublicIdeas({ method: "GET", query }, mkRes());
       expect(onIdeas().some((c) => excludes(c)), query.action).toBe(false);
+    }
+  });
+
+  it("authenticated ticker-views reads ONLY public Market Views, never research", async () => {
+    sqlCalls.length = 0;
+    await handleLookups({ method: "GET", query: { action: "ticker-views", ticker: "INFY" }, headers: { authorization: "Bearer t" } }, mkRes());
+    const calls = onIdeas();
+    expect(calls).toHaveLength(3);
+    for (const c of calls) {
+      expect(c.text).toContain("r.is_public = true");
+      expect(c.text).toContain("= ANY(");
+      expect(c.text).not.toContain("<> ALL(");
+      for (const col of ["reco_price", "target_price", "stop_loss", "exit_price", "conviction", "horizon"]) expect(c.text).not.toContain(col);
     }
   });
 

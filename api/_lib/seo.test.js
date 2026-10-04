@@ -13,10 +13,18 @@ const SUMMARY = {
   asset_name: "Reliance Industries", sector: "Energy",
   first_posted: "2025-08-04T00:00:00.000Z", last_posted: "2026-03-12T00:00:00.000Z",
 };
+const NO_VIEWS = { total: 0, positive: 0, neutral: 0, negative: 0, contributor_count: 0 };
 let rows = [];
 let summaryRows = [SUMMARY];
+let viewRows = [];
+let viewSummaryRows = [NO_VIEWS];
 const sqlTag = (strings) => {
   const text = strings.join("?");
+  // Market View statements (select ONLY views) vs research statements.
+  if (text.includes("= ANY(")) {
+    if (text.includes("COUNT(DISTINCT r.recommender_id)")) return Promise.resolve(viewSummaryRows);
+    return Promise.resolve(text.includes("r.thesis") ? viewRows : []);
+  }
   if (text.includes("COUNT(DISTINCT r.recommender_id)")) return Promise.resolve(summaryRows);
   return Promise.resolve(rows);
 };
@@ -53,7 +61,7 @@ const idea = (over = {}) => ({
   ...over,
 });
 
-beforeEach(() => { rows = [idea()]; summaryRows = [SUMMARY]; });
+beforeEach(() => { rows = [idea()]; summaryRows = [SUMMARY]; viewRows = []; viewSummaryRows = [NO_VIEWS]; });
 
 describe("seo — escaping member-written text", () => {
   const payload = `</script><script>alert("xss")</script>`;
@@ -100,9 +108,63 @@ describe("seo — the share card", () => {
 
   it("gives a stock page its own title and description", async () => {
     const res = await get({ page: "stock", symbol: "RELIANCE" });
-    expect(res.body).toMatch(/<meta property="og:title" content="RELIANCE — 3 investor ideas/);
-    expect(res.body).toMatch(/<meta property="og:description" content="3 published ideas on Reliance Industries/);
-    expect(res.body).toContain("Investor ideas on Reliance Industries");
+    expect(res.body).toMatch(/<meta property="og:title" content="RELIANCE — verified research \| My Investor Circle/);
+    expect(res.body).toMatch(/<meta property="og:description" content="3 pieces of verified research/);
+    expect(res.body).toContain("Reliance Industries — verified research");
+  });
+
+  // The stock page now carries two separate layers and only the ones with data.
+  describe("research and Market Views as separate layers", () => {
+    const view = (over = {}) => ({
+      id: "v1", ticker: "RELIANCE", asset_name: "Reliance Industries", recommendation_type: "Positive",
+      thesis: "Retail arm is compounding.", disclosure: "Personal view. No position.",
+      created_at: "2026-03-14T00:00:00.000Z", author_name: "Meera K", author_username: "meera_k", ...over,
+    });
+
+    it("renders research only when there are no Market Views (no Market Views section)", async () => {
+      const res = await get({ page: "stock", symbol: "RELIANCE" });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain("Verified research on RELIANCE");
+      expect(res.body).not.toContain("Market Views on RELIANCE");
+    });
+
+    it("renders a Market-View-only stock (it is a real page now), with no research section", async () => {
+      rows = []; summaryRows = [{ ...SUMMARY, idea_count: 0, contributor_count: 0, closed_count: 0 }];
+      viewRows = [view(), view({ id: "v2", recommendation_type: "Negative", thesis: "Margins under pressure." })];
+      viewSummaryRows = [{ total: 2, positive: 1, neutral: 0, negative: 1, contributor_count: 1 }];
+      const res = await get({ page: "stock", symbol: "RELIANCE" });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain("Market Views on RELIANCE");
+      expect(res.body).not.toContain("Verified research on RELIANCE");
+      expect(res.body).toMatch(/1 Positive, 0 Neutral, 1 Negative/);
+      expect(res.body).toContain("Personal view. No position.");
+      expect(res.body).toContain("POSITIVE");
+    });
+
+    it("shows both layers, and a Market View never carries entry / target / status / return", async () => {
+      viewRows = [view()];
+      viewSummaryRows = [{ total: 1, positive: 1, neutral: 0, negative: 0, contributor_count: 1 }];
+      const res = await get({ page: "stock", symbol: "RELIANCE" });
+      expect(res.body).toContain("Verified research on RELIANCE");
+      expect(res.body).toContain("Market Views on RELIANCE");
+      const views = res.body.slice(res.body.indexOf("Market Views on RELIANCE"));
+      for (const word of ["ENTRY", "TARGET", "CONVICTION", "ACTIVE", "CLOSED", "horizon"]) expect(views).not.toContain(word);
+    });
+
+    it("404s only when there is neither research nor a Market View", async () => {
+      rows = []; summaryRows = [{ ...SUMMARY, idea_count: 0 }];
+      const res = await get({ page: "stock", symbol: "RELIANCE" });
+      expect(res.statusCode).toBe(404);
+    });
+
+    it("escapes member-written commentary and disclosure in a Market View", async () => {
+      const bad = `</script><script>alert("xss")</script>`;
+      viewRows = [view({ thesis: bad, disclosure: bad, author_name: bad })];
+      viewSummaryRows = [{ total: 1, positive: 1, neutral: 0, negative: 0, contributor_count: 1 }];
+      const res = await get({ page: "stock", symbol: "RELIANCE" });
+      expect(res.body).not.toContain(bad);
+      expect(res.body).not.toContain("<script>alert");
+    });
   });
 
   it("points the stock page's canonical at /security/:symbol, not its own URL", async () => {

@@ -30,6 +30,28 @@ export async function getTickerRecos(ticker) {
 }
 
 /**
+ * Market Views for one ticker — a SEPARATE dataset from getTickerRecos
+ * (Verified Research only). Commentary + disclosure, no entry price / target /
+ * horizon / return. Returns { summary (exact counts), views (one page),
+ * stances (lightweight who/what/when for every public view), hasMore }.
+ */
+export async function getTickerViews(ticker, { limit = 30, offset = 0 } = {}) {
+  const empty = { summary: { total: 0, positive: 0, neutral: 0, negative: 0, contributors: 0 }, views: [], stances: [], hasMore: false };
+  const t = String(ticker || "").trim();
+  if (!t) return empty;
+  const api = await callApi(
+    `/data?resource=lookups&action=ticker-views&ticker=${encodeURIComponent(t)}&limit=${limit}&offset=${offset}`
+  );
+  if (!api.ok) return empty;
+  return {
+    summary: api.data.summary || empty.summary,
+    views: api.data.views || [],
+    stances: api.data.stances || [],
+    hasMore: !!api.data.has_more,
+  };
+}
+
+/**
  * Persisted daily closes for a set of tickers, for the price sparkline.
  * Deduped and upper-cased here exactly as the web does, so the same set of
  * tickers produces the same cache-friendly request from either client.

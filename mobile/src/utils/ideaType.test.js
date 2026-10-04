@@ -4,7 +4,6 @@ import {
 } from "./ideaType";
 import { returnPct } from "./format";
 import { computeConsensus, computeTrend } from "./consensus";
-import { tickerStats, buildAiSummary } from "./stockInsights";
 
 describe("publishingPersona", () => {
   it("is verified_publisher only for an APPROVED Verified Research Publisher", () => {
@@ -61,13 +60,5 @@ describe("Market Views stay out of performance and consensus", () => {
     const withViews = [...base, { recommendation_type: "Positive", created_at: now }, { recommendation_type: "Neutral", created_at: now }];
     expect(computeConsensus(withViews)).toEqual(computeConsensus(base));
     expect(computeTrend(withViews)).toEqual(computeTrend(base));
-  });
-  it("is left out of ticker statistics and the summary", () => {
-    const rows = [
-      { recommendation_type: "Buy", created_at: "2025-01-02", from: "a", thesis: "good" },
-      { recommendation_type: "Positive", created_at: "2025-01-03", from: "b", thesis: "nice" },
-    ];
-    expect(tickerStats(rows).total).toBe(1);
-    expect(buildAiSummary([rows[1]])).toBeNull();
   });
 });

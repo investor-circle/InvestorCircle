@@ -2,93 +2,54 @@
 // Insights is a nav-only page (App.jsx renders it behind page==="sec_intel"
 // and the standalone /security/:ticker route, lazy-loaded), not needed for
 // the signed-in Home Feed's initial render.
-import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import {
-  Users,
-  Lightbulb,
-  Search,
-  TrendingUp,
-  TrendingDown,
-  X,
-  MessageSquare,
-  Bookmark,
-  ChevronRight,
-  ChevronDown,
-  Sparkles,
-  UserPlus,
-  ThumbsUp,
-  Loader,
-  RefreshCw,
-  Globe,
-  Flame,
-  BarChart2,
-  Activity,
-  Zap,
-  Target,
-  Clock,
-  Share2,
-  ArrowLeft,
-  Home
-} from "lucide-react";
-import {
-  getInvestorIciBatch as dbGetInvestorIciBatch
-} from "../../services/api/profileApi";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { Users, Search, X, Loader, BarChart2, Activity, Share2, ArrowLeft, Home } from "lucide-react";
+import { getInvestorIciBatch as dbGetInvestorIciBatch } from "../../services/api/profileApi";
 import {
   computeIci,
-  forwardRecommendation as dbForwardReco,
-  getConsensusRecosPublic as dbGetConsensusRecosPublic,
   getTickerRecos as dbGetTickerRecos,
-  getPublicTickerIdeas as dbGetPublicTickerIdeas,
-  updateDelivery as dbUpdateDelivery
+  getTickerViews as dbGetTickerViews,
+  getPublicSecurity as dbGetPublicSecurity,
 } from "../../services/api/recommendationsApi";
-import {
-  reactToReco as dbReactToReco,
-  trackReco as dbTrackReco,
-  getMyTrackedRecos as dbGetMyTrackedRecos
-} from "../../services/api/engagementApi";
-import { ConsensusBar, ConvBadge, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, MemberBadgeOverlay, SectionErrorBoundary, SparkLine, StatusBadge2, WidgetHeader } from "../../components/common";
+import { InstrumentSearch, LinkSharePopover } from "../../components/common";
 import { useMemberTagsMap } from "../../MemberTagsContext";
-import { FeedCard, IdeaSharePopover, InvestedToggle, MakeRecoModal, ThesisRenderer } from "../recommendations/Recommendations";
 import { useIsMobile } from "../../hooks/index";
-import { computeConsensus, computeTrend, consensusStrengthColor, fmtDate, getThesisText, ideaStatusSummary, initialsOf, scoreFeedRec } from "../../utils/format";
-import { fetchPublicProfileInfo, openProfile, openReco, goHome } from "../../utils/navigation";
-import { getSeenIds, markSeen, rankWhatYouMissed } from "../../utils/whatYouMissed";
-import { getSeenState as getTrendingSeenState, markSeen as markTrendingSeen, rankTrending } from "../../utils/trending";
-import { trackInvestor as dbTrackInvestor, untrackInvestor as dbUntrackInvestor } from "../../services/api/trackingApi";
-import { deriveTrackedActivity, getSeenCommentCounts, saveSeenCommentCounts } from "../../utils/trackedActivity";
-import { getDailyPrices, getPublicDailyPrice, byTicker, priceKey } from "../../services/api/pricingApi";
-import { ideaTypeMeta, toneColors } from "../../utils/ideaType";
+import { goHome } from "../../utils/navigation";
+import { getDailyPrices, getPublicDailyPrice } from "../../services/api/pricingApi";
+import { researchBreakdown, viewBreakdownFromCounts, currentViews, pageSections } from "../../utils/securityInsights";
+import { LayerSummary, ResearchSection, ViewsSection, PeopleSection } from "./SecuritySections";
 
-// Shared by the tab bar, each section's own heading, and the scroll-spy
-// IntersectionObserver below — one list instead of the same five ids typed
-// out three times. Mirrors the public /security/:symbol page's own section
-// set (web-public/app/(pages)/security/[symbol]/SecurityTabs.jsx) — that
-// page never hid inactive panels either (see its own header comment: a
-// hide/show tab switcher excludes the hidden panels from a real browser's
-// text layout, which is the wrong trade-off for content built to be
-// indexed). Applying the same "always rendered, tabs just scroll you to a
-// section" approach here too, for the signed-in view.
-/* eslint-disable react/jsx-key -- lookup-table tuples destructured by
-   .map() calls below, never rendered as an array themselves; the actual
-   rendered elements (tab <button>s) already have their own key. */
-const SECTIONS = [
-  ['consensus', 'Consensus',    <Activity size={15}/> ],
-  ['timeline',  'Idea History', <Clock size={15}/>    ],
-  ['investors', 'Investors',    <Users size={15}/>    ],
-  ['stats',     'Statistics',   <BarChart2 size={15}/>],
-  ['ai',        'AI Summary',   <Sparkles size={15}/>],
-];
+// The page's navigable sections. Only sections with data are offered (and
+// rendered): a security with no Verified Research has no Research section, one
+// with no Market Views has no Market Views section — never an empty card.
+// Every section that exists is always mounted (the tabs just scroll to it and
+// the scroll-spy below highlights the one on screen), the same "always rendered,
+// tabs only scroll" approach as the public /security/:symbol page, so content
+// stays in the document.
+/* eslint-disable react/jsx-key -- lookup-table tuples destructured by .map() */
+const sectionsFor = ({ hasResearch, hasViews }) => [
+  hasResearch && ['research', 'Verified Research', <BarChart2 size={15}/>],
+  hasViews    && ['views',    'Market Views',      <Activity size={15}/>],
+  (hasResearch || hasViews) && ['people', 'People', <Users size={15}/>],
+].filter(Boolean);
 /* eslint-enable react/jsx-key */
+// Tab ids callers used before this redesign (e.g. MarketInsights' "View all
+// investors" opens straight to the people list).
+const LEGACY_TAB = { consensus: 'research', timeline: 'research', stats: 'research', investors: 'people', ai: 'views' };
+const normTab = (t) => LEGACY_TAB[t] || t;
 
 export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerUser, trackedIds, onOpenSecurity, onBack, onHome }) {
   const isMobile = useIsMobile();
   const memberTagsByUser = useMemberTagsMap();
   const { ticker, name } = securityTicker || {};
-  const [recos, setRecos]     = useState([]);
+  const [recos, setRecos]     = useState([]);   // Verified Research (Buy/Hold/Sell) only
+  const [views, setViews]     = useState([]);   // Market Views (Positive/Neutral/Negative) only — current page of commentary
+  const [viewSummary, setViewSummary] = useState({ total:0, positive:0, neutral:0, negative:0, contributors:0 });
+  const [viewStances, setViewStances] = useState([]); // lightweight who/what/when for every public view
+  const [hasMoreViews, setHasMoreViews] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab]         = useState(securityTicker?.tab || 'consensus'); // consensus | timeline | investors | stats | ai
-  const [aiSummary, setAiSummary] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
+  const [tab, setTab]         = useState(normTab(securityTicker?.tab) || 'research'); // research | views | people
   const [investorIcis, setInvestorIcis] = useState({}); // uid → {score,band}
   const [searchOpen, setSearchOpen] = useState(false); // mobile: search starts collapsed to an icon
   const [shareOpen, setShareOpen] = useState(false);
@@ -102,7 +63,6 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   const sectionRefs = useRef({});
   const scrollToSection = (v) => {
     setTab(v);
-    if (v === 'ai') buildAiSummary();
     sectionRefs.current[v]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
@@ -143,9 +103,13 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   // to animate from.
   useEffect(()=>{
     if (!securityTicker?.tab) return;
-    setTab(securityTicker.tab);
-    sectionRefs.current[securityTicker.tab]?.scrollIntoView({ block: 'start' });
+    const t = normTab(securityTicker.tab);
+    setTab(t);
+    sectionRefs.current[t]?.scrollIntoView({ block: 'start' });
   }, [ticker, securityTicker?.tab]);
+
+  const avail = pageSections({ research: recos.length, views: viewSummary.total });
+  const SECTIONS = useMemo(() => sectionsFor(avail), [avail.hasResearch, avail.hasViews]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scroll-spy: highlights whichever tab's section is actually on screen as
   // the visitor scrolls, not just whichever was last clicked — every
@@ -178,7 +142,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
     );
     entries.forEach(([,el])=>observer.observe(el));
     return ()=>observer.disconnect();
-  }, [ticker, recos.length]);
+  }, [ticker, SECTIONS]);
 
   // Fetch real ICI scores for all investors when recos loads. Only meaningful
   // when signed in: the public (signed-out) data path below has no uid to
@@ -208,14 +172,39 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
       .catch(()=>{});
   },[recos, signedIn]);
 
+  // Verified Research and Market Views are two separate datasets from two
+  // separate endpoints (signed-in) / one public response with two fields
+  // (signed-out) — fetched together, never merged.
   useEffect(()=>{
     if (!ticker) return;
-    setLoading(true); setRecos([]);
-    const fetchRecos = signedIn ? dbGetTickerRecos(ticker) : dbGetPublicTickerIdeas(ticker);
-    fetchRecos
-      .then(rows=>{ setRecos(rows); setLoading(false); })
-      .catch(()=>setLoading(false));
+    let cancelled = false;
+    setLoading(true); setRecos([]); setViews([]); setViewStances([]); setHasMoreViews(false);
+    setViewSummary({ total:0, positive:0, neutral:0, negative:0, contributors:0 });
+    const load = signedIn
+      ? Promise.all([dbGetTickerRecos(ticker), dbGetTickerViews(ticker)])
+          .then(([rows, v]) => ({ ideas: rows, views: v.views, summary: v.summary, stances: v.stances, hasMore: v.hasMore }))
+      : dbGetPublicSecurity(ticker)
+          .then(d => ({ ideas: d.ideas, views: d.views, summary: d.viewSummary, stances: d.viewStances, hasMore: d.views.length < d.viewSummary.total }));
+    load
+      .then(d=>{
+        if (cancelled) return;
+        setRecos(d.ideas); setViews(d.views); setViewSummary(d.summary); setViewStances(d.stances); setHasMoreViews(!!d.hasMore);
+        setLoading(false);
+      })
+      .catch(()=>{ if (!cancelled) setLoading(false); });
+    return ()=>{ cancelled = true; };
   },[ticker, signedIn]);
+
+  // Older Market Views, a page at a time (signed-in only: the public page is
+  // server-rendered and shows its capped page plus the exact counts).
+  const loadMoreViews = () => {
+    if (loadingMore || !signedIn) return;
+    setLoadingMore(true);
+    dbGetTickerViews(ticker, { offset: views.length })
+      .then(v => { setViews(prev => [...prev, ...v.views]); setHasMoreViews(v.hasMore); })
+      .catch(()=>{})
+      .finally(()=>setLoadingMore(false));
+  };
 
   // Daily price movement for the security itself (distinct from each idea's
   // own return_pct below, which is anchored to that idea's entry price, not
@@ -233,28 +222,6 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
     fetchPrice.then(p=>{ if (!cancelled) setDailyPrice(p); }).catch(()=>{});
     return ()=>{ cancelled = true; };
   },[ticker, signedIn]);
-
-  // stats useMemo hoisted above early return to comply with React Rules of Hooks.
-  // (hooks must be called in the same order on every render; early returns violate this)
-  const stats = useMemo(()=>{
-    if (!recos.length) return null;
-    const byMonth = {};
-    // Neon returns timestamp columns as Date objects — must stringify before .slice()
-    const toIso = v => v instanceof Date ? v.toISOString() : String(v||'');
-    recos.forEach(r=>{
-      const mo = toIso(r.created_at).slice(0,7);
-      if (!mo) return;
-      if (!byMonth[mo]) byMonth[mo]={mo,buy:0,sell:0};
-      if (r.recommendation_type==='Buy') byMonth[mo].buy++; else byMonth[mo].sell++;
-    });
-    const months = Object.values(byMonth).sort((a,b)=>a.mo.localeCompare(b.mo));
-    const convMap = {};
-    recos.forEach(r=>{ if(r.conviction) convMap[r.conviction]=(convMap[r.conviction]||0)+1; });
-    const firstDate = recos[recos.length-1]?.created_at;
-    const activeR  = recos.filter(r=>r.status==='Active');
-    const exitedR  = recos.filter(r=>r.status==='Closed' || r.status==='Expired');
-    return { months, convMap, firstDate, total:recos.length, active:activeR.length, exited:exitedR.length };
-  },[recos]);
 
   // Shown whenever this page was reached via a drill-down (a holding card,
   // a reco card's "Stock Insights" link, etc.) so there's always a quick
@@ -301,11 +268,10 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
 
         {/* Instructional copy */}
         <div style={{textAlign:'center',padding:'0 8px'}}>
-          <div style={{fontSize:15,fontWeight:700,marginBottom:10,color:'var(--ink)'}}>Discover any security's community intelligence</div>
+          <div style={{fontSize:15,fontWeight:700,marginBottom:10,color:'var(--ink)'}}>Verified research and independent market views on any security</div>
           <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.7}}>
-            Type any stock name or ticker above to instantly explore community consensus,
-            investor conviction trends, and who on myInvestorCircle is tracking it —
-            and whether they're bullish or bearish.
+            Type any stock name or ticker above to explore verified research, independent
+            Market Views, and who on myInvestorCircle has covered it.
           </div>
           <div style={{fontSize:12,color:'var(--muted)',marginTop:16,padding:'10px 14px',background:'var(--surface-2)',borderRadius:10,lineHeight:1.6}}>
             💡 You can also arrive here by clicking the <strong>ChevronRight →</strong> or
@@ -318,63 +284,13 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
     </>
   );
 
-  // Consensus strength/AI summary deliberately keep considering every idea on
-  // the ticker, not just ones currently flagged Active — that matching the
-  // pre-existing behavior here (unlike the Idea History badges and Statistics
-  // tab below, which now show the real per-idea status) is intentional: it's
-  // a business calculation CLAUDE.md marks sensitive, so its input set is
-  // left unchanged by this pass rather than narrowed as a side effect.
-  const activeRecos  = recos;
-  const circleRecos  = recos.filter(r=>circleIds.has(r.from));
-  const community    = computeConsensus(activeRecos);
-  const circle       = computeConsensus(circleRecos);
-
-  // Stats computation
-  // AI summary — deterministic analysis from recommendation data
-  const buildAiSummary = () => {
-    if (aiSummary || aiLoading || !recos.length) return;
-    setAiLoading(true);
-    const activeR = recos;
-    const bullR   = activeR.filter(r=>r.recommendation_type==='Buy');
-    const bearR   = activeR.filter(r=>r.recommendation_type==='Sell');
-    const theses  = activeR.filter(r=>r.thesis).map(r=>getThesisText(r.thesis));
-    // Simulate a brief async "analysis" then show structured summary
-    setTimeout(()=>{
-      const bullThemes = bullR.slice(0,3).map(r=>getThesisText(r.thesis)||null).filter(Boolean);
-      const bearThemes = bearR.slice(0,3).map(r=>getThesisText(r.thesis)||null).filter(Boolean);
-      const community  = computeConsensus(activeR);
-      const sentiment  = community.label==='Strong Bullish'?'strongly bullish':community.label==='Bullish'?'moderately bullish':community.label==='Strong Bearish'?'strongly bearish':community.label==='Bearish'?'cautious':'divided';
-      setAiSummary({
-        sentiment, community,
-        bullThemes: bullThemes.length ? bullThemes : (bullR.length ? [`${bullR.length} investor${bullR.length>1?'s':''} tracking as a Buy opportunity`] : []),
-        bearThemes: bearThemes.length ? bearThemes : (bearR.length ? [`${bearR.length} investor${bearR.length>1?'s':''} flagging caution`] : ['No bearish recommendations on record']),
-        highConv:  activeR.filter(r=>r.conviction==='High Conviction'||r.conviction==='Very High').length,
-        uniqueInv: new Set(activeR.map(r=>r.from)).size,
-      });
-      setAiLoading(false);
-    }, 800);
-  };
-  const investorMap = {};  // keyed by recommender uid (or username, signed-out) — populated below
-  recos.forEach(r=>{
-    if (!investorMap[r.from]) investorMap[r.from] = {...r};
-  });
-  const investors = Object.values(investorMap);
-  const inCircle  = investors.filter(r=>circleIds.has(r.from));
-  const notCircle = investors.filter(r=>!circleIds.has(r.from));
-  // investorMap keeps each investor's most recent idea on this ticker (recos
-  // arrives newest-first), so "still active" here means their latest call on
-  // {ticker} is currently open — the same per-idea status now available from
-  // both data paths.
-  const activeInvestorCount = investors.filter(r=>r.status==='Active').length;
-
-  // Idea-level status mix (distinct from activeInvestorCount above, which is
-  // per-investor: each person's most recent call). This counts every idea on
-  // {ticker}, for the summary strip below — the signed-in equivalent of the
-  // one already shown on the public /security/:symbol page.
-  const ideaActiveCount  = recos.filter(r=>r.status==='Active').length;
-  const ideaClosedCount  = recos.filter(r=>r.status==='Closed').length;
-  const ideaExpiredCount = recos.filter(r=>r.status==='Expired').length;
-  const securitySector   = recos[0]?.sector || '';
+  // Verified Research and Market Views are separate datasets: nothing below
+  // combines them, and a Market View never reaches a research figure.
+  const researchB    = researchBreakdown(recos, r=>r.from);
+  const viewB        = viewBreakdownFromCounts(viewSummary);
+  const contributors = currentViews(views, v=>v.from);   // each loaded contributor's latest view
+  const securitySector = recos[0]?.sector || views[0]?.sector || '';
+  const hasResearch = avail.hasResearch, hasViews = avail.hasViews, hasAny = avail.hasAny;
 
   return (
     <>
@@ -419,11 +335,11 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
 
         <div style={{display:'flex',alignItems:'baseline',gap:14,flexWrap:'wrap',marginTop:8}}>
           <div className="page-title">{ticker}</div>
-          <div style={{fontSize:16,color:'var(--muted)',fontWeight:400}}>{name || recos[0]?.asset_name || ''}</div>
+          <div style={{fontSize:16,color:'var(--muted)',fontWeight:400}}>{name || recos[0]?.asset_name || views[0]?.asset_name || ''}</div>
         </div>
         <div className="page-sub">
-          {loading ? 'Loading…' : investors.length===0 ? `No public ideas on ${ticker} yet.` :
-            `${investors.length} ${investors.length===1?'person has':'people have'} shared ${investors.length===1?'a view':'their views'} on ${ticker} — ${activeInvestorCount} ${activeInvestorCount===1?'is':'are'} still active`}
+          {loading ? 'Loading…' : !hasAny ? `No public research or Market Views on ${ticker} yet.` :
+            [hasResearch && `${researchB.total} piece${researchB.total===1?'':'s'} of verified research`, hasViews && `${viewB.total} independent Market View${viewB.total===1?'':'s'}`].filter(Boolean).join(' · ')}
         </div>
 
         {/* Desktop switch-security input — full width isn't needed on a
@@ -451,43 +367,35 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
         )}
       </div>
 
-      {/* ── Compact summary strip — sector/Buy-Sell/idea-status at a glance,
-           before the tabs. The signed-out /security/:symbol page (web-public)
-           already has this; the signed-in view only had the single page-sub
-           line above with nothing quantifying idea/investor counts or the
-           active/closed mix before a reader hits the tab content. ── */}
-      {!loading && recos.length > 0 && (
+      {/* ── Header summary — price, sector, and the TWO layers side by side:
+           Verified Research (Buy / Hold / Sell) and Market Views (Positive /
+           Neutral / Negative). A layer with no data is not shown. ── */}
+      {!loading && (
         <div style={{marginTop:16}}>
           {/* Nightly-batch EOD snapshot, never live/intraday — the visible
-              "as of" date is deliberate, not just a hover title, so this
-              can't read as a real-time quote it isn't. Distinct from each
-              idea's own return% below (anchored to that idea's own entry
-              price, not yesterday's close). */}
-          {dailyPrice && (
+              "as of" date is deliberate, not just a hover title. */}
+          {(dailyPrice || securitySector) && (
             <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:10}}>
-              <span className="pill" style={dailyPrice.changePct!=null?{color:dailyPrice.changePct>0?'var(--gain)':dailyPrice.changePct<0?'var(--loss)':undefined}:undefined}>
-                ₹{Number(dailyPrice.close).toLocaleString('en-IN')}
-                {dailyPrice.changePct!=null && ` ${dailyPrice.changePct>=0?'+':''}${Number(dailyPrice.changePct).toFixed(1)}%`}
-              </span>
-              <span style={{fontSize:12,color:'var(--muted)'}}>
-                as of {dailyPrice.date?new Date(dailyPrice.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'}
-              </span>
+              {dailyPrice && (
+                <>
+                  <span className="pill" style={dailyPrice.changePct!=null?{color:dailyPrice.changePct>0?'var(--gain)':dailyPrice.changePct<0?'var(--loss)':undefined}:undefined}>
+                    ₹{Number(dailyPrice.close).toLocaleString('en-IN')}
+                    {dailyPrice.changePct!=null && ` ${dailyPrice.changePct>=0?'+':''}${Number(dailyPrice.changePct).toFixed(1)}%`}
+                  </span>
+                  <span style={{fontSize:12,color:'var(--muted)'}}>
+                    as of {dailyPrice.date?new Date(dailyPrice.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'}
+                  </span>
+                </>
+              )}
+              {securitySector && <span className="pill">{securitySector}</span>}
             </div>
           )}
-          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
-            {securitySector && <span className="pill">{securitySector}</span>}
-            <span className="pill gain">{community.bull} Buy</span>
-            {community.bear > 0 && <span className="pill loss">{community.bear} Sell</span>}
-          </div>
-          <div className="statgrid">
-            <div className="stat"><div className="v">{recos.length}</div><div className="l">Ideas</div></div>
-            <div className="stat"><div className="v">{investors.length}</div><div className="l">Investors</div></div>
-            <div className="stat"><div className="v">{ideaActiveCount}</div><div className="l">Active</div></div>
-            <div className="stat"><div className="v">{ideaClosedCount}</div><div className="l">Closed</div></div>
-          </div>
-          <div style={{fontSize:13,color:'var(--ink-soft)',marginTop:10}}>
-            {ideaStatusSummary(ideaActiveCount, ideaClosedCount, ideaExpiredCount)}
-          </div>
+          <LayerSummary research={hasResearch?researchB:null} views={hasViews?viewB:null} isMobile={isMobile}/>
+          {!hasAny && (
+            <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>
+              No public research or Market Views on {ticker} yet.
+            </div></div>
+          )}
         </div>
       )}
 
@@ -496,7 +404,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
            panels. Clicking one scrolls to its section (scrollToSection,
            smooth); the highlight also updates on its own while scrolling,
            via the IntersectionObserver set up above. ── */}
-      <div style={{
+      {SECTIONS.length > 0 && <div style={{
         display:'flex', gap:4, marginTop:20, marginBottom:20, overflowX:'auto', WebkitOverflowScrolling:'touch',
         background:'var(--surface-2)', border:'1px solid var(--line)', borderRadius:14, padding:5,
         position:'sticky', top:0, zIndex:5,
@@ -517,454 +425,27 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
             }}
           >{icon}{l}</button>
         ))}
-      </div>
+      </div>}
 
-      {/* ── Consensus ──
-           scrollMarginTop on every section below matches the sticky tab
-           bar's own rendered height (~64px) plus a little breathing room —
-           without it, scrollIntoView({block:'start'}) lands a section's top
-           edge exactly where the sticky bar sits, which then covers it. */}
-      <section ref={el=>sectionRefs.current.consensus=el} data-section="consensus" style={{scrollMarginTop:76}}>
-        <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
-          {/* Strength gauge */}
-          <div className="card">
-            <div className="card-head"><Target size={15}/> Consensus Strength</div>
-            <div className="card-body" style={{textAlign:'center',padding:'24px'}}>
-              <div style={{fontSize:64,fontWeight:900,color:consensusStrengthColor(community),lineHeight:1,marginBottom:8}}>
-                {community.strength}
-              </div>
-              <div style={{fontSize:14,fontWeight:700,color:'var(--ink)',marginBottom:4}}>{community.label}</div>
-              <div style={{fontSize:12,color:'var(--muted)',marginBottom:20}}>out of 100 — based on {community.total} active ideas</div>
-              <div style={{height:8,borderRadius:6,overflow:'hidden',background:'var(--line)',position:'relative'}}>
-                <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${community.strength}%`,
-                  background:consensusStrengthColor(community),transition:'width .6s'}}/>
-              </div>
-            </div>
-          </div>
-          {/* Your Circle vs Community */}
-          <div className="card">
-            <div className="card-head"><Globe size={15}/> Your Circle vs Community</div>
-            <div className="card-body" style={{display:'flex',flexDirection:'column',gap:16,padding:'16px 18px'}}>
-              <div style={{fontSize:11.5,color:'var(--muted)',lineHeight:1.6,paddingBottom:2}}>
-                <strong style={{color:'var(--ink-soft)'}}>Community</strong> is every public idea shared on myInvestorCircle. <strong style={{color:'var(--ink-soft)'}}>Your Circle</strong> is just the people you're connected with or tracking.
-              </div>
-              {signedIn ? (
-                [['Your Circle',circle],['Community',community]].map(([l,c])=>(
-                  <div key={l}>
-                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-                      <span style={{fontSize:13,fontWeight:600}}>{l}</span>
-                      <span style={{fontSize:13,fontWeight:700,color:consensusStrengthColor(c)}}>{c.label}</span>
-                    </div>
-                    <ConsensusBar cons={c} width={'100%'}/>
-                    <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{c.total} investor{c.total!==1?'s':''}</div>
-                  </div>
-                ))
-              ) : (
-                <>
-                  {/* Soft conversion prompt in place of Your Circle — there is
-                      no signed-in viewer, so there is no circle to compute. */}
-                  <div style={{padding:'14px 16px',background:'var(--surface-2)',borderRadius:10,border:'1px dashed var(--line)',textAlign:'center'}}>
-                    <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>See how Your Circle is positioned</div>
-                    <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Sign in to see what the people you're connected with and tracking think of {ticker}.</div>
-                    <button className="btn btn-pri btn-sm" onClick={goHome}>Sign in</button>
-                  </div>
-                  <div>
-                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-                      <span style={{fontSize:13,fontWeight:600}}>Community</span>
-                      <span style={{fontSize:13,fontWeight:700,color:consensusStrengthColor(community)}}>{community.label}</span>
-                    </div>
-                    <ConsensusBar cons={community} width={'100%'}/>
-                    <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{community.total} investor{community.total!==1?'s':''}</div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Idea History ── */}
-      <section ref={el=>sectionRefs.current.timeline=el} data-section="timeline" style={{marginTop:32,scrollMarginTop:76}}>
-        <div className="card">
-          <div className="card-head"><Clock size={15}/> Idea History <span style={{fontSize:11,color:'var(--muted)',fontWeight:400,marginLeft:4}}>(immutable — all calls are permanent)</span></div>
-          {recos.length===0&&!loading?(
-            <div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>No ideas for {ticker} yet.</div>
-          ):isMobile?(
-            /* ── Mobile: cards, not the table below — a 6-column table forced
-                 to scroll sideways was the thing worth fixing here; this also
-                 has room for a thesis glimpse the table never had. ── */
-            <div style={{display:'flex',flexDirection:'column',gap:10,padding:'10px'}}>
-              {recos.map(r=>{
-                const inYourCircle = circleIds.has(r.from);
-                const goToReco = r.username ? ()=>openReco(r.username, r.id) : undefined;
-                return (
-                  <div key={r.id} onClick={goToReco} style={{border:'1px solid var(--line)',borderRadius:12,padding:'12px 14px',cursor:goToReco?'pointer':'default'}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                      <div style={{position:'relative',width:28,height:28,flexShrink:0}}>
-                        {r.avatar_url
-                          ? <img src={r.avatar_url} alt="" className="av" style={{width:28,height:28,objectFit:'cover'}}/>
-                          : <div className="av" style={{width:28,height:28,fontSize:10,background:r.avatar_color||'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>}
-                        <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={28}/>
-                      </div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontWeight:700,fontSize:13}}>{r.full_name||r.username||'Anonymous'}</div>
-                        {inYourCircle&&<span style={{fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.05em'}}>Your Circle</span>}
-                      </div>
-                      <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,flexShrink:0,
-                        background:toneColors(ideaTypeMeta(r.recommendation_type).tone).bg,
-                        color:toneColors(ideaTypeMeta(r.recommendation_type).tone).fg}}>
-                        {ideaTypeMeta(r.recommendation_type).label.toUpperCase()}
-                      </span>
-                    </div>
-                    {r.thesis&&r.thesis!=='—'&&(
-                      <div style={{marginBottom:8,fontSize:12.5}}><ThesisRenderer thesis={r.thesis} previewLines={2}/></div>
-                    )}
-                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',fontSize:12,color:'var(--muted)'}}>
-                      <span>{r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'}</span>
-                      {r.reco_price&&<span>· Entry ₹{Number(r.reco_price).toLocaleString('en-IN')}</span>}
-                      {r.return_pct!=null&&(
-                        <span style={{fontWeight:700,color:Number(r.return_pct)>=0?'var(--gain)':'var(--loss)'}}>
-                          · {Number(r.return_pct)>=0?'+':''}{Number(r.return_pct).toFixed(1)}%
-                        </span>
-                      )}
-                      <ConvBadge level={r.conviction}/>
-                      <StatusBadge2 status={r.status||'Active'}/>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ):(
-            <div style={{overflowX:'auto'}}>
-              <table style={{width:'100%',borderCollapse:'collapse'}}>
-                <thead>
-                  <tr style={{borderBottom:'2px solid var(--line)'}}>
-                    {['Investor','Type','Date','Entry Price','Return','Conviction','Status'].map((h,i)=>(
-                      <th key={i} style={{padding:'10px 14px',textAlign:i===0?'left':'center',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'var(--muted)'}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {recos.map(r=>{
-                    const inYourCircle = circleIds.has(r.from);
-                    const goToReco = r.username ? ()=>openReco(r.username, r.id) : undefined;
-                    return (
-                      <tr key={r.id} style={{borderBottom:'1px solid var(--line)',cursor:goToReco?'pointer':'default'}} onClick={goToReco}
-                        onMouseEnter={goToReco?(e)=>{e.currentTarget.style.background='var(--surface-2)';}:undefined}
-                        onMouseLeave={goToReco?(e)=>{e.currentTarget.style.background='';}:undefined}>
-                        <td style={{padding:'12px 14px'}}>
-                          <div style={{display:'flex',alignItems:'center',gap:8}}>
-                            <div style={{position:'relative',width:30,height:30,flexShrink:0}}>
-                              {r.avatar_url
-                                ? <img src={r.avatar_url} alt="" className="av" style={{width:30,height:30,objectFit:'cover'}}/>
-                                : <div className="av" style={{width:30,height:30,fontSize:11,background:r.avatar_color||'var(--grad)'}}>{initialsOf(r.full_name||r.username||'?')}</div>}
-                              <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={30}/>
-                            </div>
-                            <div style={{minWidth:0}}>
-                              <div style={{fontWeight:700,fontSize:13}}>{r.full_name||r.username||'Anonymous'}</div>
-                              {inYourCircle&&<span style={{fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4,background:'var(--accent-soft)',color:'var(--accent-ink)',textTransform:'uppercase',letterSpacing:'.05em'}}>Your Circle</span>}
-                              {r.thesis&&r.thesis!=='—'&&(
-                                <div style={{marginTop:4,fontSize:12,color:'var(--ink-soft)',maxWidth:320}}><ThesisRenderer thesis={r.thesis} previewLines={2}/></div>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td style={{padding:'12px 14px',textAlign:'center'}}>
-                          <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,
-                            background:toneColors(ideaTypeMeta(r.recommendation_type).tone).bg,
-                            color:toneColors(ideaTypeMeta(r.recommendation_type).tone).fg}}>
-                            {ideaTypeMeta(r.recommendation_type).label.toUpperCase()}
-                          </span>
-                        </td>
-                        <td style={{padding:'12px 14px',textAlign:'center',fontSize:13,color:'var(--muted)'}}>
-                          {r.created_at?new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'}
-                        </td>
-                        <td style={{padding:'12px 14px',textAlign:'center',fontSize:13,fontWeight:600}}>
-                          {r.reco_price?`₹${Number(r.reco_price).toLocaleString('en-IN')}`:'—'}
-                        </td>
-                        <td style={{padding:'12px 14px',textAlign:'center',fontSize:13,fontWeight:700,
-                          color:r.return_pct!=null?(Number(r.return_pct)>=0?'var(--gain)':'var(--loss)'):'var(--muted)'}}>
-                          {r.return_pct!=null?`${Number(r.return_pct)>=0?'+':''}${Number(r.return_pct).toFixed(1)}%`:'—'}
-                        </td>
-                        <td style={{padding:'12px 14px',textAlign:'center'}}><ConvBadge level={r.conviction}/></td>
-                        <td style={{padding:'12px 14px',textAlign:'center'}}>
-                          <StatusBadge2 status={r.status||'Active'}/>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ── Investors ── */}
-      <section ref={el=>sectionRefs.current.investors=el} data-section="investors" style={{marginTop:32,scrollMarginTop:76}}>
-        <div style={{display:'flex',flexDirection:'column',gap:12}}>
-          {/* Soft conversion prompt in place of "In Your Circle" — with no
-              signed-in viewer, circleIds is empty and inCircle would just be
-              [], silently omitting the section below rather than explaining
-              why. */}
-          {!signedIn && (
-            <div className="card">
-              <div className="card-body" style={{padding:'14px 16px',textAlign:'center'}}>
-                <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>See who in Your Circle is invested in {ticker}</div>
-                <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Sign in to see which of your connections and tracked investors have shared a view on {ticker}.</div>
-                <button className="btn btn-pri btn-sm" onClick={goHome}>Sign in</button>
-              </div>
-            </div>
-          )}
-          {[['In Your Circle', inCircle, true], ['Community', notCircle, false]].map(([label, list, isCircle])=>(
-            list.length > 0 && (
-              <div key={label} className="card">
-                <div className="card-head">
-                  {isCircle ? <Users size={15}/> : <Globe size={15}/>} {label} ({list.length})
-                </div>
-                <div className="card-body" style={{display:'flex',flexDirection:'column',gap:0,padding:0}}>
-                  {list.map((r,i)=>{
-                    const ici = investorIcis[r.from];
-                    const iciScore = ici?.score;
-                    const iciBand  = ici?.band;
-                    const bandColor = iciBand==='Strong'?'var(--gain)':iciBand==='Good'?'var(--accent)':iciBand==='Building'?'#f59e0b':'var(--muted)';
-                    const profileUrl = r.username ? `/investor/${r.username}` : null;
-                    return (
-                      <div key={r.from} style={{
-                        display:'flex', alignItems:'center', gap:12, padding:'12px 18px',
-                        borderBottom: i < list.length-1 ? '1px solid var(--line)' : 'none',
-                      }}>
-                        {/* Avatar */}
-                        <div style={{position:'relative',width:40,height:40,flexShrink:0}}>
-                          {r.avatar_url
-                            ? <img src={r.avatar_url} alt="" className="av" style={{width:40,height:40,objectFit:'cover',cursor:profileUrl?'pointer':'default'}}
-                                onClick={()=>r.username&&openProfile(r.username)}/>
-                            : <div className="av" style={{width:40,height:40,fontSize:14,background:r.avatar_color||'var(--grad)',cursor:profileUrl?'pointer':'default'}}
-                                onClick={()=>r.username&&openProfile(r.username)}>
-                                {initialsOf(r.full_name||r.username||'?')}
-                              </div>}
-                          <MemberBadgeOverlay tags={memberTagsByUser[r.from]} size={40}/>
-                        </div>
-
-                        {/* Name + handle */}
-                        <div style={{flex:1,minWidth:0}}>
-                          <div
-                            style={{fontWeight:700,fontSize:14,cursor:profileUrl?'pointer':'default',
-                              color:profileUrl?'var(--accent-ink)':'var(--ink)',
-                              textDecoration:profileUrl?'underline':'none',textDecorationColor:'rgba(109,93,245,.3)'}}
-                            onClick={()=>r.username&&openProfile(r.username)}
-                            title={profileUrl?`View ${r.full_name||r.username}'s profile`:undefined}
-                          >
-                            {r.full_name||r.username||'Anonymous'}
-                          </div>
-                          {r.username&&<div style={{fontSize:11,color:'var(--muted)'}}>@{r.username}</div>}
-                        </div>
-
-                        {/* ICI Score */}
-                        <div style={{textAlign:'center',flexShrink:0,minWidth:44}}>
-                          {iciScore !== undefined ? (
-                            <>
-                              <div style={{fontSize:18,fontWeight:900,color:bandColor,lineHeight:1}}>{iciScore}</div>
-                              <div style={{fontSize:9,color:bandColor,fontWeight:700,marginTop:2}}>{iciBand}</div>
-                            </>
-                          ) : (
-                            <>
-                              <div style={{fontSize:18,fontWeight:900,color:'var(--muted)',lineHeight:1}}>—</div>
-                              <div style={{fontSize:9,color:'var(--muted)',marginTop:2}}>ICI</div>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Conviction + direction */}
-                        <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
-                          <ConvBadge level={r.conviction}/>
-                          <span style={{fontSize:11,fontWeight:800,padding:'3px 9px',borderRadius:5,whiteSpace:'nowrap',
-                            background:toneColors(ideaTypeMeta(r.recommendation_type).tone).bg,
-                            color:toneColors(ideaTypeMeta(r.recommendation_type).tone).fg}}>
-                            {ideaTypeMeta(r.recommendation_type).label.toUpperCase()}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )
-          ))}
-          {investors.length===0&&!loading&&(
-            <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)',fontSize:14}}>
-              No investor ideas for {ticker} yet.
-            </div></div>
-          )}
-        </div>
-      </section>
-
-      {/* ── Statistics ── */}
-      <section ref={el=>sectionRefs.current.stats=el} data-section="stats" style={{marginTop:32,scrollMarginTop:76}}>
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {!stats?(
-            <div className="card"><div style={{padding:'32px',textAlign:'center',color:'var(--muted)'}}>No idea history for {ticker} yet.</div></div>
-          ):(
-            <>
-              {/* Overview stat cards */}
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12}}>
-                {[
-                  {label:'Total Ideas', val:stats.total, icon:<Activity size={16}/>},
-                  {label:'Currently Active',       val:stats.active, icon:<TrendingUp size={16}/>, color:'var(--gain)'},
-                  {label:'Exited / Closed',        val:stats.exited, icon:<TrendingDown size={16}/>, color:'var(--muted)'},
-                  {label:'Unique Investors',        val:new Set(recos.map(r=>r.from)).size, icon:<Users size={16}/>},
-                ].map((s,i)=>(
-                  <div key={i} className="card" style={{padding:'16px 18px'}}>
-                    <div style={{color:s.color||'var(--accent-ink)',opacity:.7,marginBottom:8}}>{s.icon}</div>
-                    <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--muted)',marginBottom:4}}>{s.label}</div>
-                    <div style={{fontSize:24,fontWeight:900,color:s.color||'var(--ink)'}}>{s.val}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Idea activity by month — a plain row per month (same pattern
-                  as the public /security/:symbol page's month list) rather
-                  than the SVG bar chart this replaces: fixed-width tick
-                  labels and stacked bars kept overlapping/illegible once a
-                  ticker had more than a handful of months, or a month with a
-                  small count next to one with a large one. A row list has no
-                  such failure mode at any data shape. This SPA has more
-                  horizontal room than that mobile-first page, though, so
-                  each row adds a slim proportional bar (green=buy/red=sell,
-                  scaled to the busiest month) rather than being text-only —
-                  a quick visual comparison across months without the SVG's
-                  label-collision problem. */}
-              {stats.months.length>0&&(
-                <div className="card">
-                  <div className="card-head"><Target size={15}/> Idea Activity by Month</div>
-                  <div className="card-body" style={{padding:'14px 20px',display:'flex',flexDirection:'column',gap:10}}>
-                    {(()=>{
-                      const maxTotal = Math.max(...stats.months.map(m=>m.buy+m.sell), 1);
-                      return stats.months.map(m=>{
-                        const buyPct  = (m.buy/maxTotal)*100;
-                        const sellPct = (m.sell/maxTotal)*100;
-                        const label = new Date(`${m.mo}-01`).toLocaleDateString('en-IN',{month:'short',year:'numeric'});
-                        return (
-                          <div key={m.mo} style={{display:'flex',alignItems:'center',gap:14}}>
-                            <div style={{width:72,flexShrink:0,fontSize:12.5,color:'var(--muted)',fontWeight:600}}>{label}</div>
-                            <div style={{flex:1,height:8,borderRadius:6,overflow:'hidden',background:'var(--line)',display:'flex'}}>
-                              {buyPct>0 && <div style={{width:`${buyPct}%`,background:'var(--gain)'}}/>}
-                              {sellPct>0 && <div style={{width:`${sellPct}%`,background:'var(--loss)'}}/>}
-                            </div>
-                            <div style={{width:120,flexShrink:0,textAlign:'right',fontSize:12.5}}>
-                              <span style={{color:'var(--gain)',fontWeight:700}}>{m.buy} buy</span>
-                              {m.sell>0 && <span style={{color:'var(--loss)',fontWeight:700,marginLeft:6}}>{m.sell} sell</span>}
-                            </div>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              {/* Conviction breakdown */}
-              {Object.keys(stats.convMap).length>0&&(
-                <div className="card">
-                  <div className="card-head"><Zap size={15}/> Conviction Breakdown</div>
-                  <div className="card-body" style={{display:'flex',flexWrap:'wrap',gap:10,padding:'12px 16px'}}>
-                    {Object.entries(stats.convMap).sort((a,b)=>b[1]-a[1]).map(([label,count])=>(
-                      <div key={label} style={{display:'flex',flexDirection:'column',alignItems:'center',
-                        padding:'10px 16px',background:'var(--surface-2)',borderRadius:10,minWidth:80}}>
-                        <div style={{fontSize:22,fontWeight:900,color:'var(--accent-ink)'}}>{count}</div>
-                        <div style={{fontSize:11,color:'var(--muted)',marginTop:3,textAlign:'center'}}>{label}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </section>
-
-      {/* ── AI Summary ── */}
-      <section ref={el=>sectionRefs.current.ai=el} data-section="ai" style={{marginTop:32,scrollMarginTop:76}}>
-        <div>
-          {aiLoading&&(
-            <div className="card" style={{padding:'48px',textAlign:'center'}}>
-              <Loader size={28} className="spin" style={{color:'var(--accent-ink)',marginBottom:12}}/>
-              <div style={{fontWeight:700,marginBottom:4}}>Analysing ideas…</div>
-              <div style={{fontSize:13,color:'var(--muted)'}}>Reading {recos.length} ideas for {ticker}</div>
-            </div>
-          )}
-          {!aiLoading&&!aiSummary&&(
-            <div className="card" style={{padding:'48px',textAlign:'center'}}>
-              <Lightbulb size={32} style={{color:'var(--accent-ink)',marginBottom:12,opacity:.6}}/>
-              <div style={{fontWeight:700,marginBottom:8}}>AI Investment Summary</div>
-              <div style={{fontSize:13,color:'var(--muted)',marginBottom:20}}>
-                Synthesise bullish and bearish themes from {activeRecos.length} active idea{activeRecos.length!==1?'s':''} on {ticker}
-              </div>
-              <button className="btn btn-pri" onClick={buildAiSummary} disabled={!activeRecos.length}>
-                <Lightbulb size={14}/> Generate Summary
-              </button>
-            </div>
-          )}
-          {!aiLoading&&aiSummary&&(
-            <div style={{display:'flex',flexDirection:'column',gap:16}}>
-              {/* Sentiment header */}
-              <div className="card" style={{padding:'20px 24px'}}>
-                <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
-                  <Lightbulb size={20} style={{color:'var(--accent-ink)'}}/>
-                  <div>
-                    <div style={{fontWeight:900,fontSize:16}}>AI Insight Summary</div>
-                    <div style={{fontSize:12,color:'var(--muted)'}}>Based on {aiSummary.uniqueInv} investor{aiSummary.uniqueInv!==1?'s':''} · {aiSummary.highConv} high conviction call{aiSummary.highConv!==1?'s':''}</div>
-                  </div>
-                  <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>{setAiSummary(null);buildAiSummary();}}>
-                    <RefreshCw size={12}/> Refresh
-                  </button>
-                </div>
-                <div style={{padding:'12px 16px',background: aiSummary.community.bullPct>aiSummary.community.bearPct?'var(--gain-soft)':aiSummary.community.bearPct>aiSummary.community.bullPct?'var(--loss-soft)':'var(--surface-2)',
-                  borderRadius:10,borderLeft:`3px solid ${consensusStrengthColor(aiSummary.community)}`}}>
-                  <div style={{fontWeight:700,fontSize:15,textTransform:'capitalize',marginBottom:4}}>
-                    {aiSummary.sentiment}
-                  </div>
-                  <div style={{fontSize:13,color:'var(--ink-soft)'}}>
-                    {aiSummary.community.bullPct}% of investors bullish · {aiSummary.community.bearPct}% bearish · {aiSummary.community.total} total active ideas
-                  </div>
-                </div>
-              </div>
-
-              {/* Bullish themes */}
-              {aiSummary.bullThemes.length>0&&(
-                <div className="card">
-                  <div className="card-head" style={{color:'var(--gain)'}}><TrendingUp size={15}/> Bullish Themes</div>
-                  <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10,padding:'12px 16px'}}>
-                    {aiSummary.bullThemes.map((t,i)=>(
-                      <div key={i} style={{display:'flex',gap:10,padding:'10px 12px',background:'var(--gain-soft)',borderRadius:8}}>
-                        <div style={{color:'var(--gain)',marginTop:1,flexShrink:0}}>↑</div>
-                        <div style={{fontSize:13,lineHeight:1.5}}>{t}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Bearish / risk themes */}
-              <div className="card">
-                <div className="card-head" style={{color:'var(--loss)'}}><TrendingDown size={15}/> Risks &amp; Bearish Views</div>
-                <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10,padding:'12px 16px'}}>
-                  {aiSummary.bearThemes.map((t,i)=>(
-                    <div key={i} style={{display:'flex',gap:10,padding:'10px 12px',background:'var(--loss-soft)',borderRadius:8}}>
-                      <div style={{color:'var(--loss)',marginTop:1,flexShrink:0}}>↓</div>
-                      <div style={{fontSize:13,lineHeight:1.5}}>{t}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{fontSize:11,color:'var(--muted)',textAlign:'center',padding:'4px 0'}}>
-                Summary is generated from investor ideas on myInvestorCircle and reflects community opinion, not financial advice.
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
+      {/* Sections render only when their dataset exists. Research first
+          ("what does verified research say?"), then Market Views ("what are
+          independent participants saying?"), then the people behind both. */}
+      {hasResearch && (
+        <ResearchSection sectionRef={el=>sectionRefs.current.research=el} ticker={ticker} recos={recos}
+          circleIds={circleIds} isMobile={isMobile} memberTagsByUser={memberTagsByUser}/>
+      )}
+      {hasViews && (
+        <ViewsSection sectionRef={el=>sectionRefs.current.views=el} ticker={ticker}
+          summary={viewSummary} views={views} stances={viewStances} hasMore={hasMoreViews}
+          loadingMore={loadingMore} onLoadMore={loadMoreViews}
+          signedIn={signedIn} circleIds={circleIds} onSignIn={goHome} isMobile={isMobile}
+          memberTagsByUser={memberTagsByUser}/>
+      )}
+      {hasAny && (
+        <PeopleSection sectionRef={el=>sectionRefs.current.people=el} ticker={ticker} recos={recos}
+          contributors={contributors} signedIn={signedIn} circleIds={circleIds}
+          investorIcis={investorIcis} onSignIn={goHome} memberTagsByUser={memberTagsByUser}/>
+      )}
     </>
   );
 }

@@ -1,7 +1,10 @@
 import IdeaCard from '../../../../components/IdeaCard';
+import ViewCard from '../../../../components/ViewCard';
 import { ideaTypeMeta } from '../../../../lib/ideaType';
-import { computeConsensus, consensusStrengthColor } from '../../../../lib/consensus';
 import { money, day } from '../../../../lib/format';
+import {
+  researchRows, researchBreakdown, researchMonthly, viewBreakdownFromCounts, viewMonthly, currentViews, viewThemes,
+} from '../../../../lib/securityInsights';
 
 // Deliberately NOT a tab switcher that hides inactive panels: an earlier
 // version of this component used client-side state to show only one
@@ -16,12 +19,9 @@ import { money, day } from '../../../../lib/format';
 // href="#history">`) that jump to a section. That works with zero
 // JavaScript at all: no client component, no hydration dependency for the
 // one thing that matters most here.
-const BASE_SECTIONS = [
-  { id: 'consensus', label: 'Consensus' },
-  { id: 'history', label: 'Idea History' },
-  { id: 'investors', label: 'Investors' },
-  { id: 'stats', label: 'Stats' },
-];
+// Sections are offered (and rendered) only when their dataset exists:
+// Verified Research and Market Views are separate layers, and a layer with no
+// data is hidden rather than shown as an empty card.
 
 const CONVICTION_ORDER = ['Low', 'Medium', 'High'];
 const HORIZON_ORDER = ['<3m', '6m', '12m', '>2Y'];
@@ -59,36 +59,38 @@ function formatRange(range) {
   return range.min === range.max ? money(range.min) : `${money(range.min)}–${money(range.max)}`;
 }
 
-export default function SecurityTabs({ symbol, ideas, summary, related = [] }) {
-  const community = computeConsensus(ideas);
-  const convictionCounts = countByField(ideas, 'conviction');
-  const horizonCounts = countByField(ideas, 'horizon');
-  const entryRange = priceRange(ideas, 'reco_price');
-  const targetRange = priceRange(ideas, 'target_price');
+export default function SecurityTabs({ symbol, ideas, summary, views = [], viewSummary = {}, viewStances = [], related = [] }) {
+  const research = researchRows(ideas);
+  const rb = researchBreakdown(research);
+  const vb = viewBreakdownFromCounts({ ...viewSummary, contributors: viewSummary.contributor_count });
+  const hasResearch = research.length > 0;
+  const hasViews = vb.total > 0;
 
-  const investorMap = {};
-  for (const idea of ideas) {
+  const convictionCounts = countByField(research, 'conviction');
+  const horizonCounts = countByField(research, 'horizon');
+  const entryRange = priceRange(research, 'reco_price');
+  const targetRange = priceRange(research, 'target_price');
+
+  const publisherMap = {};
+  for (const idea of research) {
     const key = idea.author_username || idea.author_name;
-    if (!investorMap[key]) investorMap[key] = idea;
+    if (!publisherMap[key]) publisherMap[key] = idea;
   }
-  const investors = Object.values(investorMap);
-  const activeInvestorCount = investors.filter((i) => i.status === 'Active').length;
+  const publishers = Object.values(publisherMap);
+  const contributors = currentViews(views, (v) => v.author_username || v.author_name);
 
-  const byMonth = {};
-  for (const idea of ideas) {
-    const mo = (idea.created_at ? String(idea.created_at) : '').slice(0, 7);
-    if (!mo) continue;
-    if (!byMonth[mo]) byMonth[mo] = { mo, buy: 0, sell: 0 };
-    if (idea.recommendation_type === 'Buy') byMonth[mo].buy++;
-    else byMonth[mo].sell++;
-  }
-  const months = Object.values(byMonth).sort((a, b) => a.mo.localeCompare(b.mo));
-  // Active/closed already shown above the fold (page.jsx's stat strip) —
-  // only expired isn't broken out there, so that's the one count still
-  // computed here (see the Statistics section below).
-  const expiredCount = ideas.filter((i) => i.status === 'Expired').length;
+  const researchMonths = researchMonthly(research);
+  const viewMonths = viewMonthly(viewStances);
+  const themes = viewThemes(views, { nameOf: (v) => v.author_name || v.author_username || null });
+  const hasThemes = themes.positive.length > 0 || themes.concerns.length > 0;
+  const expiredCount = research.filter((i) => i.status === 'Expired').length;
 
-  const sections = related.length ? [...BASE_SECTIONS, { id: 'related', label: 'Related' }] : BASE_SECTIONS;
+  const sections = [
+    hasResearch && { id: 'research', label: 'Verified Research' },
+    hasViews && { id: 'views', label: 'Market Views' },
+    (publishers.length > 0 || contributors.length > 0) && { id: 'people', label: 'People' },
+    related.length > 0 && { id: 'related', label: 'Related' },
+  ].filter(Boolean);
 
   return (
     <div>
@@ -98,131 +100,196 @@ export default function SecurityTabs({ symbol, ideas, summary, related = [] }) {
         ))}
       </nav>
 
-      <section id="consensus" aria-label="Consensus">
-        <h2 style={{ marginTop: 4 }}>Community Consensus</h2>
-        <div className="card">
-          <div className="pad">
-            {/* Raw Buy/Sell counts already shown above the fold (the badge
-                row under the H1) — not repeated here, just the label and
-                the same distribution as a bar. */}
-            <div style={{ marginBottom: 6 }}>
-              <span style={{ fontWeight: 700 }}>{community.label}</span>
-            </div>
-            <div className="dist-bar">
-              {community.bullPct > 0 && <div className="seg-buy" style={{ width: `${community.bullPct}%` }} />}
-              {community.bearPct > 0 && <div className="seg-sell" style={{ width: `${community.bearPct}%` }} />}
-            </div>
-
-            {(CONVICTION_ORDER.some((k) => convictionCounts[k]) || HORIZON_ORDER.some((k) => horizonCounts[k])) && (
-              <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
-                {CONVICTION_ORDER.some((k) => convictionCounts[k]) && (
-                  <div>
-                    <div className="meta">Conviction</div>
-                    <div className="badge-row">
-                      {CONVICTION_ORDER.filter((k) => convictionCounts[k]).map((k) => (
-                        <span className="tag" key={k}>{k} · {convictionCounts[k]}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {HORIZON_ORDER.some((k) => horizonCounts[k]) && (
-                  <div>
-                    <div className="meta">Horizon</div>
-                    <div className="badge-row">
-                      {HORIZON_ORDER.filter((k) => horizonCounts[k]).map((k) => (
-                        <span className="tag" key={k}>{k} · {horizonCounts[k]}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section id="history" aria-label="Idea History">
-        <h2 style={{ marginTop: 4 }}>Idea History on {symbol}</h2>
-        <p className="meta" style={{ marginTop: -6, marginBottom: 14 }}>
-          Immutable — every idea here is permanent, however it turned out.
-          {(entryRange || targetRange) && ' '}
-          {entryRange && `Entry ${formatRange(entryRange)} (${entryRange.count} of ${ideas.length} ideas)`}
-          {entryRange && targetRange && ' · '}
-          {targetRange && `Target ${formatRange(targetRange)} (${targetRange.count} of ${ideas.length} ideas)`}
-        </p>
-        <div className="idea-row" style={{ padding: 0 }}>
-          {ideas.map((idea) => <IdeaCard key={idea.id} idea={idea} />)}
-        </div>
-      </section>
-
-      <section id="investors" aria-label="Investors">
-        <h2 style={{ marginTop: 4 }}>Investors covering {symbol}</h2>
-        {/* "Currently active on their latest call" is deliberately spelled
-            out — this counts INVESTORS (each one's most recent idea on
-            {symbol}), not ideas, so it won't generally match the idea-level
-            active/closed count already stated above the fold. Leaving that
-            unstated read like the same number repeated, when it's actually
-            a different measure. */}
-        <p className="meta" style={{ marginTop: -10, marginBottom: 10 }}>
-          {investors.length} investor{investors.length === 1 ? '' : 's'} {investors.length === 1 ? 'has' : 'have'} posted on {symbol} — {activeInvestorCount} {activeInvestorCount === 1 ? 'is' : 'are'} currently active on their latest call.
-        </p>
-        <div className="card">
-          <div className="card-body" style={{ padding: 0 }}>
-            {investors.map((inv, i) => (
-              <div
-                key={inv.author_username || inv.author_name}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px',
-                  borderBottom: i < investors.length - 1 ? '1px solid var(--line)' : 'none',
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {inv.author_username ? (
-                    <a href={`https://myinvestorcircle.com/investor/${encodeURIComponent(inv.author_username)}`} style={{ fontWeight: 700 }}>
-                      {inv.author_name || inv.author_username}
-                    </a>
-                  ) : (
-                    <span style={{ fontWeight: 700 }}>{inv.author_name || 'Anonymous'}</span>
-                  )}
-                  {inv.author_username && <div className="meta">@{inv.author_username}</div>}
-                </div>
-                <span className={`tag ${ideaTypeMeta(inv.recommendation_type).tag}`}>
-                  {ideaTypeMeta(inv.recommendation_type).label.toUpperCase()}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="stats" aria-label="Statistics">
-        <h2 style={{ marginTop: 4 }}>Statistics</h2>
-        {/* Total/active/closed already shown above the fold — this section
-            only adds what isn't stated anywhere else: expired ideas (a
-            third status the top strip doesn't break out) and the monthly
-            activity below. */}
-        {(summary?.last_posted || expiredCount > 0) && (
-          <p className="meta" style={{ marginTop: -10, marginBottom: 16 }}>
-            {summary?.last_posted && `Latest activity ${day(summary.last_posted)}`}
-            {summary?.last_posted && expiredCount > 0 && ' · '}
-            {expiredCount > 0 && `${expiredCount} expired`}
+      {hasResearch && (
+        <section id="research" aria-label="Verified Research">
+          <h2 style={{ marginTop: 4 }}>Verified Research on {symbol}</h2>
+          <p className="meta" style={{ marginTop: -6, marginBottom: 14 }}>
+            Published by Verified Research Publishers: Buy / Hold / Sell with entry price, target and outcome on the record. Immutable — every piece is permanent, however it turned out.
           </p>
-        )}
-        {months.length > 0 && (
+
           <div className="card">
-            <div className="card-head">Idea activity by month</div>
-            <div className="pad" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {months.map((m) => (
-                <div key={m.mo} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                  <span className="meta" style={{ width: 64, flexShrink: 0 }}>{m.mo}</span>
-                  <span className="gain" style={{ fontWeight: 700 }}>{m.buy} buy</span>
-                  <span className="loss" style={{ fontWeight: 700 }}>{m.sell} sell</span>
+            <div className="card-head">Research Consensus</div>
+            <div className="pad">
+              <div className="layer-counts">
+                <span className="gain">{rb.buy} Buy</span> · <span>{rb.hold} Hold</span> · <span className="loss">{rb.sell} Sell</span>
+              </div>
+              <div className="dist-bar">
+                {rb.buyPct > 0 && <div className="seg-buy" style={{ width: `${rb.buyPct}%` }} />}
+                {rb.holdPct > 0 && <div className="seg-neutral" style={{ width: `${rb.holdPct}%` }} />}
+                {rb.sellPct > 0 && <div className="seg-sell" style={{ width: `${rb.sellPct}%` }} />}
+              </div>
+              <div className="meta" style={{ marginTop: 6 }}>Buy {rb.buyPct}% · Hold {rb.holdPct}% · Sell {rb.sellPct}%</div>
+
+              {(CONVICTION_ORDER.some((k) => convictionCounts[k]) || HORIZON_ORDER.some((k) => horizonCounts[k])) && (
+                <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
+                  {CONVICTION_ORDER.some((k) => convictionCounts[k]) && (
+                    <div>
+                      <div className="meta">Conviction</div>
+                      <div className="badge-row">
+                        {CONVICTION_ORDER.filter((k) => convictionCounts[k]).map((k) => (
+                          <span className="tag" key={k}>{k} · {convictionCounts[k]}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {HORIZON_ORDER.some((k) => horizonCounts[k]) && (
+                    <div>
+                      <div className="meta">Horizon</div>
+                      <div className="badge-row">
+                        {HORIZON_ORDER.filter((k) => horizonCounts[k]).map((k) => (
+                          <span className="tag" key={k}>{k} · {horizonCounts[k]}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ))}
+              )}
             </div>
           </div>
-        )}
-      </section>
+
+          <h3 style={{ margin: '22px 0 6px' }}>Research History</h3>
+          <p className="meta" style={{ marginTop: 0, marginBottom: 14 }}>
+            {entryRange && `Entry ${formatRange(entryRange)} (${entryRange.count} of ${research.length})`}
+            {entryRange && targetRange && ' · '}
+            {targetRange && `Target ${formatRange(targetRange)} (${targetRange.count} of ${research.length})`}
+            {expiredCount > 0 && `${entryRange || targetRange ? ' · ' : ''}${expiredCount} expired`}
+            {summary?.last_posted && `${entryRange || targetRange || expiredCount ? ' · ' : ''}Latest ${day(summary.last_posted)}`}
+          </p>
+          <div className="idea-row" style={{ padding: 0 }}>
+            {research.map((idea) => <IdeaCard key={idea.id} idea={idea} />)}
+          </div>
+
+          {researchMonths.length > 0 && (
+            <div className="card" style={{ marginTop: 14 }}>
+              <div className="card-head">Research activity by month</div>
+              <div className="pad" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {researchMonths.map((m) => (
+                  <div key={m.mo} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, flexWrap: 'wrap' }}>
+                    <span className="meta" style={{ width: 64, flexShrink: 0 }}>{m.mo}</span>
+                    {m.Buy > 0 && <span className="gain" style={{ fontWeight: 700 }}>{m.Buy} Buy</span>}
+                    {m.Hold > 0 && <span style={{ fontWeight: 700 }}>{m.Hold} Hold</span>}
+                    {m.Sell > 0 && <span className="loss" style={{ fontWeight: 700 }}>{m.Sell} Sell</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {hasViews && (
+        <section id="views" aria-label="Market Views">
+          <h2 style={{ marginTop: 4 }}>Market Views on {symbol}</h2>
+          <p className="meta" style={{ marginTop: -6, marginBottom: 14 }}>
+            Independent commentary from members of myInvestorCircle — personal views, not research and not a recommendation. myInvestorCircle does not endorse them.
+          </p>
+
+          <div className="card">
+            <div className="card-head">Community sentiment</div>
+            <div className="pad">
+              <div className="layer-counts">{vb.total} independent view{vb.total === 1 ? '' : 's'}</div>
+              <div className="dist-bar">
+                {vb.positivePct > 0 && <div className="seg-buy" style={{ width: `${vb.positivePct}%` }} />}
+                {vb.neutralPct > 0 && <div className="seg-neutral" style={{ width: `${vb.neutralPct}%` }} />}
+                {vb.negativePct > 0 && <div className="seg-sell" style={{ width: `${vb.negativePct}%` }} />}
+              </div>
+              <div className="meta" style={{ marginTop: 6 }}>
+                <span className="gain">Positive {vb.positivePct}%</span> · Neutral {vb.neutralPct}% · <span className="loss">Negative {vb.negativePct}%</span>
+                {vb.contributors ? ` · ${vb.contributors} contributor${vb.contributors === 1 ? '' : 's'}` : ''}
+              </div>
+            </div>
+          </div>
+
+          {hasThemes && (
+            <div className="card" style={{ marginTop: 14 }}>
+              <div className="card-head">Market View Summary</div>
+              <div className="pad">
+                <p className="meta" style={{ marginTop: 0 }}>A summary of themes appearing across community views on this security.</p>
+                {themes.positive.length > 0 && (
+                  <>
+                    <div className="layer-label" style={{ marginTop: 10 }}>Positive themes</div>
+                    {themes.positive.map((t) => (
+                      <div key={t.id} className="quote pos">“{t.text}”{t.by && <span className="meta"> — {t.by}</span>}</div>
+                    ))}
+                  </>
+                )}
+                {themes.concerns.length > 0 && (
+                  <>
+                    <div className="layer-label" style={{ marginTop: 14 }}>Concerns raised</div>
+                    {themes.concerns.map((t) => (
+                      <div key={t.id} className="quote neg">“{t.text}”{t.by && <span className="meta"> — {t.by}</span>}</div>
+                    ))}
+                  </>
+                )}
+                <p className="meta" style={{ marginTop: 12 }}>
+                  Excerpts are contributors’ own words from public Market Views. This reflects community opinion, not financial advice, and is not a myInvestorCircle recommendation or signal.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <h3 style={{ margin: '22px 0 6px' }}>Latest Market Views</h3>
+          <div className="idea-row" style={{ padding: 0 }}>
+            {views.map((v) => <ViewCard key={v.id} view={v} />)}
+          </div>
+          {vb.total > views.length && (
+            <p className="meta" style={{ marginTop: 10 }}>
+              Showing the latest {views.length} of {vb.total} Market Views. Sign in to myInvestorCircle to see them all.
+            </p>
+          )}
+
+          {viewMonths.length > 0 && (
+            <div className="card" style={{ marginTop: 14 }}>
+              <div className="card-head">Market View activity by month</div>
+              <div className="pad" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {viewMonths.map((m) => (
+                  <div key={m.mo} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, flexWrap: 'wrap' }}>
+                    <span className="meta" style={{ width: 64, flexShrink: 0 }}>{m.mo}</span>
+                    {m.Positive > 0 && <span className="gain" style={{ fontWeight: 700 }}>{m.Positive} Positive</span>}
+                    {m.Neutral > 0 && <span style={{ fontWeight: 700 }}>{m.Neutral} Neutral</span>}
+                    {m.Negative > 0 && <span className="loss" style={{ fontWeight: 700 }}>{m.Negative} Negative</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {(publishers.length > 0 || contributors.length > 0) && (
+        <section id="people" aria-label="People">
+          <h2 style={{ marginTop: 4 }}>People covering {symbol}</h2>
+          <p className="meta" style={{ marginTop: -10, marginBottom: 10 }}>
+            Each person’s latest rating or view is shown — it is theirs, not myInvestorCircle’s.
+          </p>
+          {[
+            ['Research publishers', publishers, (p) => p.recommendation_type],
+            ['Market View contributors', contributors, (c) => c.recommendation_type],
+          ].map(([title, list, typeOf]) => list.length > 0 && (
+            <div className="card" key={title} style={{ marginBottom: 12 }}>
+              <div className="card-head">{title} ({list.length})</div>
+              <div className="card-body" style={{ padding: 0 }}>
+                {list.map((p, i) => (
+                  <div key={p.author_username || p.author_name}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: i < list.length - 1 ? '1px solid var(--line)' : 'none' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {p.author_username ? (
+                        <a href={`https://myinvestorcircle.com/investor/${encodeURIComponent(p.author_username)}`} style={{ fontWeight: 700 }}>
+                          {p.author_name || p.author_username}
+                        </a>
+                      ) : (
+                        <span style={{ fontWeight: 700 }}>{p.author_name || 'Anonymous'}</span>
+                      )}
+                      {p.author_username && <div className="meta">@{p.author_username}</div>}
+                    </div>
+                    <span className={`tag ${ideaTypeMeta(typeOf(p)).tag}`}>{ideaTypeMeta(typeOf(p)).label.toUpperCase()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       {related.length > 0 && (
         <section id="related" aria-label="Related Securities">

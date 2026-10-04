@@ -150,6 +150,9 @@ describe("public-ideas — thesis sanitization", () => {
     const bySymbolRes = await get({ action: "by-symbol", symbol: "RELIANCE" });
     expect(bySymbolRes.body.ideas[0].thesis).toBe("Strong quarter.\n\nDon't miss this.");
     expect(JSON.stringify(bySymbolRes.body)).not.toContain("base64");
+    // Market Views get the same treatment, and the lightweight stance rows never carry commentary at all.
+    expect(bySymbolRes.body.views[0].thesis).toBe("Strong quarter.\n\nDon't miss this.");
+    expect(Object.keys(bySymbolRes.body.view_stances[0]).sort()).toEqual(["author_username", "created_at", "recommendation_type"]);
 
     rows = [{ ...ideaRow, thesis: richThesis }];
     const searchRes = await get({ action: "search", q: "reliance" });

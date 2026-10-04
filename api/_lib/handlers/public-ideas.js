@@ -53,6 +53,11 @@ import { MARKET_VIEW_TYPES } from '../ideaType.js';
 // inviting the caller to keep probing.
 const SYMBOL_RE = /^[A-Za-z0-9.&_-]{1,24}$/;
 const MAX_LIMIT = 60;
+// Market Views shown inline on the public security page. The page is server-
+// rendered (no client pagination), so this is a deliberate cap; the aggregate
+// counts below cover every public view regardless.
+const VIEWS_PAGE = 30;
+const STANCE_CAP = 1000;
 
 /* r.thesis is either legacy plain text or a JSON-encoded rich payload —
    {"__v":"1","text":"...","images":["data:image/jpeg;base64,..."]} — written
@@ -152,7 +157,7 @@ async function bySymbol(req, res) {
   if (!SYMBOL_RE.test(symbol)) { res.status(400).json({ error: 'invalid symbol' }); return; }
   const limit = clampLimit(req.query?.limit, MAX_LIMIT);
 
-  const [ideas, summary] = await Promise.all([
+  const [ideas, summary, views, viewSummary, viewStances] = await Promise.all([
     sql`
       SELECT
         r.id, r.ticker, r.asset_name, r.asset_class,
@@ -206,15 +211,62 @@ async function bySymbol(req, res) {
       WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
         AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
     `,
+    // ── Market Views: a separate dataset, never mixed into the research
+    //    statements above. Commentary + disclosure only — a Market View has
+    //    no entry price, target, horizon, conviction, return or status. ──
+    sql`
+      SELECT
+        r.id, r.ticker, r.asset_name, r.recommendation_type, r.sector,
+        r.thesis, r.disclosure, r.created_at,
+        up.full_name AS author_name,
+        up.username  AS author_username,
+        up.avatar_color, up.avatar_url
+      FROM ic_recommendations r
+      JOIN user_profiles up ON up.id = r.recommender_id
+      WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+      ORDER BY r.created_at DESC
+      LIMIT ${VIEWS_PAGE}
+    `,
+    sql`
+      SELECT
+        COUNT(*)                                                          AS total,
+        COUNT(*) FILTER (WHERE r.recommendation_type = 'Positive')        AS positive,
+        COUNT(*) FILTER (WHERE r.recommendation_type = 'Neutral')         AS neutral,
+        COUNT(*) FILTER (WHERE r.recommendation_type = 'Negative')        AS negative,
+        COUNT(DISTINCT r.recommender_id)                                  AS contributor_count,
+        MAX(r.created_at)                                                 AS last_posted,
+        MAX(r.asset_name)                                                 AS asset_name,
+        MAX(r.sector)                                                     AS sector
+      FROM ic_recommendations r
+      WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+    `,
+    // Lightweight (no commentary): who said what, when — lets the page show
+    // each contributor's current view and the monthly activity for every
+    // public view, not just the page of commentary above.
+    sql`
+      SELECT r.recommendation_type, r.created_at, up.username AS author_username
+      FROM ic_recommendations r
+      JOIN user_profiles up ON up.id = r.recommender_id
+      WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+      ORDER BY r.created_at DESC
+      LIMIT ${STANCE_CAP}
+    `,
   ]);
 
   const s = summary[0] || {};
-  if (!Number(s.idea_count)) { res.status(404).json({ error: 'not_found' }); return; }
+  const v = viewSummary[0] || {};
+  const researchCount = Number(s.idea_count) || 0;
+  const viewCount = Number(v.total) || 0;
+  // A ticker is a page if it has verified research OR market views.
+  if (!researchCount && !viewCount) { res.status(404).json({ error: 'not_found' }); return; }
 
   res.status(200).json({
     symbol,
-    name:   s.asset_name || symbol,
-    sector: s.sector || null,
+    name:   s.asset_name || v.asset_name || symbol,
+    sector: s.sector || v.sector || null,
     summary: {
       idea_count:        Number(s.idea_count) || 0,
       contributor_count: Number(s.contributor_count) || 0,
@@ -223,6 +275,17 @@ async function bySymbol(req, res) {
       last_posted:       s.last_posted || null,
     },
     ideas: ideas.map(i => ({ ...i, thesis: plainThesisText(i.thesis) })),
+    view_summary: {
+      total:             viewCount,
+      positive:          Number(v.positive) || 0,
+      neutral:           Number(v.neutral) || 0,
+      negative:          Number(v.negative) || 0,
+      contributor_count: Number(v.contributor_count) || 0,
+      last_posted:       v.last_posted || null,
+    },
+    views: views.map(i => ({ ...i, thesis: plainThesisText(i.thesis) })),
+    // Only who/what/when — never commentary — whatever the query returned.
+    view_stances: viewStances.map(({ recommendation_type, created_at, author_username }) => ({ recommendation_type, created_at, author_username })),
   });
 }
 
@@ -294,7 +357,6 @@ async function symbols(_req, res) {
       MAX(r.created_at) AS last_posted
     FROM ic_recommendations r
     WHERE r.is_public = true AND r.ticker IS NOT NULL AND r.ticker <> ''
-      AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
     GROUP BY UPPER(r.ticker)
     ORDER BY MAX(r.created_at) DESC
   `;
@@ -319,7 +381,6 @@ async function related(req, res) {
     WHERE r.is_public = true
       AND r.ticker IS NOT NULL AND r.ticker <> ''
       AND UPPER(r.ticker) <> ${symbol}
-      AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
       AND r.sector = (
         SELECT MAX(r2.sector) FROM ic_recommendations r2
         WHERE UPPER(r2.ticker) = ${symbol} AND r2.is_public = true
