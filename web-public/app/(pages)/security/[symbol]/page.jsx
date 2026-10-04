@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getSecurityByTicker, getRelatedSecurities, getDailyPrice, getPublicSymbols } from '../../../../lib/api';
 import TickerTypeahead from '../../../../components/TickerTypeahead';
 import { jsonLd, ideaStatusSummary, money, pct, day } from '../../../../lib/format';
-import { researchRows } from '../../../../lib/securityInsights';
+import { researchRows, excerpt } from '../../../../lib/securityInsights';
 import { securityModel } from '../../../../lib/securityModel';
 import SecurityLayers from '../../../../components/SecurityLayers';
 import Gate from '../../../../components/Gate';
@@ -39,19 +39,21 @@ export async function generateMetadata({ params }) {
   const description = describe({
     name, sym, research, views,
     contributors: (data.summary?.contributor_count || 0) + (data.view_summary?.contributor_count || 0),
-  }).slice(0, 200);
+  });
+  // word-aware cut (a plain slice split "members" mid-word)
+  const metaDescription = excerpt(description, 200);
   const canonical = `https://myinvestorcircle.com/security/${encodeURIComponent(sym)}`;
 
   return {
     title,
-    description,
+    description: metaDescription,
     alternates: { canonical },
     openGraph: {
       type: 'website',
       siteName: 'My Investor Circle',
       url: canonical,
       title,
-      description,
+      description: metaDescription,
       // No `images` here — opengraph-image.jsx in this same route segment
       // (a per-ticker generated PNG, see its own header comment) supplies
       // it via Next's file-convention metadata instead. Setting a static

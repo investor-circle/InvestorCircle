@@ -16,7 +16,7 @@ import { useMemberTagsMap } from "../../MemberTagsContext";
 import { useIsMobile } from "../../hooks/index";
 import { goHome } from "../../utils/navigation";
 import { getDailyPrices, getPublicDailyPrice } from "../../services/api/pricingApi";
-import { researchBreakdown, viewBreakdownFromCounts, currentViews, pageSections } from "../../utils/securityInsights";
+import { researchBreakdown, researchBreakdownFromCounts, viewBreakdownFromCounts, currentViews, pageSections } from "../../utils/securityInsights";
 import { LayerSummary, ResearchSection, ViewsSection, PeopleSection } from "./SecuritySections";
 
 // The page's navigable sections. Only sections with data are offered (and
@@ -47,6 +47,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   const [viewSummary, setViewSummary] = useState({ total:0, positive:0, neutral:0, negative:0, contributors:0 });
   const [viewStances, setViewStances] = useState([]); // lightweight who/what/when for every public view
   const [hasMoreViews, setHasMoreViews] = useState(false);
+  const [researchCounts, setResearchCounts] = useState(null); // exact rating counts (public path), else derived from the full list
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [tab, setTab]         = useState(normTab(securityTicker?.tab) || 'research'); // research | views | people
@@ -178,17 +179,17 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
   useEffect(()=>{
     if (!ticker) return;
     let cancelled = false;
-    setLoading(true); setRecos([]); setViews([]); setViewStances([]); setHasMoreViews(false);
+    setLoading(true); setRecos([]); setViews([]); setViewStances([]); setHasMoreViews(false); setResearchCounts(null);
     setViewSummary({ total:0, positive:0, neutral:0, negative:0, contributors:0 });
     const load = signedIn
       ? Promise.all([dbGetTickerRecos(ticker), dbGetTickerViews(ticker)])
-          .then(([rows, v]) => ({ ideas: rows, views: v.views, summary: v.summary, stances: v.stances, hasMore: v.hasMore }))
+          .then(([rows, v]) => ({ ideas: rows, views: v.views, summary: v.summary, stances: v.stances, hasMore: v.hasMore, counts: null }))
       : dbGetPublicSecurity(ticker)
-          .then(d => ({ ideas: d.ideas, views: d.views, summary: d.viewSummary, stances: d.viewStances, hasMore: d.views.length < d.viewSummary.total }));
+          .then(d => ({ ideas: d.ideas, views: d.views, summary: d.viewSummary, stances: d.viewStances, hasMore: d.views.length < d.viewSummary.total, counts: d.researchCounts }));
     load
       .then(d=>{
         if (cancelled) return;
-        setRecos(d.ideas); setViews(d.views); setViewSummary(d.summary); setViewStances(d.stances); setHasMoreViews(!!d.hasMore);
+        setRecos(d.ideas); setViews(d.views); setViewSummary(d.summary); setViewStances(d.stances); setHasMoreViews(!!d.hasMore); setResearchCounts(d.counts);
         setLoading(false);
       })
       .catch(()=>{ if (!cancelled) setLoading(false); });
@@ -286,7 +287,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
 
   // Verified Research and Market Views are separate datasets: nothing below
   // combines them, and a Market View never reaches a research figure.
-  const researchB    = researchBreakdown(recos, r=>r.from);
+  const researchB    = researchCounts ? researchBreakdownFromCounts(researchCounts) : researchBreakdown(recos, r=>r.from);
   const viewB        = viewBreakdownFromCounts(viewSummary);
   const contributors = currentViews(views, v=>v.from);   // each loaded contributor's latest view
   const securitySector = recos[0]?.sector || views[0]?.sector || '';
@@ -431,7 +432,7 @@ export function SecurityIntelligencePage({ securityTicker, contacts, me, viewerU
           ("what does verified research say?"), then Market Views ("what are
           independent participants saying?"), then the people behind both. */}
       {hasResearch && (
-        <ResearchSection sectionRef={el=>sectionRefs.current.research=el} ticker={ticker} recos={recos}
+        <ResearchSection sectionRef={el=>sectionRefs.current.research=el} ticker={ticker} recos={recos} breakdown={researchB}
           circleIds={circleIds} isMobile={isMobile} memberTagsByUser={memberTagsByUser}/>
       )}
       {hasViews && (

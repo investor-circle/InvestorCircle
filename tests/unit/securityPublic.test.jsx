@@ -121,6 +121,17 @@ describe("public Security Page — Market Views carry no recommendation framing"
     expect(m.researchB.buy).toBe(1);
   });
 
+  it("research percentages come from the exact counts, not the (capped) list of ideas returned", () => {
+    const d = dataOf({ r: [research(1, "Buy"), research(2, "Sell")] });
+    d.summary = { ...d.summary, idea_count: 100, buy_count: 70, hold_count: 20, sell_count: 10, contributor_count: 31 };
+    const m = securityModel(d);
+    expect(m.researchB).toMatchObject({ total: 100, buy: 70, hold: 20, sell: 10, buyPct: 70, holdPct: 20, sellPct: 10, publishers: 31 });
+    const out = html(d);
+    expect(out).toContain("70 Buy");
+    expect(out).toContain("20 Hold");
+    expect(out).toContain("10 Sell");
+  });
+
   it("the public page shows only a capped page of views and says so, while the counts stay exact", () => {
     const vs = [view(1, "Positive"), view(2, "Positive")];
     const d = dataOf({ v: vs });

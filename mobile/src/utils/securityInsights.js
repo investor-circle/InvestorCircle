@@ -66,6 +66,13 @@ export function researchBreakdown(rows, keyOf) {
   return { total: list.length, buy, hold, sell, buyPct, holdPct, sellPct, publishers };
 }
 
+/** Research distribution from exact counts (server aggregate — never from a capped list of rows). */
+export function researchBreakdownFromCounts({ buy = 0, hold = 0, sell = 0, publishers = null } = {}) {
+  const b = Number(buy) || 0, h = Number(hold) || 0, s = Number(sell) || 0;
+  const [buyPct, holdPct, sellPct] = percentSplit([b, h, s]);
+  return { total: b + h + s, buy: b, hold: h, sell: s, buyPct, holdPct, sellPct, publishers: publishers == null ? null : Number(publishers) || 0 };
+}
+
 /** Market View distribution from exact counts (server aggregate). */
 export function viewBreakdownFromCounts({ positive = 0, neutral = 0, negative = 0, contributors = null } = {}) {
   const p = Number(positive) || 0, n = Number(neutral) || 0, g = Number(negative) || 0;
@@ -138,29 +145,36 @@ export function excerpt(text, max = 180) {
 }
 
 /**
- * Themes appearing across Market Views — the contributors' OWN words, quoted
- * and attributed, never generated opinion or a MIC signal. Positive themes come
- * from Positive views, concerns from Negative ones; Neutral views carry no
- * theme of their own. Newest first, duplicates dropped. A side with nothing to
- * quote is empty (the caller hides it).
+ * Themes appearing across Market Views — SHORT snippets of the contributors'
+ * OWN commentary, quoted and attributed, never generated opinion and never a MIC
+ * conclusion. Positive themes come from Positive views, concerns from Negative
+ * ones; Neutral views carry no theme of their own. Newest first, duplicates
+ * dropped, a few snippets per side. `basis` is how many views of each kind had
+ * commentary to draw from (so the page can say what the snippets are drawn
+ * from). A side with nothing to quote is empty (the caller hides it).
  */
-export function viewThemes(rows, { max = 3, chars = 180, nameOf = () => null } = {}) {
+export function viewThemes(rows, { max = 3, chars = 110, nameOf = () => null } = {}) {
   const pick = (type) => {
     const seen = new Set();
     const out = [];
+    let basis = 0;
     const sorted = viewRows(rows)
       .filter((r) => typeOf(r) === type)
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     for (const r of sorted) {
-      const text = excerpt(commentaryOf(r.thesis), chars);
-      if (!text || seen.has(text)) continue;
+      const full = commentaryOf(r.thesis);
+      if (!full) continue;
+      basis++;
+      const text = excerpt(full, chars);
+      if (seen.has(text) || out.length >= max) continue;
       seen.add(text);
       out.push({ id: r.id, text, by: nameOf(r) });
-      if (out.length >= max) break;
     }
-    return out;
+    return { out, basis };
   };
-  return { positive: pick('Positive'), concerns: pick('Negative') };
+  const pos = pick('Positive');
+  const neg = pick('Negative');
+  return { positive: pos.out, concerns: neg.out, basis: { positive: pos.basis, concerns: neg.basis } };
 }
 
 /** Which sections of the page have data. Everything else is hidden, not shown empty. */

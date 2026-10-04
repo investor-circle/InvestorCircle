@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
-  percentSplit, researchBreakdown, viewBreakdown, viewBreakdownFromCounts, currentViews, researchMonthly, viewMonthly,
+  percentSplit, researchBreakdown, researchBreakdownFromCounts, viewBreakdown, viewBreakdownFromCounts, currentViews, researchMonthly, viewMonthly,
   commentaryOf, excerpt, viewThemes, pageSections, researchRows, viewRows, isViewRow,
 } from "./securityInsights";
 
@@ -43,6 +43,16 @@ describe("research breakdown (Buy / Hold / Sell)", () => {
   });
   it("treats the legacy default (no type) as Buy", () => expect(researchBreakdown([{}]).buy).toBe(1));
   it("is empty for no research", () => expect(researchBreakdown([]).total).toBe(0));
+});
+
+describe("research breakdown from exact counts", () => {
+  it("uses the server counts, not however many rows were returned", () => {
+    expect(researchBreakdownFromCounts({ buy: 70, hold: 20, sell: 10, publishers: 31 })).toMatchObject({ total: 100, buyPct: 70, holdPct: 20, sellPct: 10, publishers: 31 });
+  });
+  it("still adds up to 100", () => {
+    const b = researchBreakdownFromCounts({ buy: 1, hold: 1, sell: 1 });
+    expect(b.buyPct + b.holdPct + b.sellPct).toBe(100);
+  });
 });
 
 describe("market view breakdown (Positive / Neutral / Negative)", () => {
@@ -103,6 +113,7 @@ describe("viewThemes — contributors' own words, not a generated signal", () =>
     expect(t.positive.map(x => x.id)).toEqual(["1"]);
     expect(t.concerns.map(x => x.id)).toEqual(["3"]);
     expect(t.positive[0].text).toBe("Deal wins are accelerating and margins are improving.");
+    expect(t.basis).toEqual({ positive: 2, concerns: 1 }); // views with commentary the snippets are drawn from
     expect(t.positive[0].by).toBe("n1");
   });
   it("neutral views and research never become themes", () => {
@@ -113,7 +124,18 @@ describe("viewThemes — contributors' own words, not a generated signal", () =>
   it("a side with nothing to quote is empty so the caller can hide it", () => {
     expect(viewThemes([v("Positive", { id: "1", thesis: "Good." })]).concerns).toEqual([]);
     expect(viewThemes([v("Negative", { id: "1", thesis: "Bad." })]).positive).toEqual([]);
-    expect(viewThemes([])).toEqual({ positive: [], concerns: [] });
+    expect(viewThemes([])).toEqual({ positive: [], concerns: [], basis: { positive: 0, concerns: 0 } });
+  });
+  it("keeps snippets short, however long the commentary", () => {
+    const long = v("Positive", { id: "9", thesis: "word ".repeat(200) });
+    const t = viewThemes([long]);
+    expect(t.positive[0].text.length).toBeLessThanOrEqual(111);
+    expect(t.positive[0].text.endsWith("…")).toBe(true);
+  });
+  it("shows at most three snippets per side", () => {
+    const many = Array.from({ length: 8 }, (_, i) => v("Positive", { id: "p" + i, thesis: "Distinct positive point number " + i, created_at: "2025-06-0" + (i + 1) }));
+    expect(viewThemes(many).positive).toHaveLength(3);
+    expect(viewThemes(many).basis.positive).toBe(8);
   });
   it("uses no signal wording", () => {
     expect(JSON.stringify(viewThemes(rows))).not.toMatch(/bullish|bearish|strongly|buy|sell/i);

@@ -939,7 +939,7 @@ export async function getTickerViews(ticker, { limit = 30, offset = 0 } = {}) {
 // the page logic runs unmodified against either source (see the field notes on
 // getPublicTickerIdeas above — `from` is the author's username here).
 export async function getPublicSecurity(ticker) {
-  const empty = { ideas: [], views: [], viewSummary: EMPTY_VIEW_SUMMARY, viewStances: [], name: null, sector: null };
+  const empty = { ideas: [], views: [], viewSummary: EMPTY_VIEW_SUMMARY, viewStances: [], researchCounts: null, name: null, sector: null };
   if (!ticker) return empty;
   try {
     const res = await fetch(`${API_BASE}/data?resource=public-ideas&action=by-symbol&symbol=${encodeURIComponent(ticker)}`);
@@ -955,6 +955,11 @@ export async function getPublicSecurity(ticker) {
         negative: Number(vs.negative) || 0, contributors: Number(vs.contributor_count) || 0,
       },
       viewStances: (data.view_stances || []).map(r => ({ ...r, from: r.author_username })),
+      // Exact research rating counts: the `ideas` list is capped server-side, so
+      // the distribution must come from these, not from counting that list.
+      researchCounts: data.summary && data.summary.buy_count != null
+        ? { buy: Number(data.summary.buy_count) || 0, hold: Number(data.summary.hold_count) || 0, sell: Number(data.summary.sell_count) || 0, publishers: Number(data.summary.contributor_count) || 0 }
+        : null,
       name: data.name || null,
       sector: data.sector || null,
     };

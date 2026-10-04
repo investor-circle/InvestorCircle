@@ -336,7 +336,10 @@ export function ViewsSection({
       {hasThemes ? (
         <View style={styles.card}>
           <Text style={styles.cardLabel}>Market View Summary</Text>
-          <Text style={styles.basis}>A summary of themes appearing across community views on this security.</Text>
+          <Text style={styles.basis}>
+            A summary of themes appearing across community views on this security. Short snippets from {themes.basis.positive} Positive and{" "}
+            {themes.basis.concerns} Negative view{themes.basis.positive + themes.basis.concerns === 1 ? "" : "s"} with commentary.
+          </Text>
           {themes.positive.length ? (
             <View style={styles.themeBlock}>
               <Text style={[styles.themeHead, { color: colors.gain }]}>Positive themes</Text>
@@ -358,8 +361,8 @@ export function ViewsSection({
             </View>
           ) : null}
           <Text style={styles.themeNote}>
-            Excerpts are contributors' own words from public Market Views. This reflects community opinion, not financial advice, and
-            is not a myInvestorCircle recommendation or signal.
+            Snippets are contributors' own words from public Market Views, shown with attribution. myInvestorCircle draws no conclusion
+            from them — this is community opinion, not financial advice or a recommendation.
           </Text>
         </View>
       ) : null}

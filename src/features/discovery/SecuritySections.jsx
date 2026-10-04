@@ -134,8 +134,9 @@ const TypePill = ({ t, size = 11 }) => {
 const CirclePill = () => <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'var(--accent-soft)', color: 'var(--accent-ink)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Your Circle</span>;
 
 /* ───────────────────────── Verified Research ───────────────────────── */
-export function ResearchSection({ sectionRef, ticker, recos, circleIds, isMobile, memberTagsByUser }) {
-  const b = researchBreakdown(recos, r => r.from);
+export function ResearchSection({ sectionRef, ticker, recos, breakdown, circleIds, isMobile, memberTagsByUser }) {
+  // `breakdown` carries the exact counts when the data source caps its list.
+  const b = breakdown || researchBreakdown(recos, r => r.from);
   const months = researchMonthly(recos);
   const convMap = {};
   recos.forEach(r => { if (r.conviction) convMap[r.conviction] = (convMap[r.conviction] || 0) + 1; });
@@ -178,6 +179,7 @@ export function ResearchSection({ sectionRef, ticker, recos, circleIds, isMobile
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head" style={{ justifyContent: "flex-start", gap: 6 }}><Clock size={15} /> Research History <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 4 }}>(immutable — all research is permanent)</span></div>
+        {recos.length < b.total && <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>Showing the latest {recos.length} of {b.total} research ideas. The consensus above counts all {b.total}.</div>}
         {isMobile ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 10 }}>
             {recos.map(r => {
@@ -355,7 +357,9 @@ export function ViewsSection({ sectionRef, ticker, summary, views, stances, hasM
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-head" style={{ justifyContent: "flex-start", gap: 6 }}><Lightbulb size={15} /> Market View Summary</div>
           <div className="card-body" style={{ padding: '14px 18px' }}>
-            <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12 }}>A summary of themes appearing across community views on this security.</div>
+            <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12 }}>
+              A summary of themes appearing across community views on this security. Short snippets from {themes.basis.positive} Positive and {themes.basis.concerns} Negative view{themes.basis.positive + themes.basis.concerns === 1 ? '' : 's'} with commentary.
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile || !(themes.positive.length && themes.concerns.length) ? '1fr' : '1fr 1fr', gap: 16 }}>
               {[['Positive themes', themes.positive, 'var(--gain)', 'var(--gain-soft)'], ['Concerns raised', themes.concerns, 'var(--loss)', 'var(--loss-soft)']].map(([title, list, fg, bg]) => list.length > 0 && (
                 <div key={title}>
@@ -371,7 +375,7 @@ export function ViewsSection({ sectionRef, ticker, summary, views, stances, hasM
               ))}
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12 }}>
-              Excerpts are contributors' own words from public Market Views. This reflects community opinion, not financial advice, and is not a myInvestorCircle recommendation or signal.
+              Snippets are contributors' own words from public Market Views, shown with attribution. myInvestorCircle draws no conclusion from them — this is community opinion, not financial advice or a recommendation.
             </div>
           </div>
         </div>

@@ -1,9 +1,10 @@
 import IdeaCard from '../../../../components/IdeaCard';
 import ViewCard from '../../../../components/ViewCard';
+import { researchBreakdownOf } from '../../../../lib/securityModel';
 import { ideaTypeMeta } from '../../../../lib/ideaType';
 import { money, day } from '../../../../lib/format';
 import {
-  researchRows, researchBreakdown, researchMonthly, viewBreakdownFromCounts, viewMonthly, currentViews, viewThemes,
+  researchRows, researchMonthly, viewBreakdownFromCounts, viewMonthly, currentViews, viewThemes,
 } from '../../../../lib/securityInsights';
 
 // Deliberately NOT a tab switcher that hides inactive panels: an earlier
@@ -61,7 +62,7 @@ function formatRange(range) {
 
 export default function SecurityTabs({ symbol, ideas, summary, views = [], viewSummary = {}, viewStances = [], related = [] }) {
   const research = researchRows(ideas);
-  const rb = researchBreakdown(research);
+  const rb = researchBreakdownOf({ summary }, research);
   const vb = viewBreakdownFromCounts({ ...viewSummary, contributors: viewSummary.contributor_count });
   const hasResearch = research.length > 0;
   const hasViews = vb.total > 0;
@@ -158,6 +159,11 @@ export default function SecurityTabs({ symbol, ideas, summary, views = [], viewS
           <div className="idea-row" style={{ padding: 0 }}>
             {research.map((idea) => <IdeaCard key={idea.id} idea={idea} />)}
           </div>
+          {research.length < rb.total && (
+            <p className="meta" style={{ marginTop: 10 }}>
+              Showing the latest {research.length} of {rb.total} research ideas. The consensus above counts all {rb.total}.
+            </p>
+          )}
 
           {researchMonths.length > 0 && (
             <div className="card" style={{ marginTop: 14 }}>
@@ -204,7 +210,9 @@ export default function SecurityTabs({ symbol, ideas, summary, views = [], viewS
             <div className="card" style={{ marginTop: 14 }}>
               <div className="card-head">Market View Summary</div>
               <div className="pad">
-                <p className="meta" style={{ marginTop: 0 }}>A summary of themes appearing across community views on this security.</p>
+                <p className="meta" style={{ marginTop: 0 }}>
+                  A summary of themes appearing across community views on this security. Short snippets from {themes.basis.positive} Positive and {themes.basis.concerns} Negative view{themes.basis.positive + themes.basis.concerns === 1 ? '' : 's'} with commentary.
+                </p>
                 {themes.positive.length > 0 && (
                   <>
                     <div className="layer-label" style={{ marginTop: 10 }}>Positive themes</div>
@@ -222,7 +230,7 @@ export default function SecurityTabs({ symbol, ideas, summary, views = [], viewS
                   </>
                 )}
                 <p className="meta" style={{ marginTop: 12 }}>
-                  Excerpts are contributors’ own words from public Market Views. This reflects community opinion, not financial advice, and is not a myInvestorCircle recommendation or signal.
+                  Snippets are contributors’ own words from public Market Views, shown with attribution. myInvestorCircle draws no conclusion from them — this is community opinion, not financial advice or a recommendation.
                 </p>
               </div>
             </div>

@@ -203,6 +203,11 @@ async function bySymbol(req, res) {
         COUNT(*)                                  AS idea_count,
         COUNT(DISTINCT r.recommender_id)          AS contributor_count,
         COUNT(CASE WHEN r.exit_signal THEN 1 END) AS closed_count,
+        -- Exact rating counts over EVERY public research idea (the ideas list
+        -- above is capped, so a distribution must never be derived from it).
+        COUNT(*) FILTER (WHERE COALESCE(r.recommendation_type, 'Buy') NOT IN ('Hold', 'Sell')) AS buy_count,
+        COUNT(*) FILTER (WHERE r.recommendation_type = 'Hold')                                 AS hold_count,
+        COUNT(*) FILTER (WHERE r.recommendation_type = 'Sell')                                 AS sell_count,
         MAX(r.created_at)                         AS last_posted,
         MIN(r.created_at)                         AS first_posted,
         MAX(r.asset_name)                         AS asset_name,
@@ -271,6 +276,9 @@ async function bySymbol(req, res) {
       idea_count:        Number(s.idea_count) || 0,
       contributor_count: Number(s.contributor_count) || 0,
       closed_count:      Number(s.closed_count) || 0,
+      buy_count:         Number(s.buy_count) || 0,
+      hold_count:        Number(s.hold_count) || 0,
+      sell_count:        Number(s.sell_count) || 0,
       first_posted:      s.first_posted || null,
       last_posted:       s.last_posted || null,
     },
