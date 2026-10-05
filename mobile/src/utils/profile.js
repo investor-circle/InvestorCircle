@@ -10,17 +10,52 @@
  * Pure, so the round-trip (server row -> form state -> payload) is testable.
  */
 
-export const REG_STATUSES = ["self_directed", "sebi_ra", "sebi_ria"];
+// Exactly two profile categories. Mirrors api/_lib/registrationStatus.js and
+// src/constants/app.js — keep the three in step. The retired self_directed /
+// enthusiast / sebi_ra / sebi_ria codes are mapped (never written), so a
+// profile row that predates the data migration still renders correctly.
+export const REG_PUBLISHER = "verified_research_publisher";
+export const REG_CONTRIBUTOR = "independent_market_contributor";
+export const REG_STATUSES = [REG_PUBLISHER, REG_CONTRIBUTOR];
 
 export const REG_LABELS = {
-  self_directed: "Self-directed investor",
-  sebi_ra: "SEBI Registered Analyst",
-  sebi_ria: "SEBI Registered Investment Adviser",
+  [REG_PUBLISHER]: "Verified Research Publisher",
+  [REG_CONTRIBUTOR]: "Independent Market Contributor",
 };
 
-/** Whether a registration status is one of the SEBI-registered kinds. */
+export const REG_DESCRIPTIONS = {
+  [REG_PUBLISHER]:
+    "SEBI-registered Research Analysts and Research Entities who publish professional investment research.",
+  [REG_CONTRIBUTOR]:
+    "Investors and market participants who share independent views, analysis and commentary on companies and markets.",
+};
+
+const LEGACY_REG_STATUS = {
+  sebi_ra: REG_PUBLISHER,
+  self_directed: REG_CONTRIBUTOR,
+  enthusiast: REG_CONTRIBUTOR,
+  sebi_ria: REG_CONTRIBUTOR,
+};
+
+/** Any stored value (current, legacy, or missing) -> a current category code. */
+export function normalizeRegStatus(status) {
+  if (REG_STATUSES.includes(status)) return status;
+  return LEGACY_REG_STATUS[status] || REG_CONTRIBUTOR;
+}
+
+/**
+ * Effective category: a publisher whose SEBI verification was rejected is an
+ * Independent Market Contributor (details kept server-side for audit).
+ * Mirrors effectiveRegStatus in api/_lib/registrationStatus.js.
+ */
+export function effectiveRegStatus(status, approval) {
+  const s = normalizeRegStatus(status);
+  return s === REG_PUBLISHER && approval === "rejected" ? REG_CONTRIBUTOR : s;
+}
+
+/** Whether a status is Verified Research Publisher — the only one with SEBI fields. */
 export function isSebiStatus(status) {
-  return status === "sebi_ra" || status === "sebi_ria";
+  return normalizeRegStatus(status) === REG_PUBLISHER;
 }
 
 /**
@@ -30,7 +65,7 @@ export function isSebiStatus(status) {
  */
 export function profileToForm(profile) {
   const p = profile || {};
-  const status = REG_STATUSES.includes(p.registration_status) ? p.registration_status : "self_directed";
+  const status = effectiveRegStatus(p.registration_status, p.sebi_approval_status);
   return {
     firstName: p.first_name || "",
     lastName: p.last_name || "",
@@ -50,13 +85,13 @@ export function profileToForm(profile) {
 /**
  * Form state -> the payload profile-edit-save expects.
  *
- * SEBI fields are dropped for a self-directed user rather than sent blank:
+ * SEBI fields are dropped for an Independent Market Contributor rather than sent blank:
  * the server already nulls them for non-SEBI statuses, and sending stale
  * values would misrepresent what the user claimed.
  */
 export function buildProfilePayload(form) {
   const f = form || {};
-  const status = REG_STATUSES.includes(f.registrationStatus) ? f.registrationStatus : "self_directed";
+  const status = normalizeRegStatus(f.registrationStatus);
   const payload = {
     firstName: String(f.firstName || "").trim(),
     lastName: String(f.lastName || "").trim(),

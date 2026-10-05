@@ -77,6 +77,7 @@ import {
 import { ClassTag, ClosedInfoLine, ConvBadge, HoldPreviewTable, IdeaDisclaimer, InstrumentSearch, LinkSharePopover, MemberBadgeOverlay, Money, OpenInAppBanner, SortTh, StatusBadge2, TypeBadge } from "../../components/common";
 import { useMemberTagsFor } from "../../MemberTagsContext";
 import { CONTACT_COLORS, FALLBACK_SECTORS, HORIZONS, SECTOR_EMOJI, THESIS_EMOJIS, THESIS_MAX_CHARS, THESIS_MAX_IMAGES, THESIS_MAX_MB, TODAY } from "../../constants/app";
+import { RECOMMENDATION_TYPES, MARKET_VIEW_TYPES, MARKET_VIEW_MIN_COMMENTARY, DISCLOSURE_MAX_CHARS, DEFAULT_MARKET_VIEW_DISCLOSURE, publishingPersona, commentaryText, ideaTypeMeta, toneColors, isMarketViewIdea } from "../../utils/ideaType";
 import { useIsMobile } from "../../hooks/index";
 import { _CAS_CONFIGURED, parseCasPdf } from "../../services/casUpload";
 import { sendEmail, sendPush } from "../../services/notify";
@@ -160,8 +161,19 @@ export function ThesisRenderer({ thesis, previewLines=3, defaultExpanded=false }
   );
 }
 
+// Short explanatory line under a form field (same muted/small styling the form
+// already uses for its inline hints).
+const Hint = ({children, style}) => <div className="muted small" style={{marginTop:5,lineHeight:1.45,...style}}>{children}</div>;
+
 export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups, holdings, me, onClose, onCreate, recsMade=[] }) {
   const myId = me?.id || "me";
+  // Who is posting decides what this form offers: a Verified Research Publisher
+  // posts Buy/Hold/Sell recommendations; everyone else posts a Market View
+  // (Positive/Neutral/Negative) with commentary and a disclosure, and none of
+  // the recommendation-performance fields. The server enforces the same rule
+  // (api/_lib/ideaType.js) — this only decides what to show.
+  const persona = publishingPersona(me?.registrationStatus, me?.sebiApprovalStatus);
+  const isView = persona === "contributor";
   // Posting permission (product rule): a private Circle is shared between
   // friends, so any active member may post an idea to it. A public Circle
   // is the owner's broadcast channel, so only its owner/admin may post to
@@ -179,7 +191,13 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
   const [ticker,      setTicker]      = useState("");
   const [cls,         setCls]         = useState(assetClasses[0]);
   const [currency,    setCurrency]    = useState("INR");
-  const [recType,     setRecType]     = useState("Buy");
+  const [recType,     setRecType]     = useState(isView ? "" : "Buy");
+  const [disclosure,  setDisclosure]  = useState(DEFAULT_MARKET_VIEW_DISCLOSURE);
+  // If the posting persona changes while the form is open (profile refresh),
+  // keep the chosen type valid for it.
+  useEffect(() => {
+    if (!(isView ? MARKET_VIEW_TYPES : RECOMMENDATION_TYPES).includes(recType)) setRecType(isView ? "" : "Buy");
+  }, [isView]); // eslint-disable-line react-hooks/exhaustive-deps
   const [conviction,  setConviction]  = useState("");
   const [sector,      setSector]      = useState("");
   // Auto-stamped entry price
@@ -195,6 +213,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
   const [sectorOpts,  setSectorOpts]  = useState(FALLBACK_SECTORS);
   const [submitting,  setSubmitting]  = useState(false);
   const [posted,      setPosted]      = useState(null); // { id, ticker, assetName } once the idea is live
+  const [createErr,   setCreateErr]   = useState("");
 
   // Load sector options from sector_master — same pattern as all other DB calls in this app
   useEffect(() => {
@@ -203,7 +222,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
       .catch(() => {});
   }, []);
   useEffect(() => {
-    if (!selectedInstr) return;
+    if (!selectedInstr || isView) return;   // a Market View has no entry price
     setPriceData(null); setPriceError(""); setPriceLoading(true);
     getPreviousClose(selectedInstr.symbol, selectedInstr.exchange || "NSE")
       .then(d => { setPriceData(d); setPriceLoading(false); })
@@ -262,20 +281,21 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
   const create = async () => {
     if (submitting) return; // guard against a double-click firing two creates
     setSubmitting(true);
-    const rp = priceData?.price || 0;
-    const td = calcTargetDate(TODAY, horizon);
+    const rp = isView ? 0 : (priceData?.price || 0);
+    const td = isView ? null : calcTargetDate(TODAY, horizon);
     const recoData = {
       assetName: assetName.trim() || ticker.toUpperCase(),
       ticker: (ticker||"—").toUpperCase(), assetClass:cls, currency,
       priceAt: rp, price: rp,
-      targetPrice: targetPrice ? +targetPrice : null,
-      stopLoss:    stopLoss    ? +stopLoss    : null,
-      horizon, targetDate: td, thesis: thesis||"—",
+      targetPrice: isView ? null : (targetPrice ? +targetPrice : null),
+      stopLoss:    isView ? null : (stopLoss    ? +stopLoss    : null),
+      horizon: isView ? null : horizon, targetDate: td, thesis: thesis||"—",
       isPublic: isPublic || hasPublicCircleSelected, recType,
-      conviction:  conviction  || null,
+      conviction:  isView ? null : (conviction  || null),
       sector:      sector      || null,
       exchange:    selectedInstr?.exchange || "NSE",
-      priceSource: priceData?.source || null,
+      priceSource: isView ? null : (priceData?.source || null),
+      ...(isView ? { disclosure: disclosure.trim() } : {}),
     };
     const recipients = targets.map(id=>({ type:groups.some(g=>g.id===id)?"group":"user", id }));
     let created = null;
@@ -331,8 +351,17 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
         }
         await onCreate?.reload?.();
       }
-      catch(e) { console.error("create reco:", e); }
+      catch(e) {
+        // The server is the real gate on what this author may publish (e.g. a
+        // publisher whose verification changed since this form opened), so a
+        // failed create must not look like a successful post.
+        console.error("create reco:", e);
+        setCreateErr("We couldn't post this. If your publishing status has changed, close and reopen New idea and try again.");
+        setSubmitting(false);
+        return;
+      }
     }
+    setCreateErr("");
     onCreate({ id:"m"+Date.now(), ...recoData, date:TODAY, recipients:targets, actedList:[], likes:[], exit:false, exitDate:null });
     setSubmitting(false);
     // Only show the "posted" confirmation + link when the server actually
@@ -355,7 +384,8 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
     setTicker("");
     setCls(assetClasses[0]);
     setCurrency("INR");
-    setRecType("Buy");
+    setRecType(isView ? "" : "Buy");
+    setDisclosure(DEFAULT_MARKET_VIEW_DISCLOSURE);
     setConviction("");
     setSector("");
     setPriceData(null);
@@ -370,7 +400,9 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
     setPosted(null);
   };
 
-  const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && (priceData?.price > 0 || !!priceError);
+  const commentaryLen = commentaryText(thesis).length;
+  const viewValid = !isView || (MARKET_VIEW_TYPES.includes(recType) && commentaryLen >= MARKET_VIEW_MIN_COMMENTARY && disclosure.trim().length > 0 && disclosure.length <= DISCLOSURE_MAX_CHARS);
+  const valid = (assetName.trim()||ticker.trim()) && (isPublic || targets.length>0) && (isView || priceData?.price > 0 || !!priceError) && viewValid;
 
   // Confirmation state: shown in place of the form once the idea is live,
   // so pressing Send always ends in visible feedback rather than the modal
@@ -382,7 +414,7 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
         <div style={{width:52,height:52,borderRadius:"50%",background:"var(--gain-soft)",color:"var(--gain)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
           <Check size={26}/>
         </div>
-        <div style={{fontWeight:700,fontSize:16,marginBottom:6}}>Your idea has been posted</div>
+        <div style={{fontWeight:700,fontSize:16,marginBottom:6}}>{isView ? "Your market view has been posted" : "Your idea has been posted"}</div>
         <div className="muted small" style={{marginBottom:22}}>
           {posted.ticker && posted.ticker!=="—" ? posted.ticker : posted.assetName} is now live in your circle.
         </div>
@@ -399,26 +431,34 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
   }
 
   return (<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> New idea</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
+    <div className="modal-head"><h3><Sparkles size={18} style={{verticalAlign:-3,color:"var(--accent)"}}/> {isView ? "New market view" : "New idea"}</h3><button className="icon-btn" onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">
 
-      {/* Recommendation type — Buy / Sell */}
-      <div className="field"><label>Idea type</label>
+      {/* Recommendation (Buy / Hold / Sell) for a Verified Research Publisher;
+          Market View (Positive / Neutral / Negative) for everyone else. */}
+      <div className="field"><label>{isView ? "Your view" : "Recommendation"}</label>
         <div style={{display:"flex",gap:8}}>
-          {["Buy","Sell"].map(t=>(
+          {(isView ? MARKET_VIEW_TYPES : RECOMMENDATION_TYPES).map(t=>{
+            const c = toneColors(ideaTypeMeta(t).tone);
+            const on = recType===t;
+            return (
             <button key={t} onClick={()=>setRecType(t)}
               style={{flex:1,padding:"10px 0",borderRadius:10,fontWeight:700,fontSize:14,cursor:"pointer",border:"1.5px solid",
-                background: recType===t ? (t==="Buy"?"var(--gain-soft)":"var(--loss-soft)") : "var(--surface)",
-                color:      recType===t ? (t==="Buy"?"var(--gain)":"var(--loss)") : "var(--muted)",
-                borderColor:recType===t ? (t==="Buy"?"var(--gain)":"var(--loss)") : "var(--line)",
-              }}>{t}</button>
-          ))}
+                background: on ? c.bg : "var(--surface)",
+                color:      on ? c.fg : "var(--muted)",
+                borderColor:on ? c.fg : "var(--line)",
+              }}>{t}</button>);
+          })}
         </div>
+        <Hint>{isView
+          ? "Your overall stance on this company or security. This is your personal market view, not a buy, sell or hold recommendation."
+          : "Your professional recommendation on this security. Hold means keep an existing position."}</Hint>
       </div>
 
       {/* Instrument search */}
       <div className="field"><label>Search instrument <span className="muted small">(type symbol or company name)</span></label>
         <InstrumentSearch onSelect={onInstrSelect} placeholder="e.g. RELIANCE or Reliance Industries…"/>
+        <Hint>{isView ? "The company or security your view is about." : "The security you are recommending. Picking one fills in its class, sector, currency and entry price."}</Hint>
       </div>
 
       {/* Manual override if instrument not in list */}
@@ -483,14 +523,17 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
                 {sectorOpts.map(s=><option key={s}>{s}</option>)}
               </select>}
         </div>
-        <div className="field"><label>Conviction <span className="muted small">(optional)</span></label>
+        {!isView && <div className="field"><label>Conviction <span className="muted small">(optional)</span></label>
           <select value={conviction} onChange={e=>setConviction(e.target.value)}>
             <option value="">— Not specified —</option>
             <option>Low</option><option>Medium</option><option>High</option>
-          </select></div>
+          </select>
+          <Hint>How strongly you hold this view.</Hint></div>}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",columnGap:14,rowGap:0}}>
+      {/* Currency, entry price, target, stop loss and horizon frame a formal
+          recommendation and its performance — not offered for a Market View. */}
+      {!isView && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",columnGap:14,rowGap:0}}>
         {/* Currency — locked from master, editable only when manual */}
         <div className="field">
           <label style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -536,16 +579,32 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
               <div style={{marginTop:3,opacity:.8}}>Entry price is stamped using closing price of idea date — not manual entry.</div>
             </div>
           )}
+          <Hint>Set automatically from the previous close, so every idea is measured from the same starting point. It can't be edited.</Hint>
         </div>
         <div className="field"><label>Target price <span className="muted small">(opt.)</span></label>
-          <input type="number" value={targetPrice} onChange={e=>setTargetPrice(e.target.value)} placeholder="0"/></div>
+          <input type="number" value={targetPrice} onChange={e=>setTargetPrice(e.target.value)} placeholder="0"/>
+          <Hint>The price you expect it to reach within your horizon.</Hint></div>
         <div className="field"><label>Stop loss <span className="muted small">(opt.)</span></label>
-          <input type="number" value={stopLoss} onChange={e=>setStopLoss(e.target.value)} placeholder="0"/></div>
-        <div className="field"><label>Horizon</label>
-          <select value={horizon} onChange={e=>setHorizon(e.target.value)}>{HORIZONS.map(h=><option key={h} value={h}>{h}</option>)}</select></div>
-      </div>
+          <input type="number" value={stopLoss} onChange={e=>setStopLoss(e.target.value)} placeholder="0"/>
+          <Hint>The price at which your view would be proven wrong.</Hint></div>
+        <div className="field"><label>Investment horizon</label>
+          <select value={horizon} onChange={e=>setHorizon(e.target.value)}>{HORIZONS.map(h=><option key={h} value={h}>{h}</option>)}</select>
+          <Hint>How long you expect your view to play out. The idea is marked expired when it ends.</Hint></div>
+      </div>}
 
-      <div className="field"><label>Thesis <span className="muted small">(optional — formatting, emojis &amp; images supported)</span></label><ThesisEditor value={thesis} onChange={setThesis}/></div>
+      {isView ? (<>
+        <div className="field"><label>Commentary <span className="muted small">(required — formatting, links, emojis &amp; images supported)</span></label>
+          <ThesisEditor value={thesis} onChange={setThesis} placeholder={`Explain your view — what you are seeing and why. At least ${MARKET_VIEW_MIN_COMMENTARY} characters. Max ${THESIS_MAX_CHARS} chars`}/>
+          <Hint>Share the reasoning behind your view so others can judge it for themselves.
+            {commentaryLen>0 && commentaryLen<MARKET_VIEW_MIN_COMMENTARY && <span style={{color:"var(--amber)"}}> A little more detail needed ({commentaryLen}/{MARKET_VIEW_MIN_COMMENTARY}).</span>}</Hint></div>
+        <div className="field"><label>Disclosure <span className="muted small">(shown with your post — edit as needed)</span></label>
+          <textarea value={disclosure} onChange={e=>setDisclosure(e.target.value.slice(0,DISCLOSURE_MAX_CHARS))} rows={4}
+            style={{width:"100%",boxSizing:"border-box",resize:"vertical"}}/>
+          <Hint>State your interests and your status. You can adjust this text; a disclosure is required. Adding one does not by itself make a post compliant with any regulation. <span style={{float:"right"}}>{disclosure.length}/{DISCLOSURE_MAX_CHARS}</span></Hint></div>
+      </>) : (
+        <div className="field"><label>Thesis <span className="muted small">(optional — formatting, emojis &amp; images supported)</span></label><ThesisEditor value={thesis} onChange={setThesis}/>
+          <Hint>Explain the reasoning behind your recommendation — valuation, catalysts and risks.</Hint></div>
+      )}
       {/* ── Who should see this? ─────────────────────────────────────── */}
       <div className="field" style={{borderTop:"1px solid var(--line)",paddingTop:14,marginTop:8}}>
         <label style={{display:"block",marginBottom:10}}>Who should see this?</label>
@@ -616,9 +675,10 @@ export function MakeRecoModal({ assetClasses, setAssetClasses, contacts, groups,
           )}
         </div>
       </div>
+      {createErr && <div className="note warn" style={{marginTop:12,fontSize:12.5}}><AlertTriangle size={14}/><div>{createErr}</div></div>}
     </div>
     <div className="modal-foot">
-      <span className="muted small">Target date: {calcTargetDate(TODAY,horizon)?fmtDate(calcTargetDate(TODAY,horizon)):"—"}</span>
+      <span className="muted small">{isView ? "" : <>Target date: {calcTargetDate(TODAY,horizon)?fmtDate(calcTargetDate(TODAY,horizon)):"—"}</>}</span>
       <div style={{display:"flex",gap:10}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn btn-pri" disabled={!valid || submitting} onClick={create}>
           {submitting ? <><Loader size={15} className="spin"/> Posting…</> : <><Send size={15}/> Send</>}
@@ -932,17 +992,19 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
     }
   };
 
-  const isBuy=(r.recommendation_type||r.recType||'Buy')==='Buy';
+  const typeMeta=ideaTypeMeta(r.recommendation_type||r.recType);
+  const typeTone=toneColors(typeMeta.tone);
+  const isView=isMarketViewIdea(r); // Market View: no return / entry / invest framing
 
   // SEBI regulatory badge — shown after recommender info loads
   const SebiBadge=()=>{
     if(!recommenderInfo) return null;
     return recommenderInfo.isSebiApproved
-      ? <span title="SEBI Registered Research Analyst or Investment Adviser — platform-verified"
+      ? <span title="Verified Research Publisher — SEBI registration platform-verified"
           style={{fontSize:9,fontWeight:800,padding:'2px 8px',borderRadius:4,background:'rgba(21,146,78,.12)',color:'var(--gain)',border:'1px solid rgba(21,146,78,.3)',textTransform:'uppercase',letterSpacing:'.05em',whiteSpace:'nowrap',flexShrink:0}}>
           ✓ SEBI Reg.
         </span>
-      : <span title="Not SEBI Registered — investing on own account"
+      : <span title="Not a SEBI-verified publisher"
           style={{fontSize:9,fontWeight:700,padding:'2px 8px',borderRadius:4,background:'rgba(141,144,173,.08)',color:'var(--muted)',border:'1px solid rgba(141,144,173,.2)',textTransform:'uppercase',letterSpacing:'.05em',whiteSpace:'nowrap',flexShrink:0}}>
           Non-SEBI
         </span>;
@@ -994,8 +1056,8 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
                 onClick={e=>{ if(r.ticker&&onOpenSecurity){ e.stopPropagation(); onOpenSecurity(r.ticker, r.assetName); } }}
               >{r.assetName}</b>
               <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:5,
-                background:isBuy?'var(--gain-soft)':'var(--loss-soft)',color:isBuy?'var(--gain)':'var(--loss)'}}>
-                {isBuy?'Buy':'Sell'}
+                background:typeTone.bg,color:typeTone.fg}}>
+                {typeMeta.label}
               </span>
               {/* Regulatory badge */}
               <SebiBadge/>
@@ -1003,7 +1065,7 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
             <div style={{fontSize:12,color:'var(--muted)',marginTop:3,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <span>{fmtDate(r.date)}</span>
               {r.assetClass&&<span style={{display:'flex',alignItems:'center',gap:4}}><span className="dot" style={{background:classColor(r.assetClass),width:7,height:7}}/>{r.assetClass}</span>}
-              {r.priceAt>0&&<span>Entry ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
+              {!isView&&r.priceAt>0&&<span>Entry ₹{Number(r.priceAt).toLocaleString('en-IN')}</span>}
               {r.feedSource==='public'
                 ? <span title="This idea is publicly visible to all investors on myInvestorCircle"
                     style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(99,102,241,.1)',color:'rgb(99,102,241)',border:'1px solid rgba(99,102,241,.25)',display:'flex',alignItems:'center',gap:3}}><Globe size={9}/> Public</span>
@@ -1019,12 +1081,12 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
           </div>
 
           {/* Return badge — display only; clicking bubbles to the card's click-through */}
-          <div style={{textAlign:'right',flexShrink:0}}>
+          {!isView && <div style={{textAlign:'right',flexShrink:0}}>
             <div style={{fontSize:16,fontWeight:800,letterSpacing:'-.3px',color:itm?'var(--gain)':'var(--loss)'}}>
               {itm?'+':''}{(retPct*100).toFixed(1)}%
             </div>
             <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>₹{Number(r.price).toLocaleString('en-IN')} now</div>
-          </div>
+          </div>}
         </div>
 
         {/* ── Thesis — plain text/links bubble up to the card's click-through like
@@ -1077,7 +1139,7 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
             <Bookmark size={14}/>
           </button>
           {/* Mark Invested */}
-          <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+          {!isView && <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
             <InvestedToggle
               invested={r.invested} investedPrice={r.investedPrice||r.invested_price}
               reco={{...r,price:r.price,ticker:r.ticker,assetName:r.assetName,priceAt:r.priceAt}}
@@ -1095,9 +1157,9 @@ export function FeedCard({ r, me, contacts, groups, setRecsReceived, setPublicFe
               }}
               stopProp={true}
             />
-          </div>
+          </div>}
         </div>
-        <IdeaDisclaimer style={{marginTop:10}}/>
+        <IdeaDisclaimer style={{marginTop:10}} text={r.disclosure}/>
       </div>
     </div>
   );
@@ -1123,7 +1185,7 @@ export function InvestPriceModal({ reco, onClose, onConfirm }) {
 }
 
 
-export function ThesisEditor({ value, onChange }) {
+export function ThesisEditor({ value, onChange, placeholder }) {
   const init = useMemo(() => parseThesis(value), []);  // eslint-disable-line
   const [text,      setText]      = useState(init?.text   || '');
   const [images,    setImages]    = useState(init?.images || []);
@@ -1250,7 +1312,7 @@ export function ThesisEditor({ value, onChange }) {
 
       {/* ── Textarea ── */}
       <textarea ref={taRef} value={text} onChange={e=>{ const v=e.target.value.slice(0,THESIS_MAX_CHARS); setText(v); emit(v,undefined); }}
-        placeholder={`Share your investment thesis… Max ${THESIS_MAX_CHARS} chars`}
+        placeholder={placeholder || `Share your investment thesis… Max ${THESIS_MAX_CHARS} chars`}
         rows={3}
         style={{borderRadius:'0 0 9px 9px',resize:'vertical',fontFamily:'var(--font)',fontSize:13,
           lineHeight:1.65,padding:'10px 12px',border:'1px solid var(--line)',borderTop:'none',

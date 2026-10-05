@@ -43,9 +43,9 @@
 
 import { sql, parseBody, requireUid, requireAdmin, sendAuthError } from '../auth.js';
 import { randomUUID } from 'crypto';
+import { REG_CONTRIBUTOR, normalizeRegStatus } from '../registrationStatus.js';
 
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
-const ALLOWED_REG_STATUS = ['self_directed', 'sebi_ra', 'sebi_ria'];
 
 async function usernameAvailable(username, excludeId) {
   const rows = excludeId
@@ -167,12 +167,12 @@ export default async function handleClaimProfile(req, res) {
       const firstName = String(body.firstName || '').trim();
       const lastName = String(body.lastName || '').trim();
       const bio = body.bio != null ? String(body.bio).trim() : '';
-      const registrationStatus = String(body.registrationStatus || 'self_directed');
+      const registrationStatus = normalizeRegStatus(body.registrationStatus || REG_CONTRIBUTOR);
       const requestedUsername = body.username != null ? String(body.username).trim().toLowerCase() : '';
 
       if (!token) { res.status(400).json({ error: 'token is required' }); return; }
       if (!firstName) { res.status(400).json({ error: 'First name is required' }); return; }
-      if (!ALLOWED_REG_STATUS.includes(registrationStatus)) {
+      if (!registrationStatus) {
         res.status(400).json({ error: 'Invalid registration status' });
         return;
       }
@@ -255,11 +255,11 @@ export default async function handleClaimProfile(req, res) {
       const lastName = String(body.lastName || '').trim();
       const username = String(body.username || '').trim().toLowerCase();
       const bio = body.bio != null ? String(body.bio).trim() : '';
-      const registrationStatus = String(body.registrationStatus || 'self_directed');
+      const registrationStatus = normalizeRegStatus(body.registrationStatus || REG_CONTRIBUTOR);
 
       if (!firstName) { res.status(400).json({ error: 'First name is required' }); return; }
       if (!USERNAME_RE.test(username)) { res.status(400).json({ error: 'Invalid username' }); return; }
-      if (!ALLOWED_REG_STATUS.includes(registrationStatus)) {
+      if (!registrationStatus) {
         res.status(400).json({ error: 'Invalid registration status' });
         return;
       }
@@ -350,8 +350,8 @@ export default async function handleClaimProfile(req, res) {
             username = COALESCE(user_profiles.username, ${u.username}),
             bio = COALESCE(NULLIF(user_profiles.bio, ''), ${u.bio || null}),
             registration_status = CASE WHEN user_profiles.registration_status IS NULL
-                                       OR user_profiles.registration_status = 'self_directed'
-                                  THEN ${u.registration_status || 'self_directed'}
+                                       OR user_profiles.registration_status IN (${REG_CONTRIBUTOR}, 'self_directed')
+                                  THEN ${normalizeRegStatus(u.registration_status) || REG_CONTRIBUTOR}
                                   ELSE user_profiles.registration_status END,
             sebi_approval_status = CASE WHEN user_profiles.sebi_approval_status IS NULL
                                         OR user_profiles.sebi_approval_status = 'not_applied'

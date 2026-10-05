@@ -56,12 +56,13 @@
 
 import { sql, parseBody, requireUid, requireAdmin, sendAuthError } from '../auth.js';
 import { sendInternalEmail } from '../notifyMember.js';
+import { MARKET_VIEW_TYPES } from '../ideaType.js';
+import { REG_CONTRIBUTOR, REG_STATUSES, normalizeRegStatus, effectiveRegStatus, isPublisherStatus } from '../registrationStatus.js';
 
 const USERNAME_RE = /^[a-z0-9_]{5,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FEATURE_KEYS = ['portfolio_import', 'ai_summaries', 'mutual_fund', 'leaderboards', 'overlap', 'mobile_app'];
 const CONTACT_CATEGORIES = ['bug', 'feature', 'question', 'partner', 'media', 'misleading', 'abuse', 'other'];
-const ALLOWED_REG_STATUS_LOOKUPS = ['self_directed', 'sebi_ra', 'sebi_ria'];
 // Profile-picture upload guardrail: client compresses to a small JPEG/PNG/WebP
 // before upload (see src/utils/image.js); this is a hard server-side backstop
 // against a caller sending something much larger. ~130,000 base64 chars is
@@ -184,7 +185,7 @@ export default async function handleLookups(req, res) {
           FROM user_profiles WHERE id = ${userId} LIMIT 1
         `;
         if (!rows[0]) { res.status(200).json({ info: null }); return; }
-        const isSebiApproved = ['sebi_ra', 'sebi_ria'].includes(rows[0].registration_status)
+        const isSebiApproved = isPublisherStatus(rows[0].registration_status)
           && rows[0].sebi_approval_status === 'approved';
         res.status(200).json({ info: { username: rows[0].username || null, isSebiApproved } });
         return;
@@ -193,7 +194,7 @@ export default async function handleLookups(req, res) {
       if (action === 'reg-options') {
         try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
         const [opts, msg] = await Promise.all([
-          sql`SELECT id, code, label, description, is_active, sort_order FROM registration_status_options WHERE is_active=true ORDER BY sort_order`,
+          sql`SELECT id, code, label, description, is_active, sort_order FROM registration_status_options WHERE is_active=true AND code = ANY(${REG_STATUSES}) ORDER BY sort_order`,
           sql`SELECT value FROM app_settings WHERE key='sebi_verification_message' LIMIT 1`,
         ]);
         res.status(200).json({ options: opts, verifyMessage: msg[0]?.value || '' });
@@ -264,7 +265,7 @@ export default async function handleLookups(req, res) {
           SELECT DISTINCT ir.id, ir.asset_name, ir.ticker, ir.asset_class,
                  ir.recommendation_type, ir.reco_price, ir.current_price,
                  ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
-                 ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
+                 ir.sector, ir.conviction, ir.disclosure, ir.created_at as date, ir.is_public,
                  up.full_name as by_name, up.id as from_id,
                  (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text)::int as likes,
                  (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count
@@ -297,7 +298,7 @@ export default async function handleLookups(req, res) {
           SELECT ir.id, ir.asset_name, ir.ticker, ir.asset_class,
                  ir.recommendation_type, ir.reco_price, ir.current_price,
                  ir.target_price, ir.stop_loss, ir.horizon, ir.thesis,
-                 ir.sector, ir.conviction, ir.created_at as date, ir.is_public,
+                 ir.sector, ir.conviction, ir.disclosure, ir.created_at as date, ir.is_public,
                  up.full_name as by_name, up.id as from_id, up.username as from_username,
                  (SELECT COUNT(*) FROM recommendation_comments rc WHERE rc.reco_id=ir.id)::int as comment_count,
                  (SELECT COUNT(*) FROM recommendation_reactions rx WHERE rx.reco_id=ir.id::text)::int as likes_count,
@@ -339,6 +340,7 @@ export default async function handleLookups(req, res) {
           LEFT JOIN user_profiles up ON r.recommender_id = up.id
           WHERE (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
+            AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
         `;
         res.status(200).json({ recos: rows });
         return;
@@ -355,9 +357,105 @@ export default async function handleLookups(req, res) {
           WHERE r.is_public = true
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
+            AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
           ORDER BY r.created_at DESC
         `;
         res.status(200).json({ recos: rows });
+        return;
+      }
+
+      // Market Views on one security — the counterpart to ticker-recos, which
+      // is research-only. A separate dataset, never mixed into it: commentary
+      // and disclosure only (a Market View has no entry price, target, horizon,
+      // conviction, return or status). Public ideas only, so no private Circle
+      // or direct-share content can surface here. Returns:
+      //   summary  exact counts over EVERY public view of the ticker,
+      //   views    one page of full commentary (limit/offset),
+      //   stances  lightweight (who/what/when) rows for the same ticker, used
+      //            for each contributor's current view, the Circle comparison
+      //            and monthly activity without shipping every commentary.
+      if (action === 'ticker-views') {
+        try { await requireUid(req); } catch (e) { sendAuthError(res, e); return; }
+        const ticker = String(req.query?.ticker || '');
+        if (!ticker) { res.status(400).json({ error: 'ticker is required' }); return; }
+        const limit = Math.min(60, Math.max(1, parseInt(req.query?.limit, 10) || 30));
+        const offset = Math.max(0, parseInt(req.query?.offset, 10) || 0);
+        const [views, summary, stances, monthly, byContributor] = await Promise.all([
+          sql`
+            SELECT r.id, r.ticker, r.asset_name, r.recommendation_type,
+                   r.recommender_id as "from", r.created_at, r.thesis, r.disclosure, r.sector,
+                   up.username, up.full_name, up.avatar_url, up.avatar_color
+            FROM ic_recommendations r
+            LEFT JOIN user_profiles up ON r.recommender_id = up.id
+            WHERE r.ticker = ${ticker}
+              AND r.is_public = true
+              AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
+            ORDER BY r.created_at DESC
+            LIMIT ${limit} OFFSET ${offset}
+          `,
+          sql`
+            SELECT COUNT(*)::int AS total,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Positive')::int AS positive,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Neutral')::int  AS neutral,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Negative')::int AS negative,
+                   COUNT(DISTINCT r.recommender_id)::int AS contributors
+            FROM ic_recommendations r
+            LEFT JOIN user_profiles up ON r.recommender_id = up.id
+            WHERE r.ticker = ${ticker}
+              AND r.is_public = true
+              AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
+          `,
+          sql`
+            SELECT r.recommender_id as "from", r.recommendation_type, r.created_at
+            FROM ic_recommendations r
+            LEFT JOIN user_profiles up ON r.recommender_id = up.id
+            WHERE r.ticker = ${ticker}
+              AND r.is_public = true
+              AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
+            ORDER BY r.created_at DESC
+            LIMIT 1000
+          `,
+          // Exact month-by-month counts over EVERY public view (not the capped stances).
+          sql`
+            SELECT to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS mo,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Positive')::int AS "Positive",
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Neutral')::int  AS "Neutral",
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Negative')::int AS "Negative"
+            FROM ic_recommendations r
+            LEFT JOIN user_profiles up ON r.recommender_id = up.id
+            WHERE r.ticker = ${ticker}
+              AND r.is_public = true
+              AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
+            GROUP BY 1 ORDER BY 1
+          `,
+          // Exact counts per contributor over EVERY public view: one row per
+          // person, so the client can total "Your Circle" without relying on
+          // the capped stances (the Circle itself is known only to the client).
+          sql`
+            SELECT r.recommender_id AS "from",
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Positive')::int AS positive,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Neutral')::int  AS neutral,
+                   COUNT(*) FILTER (WHERE r.recommendation_type = 'Negative')::int AS negative
+            FROM ic_recommendations r
+            LEFT JOIN user_profiles up ON r.recommender_id = up.id
+            WHERE r.ticker = ${ticker}
+              AND r.is_public = true
+              AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+              AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
+              AND (up.claim_status IS DISTINCT FROM 'claimed')
+            GROUP BY r.recommender_id
+          `,
+        ]);
+        const sm = summary[0] || { total: 0, positive: 0, neutral: 0, negative: 0, contributors: 0 };
+        res.status(200).json({ summary: sm, views, stances, monthly, by_contributor: byContributor, has_more: offset + views.length < (sm.total || 0) });
         return;
       }
 
@@ -410,6 +508,9 @@ export default async function handleLookups(req, res) {
           LEFT JOIN user_profiles up ON r.recommender_id = up.id
           WHERE r.ticker = ${ticker}
             AND r.is_public = true
+            -- Verified Research only (consensus, history, performance). The Security
+            -- Page's Market Views layer comes from action=ticker-views, never from here.
+            AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
           ORDER BY r.created_at DESC
@@ -482,6 +583,7 @@ export default async function handleLookups(req, res) {
             ), 0) AS ret_stddev
           FROM user_profiles up
           LEFT JOIN ic_recommendations r ON r.recommender_id = up.id
+            AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
           WHERE up.id != ${uid}
             AND (up.is_unclaimed IS NULL OR up.is_unclaimed = FALSE)
             AND (up.claim_status IS DISTINCT FROM 'claimed')
@@ -711,20 +813,23 @@ export default async function handleLookups(req, res) {
       const p = body.profile || {};
       const fn = String(p.firstName || '').trim();
       const ln = String(p.lastName || '').trim();
-      const regStatus = String(p.registrationStatus || 'self_directed');
-      if (!ALLOWED_REG_STATUS_LOOKUPS.includes(regStatus)) {
+      const regStatus = normalizeRegStatus(p.registrationStatus || REG_CONTRIBUTOR);
+      if (!regStatus) {
         res.status(400).json({ error: 'Invalid registration status' });
         return;
       }
-      const isSebi = ['sebi_ra', 'sebi_ria'].includes(regStatus);
+      const isSebi = isPublisherStatus(regStatus);
       const current = await sql`
         SELECT registration_status, sebi_approval_status, sebi_submitted_at FROM user_profiles WHERE id = ${uid} LIMIT 1
       `;
       if (!current[0]) { res.status(404).json({ error: 'not_found' }); return; }
-      const sebiChanged = regStatus !== (current[0].registration_status || 'self_directed');
+      const sebiChanged = regStatus !== effectiveRegStatus(current[0].registration_status, current[0].sebi_approval_status);
+      // SEBI details are only ever written for the publisher category. Saving
+      // as an Independent Market Contributor leaves them (and the verification
+      // outcome, e.g. 'rejected') exactly as stored, as an audit trail.
       const newApprovalStatus = isSebi
         ? (sebiChanged ? 'pending' : (current[0].sebi_approval_status || 'not_applied'))
-        : 'not_applied';
+        : (current[0].sebi_approval_status || 'not_applied');
       const submittedAt = (isSebi && sebiChanged) ? new Date().toISOString() : current[0].sebi_submitted_at;
       const row = await sql`
         UPDATE user_profiles SET
@@ -735,9 +840,9 @@ export default async function handleLookups(req, res) {
           twitter_url = ${p.twitter || null}, linkedin_url = ${p.linkedin || null},
           telegram_url = ${p.telegram || null}, instagram_url = ${p.instagram || null},
           registration_status = ${regStatus},
-          sebi_reg_number = ${isSebi ? (p.sebiNum || null) : null},
-          sebi_reg_valid_till = ${isSebi ? (p.sebiTill || null) : null},
-          sebi_firm_name = ${isSebi ? (p.sebiFirm || null) : null},
+          sebi_reg_number = CASE WHEN ${isSebi}::boolean THEN ${p.sebiNum || null} ELSE sebi_reg_number END,
+          sebi_reg_valid_till = CASE WHEN ${isSebi}::boolean THEN ${p.sebiTill || null} ELSE sebi_reg_valid_till END,
+          sebi_firm_name = CASE WHEN ${isSebi}::boolean THEN ${p.sebiFirm || null} ELSE sebi_firm_name END,
           sebi_approval_status = ${newApprovalStatus},
           sebi_submitted_at = ${submittedAt},
           updated_at = now()
@@ -849,6 +954,7 @@ export default async function handleLookups(req, res) {
           ), 0)                                                          AS ret_stddev
         FROM ic_recommendations r
         WHERE r.recommender_id = ANY(${uids})
+          AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
         GROUP BY r.recommender_id
       `;
       res.status(200).json({ stats: rows });
@@ -871,6 +977,7 @@ export default async function handleLookups(req, res) {
         SELECT recommender_id AS uid, COUNT(*)::int AS total
         FROM ic_recommendations
         WHERE recommender_id = ANY(${uids}) AND is_public = true
+          AND COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
         GROUP BY recommender_id
       `;
       res.status(200).json({ counts: rows });

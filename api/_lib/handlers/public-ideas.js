@@ -45,6 +45,7 @@
  */
 
 import { sql } from '../auth.js';
+import { MARKET_VIEW_TYPES } from '../ideaType.js';
 
 // Tickers are short alphanumerics with the odd dot/dash/ampersand (BSE codes,
 // "M&M", "BAJAJ-AUTO"). Anything else is not a symbol we hold ideas for, so it
@@ -52,6 +53,11 @@ import { sql } from '../auth.js';
 // inviting the caller to keep probing.
 const SYMBOL_RE = /^[A-Za-z0-9.&_-]{1,24}$/;
 const MAX_LIMIT = 60;
+// Market Views shown inline on the public security page. The page is server-
+// rendered (no client pagination), so this is a deliberate cap; the aggregate
+// counts below cover every public view regardless.
+const VIEWS_PAGE = 30;
+const STANCE_CAP = 1000;
 
 /* r.thesis is either legacy plain text or a JSON-encoded rich payload —
    {"__v":"1","text":"...","images":["data:image/jpeg;base64,..."]} — written
@@ -105,7 +111,7 @@ async function oneIdea(req, res) {
   const rows = await sql`
     SELECT
       r.id, r.ticker, r.asset_name, r.asset_class,
-      r.recommendation_type, r.sector, r.conviction,
+      r.recommendation_type, r.sector, r.conviction, r.disclosure,
       r.reco_price, r.current_price, r.exit_price,
       r.expiry_price, r.target_price, r.stop_loss,
       r.horizon, r.target_date, r.thesis,
@@ -151,11 +157,11 @@ async function bySymbol(req, res) {
   if (!SYMBOL_RE.test(symbol)) { res.status(400).json({ error: 'invalid symbol' }); return; }
   const limit = clampLimit(req.query?.limit, MAX_LIMIT);
 
-  const [ideas, summary] = await Promise.all([
+  const [ideas, summary, views, viewSummary, viewStances, researchMonthly, viewMonthly] = await Promise.all([
     sql`
       SELECT
         r.id, r.ticker, r.asset_name, r.asset_class,
-        r.recommendation_type, r.sector, r.conviction,
+        r.recommendation_type, r.sector, r.conviction, r.disclosure,
         r.reco_price, r.current_price, r.exit_price,
         r.expiry_price, r.target_price, r.stop_loss,
         r.horizon, r.target_date, r.thesis,
@@ -188,6 +194,7 @@ async function bySymbol(req, res) {
       FROM ic_recommendations r
       JOIN user_profiles up ON up.id = r.recommender_id
       WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
       ORDER BY r.created_at DESC
       LIMIT ${limit}
     `,
@@ -196,30 +203,123 @@ async function bySymbol(req, res) {
         COUNT(*)                                  AS idea_count,
         COUNT(DISTINCT r.recommender_id)          AS contributor_count,
         COUNT(CASE WHEN r.exit_signal THEN 1 END) AS closed_count,
+        -- Exact rating counts over EVERY public research idea (the ideas list
+        -- above is capped, so a distribution must never be derived from it).
+        COUNT(*) FILTER (WHERE COALESCE(r.recommendation_type, 'Buy') NOT IN ('Hold', 'Sell')) AS buy_count,
+        COUNT(*) FILTER (WHERE r.recommendation_type = 'Hold')                                 AS hold_count,
+        COUNT(*) FILTER (WHERE r.recommendation_type = 'Sell')                                 AS sell_count,
         MAX(r.created_at)                         AS last_posted,
         MIN(r.created_at)                         AS first_posted,
         MAX(r.asset_name)                         AS asset_name,
         MAX(r.sector)                             AS sector
       FROM ic_recommendations r
       WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
+    `,
+    // ── Market Views: a separate dataset, never mixed into the research
+    //    statements above. Commentary + disclosure only — a Market View has
+    //    no entry price, target, horizon, conviction, return or status. ──
+    sql`
+      SELECT
+        r.id, r.ticker, r.asset_name, r.recommendation_type, r.sector,
+        r.thesis, r.disclosure, r.created_at,
+        up.full_name AS author_name,
+        up.username  AS author_username,
+        up.avatar_color, up.avatar_url
+      FROM ic_recommendations r
+      JOIN user_profiles up ON up.id = r.recommender_id
+      WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+      ORDER BY r.created_at DESC
+      LIMIT ${VIEWS_PAGE}
+    `,
+    sql`
+      SELECT
+        COUNT(*)                                                          AS total,
+        COUNT(*) FILTER (WHERE r.recommendation_type = 'Positive')        AS positive,
+        COUNT(*) FILTER (WHERE r.recommendation_type = 'Neutral')         AS neutral,
+        COUNT(*) FILTER (WHERE r.recommendation_type = 'Negative')        AS negative,
+        COUNT(DISTINCT r.recommender_id)                                  AS contributor_count,
+        MAX(r.created_at)                                                 AS last_posted,
+        MAX(r.asset_name)                                                 AS asset_name,
+        MAX(r.sector)                                                     AS sector
+      FROM ic_recommendations r
+      WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+    `,
+    // Lightweight (no commentary): who said what, when — lets the page show
+    // each contributor's current view and the monthly activity for every
+    // public view, not just the page of commentary above.
+    sql`
+      SELECT r.recommendation_type, r.created_at, up.username AS author_username
+      FROM ic_recommendations r
+      JOIN user_profiles up ON up.id = r.recommender_id
+      WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+      ORDER BY r.created_at DESC
+      LIMIT ${STANCE_CAP}
+    `,
+    // Exact monthly activity, grouped in the database over EVERY public idea —
+    // never derived from the capped lists above. Two datasets, two statements:
+    // research (Buy/Hold/Sell) and Market Views (Positive/Neutral/Negative).
+    sql`
+      SELECT to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS mo,
+             COUNT(*) FILTER (WHERE COALESCE(r.recommendation_type, 'Buy') NOT IN ('Hold', 'Sell')) AS buy,
+             COUNT(*) FILTER (WHERE r.recommendation_type = 'Hold') AS hold,
+             COUNT(*) FILTER (WHERE r.recommendation_type = 'Sell') AS sell
+      FROM ic_recommendations r
+      WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND COALESCE(r.recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})
+      GROUP BY 1 ORDER BY 1
+    `,
+    sql`
+      SELECT to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS mo,
+             COUNT(*) FILTER (WHERE r.recommendation_type = 'Positive') AS positive,
+             COUNT(*) FILTER (WHERE r.recommendation_type = 'Neutral')  AS neutral,
+             COUNT(*) FILTER (WHERE r.recommendation_type = 'Negative') AS negative
+      FROM ic_recommendations r
+      WHERE UPPER(r.ticker) = ${symbol} AND r.is_public = true
+        AND r.recommendation_type = ANY(${MARKET_VIEW_TYPES})
+      GROUP BY 1 ORDER BY 1
     `,
   ]);
 
   const s = summary[0] || {};
-  if (!Number(s.idea_count)) { res.status(404).json({ error: 'not_found' }); return; }
+  const v = viewSummary[0] || {};
+  const researchCount = Number(s.idea_count) || 0;
+  const viewCount = Number(v.total) || 0;
+  // A ticker is a page if it has verified research OR market views.
+  if (!researchCount && !viewCount) { res.status(404).json({ error: 'not_found' }); return; }
 
   res.status(200).json({
     symbol,
-    name:   s.asset_name || symbol,
-    sector: s.sector || null,
+    name:   s.asset_name || v.asset_name || symbol,
+    sector: s.sector || v.sector || null,
     summary: {
       idea_count:        Number(s.idea_count) || 0,
       contributor_count: Number(s.contributor_count) || 0,
       closed_count:      Number(s.closed_count) || 0,
+      buy_count:         Number(s.buy_count) || 0,
+      hold_count:        Number(s.hold_count) || 0,
+      sell_count:        Number(s.sell_count) || 0,
       first_posted:      s.first_posted || null,
       last_posted:       s.last_posted || null,
     },
     ideas: ideas.map(i => ({ ...i, thesis: plainThesisText(i.thesis) })),
+    view_summary: {
+      total:             viewCount,
+      positive:          Number(v.positive) || 0,
+      neutral:           Number(v.neutral) || 0,
+      negative:          Number(v.negative) || 0,
+      contributor_count: Number(v.contributor_count) || 0,
+      last_posted:       v.last_posted || null,
+    },
+    views: views.map(i => ({ ...i, thesis: plainThesisText(i.thesis) })),
+    // Only who/what/when — never commentary — whatever the query returned.
+    view_stances: viewStances.map(({ recommendation_type, created_at, author_username }) => ({ recommendation_type, created_at, author_username })),
+    // Exact month-by-month counts over every public idea (not the capped lists).
+    research_monthly: researchMonthly.map(m => ({ mo: m.mo, Buy: Number(m.buy) || 0, Hold: Number(m.hold) || 0, Sell: Number(m.sell) || 0 })),
+    view_monthly: viewMonthly.map(m => ({ mo: m.mo, Positive: Number(m.positive) || 0, Neutral: Number(m.neutral) || 0, Negative: Number(m.negative) || 0 })),
   });
 }
 
@@ -237,7 +337,7 @@ async function search(req, res) {
   const ideas = await sql`
     SELECT
       r.id, r.ticker, r.asset_name, r.asset_class,
-      r.recommendation_type, r.sector, r.conviction,
+      r.recommendation_type, r.sector, r.conviction, r.disclosure,
       r.reco_price, r.current_price, r.exit_price,
       r.expiry_price, r.target_price, r.stop_loss,
       r.horizon, r.target_date, r.thesis,

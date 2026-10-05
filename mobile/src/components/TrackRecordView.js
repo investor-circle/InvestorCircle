@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import IciBadge, { IciBreakdown } from "./IciBadge";
 import { fmt, fmtDate, fmtPct, returnPct } from "../utils/format";
 import { mapProfileReco } from "../utils/feed";
+import { ideaTypeMeta, isMarketView } from "../utils/ideaType";
 import { colors, fonts } from "../theme/colors";
 
 const FOUNDING_MEMBER_BADGE = require("../../assets/founding-member-badge.png");
@@ -372,7 +373,8 @@ function IdeaRow({ reco, profile, onPress, last }) {
   // structurally impossible instead of hoping the two formulas keep
   // agreeing as either evolves.
   const pct = returnPct(mapProfileReco(reco, profile));
-  const isBuy = (reco.recommendation_type || "Buy") !== "Sell";
+  const typeMeta = ideaTypeMeta(reco.recommendation_type);
+  const isView = isMarketView(reco.recommendation_type); // commentary: no return / entry price
 
   return (
     <Pressable
@@ -380,9 +382,9 @@ function IdeaRow({ reco, profile, onPress, last }) {
       onPress={() => onPress?.(reco)}
       disabled={!onPress}
     >
-      <View style={[styles.sideTag, isBuy ? styles.sideBuy : styles.sideSell]}>
-        <Text style={[styles.sideText, isBuy ? styles.sideTextBuy : styles.sideTextSell]}>
-          {isBuy ? "BUY" : "SELL"}
+      <View style={[styles.sideTag, typeMeta.tone === "gain" ? styles.sideBuy : typeMeta.tone === "loss" ? styles.sideSell : styles.sideNeutral]}>
+        <Text style={[styles.sideText, typeMeta.tone === "gain" ? styles.sideTextBuy : typeMeta.tone === "loss" ? styles.sideTextSell : styles.sideTextNeutral]}>
+          {typeMeta.label.toUpperCase()}
         </Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -392,11 +394,11 @@ function IdeaRow({ reco, profile, onPress, last }) {
         <Text style={styles.ideaMeta} numberOfLines={1}>
           {reco.created_at ? fmtDate(reco.created_at) : "—"}
           {reco.sector ? ` · ${reco.sector}` : ""}
-          {closed ? " · Closed" : ""}
+          {closed && !isView ? " · Closed" : ""}
         </Text>
       </View>
       <View style={{ alignItems: "flex-end" }}>
-        {pct == null ? (
+        {isView || pct == null ? (
           <Text style={styles.ideaPrice}>—</Text>
         ) : (
           <Text style={[styles.ideaPct, { color: pct >= 0 ? colors.gain : colors.loss }]}>
@@ -637,8 +639,10 @@ const styles = StyleSheet.create({
   sideTag: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3 },
   sideBuy: { backgroundColor: colors.gainSoft },
   sideSell: { backgroundColor: colors.lossSoft },
+  sideNeutral: { backgroundColor: colors.surface2 },
   sideText: { fontFamily: fonts.extrabold, fontSize: 9.5 },
   sideTextBuy: { color: colors.gain },
+  sideTextNeutral: { color: colors.muted },
   sideTextSell: { color: colors.loss },
   ideaTicker: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
   ideaMeta: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11.5, marginTop: 2 },

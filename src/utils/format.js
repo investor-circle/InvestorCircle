@@ -1,4 +1,5 @@
 import { ADMIN_SEBI_API, CLASS_COLOR, CURRENCY_SYM, NOTIONAL, THESIS_MAX_MB, THESIS_TARGET_KB, TODAY } from "../constants/app";
+import { onlyRecommendations } from "./ideaType";
 
 export const classColor = (c) => CLASS_COLOR[c] || "#8d90ad";
 
@@ -253,6 +254,9 @@ export async function adminSebiApi(user, opts = {}) {
 }
 
 export function computeConsensus(recos=[]) {
+  // Consensus is a view of professional recommendations only — a Market View
+  // (Positive/Neutral/Negative) must not dilute it as a phantom "neutral".
+  recos = onlyRecommendations(recos);
   if (!recos.length) return {bull:0,bear:0,neutral:0,bullPct:0,bearPct:0,neutralPct:0,strength:0,label:'No Data',total:0};
   const bull = recos.filter(r=>r.recommendation_type==='Buy').length;
   const bear = recos.filter(r=>r.recommendation_type==='Sell').length;
@@ -310,6 +314,7 @@ export function ideaStatusSummary(active=0, closed=0, expired=0) {
 }
 
 export function computeTrend(recos=[], months=6) {
+  recos = onlyRecommendations(recos);
   if (!recos.length) return [];
   const now=new Date(), result=[];
   for (let i=months-1; i>=0; i--) {

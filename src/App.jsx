@@ -83,7 +83,7 @@ import {
 } from "./services/api/recommendationsApi";
 import { MemberBadgeOverlay, ProfileErrorBoundary, SectionErrorBoundary } from "./components/common";
 import { useMemberTagsMap } from "./MemberTagsContext";
-import { CONTACT_COLORS, DEFAULT_CLASSES, HOLDINGS } from "./constants/app";
+import { CONTACT_COLORS, DEFAULT_CLASSES, HOLDINGS, isPublisherStatus, effectiveRegStatus } from "./constants/app";
 // Admin screens are code-split into their own chunk: only admin-role users
 // ever navigate here, so investors never pay for this bundle weight.
 const adminModule = () => import("./features/admin/Admin");
@@ -264,8 +264,8 @@ export default function App() {
     const firstName = profile?.first_name || user.email?.split("@")[0] || "User";
     const lastName  = profile?.last_name  || "";
     const name = `${firstName} ${lastName}`.trim();
-    return { id:user.uid, name, firstName, lastName, username:profile?.username||"", initials:initialsOf(name), email:user.email||"", avatarUrl:profile?.avatar_url||"" };
-  }, [user?.uid, profile?.first_name, profile?.last_name, profile?.username, profile?.avatar_url]);
+    return { id:user.uid, name, firstName, lastName, username:profile?.username||"", initials:initialsOf(name), email:user.email||"", avatarUrl:profile?.avatar_url||"", registrationStatus:profile?.registration_status||"", sebiApprovalStatus:profile?.sebi_approval_status||"" };
+  }, [user?.uid, profile?.first_name, profile?.last_name, profile?.username, profile?.avatar_url, profile?.registration_status, profile?.sebi_approval_status]);
   // Whole { userId: [tag_type,...] } map, looked up once here (never inside
   // a .map() callback — that would call a hook a variable number of times)
   // and read by plain property access wherever an avatar renders below.
@@ -1669,7 +1669,7 @@ export default function App() {
                     {searchPeople.map((u,i)=>{
                       const isConn = connections.some(c=>c.user_id===u.id&&c.status==='accepted');
                       const isPend = connections.some(c=>c.user_id===u.id&&c.status==='pending');
-                      const isSebi = u.sebi_approval_status==='approved'||['sebi_ra','sebi_ria'].includes(u.registration_status||'');
+                      const isSebi = isPublisherStatus(effectiveRegStatus(u.registration_status, u.sebi_approval_status));
                       return (
                         <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',borderTop:i>0?'1px solid var(--line)':'none',transition:'background .1s'}}
                           onMouseEnter={e=>e.currentTarget.style.background='var(--surface-2)'}

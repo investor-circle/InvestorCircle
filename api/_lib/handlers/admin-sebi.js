@@ -37,10 +37,10 @@ export default async function handleAdminSebi(req, res) {
       const [pending, approved, msg, opts] = await Promise.all([
         sql`SELECT id, full_name, first_name, last_name, email, registration_status,
                    sebi_reg_number, sebi_reg_valid_till, sebi_firm_name, sebi_submitted_at
-            FROM user_profiles WHERE sebi_approval_status = 'pending' ORDER BY sebi_submitted_at`,
+            FROM user_profiles WHERE sebi_approval_status = 'pending' AND registration_status IN ('verified_research_publisher', 'sebi_ra') ORDER BY sebi_submitted_at`,
         sql`SELECT id, full_name, first_name, last_name, email, registration_status,
                    sebi_reg_number, sebi_reg_valid_till, sebi_firm_name, sebi_approved_at
-            FROM user_profiles WHERE sebi_approval_status = 'approved' ORDER BY sebi_approved_at DESC`,
+            FROM user_profiles WHERE sebi_approval_status = 'approved' AND registration_status IN ('verified_research_publisher', 'sebi_ra') ORDER BY sebi_approved_at DESC`,
         sql`SELECT value FROM app_settings WHERE key = 'sebi_verification_message' LIMIT 1`,
         sql`SELECT id, code, label, description, is_active, sort_order FROM registration_status_options ORDER BY sort_order`,
       ]);
@@ -61,7 +61,14 @@ export default async function handleAdminSebi(req, res) {
       if (action === 'approve') {
         await sql`UPDATE user_profiles SET sebi_approval_status='approved', sebi_approved_at=now() WHERE id=${userId}`;
       } else {
-        await sql`UPDATE user_profiles SET sebi_approval_status='rejected', sebi_approved_at=null WHERE id=${userId}`;
+        // Rejection moves the member to Independent Market Contributor. The
+        // submitted SEBI details are deliberately left in place for audit.
+        await sql`
+          UPDATE user_profiles
+          SET sebi_approval_status='rejected', sebi_approved_at=null,
+              registration_status = CASE WHEN registration_status IN ('verified_research_publisher', 'sebi_ra')
+                                         THEN 'independent_market_contributor' ELSE registration_status END
+          WHERE id=${userId}`;
       }
       res.status(200).json({ success: true });
       return;

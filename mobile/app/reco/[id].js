@@ -19,6 +19,7 @@ import { getReco } from "../../src/utils/recoStore";
 import { getPublicFeed, getMyMadeRecos, getMyReceivedRecos } from "../../src/services/api/recommendationsApi";
 import { mapPublicReco } from "../../src/utils/feed";
 import { fmt, fmtDate } from "../../src/utils/format";
+import { isMarketViewIdea } from "../../src/utils/ideaType";
 import { getTodayClose, sourceName } from "../../src/services/marketData";
 import Avatar from "../../src/components/Avatar";
 import { primeAvatars } from "../../src/services/avatarCache";
@@ -515,16 +516,19 @@ function RecoDetailScreen() {
                 {isTracked ? "Tracking" : "Track"}
               </Text>
             </Pressable>
-            <Pressable style={[styles.actionBtn, isInvested && styles.actionOnGain]} onPress={onInvestedPress}>
-              <Ionicons
-                name={isInvested ? "checkmark-circle" : "checkmark-circle-outline"}
-                size={18}
-                color={isInvested ? colors.gain : colors.inkSoft}
-              />
-              <Text style={[styles.actionText, isInvested && { color: colors.gain }]}>
-                {isInvested ? "Invested" : "Invest"}
-              </Text>
-            </Pressable>
+            {/* Investing / exiting frame an idea as a position — not offered on a Market View. */}
+            {!isMarketViewIdea(reco) ? (
+              <Pressable style={[styles.actionBtn, isInvested && styles.actionOnGain]} onPress={onInvestedPress}>
+                <Ionicons
+                  name={isInvested ? "checkmark-circle" : "checkmark-circle-outline"}
+                  size={18}
+                  color={isInvested ? colors.gain : colors.inkSoft}
+                />
+                <Text style={[styles.actionText, isInvested && { color: colors.gain }]}>
+                  {isInvested ? "Invested" : "Invest"}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
 
           {/* Market consensus for this security — the "what does everyone
@@ -572,7 +576,7 @@ function RecoDetailScreen() {
               exposes no delete either. (A short post-publish correction
               window may come later; that would be a deliberate feature with
               its own rules, not this button.) */}
-          {isOwner ? (
+          {isOwner && !isMarketViewIdea(reco) ? (
             <View style={styles.ownerBar}>
               {ownerBusy ? (
                 <ActivityIndicator color={colors.accent} />

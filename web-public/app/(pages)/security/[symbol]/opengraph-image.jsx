@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 import { getSecurityByTicker } from '../../../../lib/api';
-import { computeConsensus } from '../../../../lib/consensus';
+import { researchRows, researchBreakdown } from '../../../../lib/securityInsights';
 import { Brand, FallbackCard } from '../../../../components/OgBrand';
 
 export const alt = 'Stock Insights on My Investor Circle';
@@ -27,12 +27,17 @@ export default async function Image({ params }) {
   const { symbol } = await params;
   const data = await getSecurityByTicker(symbol);
 
-  if (!data || !data.summary?.idea_count) {
-    return new ImageResponse(<FallbackCard message="Investor ideas & community sentiment" />, size);
+  const researchCount = data?.summary?.idea_count || 0;
+  const viewCount = data?.view_summary?.total || 0;
+  if (!data || (!researchCount && !viewCount)) {
+    return new ImageResponse(<FallbackCard message="Verified research & independent market views" />, size);
   }
 
-  const { name, sector, summary, ideas } = data;
-  const consensus = computeConsensus(ideas);
+  const { name, sector, ideas } = data;
+  // Two separate layers, never merged: research is Buy / Hold / Sell, Market
+  // Views are Positive / Neutral / Negative.
+  const rb = researchCount ? researchBreakdown(researchRows(ideas)) : null;
+  const vs = data.view_summary || {};
 
   return new ImageResponse(
     (
@@ -58,9 +63,8 @@ export default async function Image({ params }) {
         </div>
 
         <div style={{ display: 'flex', gap: 16 }}>
-          <StatBlock label="Ideas" value={summary.idea_count} />
-          <StatBlock label="Investors" value={summary.contributor_count} />
-          <StatBlock label="Community" value={consensus.label} />
+          {rb && <StatBlock label="Verified Research" value={`${rb.buy} Buy · ${rb.hold} Hold · ${rb.sell} Sell`} />}
+          {viewCount > 0 && <StatBlock label="Market Views" value={`${vs.positive || 0} Pos · ${vs.neutral || 0} Neu · ${vs.negative || 0} Neg`} />}
         </div>
       </div>
     ),

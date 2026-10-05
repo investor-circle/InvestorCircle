@@ -1,4 +1,10 @@
 import { calcTargetDate, today } from "./format";
+import {
+  MARKET_VIEW_TYPES,
+  MARKET_VIEW_MIN_COMMENTARY,
+  DISCLOSURE_MAX_CHARS,
+  commentaryText,
+} from "./ideaType";
 
 /**
  * Turn the new-idea form into the payload the create endpoint stores.
@@ -17,6 +23,26 @@ import { calcTargetDate, today } from "./format";
  * to build it correctly.
  */
 export function buildRecoPayload(form = {}) {
+  // A Market View (persona "contributor") carries none of the recommendation
+  // framing: no entry price, target, stop loss, horizon, target date or
+  // conviction — and an editable disclosure. The server nulls those fields for
+  // a contributor regardless; omitting them here keeps the two aligned.
+  // Anything but an explicit "contributor" is the original recommendation flow.
+  if (form.persona === "contributor") {
+    return {
+      assetName: String(form.assetName || "").trim() || String(form.ticker || "").toUpperCase(),
+      ticker: String(form.ticker || "").trim().toUpperCase(),
+      assetClass: form.assetClass ?? null,
+      sector: form.sector ?? null,
+      currency: form.currency || "INR",
+      ...(form.exchange ? { exchange: form.exchange } : {}),
+      recType: form.recType || "",
+      thesis: String(form.thesis || "").trim() || null,
+      disclosure: String(form.disclosure || "").trim(),
+      isPublic: form.isPublic !== false,
+    };
+  }
+
   const num = (v) => {
     if (v === null || v === undefined || v === "") return null;
     const n = Number(v);
@@ -64,6 +90,19 @@ export function buildRecoPayload(form = {}) {
 export function validateRecoDraft(form = {}) {
   if (!String(form.assetName || "").trim() && !String(form.ticker || "").trim()) {
     return "Add an instrument name or ticker.";
+  }
+  if (form.persona === "contributor") {
+    if (!MARKET_VIEW_TYPES.includes(form.recType)) return "Choose Positive, Neutral or Negative.";
+    if (commentaryText(form.thesis).length < MARKET_VIEW_MIN_COMMENTARY) {
+      return `Add at least ${MARKET_VIEW_MIN_COMMENTARY} characters of commentary explaining your view.`;
+    }
+    const disclosure = String(form.disclosure || "").trim();
+    if (!disclosure) return "A disclosure is required.";
+    if (disclosure.length > DISCLOSURE_MAX_CHARS) return `Disclosure must be ${DISCLOSURE_MAX_CHARS} characters or fewer.`;
+    if (form.isPublic === false && !form.recipientCount) {
+      return "Pick at least one person or Circle, or post publicly.";
+    }
+    return null;
   }
   for (const [key, label] of [
     ["targetPrice", "Target price"],

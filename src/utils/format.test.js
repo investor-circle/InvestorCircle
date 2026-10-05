@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcTargetDate, getTargetDate, getClosedInfo, recoStats } from "./format.js";
+import { calcTargetDate, getTargetDate, getClosedInfo, recoStats, computeConsensus, computeTrend } from "./format.js";
 
 // Regression coverage for the "Invalid time value" crash that blanked the
 // whole app: calcTargetDate() built a Date via `date + "T00:00:00"`, which
@@ -159,5 +159,24 @@ describe("recoStats", () => {
     expect(stats.pnl).toBe(0);
     expect(stats.pnlPending).toBe(1);
     expect(Number.isFinite(stats.pnl)).toBe(true); // guards the old price/0 -> Infinity path
+  });
+});
+
+// Market Views (Positive/Neutral/Negative) are commentary, not recommendations:
+// they must not enter consensus as phantom "neutral" votes.
+describe("computeConsensus / computeTrend ignore Market Views", () => {
+  const mk = (t, extra = {}) => ({ recommendation_type: t, created_at: new Date().toISOString(), ...extra });
+  it("leaves the Buy/Sell consensus unchanged when Market Views are present", () => {
+    const base = [mk("Buy"), mk("Buy"), mk("Sell")];
+    const withViews = [...base, mk("Positive"), mk("Negative"), mk("Neutral"), mk("Neutral")];
+    expect(computeConsensus(withViews)).toEqual(computeConsensus(base));
+    expect(computeConsensus(withViews).total).toBe(3);
+  });
+  it("reports no data when only Market Views exist", () => {
+    expect(computeConsensus([mk("Positive")]).label).toBe("No Data");
+  });
+  it("leaves the monthly trend unchanged", () => {
+    const base = [mk("Buy"), mk("Sell")];
+    expect(computeTrend([...base, mk("Positive"), mk("Negative")])).toEqual(computeTrend(base));
   });
 });

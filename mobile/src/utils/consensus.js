@@ -14,6 +14,11 @@
  */
 
 export function computeConsensus(recos=[]) {
+  // Recommendations only: a Market View (Positive/Neutral/Negative) is
+  // commentary and must not count as a phantom neutral vote. (The one
+  // deliberate difference from the web copy's source — the web has the same
+  // guard, added at the same time.)
+  recos = recos.filter(r=>!['Positive','Neutral','Negative'].includes(r.recommendation_type));
   if (!recos.length) return {bull:0,bear:0,neutral:0,bullPct:0,bearPct:0,neutralPct:0,strength:0,label:'No Data',total:0};
   const bull = recos.filter(r=>r.recommendation_type==='Buy').length;
   const bear = recos.filter(r=>r.recommendation_type==='Sell').length;
@@ -35,6 +40,7 @@ export function computeConsensus(recos=[]) {
 }
 
 export function computeTrend(recos=[], months=6) {
+  recos = recos.filter(r=>!['Positive','Neutral','Negative'].includes(r.recommendation_type));
   if (!recos.length) return [];
   const now=new Date(), result=[];
   for (let i=months-1; i>=0; i--) {

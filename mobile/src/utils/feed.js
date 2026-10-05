@@ -78,6 +78,7 @@ export function mapPublicReco(r) {
     recentComments: r.recent_comments,
     lastActivityAt: r.last_activity_at,
     recType: r.recommendation_type || "Buy",
+    disclosure: r.disclosure || null,
   };
 }
 
@@ -119,6 +120,7 @@ export function mapProfileReco(r, profile) {
     from: profile?.id,
     from_username: profile?.username,
     recType: r.recommendation_type || "Buy",
+    disclosure: r.disclosure || null,
     date: r.created_at,
     exitSignal: closed,
     hidden: false,
@@ -146,6 +148,7 @@ export function mapNetworkReco(r) {
     targetPrice: r.target_price ? Number(r.target_price) : null,
     stopLoss: r.stop_loss ? Number(r.stop_loss) : null,
     recType: r.recommendation_type || "Buy",
+    disclosure: r.disclosure || null,
   };
 }
 
@@ -165,6 +168,7 @@ export function mapTrackedReco(r) {
     byName: r.recommender_name,
     from: r.recommender_id,
     recType: r.recommendation_type || "Buy",
+    disclosure: r.disclosure || null,
     targetPrice: r.target_price ? Number(r.target_price) : null,
     horizon: r.horizon,
     sector: r.sector,
@@ -193,6 +197,7 @@ export function mapCircleReco(r) {
     from: r.recommender_id,
     from_username: r.recommender_username,
     recType: r.recommendation_type || "Buy",
+    disclosure: r.disclosure || null,
     exitSignal: r.exit_signal,
     likes: Number(r.likes || 0),
     commentCount: Number(r.comments_count || 0),

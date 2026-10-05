@@ -19,25 +19,29 @@ import { colors, fonts } from "../theme/colors";
 export const IDEA_DISCLAIMER_TEXT =
   "This is the publisher’s personal view, for informational purposes only—not investment advice or a solicitation to buy/sell. myInvestorCircle (mic) does not endorse or provide this view. Please do your own research. Investments are subject to market risks.";
 
-export default function IdeaDisclaimer({ defaultExpanded = false, style }) {
+export default function IdeaDisclaimer({ defaultExpanded = false, style, text }) {
   const [expanded, setExpanded] = useState(false);
+  // A Market View carries its author's own (editable) disclosure; show that in
+  // place of the standard publisher disclaimer.
+  const body = text || IDEA_DISCLAIMER_TEXT;
+  const label = text ? "Disclosure" : "Disclaimer";
 
   if (defaultExpanded) {
-    return <Text style={[styles.text, style]}>{IDEA_DISCLAIMER_TEXT}</Text>;
+    return <Text style={[styles.text, style]}>{body}</Text>;
   }
 
   return (
     <Text style={[styles.text, style]}>
       {expanded ? (
         <>
-          {IDEA_DISCLAIMER_TEXT}{" "}
+          {body}{" "}
           <Text style={styles.link} onPress={() => setExpanded(false)}>
             Hide
           </Text>
         </>
       ) : (
         <Text style={styles.link} onPress={() => setExpanded(true)}>
-          Disclaimer
+          {label}
         </Text>
       )}
     </Text>

@@ -30,7 +30,9 @@ export default async function Image({ params }) {
   }
 
   const author = idea.author_name || idea.author_username || 'A member';
-  const isBuy = idea.recommendation_type === 'Buy';
+  const typeLabel = { Buy: 'BUY', Sell: 'SELL', Hold: 'HOLD', Positive: 'POSITIVE', Neutral: 'NEUTRAL', Negative: 'NEGATIVE' }[idea.recommendation_type] || 'BUY';
+  const tone = ['Buy', 'Positive', undefined, null].includes(idea.recommendation_type) ? 'gain' : ['Sell', 'Negative'].includes(idea.recommendation_type) ? 'loss' : 'muted';
+  const isView = ['Positive', 'Neutral', 'Negative'].includes(idea.recommendation_type);
   const entry = fmt(idea.reco_price);
   const target = fmt(idea.target_price);
 
@@ -49,13 +51,16 @@ export default async function Image({ params }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{
               display: 'flex', fontSize: 16, fontWeight: 800, letterSpacing: 1, padding: '7px 16px', borderRadius: 999,
-              background: isBuy ? 'rgba(21,146,78,.22)' : 'rgba(194,69,61,.22)', color: isBuy ? '#4ade80' : '#f87171',
+              background: tone === 'gain' ? 'rgba(21,146,78,.22)' : tone === 'loss' ? 'rgba(194,69,61,.22)' : 'rgba(141,144,173,.22)',
+              color: tone === 'gain' ? '#4ade80' : tone === 'loss' ? '#f87171' : '#c9c8e0',
             }}>
-              {isBuy ? 'BUY' : 'SELL'}
+              {typeLabel}
             </div>
-            <div style={{ display: 'flex', fontSize: 16, fontWeight: 700, letterSpacing: 1, color: '#8d90ad', textTransform: 'uppercase' }}>
-              {idea.status || 'Active'}
-            </div>
+            {!isView && (
+              <div style={{ display: 'flex', fontSize: 16, fontWeight: 700, letterSpacing: 1, color: '#8d90ad', textTransform: 'uppercase' }}>
+                {idea.status || 'Active'}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', fontSize: 76, fontWeight: 800, color: '#fff', marginTop: 14, lineHeight: 1 }}>
             {idea.ticker}

@@ -33,6 +33,7 @@ import {
   isSebiStatus,
   REG_STATUSES,
   REG_LABELS,
+  REG_DESCRIPTIONS,
   BIO_MAX_LENGTH,
 } from "../src/utils/profile";
 import { colors, fonts } from "../src/theme/colors";
@@ -161,7 +162,7 @@ function SettingsScreen() {
   // as they do on the web. They were hardcoded here, which worked but meant a
   // status added or relabelled server-side would never appear on the phone.
   // The local constants stay as the offline fallback and as the source of the
-  // SEBI/self-directed distinction the form branches on.
+  // publisher/contributor (SEBI fields or not) distinction the form branches on.
   const [regOptions, setRegOptions] = useState(null);
   const [sebiMsg, setSebiMsg] = useState("");
 
@@ -177,8 +178,9 @@ function SettingsScreen() {
 
   // Server list when we have one, local constants when we don't.
   const regChoices = regOptions
-    ? regOptions.map((o) => ({ code: o.code, label: o.label }))
-    : REG_STATUSES.map((code) => ({ code, label: REG_LABELS[code] }));
+    ? regOptions.map((o) => ({ code: o.code, label: o.label, description: o.description }))
+    : REG_STATUSES.map((code) => ({ code, label: REG_LABELS[code], description: REG_DESCRIPTIONS[code] }));
+  const selectedChoice = regChoices.find((c) => c.code === form.registrationStatus);
 
   const mounted = useRef(true);
   useEffect(() => {
@@ -437,6 +439,9 @@ function SettingsScreen() {
                 );
               })}
             </View>
+            {selectedChoice?.description ? (
+              <Text style={styles.unHint}>{selectedChoice.description}</Text>
+            ) : null}
             {sebiMsg && isSebiStatus(form.registrationStatus) ? (
               <Text style={styles.unHint}>{sebiMsg}</Text>
             ) : null}

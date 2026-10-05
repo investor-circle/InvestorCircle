@@ -29,6 +29,7 @@
  */
 
 import { sql, parseBody } from '../auth.js';
+import { MARKET_VIEW_TYPES, publishingPersona, applyPublishingRules } from '../ideaType.js';
 
 function mapReceivedRow(r) {
   return {
@@ -67,6 +68,7 @@ function mapReceivedRow(r) {
     stopLoss:      r.stop_loss  ? Number(r.stop_loss)  : null,
     conviction:    r.conviction || null,
     sector:        r.sector     || null,
+    disclosure:    r.disclosure || null,
   };
 }
 
@@ -85,7 +87,7 @@ async function getReceived(userId) {
       r.target_price, r.horizon, r.target_date, r.thesis,
       r.is_public,
       r.exit_signal, r.exit_date,
-      r.recommendation_type, r.stop_loss, r.conviction, r.sector, r.exit_price, r.expiry_price,
+      r.recommendation_type, r.stop_loss, r.conviction, r.sector, r.exit_price, r.expiry_price, r.disclosure,
       r.created_at        AS reco_date,
       rec_up.full_name    AS from_name,
       rec_up.email        AS from_email,
@@ -112,7 +114,7 @@ async function getMade(userId) {
       r.id, r.asset_name, r.ticker, r.asset_class, r.created_at,
       r.reco_price, r.current_price, r.target_price, r.horizon, r.target_date,
       r.thesis, r.exit_signal, r.exit_date, r.is_public,
-      r.recommendation_type, r.stop_loss, r.conviction, r.sector, r.exit_price, r.expiry_price,
+      r.recommendation_type, r.stop_loss, r.conviction, r.sector, r.exit_price, r.expiry_price, r.disclosure,
       (SELECT COUNT(*) FROM recommendation_deliveries d WHERE d.recommendation_id = r.id) AS recipient_count,
       (SELECT COUNT(*) FROM recommendation_deliveries d
        WHERE d.recommendation_id = r.id AND d.is_invested = true) AS acted_count,
@@ -161,6 +163,7 @@ async function getMade(userId) {
     stopLoss:    r.stop_loss     ? +r.stop_loss     : null,
     conviction:  r.conviction    || null,
     sector:      r.sector        || null,
+    disclosure:  r.disclosure    || null,
     exitPrice:   r.exit_price    ? +r.exit_price    : null,
     recipients:  [],
   }));
@@ -207,7 +210,7 @@ async function getCircleFeed(groupId, userId) {
       r.id, r.asset_name, r.ticker, r.asset_class, r.recommendation_type,
       r.reco_price, r.current_price, r.target_price, r.horizon, r.target_date,
       r.thesis, r.exit_signal, r.exit_date, r.is_public, r.created_at,
-      r.conviction, r.sector,
+      r.conviction, r.sector, r.disclosure,
       rec_up.id          AS recommender_id,
       rec_up.full_name   AS recommender_name,
       rec_up.username    AS recommender_username,
@@ -371,24 +374,36 @@ export default async function handleRecommendations(req, res, userId) {
         res.status(400).json({ error: 'reco.assetName and reco.ticker are required' });
         return;
       }
+      // Publishing persona comes from the author's own stored category and
+      // SEBI verification outcome — never from anything in the request.
+      const author = await sql`
+        SELECT registration_status, sebi_approval_status FROM user_profiles WHERE id = ${userId} LIMIT 1
+      `;
+      const persona = publishingPersona(author[0]?.registration_status, author[0]?.sebi_approval_status);
+      const ruled = applyPublishingRules(reco, persona);
+      if (!ruled.ok) {
+        res.status(400).json({ error: ruled.error, message: ruled.message });
+        return;
+      }
+      const r = ruled.reco;
       const rec = await sql`
         INSERT INTO ic_recommendations
           (recommender_id, asset_name, ticker, asset_class,
            reco_price, current_price, target_price, horizon, target_date, thesis, is_public,
            recommendation_type, stop_loss, conviction, sector, exchange,
-           price_source, price_stamped_at)
+           price_source, price_stamped_at, disclosure)
         VALUES
-          (${userId}, ${reco.assetName}, ${reco.ticker}, ${reco.assetClass},
-           ${reco.priceAt || null}, ${reco.price || null}, ${reco.targetPrice || null},
-           ${reco.horizon || null}, ${reco.targetDate || null}, ${reco.thesis || null},
-           ${reco.isPublic !== false},
-           ${reco.recType || 'Buy'}, ${reco.stopLoss || null},
-           ${reco.conviction || null}, ${reco.sector || null},
-           ${reco.exchange || 'NSE'},
-           ${reco.priceSource || null}, ${reco.priceAt ? 'now()' : null})
+          (${userId}, ${r.assetName}, ${r.ticker}, ${r.assetClass},
+           ${r.priceAt || null}, ${r.price || null}, ${r.targetPrice || null},
+           ${r.horizon || null}, ${r.targetDate || null}, ${r.thesis || null},
+           ${r.isPublic !== false},
+           ${r.recType}, ${r.stopLoss || null},
+           ${r.conviction || null}, ${r.sector || null},
+           ${r.exchange || 'NSE'},
+           ${r.priceSource || null}, ${r.priceAt ? 'now()' : null}, ${ruled.disclosure})
         RETURNING id, recommender_id, asset_name, ticker, asset_class, reco_price, current_price,
                   target_price, horizon, target_date, thesis, is_public, recommendation_type,
-                  stop_loss, conviction, sector, exchange, created_at
+                  stop_loss, conviction, sector, exchange, disclosure, created_at
       `;
       const authorizedGroupIds = await authorizedCircleRecipientIds(userId, recipients);
       await deliverToRecipients(rec[0].id, userId, recipients, reco, { authorizedGroupIds });
@@ -454,6 +469,7 @@ export default async function handleRecommendations(req, res, userId) {
             exit_price_stamped_at  = ${exitPrice ? new Date().toISOString() : null},
             updated_at             = now()
         WHERE id = ${recommendationId} AND recommender_id = ${userId}
+          AND COALESCE(recommendation_type, 'Buy') <> ALL(${MARKET_VIEW_TYPES})  -- a Market View is not a position to close
         RETURNING id, ticker, asset_name, exit_signal, exit_date, exit_price
       `;
       if (!row[0]) { res.status(404).json({ error: 'not_found' }); return; }

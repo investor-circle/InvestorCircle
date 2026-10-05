@@ -14,9 +14,14 @@ let updateRow = { id: "d1", recommendation_id: "r1", reaction: null };
 // test below.
 let groupAuthRows = [];
 let groupMemberRows = [];
+// The author's stored category + verification outcome — what the create
+// action derives the publishing persona from. Defaults to an approved
+// Verified Research Publisher, the persona the existing Circle tests assume.
+let authorRow = { registration_status: "verified_research_publisher", sebi_approval_status: "approved" };
 const sqlTag = (strings, ...values) => {
   const text = strings.join("?");
   sqlCalls.push({ text, values });
+  if (text.includes("SELECT registration_status, sebi_approval_status FROM user_profiles")) return Promise.resolve([authorRow]);
   if (text.includes("UPDATE recommendation_deliveries")) return Promise.resolve([updateRow]);
   if (text.includes("INSERT INTO ic_recommendations")) return Promise.resolve([{ id: "rec1" }]);
   if (text.includes("gm.role, gm.status")) return Promise.resolve(groupAuthRows);
@@ -70,6 +75,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   groupAuthRows = [];
   groupMemberRows = [];
+  authorRow = { registration_status: "verified_research_publisher", sebi_approval_status: "approved" };
 });
 
 describe("update-delivery leaves a reaction alone unless asked", () => {
@@ -143,7 +149,7 @@ describe("posting to your own Circle when it has no other members yet", () => {
         method: "POST", query: {}, headers: { authorization: "Bearer t" },
         body: {
           action: "create",
-          reco: { assetName: "Foo Corp", ticker: "FOO" },
+          reco: { assetName: "Foo Corp", ticker: "FOO", recType: "Buy" },
           recipients: [{ type: "group", id: "circle1" }],
         },
       },
@@ -196,5 +202,106 @@ describe("posting to your own Circle when it has no other members yet", () => {
     groupAuthRows = []; // caller has no role in this group at all
     await postToCircle();
     expect(sqlCalls.some(c => c.text.includes("INSERT INTO recommendation_deliveries"))).toBe(false);
+  });
+});
+
+
+// Publishing personas. The UI hides what a persona may not do, but the server
+// is the real gate: a client that posts a type its author may not use is
+// refused, whatever the form looked like.
+describe("create enforces the author's publishing persona", () => {
+  const COMMENTARY = "Margins are expanding and the order book looks healthy for the next two years.";
+  const create = async (reco) => {
+    const res = mkRes();
+    await handleRecommendations(
+      { method: "POST", query: {}, headers: { authorization: "Bearer t" },
+        body: { action: "create", reco: { assetName: "Foo Corp", ticker: "FOO", ...reco }, recipients: [] } },
+      res, "me");
+    return res;
+  };
+  const inserted = () => sqlCalls.find((c) => c.text.includes("INSERT INTO ic_recommendations"));
+  const publisher = { registration_status: "verified_research_publisher", sebi_approval_status: "approved" };
+  const contributor = { registration_status: "independent_market_contributor", sebi_approval_status: "not_applied" };
+
+  it("lets a Verified Research Publisher post Buy, Hold and Sell with the professional fields", async () => {
+    for (const recType of ["Buy", "Hold", "Sell"]) {
+      sqlCalls.length = 0;
+      const res = await create({ recType, priceAt: 100, targetPrice: 130, stopLoss: 90, horizon: "12m", conviction: "High" });
+      expect(res.statusCode, recType).toBe(200);
+      const call = inserted();
+      expect(call.values).toContain(recType);
+      expect(call.values).toContain(130);
+      expect(call.values).toContain("High");
+    }
+  });
+
+  it("refuses a Market View type from a Verified Research Publisher", async () => {
+    authorRow = publisher;
+    const res = await create({ recType: "Positive", thesis: COMMENTARY });
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe("invalid_idea_type");
+    expect(inserted()).toBeUndefined();
+  });
+
+  it("refuses Buy / Hold / Sell from an Independent Market Contributor, however the client sends it", async () => {
+    authorRow = contributor;
+    for (const recType of ["Buy", "Hold", "Sell", undefined, "", "buy"]) {
+      sqlCalls.length = 0;
+      const res = await create({ recType, thesis: COMMENTARY, disclosure: "my own view" });
+      expect(res.statusCode, String(recType)).toBe(400);
+      expect(inserted()).toBeUndefined();
+    }
+  });
+
+  it("treats a publisher whose verification is pending, rejected or unset as a contributor", async () => {
+    for (const sebi_approval_status of ["pending", "rejected", "not_applied", null]) {
+      authorRow = { registration_status: "verified_research_publisher", sebi_approval_status };
+      sqlCalls.length = 0;
+      const res = await create({ recType: "Buy", priceAt: 100 });
+      expect(res.statusCode, String(sebi_approval_status)).toBe(400);
+      expect(inserted()).toBeUndefined();
+    }
+  });
+
+  it("stores a contributor's Market View with the disclosure and none of the recommendation fields", async () => {
+    authorRow = contributor;
+    const res = await create({
+      recType: "Negative", thesis: COMMENTARY, disclosure: "  My own view; I hold no position.  ",
+      priceAt: 100, price: 100, targetPrice: 150, stopLoss: 90, horizon: "12m", targetDate: "2027-10-01",
+      conviction: "High", priceSource: "nse",
+    });
+    expect(res.statusCode).toBe(200);
+    const call = inserted();
+    expect(call.values).toContain("Negative");
+    expect(call.values).toContain("My own view; I hold no position.");
+    for (const forbidden of [100, 150, 90, "12m", "2027-10-01", "High", "nse"]) {
+      expect(call.values, String(forbidden)).not.toContain(forbidden);
+    }
+  });
+
+  it("requires commentary and a disclosure for a Market View", async () => {
+    authorRow = contributor;
+    const noCommentary = await create({ recType: "Positive", thesis: "too short", disclosure: "d" });
+    expect(noCommentary.body.error).toBe("commentary_required");
+    const noDisclosure = await create({ recType: "Positive", thesis: COMMENTARY, disclosure: "   " });
+    expect(noDisclosure.body.error).toBe("disclosure_required");
+    expect(inserted()).toBeUndefined();
+  });
+
+  it("derives the persona from the stored profile, not from anything in the request", async () => {
+    authorRow = contributor;
+    const res = await create({ recType: "Buy", registration_status: "verified_research_publisher", sebi_approval_status: "approved", persona: "verified_publisher" });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("does not let a Market View be closed as a position", async () => {
+    const res = mkRes();
+    await handleRecommendations(
+      { method: "POST", query: {}, headers: { authorization: "Bearer t" },
+        body: { action: "set-exit-signal", recommendationId: "r1" } },
+      res, "me");
+    const call = sqlCalls.find((c) => c.text.includes("UPDATE ic_recommendations"));
+    expect(call.text).toContain("<> ALL(");
+    expect(call.values).toContainEqual(["Positive", "Neutral", "Negative"]);
   });
 });

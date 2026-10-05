@@ -6,6 +6,9 @@
 // pre-computed from the server and are never recomputed here).
 
 export function computeConsensus(recos = []) {
+  // Recommendations only — a Market View (Positive/Neutral/Negative) is
+  // commentary and must not count as a phantom neutral vote.
+  recos = recos.filter((r) => !['Positive', 'Neutral', 'Negative'].includes(r.recommendation_type));
   if (!recos.length) return { bull: 0, bear: 0, neutral: 0, bullPct: 0, bearPct: 0, neutralPct: 0, strength: 0, label: 'No Data', total: 0 };
   const bull = recos.filter((r) => r.recommendation_type === 'Buy').length;
   const bear = recos.filter((r) => r.recommendation_type === 'Sell').length;

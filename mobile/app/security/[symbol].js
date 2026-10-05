@@ -1,46 +1,66 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Share } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { getTickerRecos, getDailyPrices } from "../../src/services/api/consensusApi";
-import { computeConsensus, computeTrend, consensusColor } from "../../src/utils/consensus";
-import { tickerStats, buildAiSummary } from "../../src/utils/stockInsights";
-import Sparkline from "../../src/components/Sparkline";
-import { fmt, fmtDate } from "../../src/utils/format";
-import Avatar from "../../src/components/Avatar";
+import { getTickerRecos, getTickerViews, getDailyPrices } from "../../src/services/api/consensusApi";
+import { getMyConnections } from "../../src/services/api/connectionsApi";
+import { getMyTracking } from "../../src/services/api/trackingApi";
+import { researchBreakdown, viewBreakdownFromCounts, pageSections } from "../../src/utils/securityInsights";
+import { LayerSummary, ResearchSection, ViewsSection } from "../../src/components/SecuritySections";
+import { fmt } from "../../src/utils/format";
 import { primeAvatars } from "../../src/services/avatarCache";
 import { debugLog } from "../../src/utils/logger";
 import { colors, fonts } from "../../src/theme/colors";
 import { withBoundary } from "../../src/components/ErrorBoundary";
 import { securityUrl } from "../../src/utils/links";
 
+const EMPTY_SUMMARY = { total: 0, positive: 0, neutral: 0, negative: 0, contributors: 0 };
+
 /**
- * Market consensus for one ticker — "what does everyone think about INFY".
+ * The Security Page — two separate layers for one ticker:
  *
- * Mirrors the web's SecurityQuickPanel: a bull/bear gauge, the consensus
- * trend over the last six months, the latest price, and every public idea
- * behind the verdict. The aggregation uses the verbatim-ported
- * computeConsensus/computeTrend, so the number here matches the web's for the
- * same ideas.
+ *   Verified Research  ("what does verified research say?")   Buy / Hold / Sell
+ *   Market Views       ("what are independent participants saying?")
+ *                                                             Positive / Neutral / Negative
+ *
+ * Kept completely apart (separate endpoints, separate figures, no combined
+ * score); a layer with no data is not rendered at all. MIC organises and
+ * presents both — it issues no recommendation of its own. Mirrors the web's
+ * SecurityIntelligencePage; the figures come from the same securityInsights
+ * helpers (a byte-identical copy), so both clients agree.
  */
-function TickerConsensusScreen() {
+function SecurityScreen() {
   const { symbol } = useLocalSearchParams();
   const router = useRouter();
   const ticker = String(symbol || "").toUpperCase();
-  const [recos, setRecos] = useState(null);
+  const [recos, setRecos] = useState(null); // Verified Research only
+  const [viewData, setViewData] = useState(null); // { summary, views, stances, hasMore }
   const [price, setPrice] = useState(null);
+  const [circleIds, setCircleIds] = useState(null); // Set of ids, or null until known
+  const [loadingMore, setLoadingMore] = useState(false);
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
-    // Independent calls: the ideas and the live price don't depend on each
-    // other, so they go together rather than one after the other.
-    const [rows, prices] = await Promise.all([getTickerRecos(ticker), getDailyPrices([ticker])]);
+    // Independent calls — research, Market Views, the price and the viewer's
+    // Circle don't depend on each other, so they go together.
+    const [rows, views, prices, conns, tracking] = await Promise.all([
+      getTickerRecos(ticker),
+      getTickerViews(ticker),
+      getDailyPrices([ticker]),
+      getMyConnections().catch(() => []),
+      getMyTracking().catch(() => []),
+    ]);
     if (!mounted.current) return;
     setRecos(rows);
+    setViewData(views);
     setPrice((prices || []).find((p) => String(p.ticker).toUpperCase() === ticker) || null);
-    primeAvatars((rows || []).map((r) => r.from));
-    debugLog(`consensus ${ticker}: ideas=${rows?.length ?? 0} price=${prices?.length ? "yes" : "no"}`);
+    const ids = new Set();
+    (conns || []).filter((c) => c.status === "accepted").forEach((c) => c.user_id && ids.add(String(c.user_id)));
+    (tracking || []).forEach((t) => (typeof t === "string" ? ids.add(t) : t?.id && ids.add(String(t.id))));
+    setCircleIds(ids);
+    primeAvatars([...(rows || []), ...(views.views || [])].map((r) => r.from));
+    debugLog(`security ${ticker}: research=${rows?.length ?? 0} views=${views?.summary?.total ?? 0}`);
   }, [ticker]);
 
   useEffect(() => {
@@ -51,32 +71,38 @@ function TickerConsensusScreen() {
     };
   }, [load]);
 
-  const cons = computeConsensus(recos || []);
-  const stats = useMemo(() => tickerStats(recos), [recos]);
-  // No model, no network call — a deterministic reading of what people
-  // actually wrote (see stockInsights.js). Computed with the rest rather than
-  // behind a button: on a phone, a tap to reveal a paragraph is friction, and
-  // the web's 800ms fake "analysing" delay is theatre this does not need.
-  const ai = useMemo(() => buildAiSummary(recos), [recos]);
-  const trend = computeTrend(recos || []);
-  const tint = consensusColor(cons, colors);
-  const assetName = (recos || []).find((r) => r.asset_name)?.asset_name;
+  const loadMoreViews = useCallback(async () => {
+    if (loadingMore || !viewData) return;
+    setLoadingMore(true);
+    const more = await getTickerViews(ticker, { offset: viewData.views.length });
+    if (!mounted.current) return;
+    setViewData((d) => ({ ...d, views: [...d.views, ...more.views], hasMore: more.hasMore }));
+    primeAvatars(more.views.map((r) => r.from));
+    setLoadingMore(false);
+  }, [loadingMore, viewData, ticker]);
 
-  // Same shareable link the web's Stock Insights page hands out
-  // (SecurityIntelligencePage's shareUrl) — a recipient without the app lands
-  // on the same public page regardless of which client shared it.
+  const loading = recos === null || viewData === null;
+  const summary = viewData?.summary || EMPTY_SUMMARY;
+  const avail = pageSections({ research: (recos || []).length, views: summary.total });
+  const researchB = avail.hasResearch ? researchBreakdown(recos, (r) => r.from) : null;
+  const viewsB = avail.hasViews ? viewBreakdownFromCounts(summary) : null;
+  const assetName = (recos || []).find((r) => r.asset_name)?.asset_name || (viewData?.views || []).find((r) => r.asset_name)?.asset_name;
+
+  // Same shareable link the web's Stock Insights page hands out — a recipient
+  // without the app lands on the same public page regardless of which client
+  // shared it.
   const onShare = async () => {
     const url = securityUrl(ticker);
     if (!url) return;
     try {
-      await Share.share({
-        message: `${assetName || ticker} on myInvestorCircle — ${url}`,
-        url,
-      });
+      await Share.share({ message: `${assetName || ticker} on myInvestorCircle — ${url}`, url });
     } catch (_) {
       /* user dismissed the OS sheet */
     }
   };
+
+  const openReco = (r) => router.push(`/reco/${r.id}`);
+  const openProfile = (username) => router.push(`/investor/${encodeURIComponent(username)}`);
 
   return (
     <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
@@ -92,7 +118,7 @@ function TickerConsensusScreen() {
         </Pressable>
       </View>
 
-      {recos === null ? (
+      {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.accent} size="large" />
         </View>
@@ -112,212 +138,38 @@ function TickerConsensusScreen() {
             </View>
           ) : null}
 
-          {cons.total === 0 ? (
+          {!avail.hasAny ? (
             <View style={styles.empty}>
               <Ionicons name="stats-chart-outline" size={40} color={colors.line2} />
-              <Text style={styles.emptyTitle}>No public ideas yet</Text>
+              <Text style={styles.emptyTitle}>No public research or Market Views yet</Text>
               <Text style={styles.emptySub}>
-                Once people share ideas on {ticker}, the consensus shows up here.
+                Once members publish research or share a view on {ticker}, it shows up here.
               </Text>
             </View>
           ) : (
             <>
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Market consensus</Text>
-                <Text style={[styles.verdict, { color: tint }]}>{cons.label}</Text>
-                <Text style={styles.basis}>
-                  from {cons.total} idea{cons.total === 1 ? "" : "s"}
-                </Text>
+              <LayerSummary research={researchB} views={viewsB} />
 
-                {/* Proportional bar: bullish, neutral, bearish. */}
-                <View style={styles.bar}>
-                  {cons.bullPct > 0 ? (
-                    <View style={{ flex: cons.bullPct, backgroundColor: colors.gain }} />
-                  ) : null}
-                  {cons.neutralPct > 0 ? (
-                    <View style={{ flex: cons.neutralPct, backgroundColor: colors.line2 }} />
-                  ) : null}
-                  {cons.bearPct > 0 ? (
-                    <View style={{ flex: cons.bearPct, backgroundColor: colors.loss }} />
-                  ) : null}
-                </View>
-                <View style={styles.legend}>
-                  <Text style={[styles.legendItem, { color: colors.gain }]}>{cons.bullPct}% buy</Text>
-                  <Text style={[styles.legendItem, { color: colors.muted }]}>{cons.neutralPct}% hold</Text>
-                  <Text style={[styles.legendItem, { color: colors.loss }]}>{cons.bearPct}% sell</Text>
-                </View>
-              </View>
-
-              {trend.length >= 2 ? (
-                <View style={styles.card}>
-                  <View style={styles.trendHead}>
-                    <Text style={styles.cardLabel}>Consensus trend</Text>
-                    <Text style={[styles.trendNow, { color: tint }]}>{trend[trend.length - 1]}%</Text>
-                  </View>
-                  <Text style={styles.basis}>Share of ideas that were Buy, by month</Text>
-                  <Sparkline values={trend} color={tint} height={52} style={{ marginTop: 12 }} />
-                </View>
+              {avail.hasResearch ? (
+                <ResearchSection ticker={ticker} recos={recos} onOpenReco={openReco} onOpenProfile={openProfile} />
               ) : null}
 
-              <Text style={styles.sectionTitle}>
-                {cons.total} idea{cons.total === 1 ? "" : "s"} on {ticker}
-              </Text>
-              {(recos || []).map((r) => (
-                <Pressable
-                  key={String(r.id)}
-                  style={styles.ideaRow}
-                  onPress={() => router.push(`/reco/${r.id}`)}
-                >
-                  {/* Nested Pressable: avatar+name go to the author's
-                      profile, the rest of the row still opens the idea. */}
-                  <Pressable
-                    style={styles.ideaRowAuthor}
-                    onPress={() => r.username && router.push(`/investor/${encodeURIComponent(r.username)}`)}
-                    disabled={!r.username}
-                    hitSlop={4}
-                  >
-                    <Avatar profile={r} uid={r.from} name={r.full_name} size={34} />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.ideaName} numberOfLines={1}>
-                        {r.full_name || r.username || "Investor"}
-                      </Text>
-                      <Text style={styles.ideaMeta} numberOfLines={1}>
-                        {fmtDate(r.created_at)}
-                        {r.conviction ? ` · ${r.conviction} conviction` : ""}
-                      </Text>
-                    </View>
-                  </Pressable>
-                  <Text
-                    style={[
-                      styles.tag,
-                      r.recommendation_type === "Buy"
-                        ? { color: colors.gain, backgroundColor: colors.gainSoft }
-                        : r.recommendation_type === "Sell"
-                        ? { color: colors.loss, backgroundColor: colors.lossSoft }
-                        : { color: colors.muted, backgroundColor: colors.surface2 },
-                    ]}
-                  >
-                    {r.recommendation_type || "Hold"}
-                  </Text>
-                </Pressable>
-              ))}
-
-              {/* ── Statistics ─────────────────────────────────────────── */}
-              {stats ? (
-                <>
-                  <Text style={styles.sectionTitle}>Statistics</Text>
-                  <View style={styles.statGrid}>
-                    <StatTile label="Total ideas" value={stats.total} />
-                    <StatTile label="Currently active" value={stats.active} tint={colors.gain} />
-                    <StatTile label="Investors" value={stats.uniqueInvestors} />
-                    <StatTile
-                      label="Months covered"
-                      value={stats.months.length}
-                    />
-                  </View>
-
-                  {stats.months.length > 1 ? (
-                    <View style={styles.card}>
-                      <Text style={styles.cardLabel}>Ideas by month</Text>
-                      <Text style={styles.basis}>Buys above, sells below</Text>
-                      <View style={styles.monthRow}>
-                        {stats.months.slice(-8).map((m) => {
-                          const max = Math.max(
-                            ...stats.months.map((x) => x.buy + x.sell),
-                            1
-                          );
-                          const total = m.buy + m.sell;
-                          return (
-                            <View key={m.mo} style={styles.monthCol}>
-                              <Text style={styles.monthCount}>{total || ""}</Text>
-                              <View style={styles.monthBars}>
-                                {m.sell > 0 ? (
-                                  <View
-                                    style={{
-                                      height: Math.max((m.sell / max) * 54, 3),
-                                      backgroundColor: colors.loss,
-                                      borderRadius: 2,
-                                    }}
-                                  />
-                                ) : null}
-                                {m.buy > 0 ? (
-                                  <View
-                                    style={{
-                                      height: Math.max((m.buy / max) * 54, 3),
-                                      backgroundColor: colors.gain,
-                                      borderRadius: 2,
-                                    }}
-                                  />
-                                ) : null}
-                              </View>
-                              <Text style={styles.monthLabel}>{m.mo.slice(5)}</Text>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {Object.keys(stats.convMap).length ? (
-                    <View style={styles.card}>
-                      <Text style={styles.cardLabel}>Conviction</Text>
-                      {Object.entries(stats.convMap)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([level, n]) => (
-                          <View key={level} style={styles.convRow}>
-                            <Text style={styles.convLabel}>{level}</Text>
-                            <Text style={styles.convCount}>
-                              {n} idea{n === 1 ? "" : "s"}
-                            </Text>
-                          </View>
-                        ))}
-                    </View>
-                  ) : null}
-                </>
-              ) : null}
-
-              {/* ── Summary ────────────────────────────────────────────── */}
-              {ai ? (
-                <>
-                  <Text style={styles.sectionTitle}>Summary</Text>
-                  <View style={styles.card}>
-                    <Text style={styles.aiLead}>
-                      The community is{" "}
-                      <Text style={{ color: tint, fontFamily: fonts.extrabold }}>{ai.sentiment}</Text> on{" "}
-                      {ticker}, across {ai.uniqueInv} investor{ai.uniqueInv === 1 ? "" : "s"}
-                      {ai.highConv > 0
-                        ? `, ${ai.highConv} of them high conviction`
-                        : ""}
-                      .
-                    </Text>
-
-                    {ai.bullThemes.length ? (
-                      <View style={styles.aiBlock}>
-                        <Text style={[styles.aiHead, { color: colors.gain }]}>The bull case</Text>
-                        {ai.bullThemes.map((t, i) => (
-                          <Text key={i} style={styles.aiPoint}>
-                            • {t}
-                          </Text>
-                        ))}
-                      </View>
-                    ) : null}
-
-                    <View style={styles.aiBlock}>
-                      <Text style={[styles.aiHead, { color: colors.loss }]}>The bear case</Text>
-                      {ai.bearThemes.map((t, i) => (
-                        <Text key={i} style={styles.aiPoint}>
-                          • {t}
-                        </Text>
-                      ))}
-                    </View>
-
-                    {/* Said plainly, because the heading could imply otherwise. */}
-                    <Text style={styles.aiNote}>
-                      Assembled from the ideas above — the quotes are their authors' own words, not
-                      generated commentary. Not investment advice.
-                    </Text>
-                  </View>
-                </>
+              {avail.hasViews ? (
+                <ViewsSection
+                  ticker={ticker}
+                  summary={summary}
+                  views={viewData.views}
+                  stances={viewData.stances}
+                  monthly={viewData.monthly}
+                  byContributor={viewData.byContributor}
+                  circleIds={circleIds}
+                  signedIn
+                  hasMore={viewData.hasMore}
+                  loadingMore={loadingMore}
+                  onLoadMore={loadMoreViews}
+                  onOpenReco={openReco}
+                  onOpenProfile={openProfile}
+                />
               ) : null}
             </>
           )}
@@ -327,51 +179,7 @@ function TickerConsensusScreen() {
   );
 }
 
-function StatTile({ label, value, tint }) {
-  return (
-    <View style={styles.statTile}>
-      <Text style={[styles.statValue, tint && { color: tint }]}>{value ?? "—"}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  statGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 4 },
-  statTile: {
-    flexGrow: 1,
-    flexBasis: "45%",
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: "center",
-  },
-  statValue: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 20 },
-  statLabel: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11.5, marginTop: 3 },
-  monthRow: { flexDirection: "row", alignItems: "flex-end", gap: 6, marginTop: 14 },
-  monthCol: { flex: 1, alignItems: "center", gap: 3 },
-  monthCount: { color: colors.ink, fontFamily: fonts.bold, fontSize: 10, height: 13 },
-  monthBars: { width: "100%", gap: 2, justifyContent: "flex-end" },
-  monthLabel: { color: colors.muted, fontFamily: fonts.regular, fontSize: 9.5 },
-  convRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8 },
-  convLabel: { color: colors.inkSoft, fontFamily: fonts.semibold, fontSize: 13.5 },
-  convCount: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12.5 },
-  aiLead: { color: colors.ink, fontFamily: fonts.regular, fontSize: 14.5, lineHeight: 22 },
-  aiBlock: { marginTop: 14, gap: 5 },
-  aiHead: { fontFamily: fonts.bold, fontSize: 11.5, letterSpacing: 0.5, textTransform: "uppercase" },
-  aiPoint: { color: colors.inkSoft, fontFamily: fonts.regular, fontSize: 13.5, lineHeight: 20 },
-  aiNote: {
-    color: colors.muted,
-    fontFamily: fonts.regular,
-    fontSize: 11.5,
-    lineHeight: 17,
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
-  },
   flex: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   topbar: {
@@ -390,54 +198,9 @@ const styles = StyleSheet.create({
   price: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 24 },
   change: { fontFamily: fonts.bold, fontSize: 14 },
   priceDate: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11 },
-  card: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 16,
-  },
-  cardLabel: { color: colors.muted, fontFamily: fonts.bold, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6 },
-  verdict: { fontFamily: fonts.extrabold, fontSize: 22, marginTop: 6 },
-  basis: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
-  bar: { flexDirection: "row", height: 10, borderRadius: 5, overflow: "hidden", marginTop: 14, backgroundColor: colors.line },
-  legend: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
-  legendItem: { fontFamily: fonts.semibold, fontSize: 12 },
-  trendHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  trendNow: { fontFamily: fonts.extrabold, fontSize: 18 },
-  sectionTitle: { color: colors.ink, fontFamily: fonts.extrabold, fontSize: 15, marginTop: 22, marginBottom: 8 },
-  ideaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-  },
-  ideaRowAuthor: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-    flex: 1,
-    minWidth: 0,
-  },
-  ideaName: { color: colors.ink, fontFamily: fonts.bold, fontSize: 14 },
-  ideaMeta: { color: colors.muted, fontFamily: fonts.regular, fontSize: 11, marginTop: 1 },
-  tag: {
-    fontFamily: fonts.bold,
-    fontSize: 11,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 999,
-    overflow: "hidden",
-  },
   empty: { alignItems: "center", paddingHorizontal: 30, paddingTop: 60 },
-  emptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16, marginTop: 12 },
+  emptyTitle: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16, marginTop: 12, textAlign: "center" },
   emptySub: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, textAlign: "center", marginTop: 6, lineHeight: 19 },
 });
 
-export default withBoundary(TickerConsensusScreen, "TickerConsensus");
+export default withBoundary(SecurityScreen, "Security");

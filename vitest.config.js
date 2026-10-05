@@ -26,6 +26,6 @@ export default defineConfig({
     //
     // Root-level *.test.js covers middleware.js: Vercel Edge Middleware must
     // live at the project root, so its test does too.
-    include: ["src/**/*.test.{js,jsx}", "api/**/*.test.js", "scripts/**/*.test.js", "*.test.js"],
+    include: ["src/**/*.test.{js,jsx}", "api/**/*.test.js", "scripts/**/*.test.js", "tests/unit/**/*.test.{js,jsx}", "*.test.js"],
   },
 });

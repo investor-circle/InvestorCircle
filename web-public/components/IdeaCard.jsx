@@ -1,4 +1,5 @@
 import { money, pct, day, splitPreview } from '../lib/format';
+import { ideaTypeMeta, isMarketView } from '../lib/ideaType';
 
 const STATUS_CLASS = { Active: 'tag-active', Closed: 'tag-closed', Expired: 'tag-expired' };
 
@@ -24,6 +25,9 @@ export default function IdeaCard({ idea, full = false, headingTag: Heading = 'h3
   const up = Number(idea.return_pct) >= 0;
   const author = idea.author_name || idea.author_username || 'A member';
   const statusClass = STATUS_CLASS[idea.status] || 'tag-expired';
+  const typeMeta = ideaTypeMeta(idea.recommendation_type);
+  // A Market View has no entry/target/status/return — commentary only.
+  const view = isMarketView(idea.recommendation_type);
 
   return (
     <div className="card">
@@ -37,11 +41,9 @@ export default function IdeaCard({ idea, full = false, headingTag: Heading = 'h3
             ) : idea.ticker}
           </Heading>
           {idea.asset_name && <span className="meta">{idea.asset_name}</span>}
-          <span className={`tag ${idea.recommendation_type === 'Buy' ? 'tag-buy' : 'tag-sell'}`}>
-            {idea.recommendation_type === 'Buy' ? 'BUY' : 'SELL'}
-          </span>
-          <span className={`tag ${statusClass}`}>{(idea.status || 'Active').toUpperCase()}</span>
-          {r && (
+          <span className={`tag ${typeMeta.tag}`}>{typeMeta.label.toUpperCase()}</span>
+          {!view && <span className={`tag ${statusClass}`}>{(idea.status || 'Active').toUpperCase()}</span>}
+          {!view && r && (
             <span style={{ marginLeft: 'auto', fontWeight: 800, fontSize: 15 }} className={up ? 'gain' : 'loss'}>
               {r}
             </span>
@@ -50,7 +52,7 @@ export default function IdeaCard({ idea, full = false, headingTag: Heading = 'h3
         <div className="meta" style={{ marginTop: 8 }}>
           {author}
           {idea.author_username && ` · @${idea.author_username}`} · {day(idea.created_at)}
-          {idea.horizon && ` · ${idea.horizon} horizon`}
+          {!view && idea.horizon && ` · ${idea.horizon} horizon`}
         </div>
         {idea.thesis && (full ? (
           <p className="thesis">{idea.thesis}</p>
@@ -71,7 +73,8 @@ export default function IdeaCard({ idea, full = false, headingTag: Heading = 'h3
             </>
           );
         })())}
-        <div className="stats">
+        {view && idea.disclosure && <p className="meta" style={{ marginTop: 10 }}><strong>Disclosure:</strong> {idea.disclosure}</p>}
+        {!view && <div className="stats">
           <div className="stat"><div className="k">ENTRY</div><div className="v">{money(idea.reco_price)}</div></div>
           <div className="stat"><div className="k">TARGET</div><div className="v">{money(idea.target_price)}</div></div>
           {idea.status === 'Closed' ? (
@@ -80,7 +83,7 @@ export default function IdeaCard({ idea, full = false, headingTag: Heading = 'h3
             <div className="stat"><div className="k">LATEST</div><div className="v">{money(idea.current_price)}</div></div>
           )}
           {idea.conviction && <div className="stat"><div className="k">CONVICTION</div><div className="v">{idea.conviction}</div></div>}
-        </div>
+        </div>}
         {!full && (
           <p style={{ marginTop: 10 }}>
             <a href={`/idea/${encodeURIComponent(idea.id)}`}>Read full idea →</a>

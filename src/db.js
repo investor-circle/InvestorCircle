@@ -909,19 +909,68 @@ export async function getTickerRecos(ticker) {
 //     membership, both of which are naturally empty with no signed-in viewer.
 //   - `username`/`full_name` are read straight off author_username/author_name.
 export async function getPublicTickerIdeas(ticker) {
-  if (!ticker) return [];
+  return (await getPublicSecurity(ticker)).ideas;
+}
+
+const EMPTY_VIEW_SUMMARY = { total: 0, positive: 0, neutral: 0, negative: 0, contributors: 0 };
+
+// Market Views on a security (authenticated). A separate dataset from
+// getTickerRecos (which is Verified Research only): commentary + a disclosure,
+// no entry price / target / horizon / return. `summary` is exact over every
+// public view, `views` is one page (limit/offset), `stances` is the
+// lightweight who/what/when for all of them (current view per contributor,
+// Circle comparison, monthly activity).
+export async function getTickerViews(ticker, { limit = 30, offset = 0 } = {}) {
+  const empty = { summary: EMPTY_VIEW_SUMMARY, views: [], stances: [], monthly: [], byContributor: [], hasMore: false };
+  if (!ticker) return empty;
+  const api = await callApi(`/data?resource=lookups&action=ticker-views&ticker=${encodeURIComponent(ticker)}&limit=${limit}&offset=${offset}`);
+  if (!api.ok) return empty;
+  return {
+    summary: api.data.summary || EMPTY_VIEW_SUMMARY,
+    views: api.data.views || [],
+    stances: api.data.stances || [],
+    // Exact aggregates over every public view (see lookups.js ticker-views).
+    monthly: api.data.monthly || [],
+    byContributor: api.data.by_contributor || [],
+    hasMore: !!api.data.has_more,
+  };
+}
+
+// Unauthenticated whole-page read for a signed-out visitor: Verified Research
+// AND Market Views from the one public-ideas by-symbol response, adapted to the
+// same field shapes the authenticated getTickerRecos / getTickerViews return so
+// the page logic runs unmodified against either source (see the field notes on
+// getPublicTickerIdeas above — `from` is the author's username here).
+export async function getPublicSecurity(ticker) {
+  const empty = { ideas: [], views: [], viewSummary: EMPTY_VIEW_SUMMARY, viewStances: [], researchCounts: null, researchMonthly: [], viewMonthly: [], name: null, sector: null };
+  if (!ticker) return empty;
   try {
     const res = await fetch(`${API_BASE}/data?resource=public-ideas&action=by-symbol&symbol=${encodeURIComponent(ticker)}`);
-    if (!res.ok) return [];
+    if (!res.ok) return empty;
     const data = await res.json();
-    return (data.ideas || []).map(idea => ({
-      ...idea,
-      from: idea.author_username,
-      username: idea.author_username,
-      full_name: idea.author_name,
-    }));
+    const asAuthor = (r) => ({ ...r, from: r.author_username, username: r.author_username, full_name: r.author_name });
+    const vs = data.view_summary || {};
+    return {
+      ideas: (data.ideas || []).map(asAuthor),
+      views: (data.views || []).map(asAuthor),
+      viewSummary: {
+        total: Number(vs.total) || 0, positive: Number(vs.positive) || 0, neutral: Number(vs.neutral) || 0,
+        negative: Number(vs.negative) || 0, contributors: Number(vs.contributor_count) || 0,
+      },
+      viewStances: (data.view_stances || []).map(r => ({ ...r, from: r.author_username })),
+      // Exact research rating counts: the `ideas` list is capped server-side, so
+      // the distribution must come from these, not from counting that list.
+      researchCounts: data.summary && data.summary.buy_count != null
+        ? { buy: Number(data.summary.buy_count) || 0, hold: Number(data.summary.hold_count) || 0, sell: Number(data.summary.sell_count) || 0, publishers: Number(data.summary.contributor_count) || 0 }
+        : null,
+      // Exact month-by-month counts over every public idea (the lists are capped).
+      researchMonthly: data.research_monthly || [],
+      viewMonthly: data.view_monthly || [],
+      name: data.name || null,
+      sector: data.sector || null,
+    };
   } catch (_) {
-    return [];
+    return empty;
   }
 }
 

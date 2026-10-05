@@ -193,7 +193,30 @@ const gate = (line) => `<div class="gate">
 
 /* ── idea rendering ───────────────────────────────────────────────────── */
 
+// A Market View (Positive / Neutral / Negative) is independent commentary, not a
+// recommendation: it renders with its view, commentary and the contributor's own
+// disclosure, and NONE of entry / target / return / status / conviction.
+const MARKET_VIEWS = ['Positive', 'Neutral', 'Negative'];
+const isView = (idea) => MARKET_VIEWS.includes(idea.recommendation_type);
+
+function viewCard(idea, { heading = 'h3' } = {}) {
+  const author = idea.author_name || idea.author_username || 'A member';
+  return `<div class="card"><div class="pad">
+    <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+      <${heading}>${esc(idea.ticker || '')}</${heading}>
+      <span class="meta">${esc(idea.asset_name || '')}</span>
+      <span class="tag">${esc(String(idea.recommendation_type).toUpperCase())}</span>
+    </div>
+    <div class="meta" style="margin-top:8px">
+      ${esc(author)}${idea.author_username ? ` · @${esc(idea.author_username)}` : ''} · Independent contributor · ${esc(day(idea.created_at))}
+    </div>
+    ${idea.thesis ? `<p class="thesis">${esc(clip(idea.thesis, 900))}</p>` : ''}
+    ${idea.disclosure ? `<p class="meta" style="margin-top:10px"><strong>Disclosure:</strong> ${esc(idea.disclosure)}</p>` : ''}
+  </div></div>`;
+}
+
 function ideaCard(idea, { heading = 'h3' } = {}) {
+  if (isView(idea)) return viewCard(idea, { heading });
   const r = pct(idea.return_pct);
   const up = Number(idea.return_pct) >= 0;
   const closed = idea.status === 'Closed';
@@ -202,6 +225,7 @@ function ideaCard(idea, { heading = 'h3' } = {}) {
     <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
       <${heading}>${esc(idea.ticker || '')}</${heading}>
       <span class="meta">${esc(idea.asset_name || '')}</span>
+      ${idea.recommendation_type ? `<span class="tag">${esc(String(idea.recommendation_type).toUpperCase())}</span>` : ''}
       ${idea.sector ? `<span class="tag">${esc(idea.sector)}</span>` : ''}
       <span class="tag ${closed ? 'tag-closed' : 'tag-open'}">${esc((idea.status || '').toUpperCase())}</span>
       ${r ? `<span style="margin-left:auto;font-weight:800;font-size:15px" class="${up ? 'gain' : 'loss'}">${esc(r)}</span>` : ''}
@@ -269,15 +293,26 @@ async function ideaPage(id) {
 
 async function stockPage(symbol) {
   const { status, body } = await callPublic({ action: 'by-symbol', symbol });
-  if (status !== 200 || !body?.ideas?.length) return null;
+  const ideas = body?.ideas || [];
+  const views = body?.views || [];
+  if (status !== 200 || (!ideas.length && !views.length)) return null;
 
-  const { name, sector, summary, ideas } = body;
+  const { name, sector, summary } = body;
+  const vs = body.view_summary || {};
   const sym = body.symbol;
-  const title = `${sym} — ${summary.idea_count} investor idea${summary.idea_count === 1 ? '' : 's'} and track records | My Investor Circle`;
-  const description = clip(
-    `${summary.idea_count} published idea${summary.idea_count === 1 ? '' : 's'} on ${name} (${sym}) from ${summary.contributor_count} member${summary.contributor_count === 1 ? '' : 's'}, each with entry price, target and outcome on the record.`,
-    200
-  );
+  const nIdeas = Number(summary.idea_count) || 0;
+  const nViews = Number(vs.total) || 0;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+  // Two separate layers, never merged: Verified Research (Buy / Hold / Sell)
+  // and Market Views (Positive / Neutral / Negative). A layer with no data is
+  // left out.
+  const what = nIdeas && nViews ? 'verified research and market views' : nIdeas ? 'verified research' : 'market views';
+  const title = `${sym} — ${what} | My Investor Circle`;
+  const bits = [];
+  if (nIdeas) bits.push(`${plural(nIdeas, 'piece')} of verified research (Buy / Hold / Sell, with entry price, target and outcome on the record)`);
+  if (nViews) bits.push(`${plural(nViews, 'independent Market View')} (Positive / Neutral / Negative)`);
+  const description = clip(`${bits.join(' and ')} on ${name} (${sym}).`, 200);
   // Canonical (and therefore og:url / JSON-LD url, which shell() derives
   // from this same value) points at /security/:symbol, NOT this page's own
   // /stock/:symbol URL. /security/:symbol (web-public/, a separate SSR
@@ -289,31 +324,40 @@ async function stockPage(symbol) {
   // tells Google which of the two is authoritative in the meantime.
   const canonical = `${SITE}/security/${encodeURIComponent(sym)}`;
 
+  const researchBlock = nIdeas ? `
+      <h2>Verified research on ${esc(sym)}</h2>
+      <p class="lede">${esc(plural(nIdeas, 'piece'))} of research from ${esc(plural(Number(summary.contributor_count) || 0, 'publisher'))},
+      ${esc(String(summary.closed_count))} of them now closed. Every piece is permanent — entry, target and outcome stay on the record whichever way it went.</p>
+      <div class="stats" style="margin-top:20px;margin-bottom:26px">
+        <div class="stat"><div class="k">RESEARCH</div><div class="v">${esc(String(nIdeas))}</div></div>
+        <div class="stat"><div class="k">PUBLISHERS</div><div class="v">${esc(String(summary.contributor_count))}</div></div>
+        <div class="stat"><div class="k">CLOSED</div><div class="v">${esc(String(summary.closed_count))}</div></div>
+        <div class="stat"><div class="k">LATEST</div><div class="v" style="font-size:13.5px">${esc(day(summary.last_posted))}</div></div>
+      </div>
+      ${ideas.map((i) => ideaCard(i)).join('')}` : '';
+
+  const viewsBlock = nViews ? `
+      <h2>Market Views on ${esc(sym)}</h2>
+      <p class="lede">${esc(plural(nViews, 'independent view'))} from ${esc(plural(Number(vs.contributor_count) || 0, 'contributor'))}:
+      ${esc(String(vs.positive || 0))} Positive, ${esc(String(vs.neutral || 0))} Neutral, ${esc(String(vs.negative || 0))} Negative.
+      These are personal views from members — not research and not a recommendation.</p>
+      ${views.map((v) => viewCard(v)).join('')}` : '';
+
   return shell({
     title, description, canonical,
     ld: jsonLd({
       '@context': 'https://schema.org',
       '@type': 'CollectionPage',
-      name: `Investor ideas on ${name} (${sym})`,
+      name: `${nIdeas && nViews ? 'Verified research and Market Views' : nIdeas ? 'Verified research' : 'Market Views'} on ${name} (${sym})`,
       description,
       url: canonical,
       isPartOf: { '@type': 'WebSite', name: 'My Investor Circle', url: SITE + '/' },
     }),
     body: `
       <div class="eyebrow">${esc(sector || 'Stock')}</div>
-      <h1>Investor ideas on ${esc(name)}</h1>
-      <p class="lede">${esc(String(summary.idea_count))} published idea${summary.idea_count === 1 ? '' : 's'} on
-      <strong>${esc(sym)}</strong> from ${esc(String(summary.contributor_count))} member${summary.contributor_count === 1 ? '' : 's'},
-      ${esc(String(summary.closed_count))} of them now closed. Every idea here is permanent — entry, target and
-      outcome stay on the record whichever way it went.</p>
-      <div class="stats" style="margin-top:20px;margin-bottom:26px">
-        <div class="stat"><div class="k">IDEAS</div><div class="v">${esc(String(summary.idea_count))}</div></div>
-        <div class="stat"><div class="k">MEMBERS</div><div class="v">${esc(String(summary.contributor_count))}</div></div>
-        <div class="stat"><div class="k">CLOSED</div><div class="v">${esc(String(summary.closed_count))}</div></div>
-        <div class="stat"><div class="k">LATEST</div><div class="v" style="font-size:13.5px">${esc(day(summary.last_posted))}</div></div>
-      </div>
-      <h2>Every idea on ${esc(sym)}</h2>
-      ${ideas.map((i) => ideaCard(i)).join('')}
+      <h1>${esc(name)} — ${nIdeas && nViews ? 'verified research &amp; market views' : nIdeas ? 'verified research' : 'market views'}</h1>
+      ${researchBlock}
+      ${viewsBlock}
       ${gate(`Sign in to post your own view on ${sym}, or follow the members above.`)}
     `,
   });
